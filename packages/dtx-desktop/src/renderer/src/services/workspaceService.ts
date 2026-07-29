@@ -116,6 +116,8 @@ const queueAuthoritativeWorkspaceReconciliation = (): void => {
 				}
 
 				workspaceStore.setPath(authoritativeRoot);
+				workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+				if (!workspaceService.isTransitionCurrent(transition)) return;
 				await workspaceService.loadSubWorkspaces();
 				if (!workspaceService.isTransitionCurrent(transition)) return;
 				await workspaceService.loadTreeStructure();
@@ -154,6 +156,8 @@ export const workspaceService = {
 					workspaceStore.reset();
 					restoreLoading(transition);
 					workspaceStore.setPath(selectedPath);
+					workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+					if (!workspaceService.isTransitionCurrent(transition)) return;
 
 					// Load sub-workspaces and tree structure in the selected directory
 					await workspaceService.loadSubWorkspaces();
@@ -178,11 +182,20 @@ export const workspaceService = {
 		),
 
 	/**
-	 * Switches to a saved workspace bookmark by trusting its stored path
-	 * directly through the native canonicalization/verification layer (no
-	 * folder picker). If the bookmarked directory no longer exists or is not
-	 * accessible, the error includes the bookmark path so the UI can offer to
-	 * remove the stale bookmark.
+	 * Switches to a saved workspace bookmark by asking native to switch the
+	 * trusted root to the bookmark identified by its opaque native id. The
+	 * renderer never sends a path; native canonicalizes/verifies the
+	 * bookmarked directory and returns a structured outcome:
+	 *   - ok: root switched; load the tree.
+	 *   - unknownId: the bookmark is no longer in the native trust pool (e.g.
+	 *     removed from another surface). No path — the renderer already holds
+	 *     the bookmark it tried to switch to.
+	 *   - notAccessible: the bookmarked directory is missing/inaccessible.
+	 *     Carries the canonical path so the UI can offer to remove the stale
+	 *     bookmark.
+	 * Transient native failures (persistence, IPC) reject the promise with a
+	 * generic error and no path, so the UI never offers "Remove bookmark" for
+	 * a transient failure (the P2 regression).
 	 */
 	switchToBookmark: async (
 		bookmark: WorkspaceBookmark
@@ -205,36 +218,52 @@ export const workspaceService = {
 			async (transition) => {
 				let nativeMutationCommitted = false;
 				try {
+					let outcome;
 					try {
-						const result = await desktopHost.setWorkspaceRoot(bookmark.path);
-						nativeMutationCommitted = !result.canceled && Boolean(result.filePaths[0]);
-						if (!workspaceService.isTransitionCurrent(transition)) {
-							return { ok: false, error: 'Workspace selection was superseded' };
-						}
-						if (result.canceled || !result.filePaths[0]) {
-							return {
-								ok: false,
-								error: 'The bookmarked folder could not be opened',
-								path: bookmark.path
-							};
-						}
-
-						const selectedPath = result.filePaths[0];
-						workspaceStore.reset();
-						restoreLoading(transition);
-						workspaceStore.setPath(selectedPath);
-						await workspaceService.loadSubWorkspaces();
-						if (!workspaceService.isTransitionCurrent(transition)) {
-							return { ok: false, error: 'Workspace selection was superseded' };
-						}
-						await workspaceService.loadTreeStructure();
+						outcome = await desktopHost.switchTrustedWorkspace(bookmark.id);
 					} catch {
+						// Transient native failure (persistence, IPC). Surface a
+						// generic error WITHOUT a path so the UI does not offer
+						// "Remove bookmark" — the bookmark may be perfectly valid.
+						return {
+							ok: false,
+							error: 'Could not switch to the bookmarked workspace. Try again.'
+						};
+					}
+
+					if (!workspaceService.isTransitionCurrent(transition)) {
+						return { ok: false, error: 'Workspace selection was superseded' };
+					}
+
+					if (outcome.outcome === 'unknownId') {
+						return {
+							ok: false,
+							error: 'This bookmark is no longer available. Remove it and re-add the folder.'
+						};
+					}
+
+					if (outcome.outcome === 'notAccessible') {
 						return {
 							ok: false,
 							error: 'The bookmarked folder is missing or not accessible. Remove it and re-add the folder.',
-							path: bookmark.path
+							path: outcome.path
 						};
 					}
+
+					nativeMutationCommitted = true;
+					const selectedPath = outcome.path;
+					workspaceStore.reset();
+					restoreLoading(transition);
+					workspaceStore.setPath(selectedPath);
+					workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+					if (!workspaceService.isTransitionCurrent(transition)) {
+						return { ok: false, error: 'Workspace selection was superseded' };
+					}
+					await workspaceService.loadSubWorkspaces();
+					if (!workspaceService.isTransitionCurrent(transition)) {
+						return { ok: false, error: 'Workspace selection was superseded' };
+					}
+					await workspaceService.loadTreeStructure();
 
 					// Check if any loader set an error during loading
 					let loadError: string | null = null;

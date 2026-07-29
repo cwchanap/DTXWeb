@@ -1,257 +1,98 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { get } from 'svelte/store';
 
+vi.mock('../services/desktopHost', () => ({
+	desktopHost: {
+		listBookmarks: vi.fn(),
+		bookmarkCurrentRoot: vi.fn(),
+		renameBookmark: vi.fn(),
+		removeBookmark: vi.fn()
+	}
+}));
+
+import { bookmarkStore, basename } from './bookmarkStore';
+import { desktopHost } from '../services/desktopHost';
+
+const host = vi.mocked(desktopHost);
+
 describe('bookmarkStore', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		host.listBookmarks.mockResolvedValue([]);
+		host.bookmarkCurrentRoot.mockResolvedValue({ id: 'native-id', path: '/foo', name: 'Foo' });
+		host.renameBookmark.mockResolvedValue(undefined);
+		host.removeBookmark.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
 		vi.resetModules();
 	});
 
-	describe('hydration', () => {
-		it('hydrates from valid JSON in localStorage', async () => {
-			const stored = [
-				{ path: '/a', name: 'A' },
-				{ path: '/b', name: 'B' }
-			];
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify(stored)
-			);
+	it('refresh hydrates the cache from the native trust pool', async () => {
+		const native = [
+			{ id: 'a', path: '/a', name: 'A' },
+			{ id: 'b', path: '/b', name: 'B' }
+		];
+		host.listBookmarks.mockResolvedValue(native);
 
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual(stored);
-		});
+		await bookmarkStore.refresh();
 
-		it('initializes empty when localStorage has no entry', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual([]);
-		});
-
-		it('initializes empty when localStorage has malformed JSON', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue('not-json');
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual([]);
-		});
-
-		it('initializes empty when localStorage has non-array JSON', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				'{"foo":"bar"}'
-			);
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual([]);
-		});
-
-		it('filters out entries with non-string or empty path', async () => {
-			const stored = [
-				{ path: '/a', name: 'A' },
-				{ path: 123, name: 'B' },
-				{ path: '', name: 'Empty' },
-				null,
-				undefined
-			];
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify(stored)
-			);
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual([{ path: '/a', name: 'A' }]);
-		});
-
-		it('deduplicates entries by path on hydration', async () => {
-			const stored = [
-				{ path: '/a', name: 'First A' },
-				{ path: '/b', name: 'B' },
-				{ path: '/a', name: 'Second A' }
-			];
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify(stored)
-			);
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toEqual([
-				{ path: '/a', name: 'First A' },
-				{ path: '/b', name: 'B' }
-			]);
-		});
-
-		it('trims to MAX_BOOKMARKS on hydration', async () => {
-			const stored = Array.from({ length: 25 }, (_, i) => ({
-				path: `/p${i}`,
-				name: `n${i}`
-			}));
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify(stored)
-			);
-
-			const { bookmarkStore: store } = await import('./bookmarkStore');
-			expect(get(store)).toHaveLength(20);
-			expect(get(store)[0]).toEqual({ path: '/p0', name: 'n0' });
-			expect(get(store)[19]).toEqual({ path: '/p19', name: 'n19' });
-		});
+		expect(host.listBookmarks).toHaveBeenCalledOnce();
+		expect(get(bookmarkStore)).toEqual(native);
 	});
 
-	describe('add', () => {
-		it('appends a bookmark and returns ok', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			const result = bookmarkStore.add('/foo/bar', 'My Folder');
-			expect(result).toEqual({ ok: true });
-			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar', name: 'My Folder' }]);
-		});
+	it('addCurrent delegates to bookmarkCurrentRoot and refreshes from native', async () => {
+		host.bookmarkCurrentRoot.mockResolvedValue({ id: 'new-id', path: '/foo', name: 'Foo' });
+		host.listBookmarks.mockResolvedValueOnce([{ id: 'new-id', path: '/foo', name: 'Foo' }]);
 
-		it('defaults name to basename of path when name omitted', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.add('/foo/bar/MySongs');
-			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar/MySongs', name: 'MySongs' }]);
-		});
+		const ref = await bookmarkStore.addCurrent('Foo');
 
-		it('handles Windows-style paths in basename default', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.add('C:\\Users\\jack\\Songs');
-			expect(get(bookmarkStore)).toEqual([{ path: 'C:\\Users\\jack\\Songs', name: 'Songs' }]);
-		});
-
-		it('returns duplicate and does not mutate when path already exists', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.add('/foo', 'First');
-			const result = bookmarkStore.add('/foo', 'Second');
-			expect(result).toEqual({ ok: false, reason: 'duplicate' });
-			expect(get(bookmarkStore)).toEqual([{ path: '/foo', name: 'First' }]);
-		});
-
-		it('returns cap-exceeded and does not mutate when at 20 entries', async () => {
-			const stored = Array.from({ length: 20 }, (_, i) => ({
-				path: `/p${i}`,
-				name: `n${i}`
-			}));
-			// Use the test's localStorage mocking convention to seed the hydrated state.
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify(stored)
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			const result = bookmarkStore.add('/new', 'New');
-			expect(result).toEqual({ ok: false, reason: 'cap-exceeded' });
-			expect(get(bookmarkStore)).toEqual(stored);
-		});
-
-		it('persists to localStorage on successful add', async () => {
-			vi.clearAllMocks();
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.add('/foo', 'Foo');
-			expect(window.localStorage.setItem).toHaveBeenCalledWith(
-				'workspace_bookmarks',
-				JSON.stringify([{ path: '/foo', name: 'Foo' }])
-			);
-		});
-
-		it('does not throw when localStorage.setItem fails', async () => {
-			vi.clearAllMocks();
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
-			(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockImplementation(() => {
-				throw new DOMException('QuotaExceededError');
-			});
-			const { bookmarkStore } = await import('./bookmarkStore');
-			expect(() => bookmarkStore.add('/foo', 'Foo')).not.toThrow();
-			// The bookmark is still in the in-memory store even though persist failed
-			expect(get(bookmarkStore)).toEqual([{ path: '/foo', name: 'Foo' }]);
-		});
+		expect(host.bookmarkCurrentRoot).toHaveBeenCalledWith('Foo');
+		expect(ref).toEqual({ id: 'new-id', path: '/foo', name: 'Foo' });
+		expect(get(bookmarkStore)).toEqual([{ id: 'new-id', path: '/foo', name: 'Foo' }]);
 	});
 
-	describe('remove', () => {
-		it('removes the matching path', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([
-					{ path: '/a', name: 'A' },
-					{ path: '/b', name: 'B' }
-				])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.remove('/a');
-			expect(get(bookmarkStore)).toEqual([{ path: '/b', name: 'B' }]);
+	it('addCurrent forwards an empty name so native applies the basename default', async () => {
+		host.bookmarkCurrentRoot.mockResolvedValue({
+			id: 'new-id',
+			path: '/foo/MySongs',
+			name: 'MySongs'
 		});
 
-		it('is a no-op when path is not present', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/a', name: 'A' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.remove('/missing');
-			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'A' }]);
-		});
+		await bookmarkStore.addCurrent();
 
-		it('persists remaining entries to localStorage', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([
-					{ path: '/a', name: 'A' },
-					{ path: '/b', name: 'B' }
-				])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.remove('/a');
-			expect(window.localStorage.setItem).toHaveBeenCalledWith(
-				'workspace_bookmarks',
-				JSON.stringify([{ path: '/b', name: 'B' }])
-			);
-		});
+		expect(host.bookmarkCurrentRoot).toHaveBeenCalledWith('');
 	});
 
-	describe('rename', () => {
-		it('updates the name for the matching path', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/a', name: 'Old' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.rename('/a', 'New');
-			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'New' }]);
-		});
+	it('addCurrent propagates a native cap-exceeded error', async () => {
+		host.bookmarkCurrentRoot.mockRejectedValue(new Error('Maximum of 20 bookmarks reached'));
 
-		it('trims surrounding whitespace from the new name', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/a', name: 'Old' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.rename('/a', '   spaced   ');
-			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'spaced' }]);
-		});
+		await expect(bookmarkStore.addCurrent('X')).rejects.toThrow(
+			'Maximum of 20 bookmarks reached'
+		);
+	});
 
-		it('falls back to basename when new name is empty after trim', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/foo/bar/MySongs', name: 'Old' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.rename('/foo/bar/MySongs', '   ');
-			expect(get(bookmarkStore)).toEqual([{ path: '/foo/bar/MySongs', name: 'MySongs' }]);
-		});
+	it('rename delegates to renameBookmark by id and refreshes', async () => {
+		host.listBookmarks.mockResolvedValueOnce([{ id: 'a', path: '/a', name: 'Renamed' }]);
 
-		it('is a no-op when path does not exist', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/a', name: 'A' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.rename('/missing', 'Whatever');
-			expect(get(bookmarkStore)).toEqual([{ path: '/a', name: 'A' }]);
-		});
+		await bookmarkStore.rename('a', 'Renamed');
 
-		it('persists to localStorage on rename', async () => {
-			(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(
-				JSON.stringify([{ path: '/a', name: 'Old' }])
-			);
-			const { bookmarkStore } = await import('./bookmarkStore');
-			bookmarkStore.rename('/a', 'New');
-			expect(window.localStorage.setItem).toHaveBeenCalledWith(
-				'workspace_bookmarks',
-				JSON.stringify([{ path: '/a', name: 'New' }])
-			);
-		});
+		expect(host.renameBookmark).toHaveBeenCalledWith('a', 'Renamed');
+		expect(get(bookmarkStore)).toEqual([{ id: 'a', path: '/a', name: 'Renamed' }]);
+	});
+
+	it('remove delegates to removeBookmark by id and refreshes', async () => {
+		host.listBookmarks.mockResolvedValueOnce([]);
+
+		await bookmarkStore.remove('a');
+
+		expect(host.removeBookmark).toHaveBeenCalledWith('a');
+		expect(get(bookmarkStore)).toEqual([]);
+	});
+
+	it('basename extracts the final path segment', () => {
+		expect(basename('/foo/bar/MySongs')).toBe('MySongs');
+		expect(basename('C:\\Users\\jack\\Songs')).toBe('Songs');
+		expect(basename('/foo/bar/')).toBe('bar');
 	});
 });

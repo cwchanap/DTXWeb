@@ -153,7 +153,10 @@ fn set_persists_canonical_root_before_replacing_memory() {
     assert_eq!(state.current_optional(), Some(canonical.clone()));
     assert_eq!(
         fs::read_to_string(path).expect("settings file"),
-        format!("{{\n  \"workspaceRoot\": \"{}\"\n}}", canonical.display())
+        format!(
+            "{{\n  \"workspaceRoot\": \"{}\",\n  \"bookmarks\": []\n}}",
+            canonical.display()
+        )
     );
 }
 
@@ -189,7 +192,7 @@ fn clear_persists_an_empty_setting_before_clearing_memory() {
     assert_eq!(state.current_optional(), None);
     assert_eq!(
         fs::read_to_string(path).expect("settings file"),
-        "{\n  \"workspaceRoot\": null\n}"
+        "{\n  \"workspaceRoot\": null,\n  \"bookmarks\": []\n}"
     );
 }
 
@@ -486,10 +489,292 @@ fn load_returns_default_when_the_e2e_data_directory_has_no_settings() {
 }
 
 // ---------------------------------------------------------------------------
-// set_workspace_root command wrapper — exercises the State<'_, WorkspaceRootState>
-// extraction path via tauri::test::mock_app(). The underlying selection_result
-// logic is already tested above; these tests cover the thin command wrapper
-// body (State deref + PathBuf conversion + return wrapping).
+// Bookmark trust-pool logic. The folder dialog is the only operation that
+// establishes a trusted root; bookmarks are native-owned and switched by id.
+// These tests cover switch_to_bookmark, bookmark_current_root, rename,
+// remove, list, and current_root_id — the surface the renderer reaches
+// through the registered Tauri commands.
+// ---------------------------------------------------------------------------
+
+fn state_with_current_root(data_dir: &std::path::Path) -> (WorkspaceRootState, std::path::PathBuf) {
+    let root = data_dir.join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir));
+    let canonical = state
+        .set_from_dialog_selection(&root)
+        .expect("select workspace");
+    (state, canonical)
+}
+
+#[test]
+fn bookmark_current_root_records_the_current_root_with_a_native_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+
+    let bookmark = state
+        .bookmark_current_root("My Songs")
+        .expect("bookmark current root");
+
+    assert_eq!(bookmark.path, canonical.to_string_lossy().into_owned());
+    assert_eq!(bookmark.name, "My Songs");
+    assert!(!bookmark.id.is_empty());
+    assert_eq!(state.list_bookmarks().len(), 1);
+    assert_eq!(
+        state.current_root_id().as_deref(),
+        Some(bookmark.id.as_str())
+    );
+}
+
+#[test]
+fn bookmark_current_root_defaults_to_basename_when_name_is_blank() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    let bookmark = state.bookmark_current_root("   ").expect("default name");
+
+    assert_eq!(bookmark.name, "workspace");
+}
+
+#[test]
+fn bookmark_current_root_updates_the_name_when_the_root_is_already_bookmarked() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    let first = state
+        .bookmark_current_root("First")
+        .expect("first bookmark");
+    let second = state
+        .bookmark_current_root("Second")
+        .expect("rename via re-bookmark");
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(second.name, "Second");
+    assert_eq!(state.list_bookmarks().len(), 1);
+}
+
+#[test]
+fn bookmark_current_root_rejects_when_no_trusted_root_is_set() {
+    let data_dir = TempDir::new().expect("data dir");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+
+    let error = state
+        .bookmark_current_root("Name")
+        .expect_err("no current root");
+
+    assert!(error.to_string().contains("A workspace root is required"));
+    assert!(state.list_bookmarks().is_empty());
+}
+
+#[test]
+fn bookmark_current_root_enforces_the_cap() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    for i in 0..MAX_BOOKMARKS {
+        let dir = data_dir.path().join(format!("ws-{i}"));
+        fs::create_dir(&dir).expect("workspace dir");
+        state
+            .set_from_dialog_selection(&dir)
+            .expect("select workspace");
+        state
+            .bookmark_current_root(&format!("WS {i}"))
+            .expect("bookmark");
+    }
+
+    // Re-select the original current root so the next bookmark targets a new
+    // distinct directory without disturbing the existing 20 bookmarks.
+    let extra = data_dir.path().join("ws-extra");
+    fs::create_dir(&extra).expect("extra workspace dir");
+    state
+        .set_from_dialog_selection(&extra)
+        .expect("select extra");
+
+    let error = state
+        .bookmark_current_root("Extra")
+        .expect_err("cap exceeded");
+
+    assert!(error
+        .to_string()
+        .contains("Maximum of 20 bookmarks reached"));
+    assert_eq!(state.list_bookmarks().len(), MAX_BOOKMARKS);
+}
+
+#[test]
+fn switch_to_bookmark_switches_the_trusted_root_by_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Mine").expect("bookmark");
+
+    // Clear the current root, then switch back to the bookmarked root by id.
+    state.clear().expect("clear");
+    assert_eq!(state.current_optional(), None);
+
+    let outcome = state
+        .switch_to_bookmark(&bookmark.id)
+        .expect("switch outcome");
+
+    assert!(matches!(outcome, SwitchOutcome::Ok { .. }));
+    if let SwitchOutcome::Ok { path } = outcome {
+        assert_eq!(std::path::PathBuf::from(path), canonical);
+    }
+    assert_eq!(state.current_optional(), Some(canonical));
+}
+
+#[test]
+fn switch_to_bookmark_returns_unknown_id_for_an_unrecognized_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    let outcome = state
+        .switch_to_bookmark("not-a-real-id")
+        .expect("switch outcome");
+
+    assert!(matches!(outcome, SwitchOutcome::UnknownId));
+    // UnknownId must not carry a path — the renderer already holds the
+    // bookmark it tried to switch to.
+}
+
+#[test]
+fn switch_to_bookmark_returns_not_accessible_when_the_path_is_missing() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Gone").expect("bookmark");
+
+    // Remove the bookmarked directory from disk.
+    fs::remove_dir(&canonical).expect("remove workspace dir");
+
+    let outcome = state
+        .switch_to_bookmark(&bookmark.id)
+        .expect("switch outcome");
+
+    match outcome {
+        SwitchOutcome::NotAccessible { path } => {
+            assert_eq!(std::path::PathBuf::from(path), canonical);
+        }
+        other => panic!("expected NotAccessible, got {other:?}"),
+    }
+    // The trusted root must not change when the bookmark is inaccessible.
+    assert_eq!(state.current_optional(), Some(canonical));
+}
+
+#[test]
+fn switch_to_bookmark_does_not_accept_a_renderer_path() {
+    // The only input to switch_to_bookmark is an opaque id. A path string
+    // supplied as an id must resolve to UnknownId, never establish trust.
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("sneaky");
+    fs::create_dir(&root).expect("sneaky directory");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+
+    let outcome = state
+        .switch_to_bookmark(root.to_string_lossy().as_ref())
+        .expect("switch outcome");
+
+    assert!(matches!(outcome, SwitchOutcome::UnknownId));
+    assert_eq!(state.current_optional(), Some(canonical));
+    assert!(state.list_bookmarks().is_empty());
+}
+
+#[test]
+fn rename_bookmark_updates_the_display_name() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Old").expect("bookmark");
+
+    state.rename_bookmark(&bookmark.id, "New").expect("rename");
+
+    let updated = state
+        .list_bookmarks()
+        .into_iter()
+        .find(|b| b.id == bookmark.id)
+        .expect("bookmark present");
+    assert_eq!(updated.name, "New");
+}
+
+#[test]
+fn rename_bookmark_rejects_an_unknown_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+
+    let error = state
+        .rename_bookmark("nope", "New")
+        .expect_err("unknown bookmark");
+
+    assert!(error.to_string().contains("Unknown workspace bookmark"));
+}
+
+#[test]
+fn remove_bookmark_drops_the_entry_from_the_trust_pool() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Drop").expect("bookmark");
+
+    state.remove_bookmark(&bookmark.id).expect("remove");
+
+    assert!(state.list_bookmarks().is_empty());
+    assert_eq!(state.current_root_id(), None);
+    // Removing a bookmark does not clear the current trusted root.
+    assert!(state.current_optional().is_some());
+}
+
+#[test]
+fn remove_bookmark_is_idempotent_for_an_unknown_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+
+    state.remove_bookmark("nope").expect("idempotent remove");
+}
+
+#[test]
+fn list_bookmarks_returns_all_entries() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+    state.bookmark_current_root("A").expect("bookmark A");
+
+    let other = data_dir.path().join("other");
+    fs::create_dir(&other).expect("other dir");
+    state
+        .set_from_dialog_selection(&other)
+        .expect("select other");
+    state.bookmark_current_root("B").expect("bookmark B");
+
+    let names: Vec<String> = state.list_bookmarks().into_iter().map(|b| b.name).collect();
+    assert_eq!(names, vec!["A".to_string(), "B".to_string()]);
+}
+
+#[test]
+fn current_root_id_is_none_when_the_current_root_is_not_bookmarked() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, _canonical) = state_with_current_root(data_dir.path());
+
+    assert_eq!(state.current_root_id(), None);
+}
+
+#[test]
+fn bookmarks_persist_across_a_reload() {
+    let data_dir = TempDir::new().expect("data dir");
+    let (state, canonical) = state_with_current_root(data_dir.path());
+    let bookmark = state.bookmark_current_root("Persisted").expect("bookmark");
+    drop(state);
+
+    let reloaded = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
+    assert_eq!(reloaded.current_optional(), Some(canonical));
+    let reloaded_bookmark = reloaded
+        .list_bookmarks()
+        .into_iter()
+        .find(|b| b.id == bookmark.id)
+        .expect("bookmark persisted");
+    assert_eq!(reloaded_bookmark.name, "Persisted");
+    assert_eq!(
+        reloaded.current_root_id().as_deref(),
+        Some(bookmark.id.as_str())
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Command wrappers — exercise the State<'_, WorkspaceRootState> extraction
+// path via tauri::test::mock_app(). The underlying logic is tested above; these
+// cover the thin command wrapper bodies (State deref + return wrapping).
 // ---------------------------------------------------------------------------
 
 fn mock_app_with_persistable_workspace(
@@ -501,22 +786,24 @@ fn mock_app_with_persistable_workspace(
 }
 
 #[test]
-fn set_workspace_root_command_wrapper_trusts_a_bookmark_path() {
+fn switch_trusted_workspace_command_wrapper_switches_by_id() {
     let data_dir = TempDir::new().expect("data dir");
     let root = data_dir.path().join("workspace");
     fs::create_dir(&root).expect("workspace directory");
     let app = mock_app_with_persistable_workspace(data_dir.path());
-    let canonical = fs::canonicalize(&root).expect("canonical root");
+    let state = app.state::<WorkspaceRootState>();
+    let canonical = state
+        .set_from_dialog_selection(&root)
+        .expect("select workspace");
+    let bookmark = state
+        .bookmark_current_root("Mine")
+        .expect("bookmark current root");
+    state.clear().expect("clear current root");
 
-    let result = set_workspace_root(
-        root.to_string_lossy().into_owned(),
-        app.state::<WorkspaceRootState>(),
-    )
-    .expect("command result");
+    let outcome = switch_trusted_workspace(bookmark.id.clone(), app.state::<WorkspaceRootState>())
+        .expect("switch outcome");
 
-    assert!(!result.canceled);
-    assert_eq!(result.file_paths.len(), 1);
-    assert_eq!(std::path::PathBuf::from(&result.file_paths[0]), canonical);
+    assert!(matches!(outcome, SwitchOutcome::Ok { .. }));
     assert_eq!(
         app.state::<WorkspaceRootState>().current_optional(),
         Some(canonical)
@@ -524,22 +811,43 @@ fn set_workspace_root_command_wrapper_trusts_a_bookmark_path() {
 }
 
 #[test]
-fn set_workspace_root_command_wrapper_rejects_a_missing_path() {
+fn switch_trusted_workspace_command_wrapper_returns_unknown_id() {
     let data_dir = TempDir::new().expect("data dir");
     let app = mock_app_with_persistable_workspace(data_dir.path());
-    let missing = data_dir.path().join("does-not-exist");
 
-    let error = set_workspace_root(
-        missing.to_string_lossy().into_owned(),
-        app.state::<WorkspaceRootState>(),
-    )
-    .expect_err("missing directory should be rejected");
+    let outcome = switch_trusted_workspace("nope".to_string(), app.state::<WorkspaceRootState>())
+        .expect("switch outcome");
 
-    assert!(
-        error
-            .to_string()
-            .contains("The selected workspace must be an accessible directory"),
-        "unexpected error: {error}"
-    );
-    assert_eq!(app.state::<WorkspaceRootState>().current_optional(), None);
+    assert!(matches!(outcome, SwitchOutcome::UnknownId));
+}
+
+#[test]
+fn list_bookmarks_command_wrapper_returns_entries() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let state = app.state::<WorkspaceRootState>();
+    state.set_from_dialog_selection(&root).expect("select");
+    state.bookmark_current_root("Mine").expect("bookmark");
+
+    let bookmarks = list_bookmarks(app.state::<WorkspaceRootState>());
+
+    assert_eq!(bookmarks.len(), 1);
+    assert_eq!(bookmarks[0].name, "Mine");
+}
+
+#[test]
+fn get_current_workspace_root_id_command_wrapper_returns_the_bookmark_id() {
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let app = mock_app_with_persistable_workspace(data_dir.path());
+    let state = app.state::<WorkspaceRootState>();
+    state.set_from_dialog_selection(&root).expect("select");
+    let bookmark = state.bookmark_current_root("Mine").expect("bookmark");
+
+    let id = get_current_workspace_root_id(app.state::<WorkspaceRootState>());
+
+    assert_eq!(id.as_deref(), Some(bookmark.id.as_str()));
 }

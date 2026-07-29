@@ -10,6 +10,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
+use uuid::Uuid;
 
 use crate::error::{DesktopError, Result};
 use crate::models::DialogResult;
@@ -18,11 +19,51 @@ use crate::native_persistence::{
 };
 
 const WORKSPACE_ROOT_REQUIRED: &str = "A workspace root is required";
+const MAX_BOOKMARKS: usize = 20;
+const MAX_BOOKMARKS_MESSAGE: &str = "Maximum of 20 bookmarks reached";
+const UNKNOWN_BOOKMARK_MESSAGE: &str = "Unknown workspace bookmark";
+
+/// A native-owned bookmark: an opaque id, the canonical workspace path it
+/// refers to, and a renderer-supplied display name. The id is the only value
+/// the renderer is allowed to send back when switching roots; the path is
+/// never accepted from the renderer as a trust anchor.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BookmarkEntry {
+    id: String,
+    path: String,
+    name: String,
+}
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
 struct WorkspaceSettings {
     workspace_root: Option<String>,
+    #[serde(default)]
+    bookmarks: Vec<BookmarkEntry>,
+}
+
+/// Wire shape returned by `list_bookmarks` and `bookmark_current_root`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BookmarkRef {
+    pub id: String,
+    pub path: String,
+    pub name: String,
+}
+
+/// Structured outcome of `switch_trusted_workspace`. Only `NotAccessible`
+/// carries a path (so the renderer can offer to remove a confirmed-stale
+/// bookmark). `UnknownId` carries no path — the renderer already holds the
+/// bookmark it tried to switch to. Transient native failures (persistence,
+/// IPC) surface through the `Err` channel as a generic error string with no
+/// path, so the menu never offers "Remove bookmark" for a transient failure.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "outcome")]
+pub enum SwitchOutcome {
+    Ok { path: String },
+    UnknownId,
+    NotAccessible { path: String },
 }
 
 #[cfg(test)]
@@ -54,6 +95,7 @@ impl TestRendezvous {
 #[derive(Debug, Default)]
 pub struct WorkspaceRootState {
     root: RwLock<Option<PathBuf>>,
+    bookmarks: RwLock<Vec<BookmarkEntry>>,
     settings_path: Option<PathBuf>,
     operation_lock: Mutex<()>,
     #[cfg(test)]
@@ -80,6 +122,7 @@ impl WorkspaceRootState {
 
         Self {
             root: RwLock::new(root),
+            bookmarks: RwLock::new(settings.bookmarks),
             settings_path: Some(settings_path),
             operation_lock: Mutex::new(()),
             #[cfg(test)]
@@ -101,21 +144,182 @@ impl WorkspaceRootState {
             .clone()
     }
 
+    /// The native bookmark id of the current root, if the current root has
+    /// been bookmarked. The renderer uses this to decide whether to show
+    /// "Bookmark this folder" or "Bookmarked as <name>".
+    pub(crate) fn current_root_id(&self) -> Option<String> {
+        let root = self.current_optional()?;
+        let root_string = root.to_string_lossy().into_owned();
+        self.bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .find(|bookmark| bookmark.path == root_string)
+            .map(|bookmark| bookmark.id.clone())
+    }
+
     pub(crate) fn set_from_dialog_selection(&self, selected: &Path) -> Result<PathBuf> {
         let canonical = canonical_workspace_directory(selected).ok_or_else(|| {
             DesktopError::Message(
                 "The selected workspace must be an accessible directory".to_string(),
             )
         })?;
-        self.commit_transition(Some(canonical.clone()))?;
+        let bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        self.commit(Some(canonical.clone()), bookmarks)?;
         Ok(canonical)
     }
 
-    pub(crate) fn clear(&self) -> Result<()> {
-        self.commit_transition(None)
+    /// Switches the trusted root to a previously-bookmarked root identified
+    /// only by its opaque native id. The renderer never supplies a path here.
+    pub(crate) fn switch_to_bookmark(&self, id: &str) -> Result<SwitchOutcome> {
+        let bookmark = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .find(|bookmark| bookmark.id == id)
+            .cloned();
+        let Some(bookmark) = bookmark else {
+            return Ok(SwitchOutcome::UnknownId);
+        };
+
+        let canonical = canonical_workspace_directory(Path::new(&bookmark.path));
+        let Some(canonical) = canonical else {
+            return Ok(SwitchOutcome::NotAccessible {
+                path: bookmark.path,
+            });
+        };
+
+        let bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        self.commit(Some(canonical.clone()), bookmarks)?;
+        Ok(SwitchOutcome::Ok {
+            path: canonical.to_string_lossy().into_owned(),
+        })
     }
 
-    fn commit_transition(&self, next_root: Option<PathBuf>) -> Result<()> {
+    /// Records the current trusted root as a bookmark with the given display
+    /// name. If the current root is already bookmarked, the existing entry's
+    /// name is updated and returned. The native id is generated here and never
+    /// supplied by the renderer.
+    pub(crate) fn bookmark_current_root(&self, name: &str) -> Result<BookmarkRef> {
+        let canonical = self.current()?;
+        let path_string = canonical.to_string_lossy().into_owned();
+        let trimmed_name = name.trim();
+        let final_name = if trimmed_name.is_empty() {
+            basename(&path_string)
+        } else {
+            trimmed_name.to_string()
+        };
+
+        let mut bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+
+        if let Some(idx) = bookmarks.iter().position(|b| b.path == path_string) {
+            let id = bookmarks[idx].id.clone();
+            let path = bookmarks[idx].path.clone();
+            let original_name = bookmarks[idx].name.clone();
+            let changed = original_name != final_name;
+            if changed {
+                bookmarks[idx].name = final_name.clone();
+                self.commit(self.current_optional(), bookmarks)?;
+            }
+            let name = if changed { final_name } else { original_name };
+            return Ok(BookmarkRef { id, path, name });
+        }
+
+        if bookmarks.len() >= MAX_BOOKMARKS {
+            return Err(DesktopError::Message(MAX_BOOKMARKS_MESSAGE.to_string()));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        bookmarks.push(BookmarkEntry {
+            id: id.clone(),
+            path: path_string.clone(),
+            name: final_name.clone(),
+        });
+        self.commit(self.current_optional(), bookmarks)?;
+        Ok(BookmarkRef {
+            id,
+            path: path_string,
+            name: final_name,
+        })
+    }
+
+    pub(crate) fn rename_bookmark(&self, id: &str, name: &str) -> Result<()> {
+        let mut bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let trimmed = name.trim();
+        let entry = bookmarks
+            .iter_mut()
+            .find(|b| b.id == id)
+            .ok_or_else(|| DesktopError::Message(UNKNOWN_BOOKMARK_MESSAGE.to_string()))?;
+        let final_name = if trimmed.is_empty() {
+            basename(&entry.path)
+        } else {
+            trimmed.to_string()
+        };
+        if entry.name == final_name {
+            return Ok(());
+        }
+        entry.name = final_name;
+        self.commit(self.current_optional(), bookmarks)?;
+        Ok(())
+    }
+
+    /// Removes a bookmark from the native trust pool. Idempotent: removing an
+    /// unknown id succeeds without mutating state.
+    pub(crate) fn remove_bookmark(&self, id: &str) -> Result<()> {
+        let mut bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        let before = bookmarks.len();
+        bookmarks.retain(|b| b.id != id);
+        if bookmarks.len() == before {
+            return Ok(());
+        }
+        self.commit(self.current_optional(), bookmarks)?;
+        Ok(())
+    }
+
+    pub(crate) fn list_bookmarks(&self) -> Vec<BookmarkRef> {
+        self.bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .map(|b| BookmarkRef {
+                id: b.id.clone(),
+                path: b.path.clone(),
+                name: b.name.clone(),
+            })
+            .collect()
+    }
+
+    pub(crate) fn clear(&self) -> Result<()> {
+        let bookmarks = self
+            .bookmarks
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        self.commit(None, bookmarks)
+    }
+
+    fn commit(&self, next_root: Option<PathBuf>, next_bookmarks: Vec<BookmarkEntry>) -> Result<()> {
         #[cfg(test)]
         self.run_test_hook(
             &self.before_operation_lock_hook,
@@ -125,13 +329,17 @@ impl WorkspaceRootState {
             .operation_lock
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        self.persist(next_root.as_deref())?;
+        self.persist(next_root.as_deref(), &next_bookmarks)?;
         #[cfg(test)]
         self.run_test_hook(&self.post_persist_hook, "post-persist rendezvous");
         *self
             .root
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = next_root;
+        *self
+            .bookmarks
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = next_bookmarks;
         Ok(())
     }
 
@@ -146,7 +354,7 @@ impl WorkspaceRootState {
         }
     }
 
-    fn persist(&self, root: Option<&Path>) -> Result<()> {
+    fn persist(&self, root: Option<&Path>, bookmarks: &[BookmarkEntry]) -> Result<()> {
         let settings_path = self.settings_path.as_deref().ok_or_else(|| {
             DesktopError::Message("Could not resolve app data directory".to_string())
         })?;
@@ -157,12 +365,28 @@ impl WorkspaceRootState {
                 })
             })
             .transpose()?;
-        write_json_atomic(settings_path, &WorkspaceSettings { workspace_root })
+        write_json_atomic(
+            settings_path,
+            &WorkspaceSettings {
+                workspace_root,
+                bookmarks: bookmarks.to_vec(),
+            },
+        )
     }
 }
 
 pub(crate) fn workspace_settings_path(data_dir: &Path) -> PathBuf {
     app_data_file(data_dir, "workspace.json")
+}
+
+fn basename(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let parts: Vec<&str> = trimmed.split(['/', '\\']).collect();
+    parts
+        .last()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| trimmed.to_string())
 }
 
 fn canonical_workspace_directory(path: &Path) -> Option<PathBuf> {
@@ -222,18 +446,54 @@ pub fn get_workspace_root(state: State<'_, WorkspaceRootState>) -> Option<String
         .map(|path| path.to_string_lossy().into_owned())
 }
 
-/// Trusts a bookmark path directly as the workspace root, without prompting
-/// the user with a folder picker. The path is canonicalized and verified to be
-/// an accessible directory (same checks as `select_workspace_folder`), so a
-/// stale or tampered bookmark cannot establish an invalid root. Returns the
-/// canonical path on success.
+/// Returns the native bookmark id of the current trusted root, or null if the
+/// current root has not been bookmarked. The renderer uses this to render the
+/// "Bookmark this folder" / "Bookmarked as <name>" state without ever needing
+/// to send a path back to native.
 #[tauri::command]
-pub fn set_workspace_root(
-    path: String,
+pub fn get_current_workspace_root_id(state: State<'_, WorkspaceRootState>) -> Option<String> {
+    state.current_root_id()
+}
+
+/// Switches the trusted workspace root to a previously-bookmarked root
+/// identified by its opaque native id. This is the only operation other than
+/// the folder dialog that can change the trusted root, and it never accepts a
+/// path from the renderer.
+#[tauri::command]
+pub fn switch_trusted_workspace(
+    id: String,
     state: State<'_, WorkspaceRootState>,
-) -> Result<DialogResult> {
-    let selected = PathBuf::from(path);
-    selection_result(&state, Some(selected))
+) -> Result<SwitchOutcome> {
+    state.switch_to_bookmark(&id)
+}
+
+/// Records the current trusted root as a bookmark. The native id is generated
+/// and persisted natively; the renderer only receives the resulting id.
+#[tauri::command]
+pub fn bookmark_current_root(
+    name: String,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<BookmarkRef> {
+    state.bookmark_current_root(&name)
+}
+
+#[tauri::command]
+pub fn rename_bookmark(
+    id: String,
+    name: String,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<()> {
+    state.rename_bookmark(&id, &name)
+}
+
+#[tauri::command]
+pub fn remove_bookmark(id: String, state: State<'_, WorkspaceRootState>) -> Result<()> {
+    state.remove_bookmark(&id)
+}
+
+#[tauri::command]
+pub fn list_bookmarks(state: State<'_, WorkspaceRootState>) -> Vec<BookmarkRef> {
+    state.list_bookmarks()
 }
 
 #[tauri::command]
@@ -256,6 +516,7 @@ pub(crate) mod test_support {
             root: RwLock::new(Some(
                 fs::canonicalize(root).expect("canonical workspace root"),
             )),
+            bookmarks: RwLock::new(Vec::new()),
             settings_path: None,
             operation_lock: Mutex::new(()),
             post_persist_hook: Mutex::new(None),

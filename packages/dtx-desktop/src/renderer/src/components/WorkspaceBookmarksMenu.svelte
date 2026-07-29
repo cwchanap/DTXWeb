@@ -7,22 +7,21 @@
 
 	let isOpen = $state(false);
 	let currentPath = $state<string | null>(null);
+	let rootId = $state<string | null>(null);
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
 	let addError = $state<string | null>(null);
-	let bookmarkSwitchError = $state<{ message: string; path?: string } | null>(null);
+	let bookmarkSwitchError = $state<{ message: string; id?: string } | null>(null);
 	let triggerEl = $state<HTMLButtonElement | null>(null);
 	let menuEl = $state<HTMLDivElement | null>(null);
 	let rootEl = $state<HTMLDivElement | null>(null);
 
-	const isCurrentBookmarked = $derived(
-		!!currentPath && bookmarks.some((b) => b.path === currentPath)
-	);
+	const isCurrentBookmarked = $derived(!!rootId);
 	const currentBookmark = $derived(
-		currentPath ? (bookmarks.find((b) => b.path === currentPath) ?? null) : null
+		rootId ? (bookmarks.find((b) => b.id === rootId) ?? null) : null
 	);
 
 	const closeDropdown = (options?: { refocus?: boolean }) => {
-		if (editingPath !== null) {
+		if (editingId !== null) {
 			commitEditing();
 		}
 		isOpen = false;
@@ -34,12 +33,12 @@
 	};
 
 	const handleSwitchTo = async (b: WorkspaceBookmark) => {
-		if (b.path === currentPath) return;
+		if (b.id === rootId) return;
 		const result = await workspaceService.switchToBookmark(b);
 		if (result.ok === false) {
 			bookmarkSwitchError = {
 				message: result.error,
-				...('path' in result && { path: result.path })
+				...('path' in result && { id: b.id })
 			};
 			// Keep the menu open to show the error
 			return;
@@ -47,19 +46,19 @@
 		closeDropdown();
 	};
 
-	const handleBookmarkCurrent = () => {
+	const handleBookmarkCurrent = async () => {
 		if (!currentPath) return;
-		const result = bookmarkStore.add(currentPath);
-		if (result.ok) {
+		try {
+			await bookmarkStore.addCurrent();
 			addError = null;
 			closeDropdown();
-			return;
-		}
-		const failure = result as { ok: false; reason: 'duplicate' | 'cap-exceeded' };
-		if (failure.reason === 'cap-exceeded') {
-			addError = 'Maximum of 20 bookmarks reached';
-		} else {
-			addError = null;
+		} catch (error) {
+			const message = error instanceof Error ? error.message : '';
+			if (message.includes('Maximum of 20 bookmarks')) {
+				addError = 'Maximum of 20 bookmarks reached';
+			} else {
+				addError = message || 'Could not bookmark this folder';
+			}
 		}
 	};
 
@@ -111,6 +110,7 @@
 	onMount(() => {
 		const unsubWorkspace = workspaceStore.subscribe((s) => {
 			currentPath = s.path;
+			rootId = s.rootId;
 		});
 		const unsubBookmarks = bookmarkStore.subscribe((v) => {
 			bookmarks = v;
@@ -127,28 +127,28 @@
 
 	const triggerLabel = $derived(currentPath ? basename(currentPath) : 'No workspace');
 
-	let editingPath = $state<string | null>(null);
+	let editingId = $state<string | null>(null);
 	let editingValue = $state('');
 
 	const startEditing = (b: WorkspaceBookmark) => {
-		editingPath = b.path;
+		editingId = b.id;
 		editingValue = b.name;
 	};
 
 	const commitEditing = () => {
-		if (editingPath === null) return;
-		const path = editingPath;
+		if (editingId === null) return;
+		const id = editingId;
 		const value = editingValue;
-		editingPath = null;
-		bookmarkStore.rename(path, value);
+		editingId = null;
+		void bookmarkStore.rename(id, value);
 	};
 
 	const cancelEditing = () => {
-		editingPath = null;
+		editingId = null;
 	};
 
 	const handleRemove = (b: WorkspaceBookmark) => {
-		bookmarkStore.remove(b.path);
+		void bookmarkStore.remove(b.id);
 	};
 
 	const handleBrowse = () => {
@@ -219,12 +219,12 @@
 			{#if bookmarkSwitchError}
 				<div class="border-red/40 bg-red/10 mx-2 my-1 rounded p-2 text-xs">
 					<p class="text-red">{bookmarkSwitchError.message}</p>
-					{#if bookmarkSwitchError.path}
+					{#if bookmarkSwitchError.id}
 						<button
 							type="button"
 							class="text-red mt-1 font-medium underline hover:opacity-80"
 							onclick={() => {
-								bookmarkStore.remove(bookmarkSwitchError.path!);
+								void bookmarkStore.remove(bookmarkSwitchError.id!);
 								bookmarkSwitchError = null;
 							}}
 						>
@@ -240,15 +240,15 @@
 					Click a bookmark to switch to that workspace folder.
 				</p>
 				<ul class="max-h-72 overflow-auto">
-					{#each bookmarks as bookmark (bookmark.path)}
-						{@const isActive = bookmark.path === currentPath}
+					{#each bookmarks as bookmark (bookmark.id)}
+						{@const isActive = bookmark.id === rootId}
 						<li
 							role="menuitem"
 							aria-label={isActive
 								? `${bookmark.name} (current)`
 								: `Switch to ${bookmark.name}`}
 							aria-disabled={isActive}
-							data-testid={`bookmark-row-${bookmark.path}`}
+							data-testid={`bookmark-row-${bookmark.id}`}
 							data-active={isActive ? 'true' : 'false'}
 							tabindex="0"
 							class="group hover:bg-surface-2 flex cursor-pointer items-center justify-between gap-2 rounded px-2 py-2 text-sm"
@@ -264,7 +264,7 @@
 							}}
 						>
 							<div class="min-w-0 flex-1">
-								{#if editingPath === bookmark.path}
+								{#if editingId === bookmark.id}
 									<!-- svelte-ignore a11y_autofocus -->
 									<input
 										type="text"

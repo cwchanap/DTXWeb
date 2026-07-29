@@ -5,7 +5,13 @@ import { get } from 'svelte/store';
 const mockDesktopHost = vi.hoisted(() => ({
 	onMagicLinkResult: vi.fn(),
 	drainPendingAuthEvents: vi.fn(),
-	getWorkspaceRoot: vi.fn()
+	getWorkspaceRoot: vi.fn(),
+	getCurrentWorkspaceRootId: vi.fn()
+}));
+
+const mockBookmarkStore = vi.hoisted(() => ({
+	refresh: vi.fn().mockResolvedValue(undefined),
+	subscribe: vi.fn(() => () => {})
 }));
 
 const mockWorkspaceService = vi.hoisted(() => ({
@@ -26,6 +32,10 @@ const mockAuthService = vi.hoisted(() => ({
 
 vi.mock('./services/desktopHost', () => ({
 	desktopHost: mockDesktopHost
+}));
+
+vi.mock('./stores/bookmarkStore', () => ({
+	bookmarkStore: mockBookmarkStore
 }));
 
 vi.mock('./services/authService', () => ({
@@ -83,6 +93,7 @@ describe('App lifecycle', () => {
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
 		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
+		mockDesktopHost.getCurrentWorkspaceRootId.mockResolvedValue(null);
 		mockWorkspaceService.getTransitionGeneration.mockReturnValue(0);
 		mockWorkspaceService.isTransitionCurrent.mockReturnValue(true);
 		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);

@@ -19,6 +19,10 @@ export interface TreeNode {
 
 export interface WorkspaceState {
 	path: string | null;
+	// The native bookmark id of the current trusted root, or null when the
+	// current root has not been bookmarked. Display-only metadata hydrated
+	// from native; never used as a trust anchor.
+	rootId: string | null;
 	currentSubWorkspace: string | null;
 	subWorkspaces: string[];
 	treeStructure: TreeNode[];
@@ -38,6 +42,7 @@ export type GoogleDriveFields = {
 
 const initialState: WorkspaceState = {
 	path: null,
+	rootId: null,
 	currentSubWorkspace: null,
 	subWorkspaces: [],
 	treeStructure: [],
@@ -76,6 +81,9 @@ function createWorkspaceStore() {
 	const applyPath = (state: WorkspaceState, path: string | null): WorkspaceState => ({
 		...state,
 		path,
+		// A path change invalidates the previous root's bookmark id; the caller
+		// re-hydrates rootId from native after the transition settles.
+		rootId: null,
 		error: null
 	});
 
@@ -83,6 +91,8 @@ function createWorkspaceStore() {
 		subscribe,
 		setPath: (path: string) => update((state) => applyPath(state, path)),
 		hydratePath: (path: string | null) => update((state) => applyPath(state, path)),
+		hydrateRootId: (rootId: string | null) =>
+			update((state) => ({ ...state, rootId, error: null })),
 		setCurrentSubWorkspace: (subWorkspace: string | null) => {
 			update((state) => ({ ...state, currentSubWorkspace: subWorkspace }));
 		},
@@ -135,6 +145,7 @@ function createWorkspaceStore() {
 			update((state) => ({
 				...state,
 				path: null,
+				rootId: null,
 				currentSubWorkspace: null,
 				subWorkspaces: [],
 				treeStructure: [],

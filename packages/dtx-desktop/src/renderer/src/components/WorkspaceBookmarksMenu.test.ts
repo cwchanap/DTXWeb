@@ -141,6 +141,36 @@ describe('WorkspaceBookmarksMenu', () => {
 				expect(screen.getByText(/maximum of 20 bookmarks/i)).toBeInTheDocument();
 			});
 		});
+
+		it('shows a generic error message when addCurrent rejects with a non-cap error', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore.addCurrent as any).mockRejectedValue(
+				new Error('Native persistence failed')
+			);
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Native persistence failed')).toBeInTheDocument();
+			});
+			// Must NOT show the cap-exceeded message for a non-cap error.
+			expect(screen.queryByText(/maximum of 20 bookmarks/i)).toBeNull();
+		});
+
+		it('shows a fallback error message when addCurrent rejects with a non-Error value', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore.addCurrent as any).mockRejectedValue('not an error object');
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Could not bookmark this folder')).toBeInTheDocument();
+			});
+		});
 	});
 
 	describe('Bookmark list', () => {

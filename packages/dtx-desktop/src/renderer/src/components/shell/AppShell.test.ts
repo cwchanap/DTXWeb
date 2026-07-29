@@ -120,7 +120,22 @@ describe('AppShell', () => {
 		expect(handle).toHaveClass('focus-visible:ring-cyan/40');
 	});
 
-	it('hides the detail pane (and handle) when stored visibility is false', async () => {
+	it('hides the detail pane when no song is selected and stored visibility is false', async () => {
+		vi.mocked(loadPreferences).mockResolvedValue({
+			detailPaneWidth: 420,
+			detailPaneVisible: false
+		});
+		window.innerWidth = 1400;
+		render(AppShell);
+		await waitFor(() =>
+			expect(screen.queryByRole('button', { name: /Resize details panel/i })).toBeNull()
+		);
+	});
+
+	it('auto-reveals the detail pane when a song is selected even if it was hidden', async () => {
+		// Clicking a song in the library should pop the detail pane back open
+		// when the user had previously hidden it, instead of leaving the
+		// selection silently invisible.
 		vi.mocked(loadPreferences).mockResolvedValue({
 			detailPaneWidth: 420,
 			detailPaneVisible: false
@@ -128,9 +143,13 @@ describe('AppShell', () => {
 		window.innerWidth = 1400;
 		selectAnySong();
 		render(AppShell);
-		await waitFor(() =>
-			expect(screen.queryByRole('button', { name: /Resize details panel/i })).toBeNull()
-		);
+		const handle = await screen.findByRole('button', { name: /Resize details panel/i });
+		await waitFor(() => expect(handle.parentElement?.style.width).toBe('420px'));
+		expect(get(preferencesStore).detailPaneVisible).toBe(true);
+		expect(savePreferences).toHaveBeenCalledWith({
+			detailPaneWidth: 420,
+			detailPaneVisible: true
+		});
 	});
 
 	it('ArrowLeft on the handle widens the pane and persists', async () => {

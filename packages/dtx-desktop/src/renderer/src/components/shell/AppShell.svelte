@@ -43,6 +43,17 @@
 		}
 	});
 
+	// Auto-reveal the detail pane when a song is selected from the library or
+	// cloud list. Without this, clicking a song while the pane was previously
+	// hidden leaves the selection silently invisible until the user toggles the
+	// pane back open. setDetailVisible is a no-op before preferences have
+	// loaded and only persists when visibility actually changes.
+	$effect(() => {
+		if (isListSection && hasSelection && !$preferencesStore.detailPaneVisible) {
+			preferencesStore.setDetailVisible(true);
+		}
+	});
+
 	const clampDetail = clampDetailWidth;
 	let isDraggingDetail = $state(false);
 	let dragDetailWidth = $state(420);

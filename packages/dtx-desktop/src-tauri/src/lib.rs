@@ -194,6 +194,7 @@ pub fn run() {
             filesystem::select_folder,
             workspace::select_workspace_folder,
             workspace::get_workspace_root,
+            workspace::set_workspace_root,
             workspace::clear_workspace_root,
             filesystem::path_exists,
             filesystem::list_directories,

@@ -222,6 +222,20 @@ pub fn get_workspace_root(state: State<'_, WorkspaceRootState>) -> Option<String
         .map(|path| path.to_string_lossy().into_owned())
 }
 
+/// Trusts a bookmark path directly as the workspace root, without prompting
+/// the user with a folder picker. The path is canonicalized and verified to be
+/// an accessible directory (same checks as `select_workspace_folder`), so a
+/// stale or tampered bookmark cannot establish an invalid root. Returns the
+/// canonical path on success.
+#[tauri::command]
+pub fn set_workspace_root(
+    path: String,
+    state: State<'_, WorkspaceRootState>,
+) -> Result<DialogResult> {
+    let selected = PathBuf::from(path);
+    selection_result(&state, Some(selected))
+}
+
 #[tauri::command]
 pub fn clear_workspace_root(state: State<'_, WorkspaceRootState>) -> Result<()> {
     state.clear()

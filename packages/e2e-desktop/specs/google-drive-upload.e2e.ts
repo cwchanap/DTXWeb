@@ -158,6 +158,8 @@ const clickDriveUpload = async (hasExistingFile: boolean): Promise<void> => {
 	await upload.click();
 };
 
+const terminalUploadStages = new Set(['upload-complete', 'upload-failed-save-succeeded']);
+
 const waitForSnapshot = async (
 	predicate: (snapshot: E2eDriveSnapshot) => boolean,
 	timeoutMsg: string
@@ -166,7 +168,12 @@ const waitForSnapshot = async (
 	await browser.waitUntil(
 		async () => {
 			latest = await snapshotGoogleDriveE2e();
-			return predicate(latest);
+			const terminalStage = latest.progress.at(-1)?.stage;
+			return (
+				predicate(latest) &&
+				terminalStage !== undefined &&
+				terminalUploadStages.has(terminalStage)
+			);
 		},
 		{ timeout: 20_000, interval: 100, timeoutMsg }
 	);

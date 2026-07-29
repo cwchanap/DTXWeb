@@ -73,13 +73,56 @@ describe('desktopHost', () => {
 	});
 
 	it('maps setWorkspaceRoot to the Tauri command with the bookmark path', async () => {
-		vi.mocked(runtime.invoke).mockResolvedValue({ canceled: false, filePaths: ['/canonical'] });
+		vi.mocked(runtime.invoke).mockResolvedValue({ outcome: 'ok', path: '/canonical' });
 
-		await desktopHost.setWorkspaceRoot('/bookmark/path');
+		await desktopHost.switchTrustedWorkspace('bookmark-id');
 
-		expect(runtime.invoke).toHaveBeenLastCalledWith('set_workspace_root', {
-			path: '/bookmark/path'
+		expect(runtime.invoke).toHaveBeenLastCalledWith('switch_trusted_workspace', {
+			id: 'bookmark-id'
 		});
+	});
+
+	it('maps getCurrentWorkspaceRootId to the Tauri command', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue('native-root-id');
+
+		await expect(desktopHost.getCurrentWorkspaceRootId()).resolves.toBe('native-root-id');
+		expect(runtime.invoke).toHaveBeenLastCalledWith('get_current_workspace_root_id');
+	});
+
+	it('maps bookmarkCurrentRoot to the Tauri command with a name', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue({ id: 'new-id', path: '/foo', name: 'Foo' });
+
+		await desktopHost.bookmarkCurrentRoot('Foo');
+
+		expect(runtime.invoke).toHaveBeenLastCalledWith('bookmark_current_root', { name: 'Foo' });
+	});
+
+	it('maps renameBookmark to the Tauri command with id and name', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue(undefined);
+
+		await desktopHost.renameBookmark('bm-id', 'Renamed');
+
+		expect(runtime.invoke).toHaveBeenLastCalledWith('rename_bookmark', {
+			id: 'bm-id',
+			name: 'Renamed'
+		});
+	});
+
+	it('maps removeBookmark to the Tauri command with id', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue(undefined);
+
+		await desktopHost.removeBookmark('bm-id');
+
+		expect(runtime.invoke).toHaveBeenLastCalledWith('remove_bookmark', { id: 'bm-id' });
+	});
+
+	it('maps listBookmarks to the Tauri command', async () => {
+		vi.mocked(runtime.invoke).mockResolvedValue([{ id: 'a', path: '/a', name: 'A' }]);
+
+		await expect(desktopHost.listBookmarks()).resolves.toEqual([
+			{ id: 'a', path: '/a', name: 'A' }
+		]);
+		expect(runtime.invoke).toHaveBeenLastCalledWith('list_bookmarks');
 	});
 
 	it('maps checkForUpdate to the Tauri command and returns an update when available', async () => {

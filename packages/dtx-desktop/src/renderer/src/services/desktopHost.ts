@@ -92,6 +92,30 @@ type DialogResult = {
 	filePaths: string[];
 };
 
+/**
+ * A native-owned workspace bookmark. The `id` is an opaque native identifier
+ * and is the only value the renderer may send back to switch to or remove a
+ * bookmarked root; `path` is a display-only canonical path and must never be
+ * used to establish trust.
+ */
+export type WorkspaceBookmarkRef = {
+	id: string;
+	path: string;
+	name: string;
+};
+
+/**
+ * Structured outcome of `switchTrustedWorkspace`. Only `notAccessible` carries
+ * a path (so the renderer can offer to remove a confirmed-stale bookmark).
+ * `unknownId` carries no path. Transient native failures (persistence, IPC)
+ * reject the promise with a generic error and no path, so the UI never offers
+ * "Remove bookmark" for a transient failure.
+ */
+export type SwitchTrustedWorkspaceOutcome =
+	| { outcome: 'ok'; path: string }
+	| { outcome: 'unknownId' }
+	| { outcome: 'notAccessible'; path: string };
+
 type ReadFileContent = string | ArrayBuffer | Uint8Array;
 type TauriReadFileContent = ReadFileContent | number[];
 
@@ -245,13 +269,35 @@ export const desktopHost = {
 	selectWorkspaceFolder: async (): Promise<SelectFolderResult> =>
 		await invokeHost<SelectFolderResult>('select_workspace_folder'),
 
-	// Trusts a bookmark path directly as the workspace root without showing a
-	// folder picker. The Rust side canonicalizes and verifies the directory.
-	setWorkspaceRoot: async (path: string): Promise<SelectFolderResult> =>
-		await invokeHost<SelectFolderResult>('set_workspace_root', { path }),
-
 	getWorkspaceRoot: async (): Promise<string | null> =>
 		await invokeHost<string | null>('get_workspace_root'),
+
+	// Returns the native bookmark id of the current trusted root, or null when
+	// the current root has not been bookmarked. The renderer uses this to
+	// render the "Bookmark this folder" / "Bookmarked as <name>" state without
+	// ever sending a path back to native.
+	getCurrentWorkspaceRootId: async (): Promise<string | null> =>
+		await invokeHost<string | null>('get_current_workspace_root_id'),
+
+	// Switches the trusted root to a previously-bookmarked root identified only
+	// by its opaque native id. This is the only non-dialog operation that can
+	// change the trusted root, and it never accepts a path from the renderer.
+	switchTrustedWorkspace: async (id: string): Promise<SwitchTrustedWorkspaceOutcome> =>
+		await invokeHost<SwitchTrustedWorkspaceOutcome>('switch_trusted_workspace', { id }),
+
+	// Records the current trusted root as a bookmark. The native id is generated
+	// and persisted natively; the renderer only receives the resulting ref.
+	bookmarkCurrentRoot: async (name: string): Promise<WorkspaceBookmarkRef> =>
+		await invokeHost<WorkspaceBookmarkRef>('bookmark_current_root', { name }),
+
+	renameBookmark: async (id: string, name: string): Promise<void> =>
+		await invokeHost<void>('rename_bookmark', { id, name }),
+
+	removeBookmark: async (id: string): Promise<void> =>
+		await invokeHost<void>('remove_bookmark', { id }),
+
+	listBookmarks: async (): Promise<WorkspaceBookmarkRef[]> =>
+		await invokeHost<WorkspaceBookmarkRef[]>('list_bookmarks'),
 
 	clearWorkspaceRoot: async (): Promise<void> => await invokeHost<void>('clear_workspace_root'),
 

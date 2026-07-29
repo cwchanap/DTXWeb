@@ -63,6 +63,7 @@ describe('workspaceStore', () => {
 	it('should initialize with default state', () => {
 		const state = get(workspaceStore);
 		expect(state.path).toBeNull();
+		expect(state.rootId).toBeNull();
 		expect(state.currentSubWorkspace).toBeNull();
 		expect(state.subWorkspaces).toEqual([]);
 		expect(state.treeStructure).toEqual([]);
@@ -93,6 +94,28 @@ describe('workspaceStore', () => {
 			workspaceStore.hydratePath('/native/canonical/path');
 
 			expect(get(workspaceStore).path).toBe('/native/canonical/path');
+		});
+
+		it('resets rootId to null on setPath (caller must re-hydrate from native)', () => {
+			workspaceStore.hydrateRootId('bm-1');
+			workspaceStore.setPath('/new/path');
+
+			expect(get(workspaceStore).rootId).toBeNull();
+		});
+	});
+
+	describe('hydrateRootId', () => {
+		it('sets the native bookmark id of the current root', () => {
+			workspaceStore.hydrateRootId('bm-42');
+
+			expect(get(workspaceStore).rootId).toBe('bm-42');
+		});
+
+		it('clears rootId when passed null', () => {
+			workspaceStore.hydrateRootId('bm-42');
+			workspaceStore.hydrateRootId(null);
+
+			expect(get(workspaceStore).rootId).toBeNull();
 		});
 	});
 

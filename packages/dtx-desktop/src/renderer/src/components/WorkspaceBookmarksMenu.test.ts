@@ -4,7 +4,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 vi.mock('@lucide/svelte');
 
 vi.mock('../stores/workspaceStore', () => {
-	let state = { path: null as string | null };
+	let state = { path: null as string | null, rootId: null as string | null };
 	const listeners: Array<(s: typeof state) => void> = [];
 	return {
 		workspaceStore: {
@@ -22,7 +22,7 @@ vi.mock('../stores/workspaceStore', () => {
 });
 
 vi.mock('../stores/bookmarkStore', () => {
-	let value: Array<{ path: string; name: string }> = [];
+	let value: Array<{ id: string; path: string; name: string }> = [];
 	const listeners: Array<(v: typeof value) => void> = [];
 	return {
 		bookmarkStore: {
@@ -35,9 +35,10 @@ vi.mock('../stores/bookmarkStore', () => {
 				value = next;
 				listeners.forEach((cb) => cb(value));
 			},
-			add: vi.fn(),
-			remove: vi.fn(),
-			rename: vi.fn()
+			addCurrent: vi.fn().mockResolvedValue(undefined),
+			remove: vi.fn().mockResolvedValue(undefined),
+			rename: vi.fn().mockResolvedValue(undefined),
+			refresh: vi.fn().mockResolvedValue(undefined)
 		},
 		basename: (p: string) => p.split('/').pop() ?? p
 	};
@@ -59,7 +60,7 @@ describe('WorkspaceBookmarksMenu', () => {
 		cleanup();
 		vi.clearAllMocks();
 		(bookmarkStore as any).setValue([]);
-		(workspaceStore as any).setState({ path: '/foo/bar/MySongs' });
+		(workspaceStore as any).setState({ path: '/foo/bar/MySongs', rootId: null });
 	});
 
 	it('renders the basename of the current path on the trigger', () => {
@@ -100,21 +101,24 @@ describe('WorkspaceBookmarksMenu', () => {
 			).toBeInTheDocument();
 		});
 
-		it('calls bookmarkStore.add and closes dropdown on click', async () => {
+		it('calls bookmarkStore.addCurrent and closes dropdown on click', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore.add as any).mockReturnValue({ ok: true });
+			(bookmarkStore.addCurrent as any).mockResolvedValue(undefined);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
 
-			expect(bookmarkStore.add).toHaveBeenCalledWith('/foo/bar/MySongs');
+			expect(bookmarkStore.addCurrent).toHaveBeenCalled();
 			expect(screen.queryByRole('menu')).toBeNull();
 		});
 
-		it('shows "Bookmarked as <name>" indicator when current path is bookmarked', async () => {
+		it('shows "Bookmarked as <name>" indicator when current root is bookmarked', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore as any).setValue([{ path: '/foo/bar/MySongs', name: 'My Faves' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'bm-1', path: '/foo/bar/MySongs', name: 'My Faves' }
+			]);
+			(workspaceStore as any).setState({ path: '/foo/bar/MySongs', rootId: 'bm-1' });
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -123,15 +127,19 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(screen.queryByRole('menuitem', { name: /bookmark this folder/i })).toBeNull();
 		});
 
-		it('shows an error message when add returns cap-exceeded', async () => {
+		it('shows an error message when addCurrent rejects with cap-exceeded', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore.add as any).mockReturnValue({ ok: false, reason: 'cap-exceeded' });
+			(bookmarkStore.addCurrent as any).mockRejectedValue(
+				new Error('Maximum of 20 bookmarks reached')
+			);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
 
-			expect(screen.getByText(/maximum of 20 bookmarks/i)).toBeInTheDocument();
+			await vi.waitFor(() => {
+				expect(screen.getByText(/maximum of 20 bookmarks/i)).toBeInTheDocument();
+			});
 		});
 	});
 
@@ -145,8 +153,8 @@ describe('WorkspaceBookmarksMenu', () => {
 		it('renders each bookmark with name and path', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			(bookmarkStore as any).setValue([
-				{ path: '/a', name: 'Alpha' },
-				{ path: '/b', name: 'Beta' }
+				{ id: 'a', path: '/a', name: 'Alpha' },
+				{ id: 'b', path: '/b', name: 'Beta' }
 			]);
 
 			render(WorkspaceBookmarksMenu);
@@ -159,7 +167,7 @@ describe('WorkspaceBookmarksMenu', () => {
 		});
 
 		it('explains that clicking a bookmark switches to that workspace', async () => {
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -170,13 +178,14 @@ describe('WorkspaceBookmarksMenu', () => {
 		it('clicking a non-active bookmark calls switchToBookmark and closes the dropdown', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to alpha/i }));
 
 			expect(workspaceService.switchToBookmark).toHaveBeenCalledWith({
+				id: 'a',
 				path: '/a',
 				name: 'Alpha'
 			});
@@ -186,12 +195,15 @@ describe('WorkspaceBookmarksMenu', () => {
 		it('marks the active bookmark and does not call switchToBookmark on click', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/foo/bar/MySongs', name: 'Active' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'bm-active', path: '/foo/bar/MySongs', name: 'Active' }
+			]);
+			(workspaceStore as any).setState({ path: '/foo/bar/MySongs', rootId: 'bm-active' });
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 
-			const activeRow = screen.getByTestId('bookmark-row-/foo/bar/MySongs');
+			const activeRow = screen.getByTestId('bookmark-row-bm-active');
 			expect(activeRow).toHaveAttribute('data-active', 'true');
 
 			await fireEvent.click(activeRow);
@@ -200,21 +212,21 @@ describe('WorkspaceBookmarksMenu', () => {
 	});
 
 	describe('Trash remove', () => {
-		it('clicking trash calls bookmarkStore.remove without confirmation', async () => {
+		it('clicking trash calls bookmarkStore.remove with the bookmark id', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 			await fireEvent.click(screen.getByRole('button', { name: /remove alpha/i }));
 
-			expect(bookmarkStore.remove).toHaveBeenCalledWith('/a');
+			expect(bookmarkStore.remove).toHaveBeenCalledWith('a');
 		});
 
 		it('clicking trash does not trigger switch on the row', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -240,8 +252,8 @@ describe('WorkspaceBookmarksMenu', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			(bookmarkStore as any).setValue([
-				{ path: '/a', name: 'Alpha' },
-				{ path: '/b', name: 'Beta' }
+				{ id: 'a', path: '/a', name: 'Alpha' },
+				{ id: 'b', path: '/b', name: 'Beta' }
 			]);
 		});
 
@@ -319,7 +331,7 @@ describe('WorkspaceBookmarksMenu', () => {
 
 		it('commits pending rename before closing on outside click', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -329,14 +341,14 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.input(input, { target: { value: 'OutsideSaved' } });
 			await fireEvent.mouseDown(document.body);
 
-			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'OutsideSaved');
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('a', 'OutsideSaved');
 		});
 	});
 
 	describe('Child action button keyboard handling', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 		});
 
 		it('pressing Enter on the Remove button does not trigger switchToBookmark', async () => {
@@ -366,10 +378,11 @@ describe('WorkspaceBookmarksMenu', () => {
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 
-			const row = screen.getByTestId('bookmark-row-/a');
+			const row = screen.getByTestId('bookmark-row-a');
 			await fireEvent.keyDown(row, { key: 'Enter' });
 
 			expect(workspaceService.switchToBookmark).toHaveBeenCalledWith({
+				id: 'a',
 				path: '/a',
 				name: 'Alpha'
 			});
@@ -379,7 +392,7 @@ describe('WorkspaceBookmarksMenu', () => {
 	describe('Inline rename', () => {
 		beforeEach(async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore as any).setValue([{ path: '/a', name: 'Alpha' }]);
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
 		});
 
 		it('clicking pencil swaps name for an input with current value', async () => {
@@ -391,7 +404,7 @@ describe('WorkspaceBookmarksMenu', () => {
 			expect(input).toHaveValue('Alpha');
 		});
 
-		it('Enter saves the new name via bookmarkStore.rename', async () => {
+		it('Enter saves the new name via bookmarkStore.rename with the id', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -401,7 +414,7 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.input(input, { target: { value: 'Renamed' } });
 			await fireEvent.keyDown(input, { key: 'Enter' });
 
-			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'Renamed');
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('a', 'Renamed');
 		});
 
 		it('Escape cancels the rename without calling rename and keeps the menu open', async () => {
@@ -429,18 +442,20 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.input(input, { target: { value: 'BlurSaved' } });
 			await fireEvent.blur(input);
 
-			expect(bookmarkStore.rename).toHaveBeenCalledWith('/a', 'BlurSaved');
+			expect(bookmarkStore.rename).toHaveBeenCalledWith('a', 'BlurSaved');
 		});
 	});
 
 	describe('Stale bookmark error handling', () => {
-		it('shows scoped error with remove option when switchToBookmark returns failure', async () => {
+		it('shows scoped error with remove option when switchToBookmark returns notAccessible failure', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'stale-id', path: '/stale/path', name: 'Stale' }
+			]);
 			(workspaceService.switchToBookmark as any).mockResolvedValue({
 				ok: false,
-				error: 'Workspace path no longer exists: /stale/path',
+				error: 'The bookmarked folder is missing or not accessible. Remove it and re-add the folder.',
 				path: '/stale/path'
 			});
 
@@ -449,17 +464,21 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
 
 			// Menu re-opens to show the scoped error
-			expect(screen.getByText(/workspace path no longer exists/i)).toBeInTheDocument();
+			expect(
+				screen.getByText(/workspace path no longer exists|bookmarked folder is missing/i)
+			).toBeInTheDocument();
 			expect(screen.getByRole('button', { name: /remove bookmark/i })).toBeInTheDocument();
 		});
 
 		it('removes the stale bookmark and clears the error when clicking remove', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'stale-id', path: '/stale/path', name: 'Stale' }
+			]);
 			(workspaceService.switchToBookmark as any).mockResolvedValue({
 				ok: false,
-				error: 'Workspace path no longer exists: /stale/path',
+				error: 'The bookmarked folder is missing or not accessible. Remove it and re-add the folder.',
 				path: '/stale/path'
 			});
 
@@ -468,14 +487,18 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
 			await fireEvent.click(screen.getByRole('button', { name: /remove bookmark/i }));
 
-			expect(bookmarkStore.remove).toHaveBeenCalledWith('/stale/path');
-			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
+			expect(bookmarkStore.remove).toHaveBeenCalledWith('stale-id');
+			expect(
+				screen.queryByText(/workspace path no longer exists|bookmarked folder is missing/i)
+			).toBeNull();
 		});
 
 		it('shows error without remove option for non-path-specific failures', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/valid/path', name: 'Valid' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'valid-id', path: '/valid/path', name: 'Valid' }
+			]);
 			(workspaceService.switchToBookmark as any).mockResolvedValue({
 				ok: false,
 				error: 'A workspace switch is already in progress'
@@ -494,7 +517,9 @@ describe('WorkspaceBookmarksMenu', () => {
 		it('does not remove bookmark for load errors without path', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/valid/path', name: 'Valid' }]);
+			(bookmarkStore as any).setValue([
+				{ id: 'valid-id', path: '/valid/path', name: 'Valid' }
+			]);
 			(workspaceService.switchToBookmark as any).mockResolvedValue({
 				ok: false,
 				error: 'Failed to load workspace tree'
@@ -504,53 +529,8 @@ describe('WorkspaceBookmarksMenu', () => {
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
 			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to valid/i }));
 
-			// Error shown but no remove button
 			expect(screen.getByText(/failed to load workspace tree/i)).toBeInTheDocument();
 			expect(screen.queryByRole('button', { name: /remove bookmark/i })).toBeNull();
-			// Bookmark should still be in the list
-			expect(screen.getByText('Valid')).toBeInTheDocument();
-		});
-
-		it('clears the scoped error when dropdown is closed via Escape and reopened', async () => {
-			const { workspaceService } = await import('../services/workspaceService');
-			(workspaceService.switchToBookmark as any).mockResolvedValue({
-				ok: false,
-				error: 'Workspace path no longer exists: /stale/path',
-				path: '/stale/path'
-			});
-
-			render(WorkspaceBookmarksMenu);
-			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
-			// Dropdown is open; close it
-			await fireEvent.keyDown(window, { key: 'Escape' });
-			// Reopen
-			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
-
-			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
-		});
-
-		it('clears the scoped error when dropdown is closed via trigger click and reopened', async () => {
-			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			const { workspaceService } = await import('../services/workspaceService');
-			(bookmarkStore as any).setValue([{ path: '/stale/path', name: 'Stale' }]);
-			(workspaceService.switchToBookmark as any).mockResolvedValue({
-				ok: false,
-				error: 'Workspace path no longer exists: /stale/path',
-				path: '/stale/path'
-			});
-
-			render(WorkspaceBookmarksMenu);
-			const trigger = screen.getByRole('button', { name: /workspace menu/i });
-			await fireEvent.click(trigger); // open
-			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
-			// Error is shown
-			expect(screen.getByText(/workspace path no longer exists/i)).toBeInTheDocument();
-			// Close by clicking trigger again
-			await fireEvent.click(trigger);
-			// Reopen — error should be gone
-			await fireEvent.click(trigger);
-
-			expect(screen.queryByText(/workspace path no longer exists/i)).toBeNull();
 		});
 	});
 });

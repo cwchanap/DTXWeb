@@ -10,7 +10,8 @@ vi.mock('./desktopHost', () => ({
 	desktopHost: {
 		selectFolder: vi.fn(),
 		selectWorkspaceFolder: vi.fn(),
-		setWorkspaceRoot: vi.fn(),
+		switchTrustedWorkspace: vi.fn(),
+		getCurrentWorkspaceRootId: vi.fn(),
 		clearWorkspaceRoot: vi.fn(),
 		getWorkspaceRoot: vi.fn(),
 		pathExists: vi.fn(),
@@ -60,6 +61,7 @@ vi.mock('../stores/workspaceStore', () => ({
 		closeSongDetails: vi.fn(),
 		clearWorkspace: vi.fn(),
 		hydratePath: vi.fn(),
+		hydrateRootId: vi.fn(),
 		reset: vi.fn()
 	}
 }));
@@ -88,6 +90,7 @@ describe('WorkspaceService', () => {
 		vi.clearAllMocks();
 
 		host.listDirectories.mockResolvedValue([]);
+		host.getCurrentWorkspaceRootId.mockResolvedValue(null);
 		// Mock tree structure with song title
 		host.loadTreeStructure.mockResolvedValue([
 			{
@@ -1022,37 +1025,46 @@ describe('WorkspaceService', () => {
 		});
 
 		it('releases a disposed bookmark switch so a new bookmark switch can run', async () => {
-			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
-			host.setWorkspaceRoot
+			const selection = createDeferred<{ outcome: 'ok'; path: string }>();
+			host.switchTrustedWorkspace
 				.mockReturnValueOnce(selection.promise)
 				.mockRejectedValueOnce(new Error('not accessible'));
 
-			const pending = workspaceService.switchToBookmark({ path: '/old', name: 'Old' });
+			const pending = workspaceService.switchToBookmark({
+				id: 'old-id',
+				path: '/old',
+				name: 'Old'
+			});
 			await vi.waitFor(() => {
-				expect(host.setWorkspaceRoot).toHaveBeenCalledOnce();
+				expect(host.switchTrustedWorkspace).toHaveBeenCalledOnce();
 			});
 			workspaceService.disposeOperations();
-			const replacement = workspaceService.switchToBookmark({ path: '/new', name: 'New' });
+			const replacement = workspaceService.switchToBookmark({
+				id: 'new-id',
+				path: '/new',
+				name: 'New'
+			});
 			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
 
-			// Resolving with canceled=true keeps nativeMutationCommitted false so
-			// the disposed switch doesn't trigger an authoritative reconciliation
-			// that would race with the replacement's loading lifecycle.
-			selection.resolve({ canceled: true, filePaths: [] });
+			// Resolving with a superseded transition keeps nativeMutationCommitted
+			// false so the disposed switch doesn't trigger an authoritative
+			// reconciliation that would race with the replacement's loading
+			// lifecycle.
+			selection.resolve({ outcome: 'ok', path: '/old-canonical' });
 			await pending;
 			const result = await replacement;
 
 			expect(result.ok).toBe(false);
 			if (!result.ok) {
-				expect(result.error).toContain('missing or not accessible');
+				expect(result.error).toContain('Could not switch');
 			}
-			expect(host.setWorkspaceRoot).toHaveBeenCalledTimes(2);
+			expect(host.switchTrustedWorkspace).toHaveBeenCalledTimes(2);
 			expect(workspaceStore.setLoading.mock.calls.at(-1)).toEqual([false]);
 		});
 
 		it('keeps a replacement bookmark switch owned when the disposed switch settles', async () => {
-			const firstSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
-			const secondSelection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
+			const firstSelection = createDeferred<{ outcome: 'ok'; path: string }>();
+			const secondSelection = createDeferred<{ outcome: 'ok'; path: string }>();
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
 				cb({ path: '/second', currentSubWorkspace: null, subWorkspaces: [], error: null });
 				return vi.fn();
@@ -1061,26 +1073,32 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			host.setWorkspaceRoot
+			host.switchTrustedWorkspace
 				.mockReturnValueOnce(firstSelection.promise)
 				.mockReturnValueOnce(secondSelection.promise);
 
-			const first = workspaceService.switchToBookmark({ path: '/first', name: 'First' });
+			const first = workspaceService.switchToBookmark({
+				id: 'first-id',
+				path: '/first',
+				name: 'First'
+			});
 			await vi.waitFor(() => {
-				expect(host.setWorkspaceRoot).toHaveBeenCalledOnce();
+				expect(host.switchTrustedWorkspace).toHaveBeenCalledOnce();
 			});
 			workspaceService.disposeOperations();
 			const replacement = workspaceService.switchToBookmark({
+				id: 'second-id',
 				path: '/second',
 				name: 'Second'
 			});
 
-			firstSelection.resolve({ canceled: true, filePaths: [] });
+			firstSelection.resolve({ outcome: 'ok', path: '/first-canonical' });
 			await first;
 			await vi.waitFor(() => {
-				expect(host.setWorkspaceRoot).toHaveBeenCalledTimes(2);
+				expect(host.switchTrustedWorkspace).toHaveBeenCalledTimes(2);
 			});
 			const third = await workspaceService.switchToBookmark({
+				id: 'third-id',
 				path: '/third',
 				name: 'Third'
 			});
@@ -1088,9 +1106,9 @@ describe('WorkspaceService', () => {
 				ok: false,
 				error: 'A workspace switch is already in progress'
 			});
-			expect(host.setWorkspaceRoot).toHaveBeenCalledTimes(2);
+			expect(host.switchTrustedWorkspace).toHaveBeenCalledTimes(2);
 
-			secondSelection.resolve({ canceled: false, filePaths: ['/canonical/second'] });
+			secondSelection.resolve({ outcome: 'ok', path: '/canonical/second' });
 			const replacementResult = await replacement;
 			expect(replacementResult.ok).toBe(true);
 		});
@@ -1098,9 +1116,9 @@ describe('WorkspaceService', () => {
 		it('returns a safe result when a queued bookmark switch is disposed before it starts', async () => {
 			const selection = createDeferred<{ canceled: boolean; filePaths: string[] }>();
 			host.selectWorkspaceFolder.mockReturnValueOnce(selection.promise);
-			host.setWorkspaceRoot.mockResolvedValue({
-				canceled: false,
-				filePaths: ['/canonical/bookmark']
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'ok',
+				path: '/canonical/bookmark'
 			});
 
 			const pendingSelection = workspaceService.selectWorkspace();
@@ -1108,6 +1126,7 @@ describe('WorkspaceService', () => {
 				expect(host.selectWorkspaceFolder).toHaveBeenCalledOnce();
 			});
 			const menuResult = workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bookmark',
 				name: 'Bookmark'
 			});
@@ -1132,7 +1151,7 @@ describe('WorkspaceService', () => {
 	});
 
 	describe('switchToBookmark', () => {
-		it('switches to a bookmarked folder by trusting its path directly (no folder picker)', async () => {
+		it('switches to a bookmarked folder by asking native to switch by id (no folder picker)', async () => {
 			const calls: string[] = [];
 			(workspaceStore.reset as any).mockImplementation(() => calls.push('reset'));
 			(workspaceStore.setPath as any).mockImplementation(() => calls.push('setPath'));
@@ -1145,10 +1164,11 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			host.setWorkspaceRoot.mockImplementation((path: string) => {
-				calls.push(`set-workspace-root:${path}`);
-				return Promise.resolve({ canceled: false, filePaths: ['/canonical/path'] });
+			host.switchTrustedWorkspace.mockImplementation((id: string) => {
+				calls.push(`switch-trusted-workspace:${id}`);
+				return Promise.resolve({ outcome: 'ok', path: '/canonical/path' });
 			});
+			host.getCurrentWorkspaceRootId.mockResolvedValue('bm-id');
 			host.listDirectories.mockImplementation(() => {
 				calls.push('list-directories');
 				return Promise.resolve([]);
@@ -1159,17 +1179,18 @@ describe('WorkspaceService', () => {
 			});
 
 			const result = await workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
 
 			expect(result).toEqual({ ok: true });
-			expect(host.setWorkspaceRoot).toHaveBeenCalledWith('/bm/path');
+			expect(host.switchTrustedWorkspace).toHaveBeenCalledWith('bm-id');
 			expect(host.selectWorkspaceFolder).not.toHaveBeenCalled();
 			expect(workspaceStore.reset).toHaveBeenCalledTimes(1);
 			expect(workspaceStore.setPath).toHaveBeenCalledWith('/canonical/path');
 			expect(host.pathExists).not.toHaveBeenCalled();
-			expect(calls.indexOf('set-workspace-root:/bm/path')).toBeLessThan(
+			expect(calls.indexOf('switch-trusted-workspace:bm-id')).toBeLessThan(
 				calls.indexOf('reset')
 			);
 			expect(calls.indexOf('reset')).toBeLessThan(calls.indexOf('setPath'));
@@ -1179,10 +1200,14 @@ describe('WorkspaceService', () => {
 			);
 		});
 
-		it('returns a path-scoped error when the bookmarked folder is missing', async () => {
-			host.setWorkspaceRoot.mockRejectedValue(new Error('not accessible'));
+		it('returns a path-scoped error when native reports notAccessible', async () => {
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'notAccessible',
+				path: '/bm/path'
+			});
 
 			const result = await workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
@@ -1197,6 +1222,23 @@ describe('WorkspaceService', () => {
 			}
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 			expect(workspaceStore.setPath).not.toHaveBeenCalled();
+		});
+
+		it('returns an error without a path when native reports unknownId', async () => {
+			host.switchTrustedWorkspace.mockResolvedValue({ outcome: 'unknownId' });
+
+			const result = await workspaceService.switchToBookmark({
+				id: 'gone-id',
+				path: '/gone',
+				name: 'Gone'
+			});
+
+			expect(result.ok).toBe(false);
+			if (!result.ok) {
+				expect(result.error).toContain('no longer available');
+				expect('path' in result).toBe(false);
+			}
+			expect(workspaceStore.reset).not.toHaveBeenCalled();
 		});
 
 		it('surfaces tree-load errors via setError after native trust establishment', async () => {
@@ -1217,14 +1259,16 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			host.setWorkspaceRoot.mockResolvedValue({
-				canceled: false,
-				filePaths: ['/canonical/path']
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'ok',
+				path: '/canonical/path'
 			});
+			host.getCurrentWorkspaceRootId.mockResolvedValue('bm-id');
 			host.listDirectories.mockResolvedValue([]);
 			host.loadTreeStructure.mockRejectedValue(new Error('boom'));
 
 			const result = await workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
@@ -1254,14 +1298,16 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			host.setWorkspaceRoot.mockResolvedValue({
-				canceled: false,
-				filePaths: ['/canonical/path']
+			host.switchTrustedWorkspace.mockResolvedValue({
+				outcome: 'ok',
+				path: '/canonical/path'
 			});
+			host.getCurrentWorkspaceRootId.mockResolvedValue('bm-id');
 			host.listDirectories.mockResolvedValue([]);
 			host.loadTreeStructure.mockResolvedValue([]);
 
 			const result = await workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
@@ -1271,7 +1317,7 @@ describe('WorkspaceService', () => {
 
 		it('returns an error when concurrent switch is attempted', async () => {
 			// Start a slow switch
-			let resolveWorkspaceSelection: (v: any) => void;
+			let resolveSwitch: (v: any) => void;
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
 				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [], error: null });
 				return vi.fn();
@@ -1280,17 +1326,22 @@ describe('WorkspaceService', () => {
 				cb({ userSimFiles: [] });
 				return vi.fn();
 			});
-			host.setWorkspaceRoot.mockImplementation(() => {
+			host.switchTrustedWorkspace.mockImplementation(() => {
 				return new Promise((resolve) => {
-					resolveWorkspaceSelection = resolve;
+					resolveSwitch = resolve;
 				});
 			});
+			host.getCurrentWorkspaceRootId.mockResolvedValue('a-id');
 
 			// Start first switch (will hang)
-			const first = workspaceService.switchToBookmark({ path: '/a', name: 'A' });
+			const first = workspaceService.switchToBookmark({ id: 'a-id', path: '/a', name: 'A' });
 
 			// Try second switch while first is in progress
-			const second = await workspaceService.switchToBookmark({ path: '/b', name: 'B' });
+			const second = await workspaceService.switchToBookmark({
+				id: 'b-id',
+				path: '/b',
+				name: 'B'
+			});
 
 			expect(second.ok).toBe(false);
 			if (!second.ok) {
@@ -1298,62 +1349,29 @@ describe('WorkspaceService', () => {
 			}
 
 			// Let the first one complete
-			resolveWorkspaceSelection!({ canceled: false, filePaths: ['/canonical/a'] });
+			resolveSwitch!({ outcome: 'ok', path: '/canonical/a' });
 			host.listDirectories.mockResolvedValue([]);
 			host.loadTreeStructure.mockResolvedValue([]);
 			const firstResult = await first;
 			expect(firstResult.ok).toBe(true);
 		});
 
-		it('returns a path-scoped error when setWorkspaceRoot throws', async () => {
-			host.setWorkspaceRoot.mockRejectedValue(new Error('IPC disconnected'));
+		it('returns a generic error WITHOUT a path when switchTrustedWorkspace throws (P2 fix)', async () => {
+			host.switchTrustedWorkspace.mockRejectedValue(new Error('IPC disconnected'));
 
 			const result = await workspaceService.switchToBookmark({
+				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
 
 			expect(result.ok).toBe(false);
 			if (!result.ok) {
-				expect(result.error).toContain('missing or not accessible');
-				expect('path' in result).toBe(true);
-				if ('path' in result) {
-					expect(result.path).toBe('/bm/path');
-				}
+				// Transient failures must NOT include a path, so the UI does not
+				// offer "Remove bookmark" for a bookmark that may be valid.
+				expect(result.error).toContain('Could not switch');
+				expect('path' in result).toBe(false);
 			}
-			expect(workspaceStore.reset).not.toHaveBeenCalled();
-		});
-
-		it('returns a path-scoped error when setWorkspaceRoot resolves canceled', async () => {
-			host.setWorkspaceRoot.mockResolvedValue({ canceled: true, filePaths: [] });
-
-			const result = await workspaceService.switchToBookmark({
-				path: '/bm/path',
-				name: 'BM'
-			});
-
-			expect(result).toEqual({
-				ok: false,
-				error: 'The bookmarked folder could not be opened',
-				path: '/bm/path'
-			});
-			expect(workspaceStore.reset).not.toHaveBeenCalled();
-			expect(workspaceStore.setPath).not.toHaveBeenCalled();
-		});
-
-		it('returns a path-scoped error when setWorkspaceRoot resolves with no file path', async () => {
-			host.setWorkspaceRoot.mockResolvedValue({ canceled: false, filePaths: [] });
-
-			const result = await workspaceService.switchToBookmark({
-				path: '/bm/path',
-				name: 'BM'
-			});
-
-			expect(result).toEqual({
-				ok: false,
-				error: 'The bookmarked folder could not be opened',
-				path: '/bm/path'
-			});
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 		});
 	});

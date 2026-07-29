@@ -1,14 +1,17 @@
 import { writable } from 'svelte/store';
+import { desktopHost } from '../services/desktopHost';
 
+/**
+ * A workspace bookmark. The `id` is an opaque native identifier and is the
+ * only value the renderer may send back to native (switch/remove/rename).
+ * `path` is a display-only canonical path and must never be used to establish
+ * trust. `name` is the user-supplied display label, persisted natively.
+ */
 export interface WorkspaceBookmark {
+	id: string;
 	path: string;
 	name: string;
 }
-
-export type AddResult = { ok: true } | { ok: false; reason: 'duplicate' | 'cap-exceeded' };
-
-const STORAGE_KEY = 'workspace_bookmarks';
-const MAX_BOOKMARKS = 20;
 
 export const basename = (p: string): string => {
 	const trimmed = p.replace(/[/\\]+$/, '');
@@ -16,82 +19,36 @@ export const basename = (p: string): string => {
 	return parts[parts.length - 1] || trimmed;
 };
 
-const hydrate = (): WorkspaceBookmark[] => {
-	try {
-		const raw = window.localStorage.getItem(STORAGE_KEY);
-		if (!raw) return [];
-		const parsed = JSON.parse(raw);
-		if (!Array.isArray(parsed)) return [];
-		const seen = new Set<string>();
-		return parsed
-			.filter(
-				(item): item is WorkspaceBookmark =>
-					item != null &&
-					typeof item.path === 'string' &&
-					item.path !== '' &&
-					typeof item.name === 'string'
-			)
-			.filter((item) => {
-				if (seen.has(item.path)) return false;
-				seen.add(item.path);
-				return true;
-			})
-			.slice(0, MAX_BOOKMARKS);
-	} catch (error) {
-		console.warn('Failed to hydrate bookmarks from localStorage:', error);
-		return [];
-	}
-};
-
-const persist = (value: WorkspaceBookmark[]): void => {
-	try {
-		window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-	} catch (error) {
-		console.error('Failed to persist bookmarks to localStorage:', error);
-	}
-};
-
 function createBookmarkStore() {
-	const { subscribe, update } = writable<WorkspaceBookmark[]>(hydrate());
+	const { subscribe, set } = writable<WorkspaceBookmark[]>([]);
+
+	// Hydrates the cache from the native trust pool. Called at app startup and
+	// after every native bookmark mutation so the renderer never owns the
+	// authoritative bookmark set.
+	const refresh = async (): Promise<void> => {
+		const bookmarks = await desktopHost.listBookmarks();
+		set(bookmarks);
+	};
 
 	return {
 		subscribe,
-		add(path: string, name?: string): AddResult {
-			let result: AddResult = { ok: true };
-			update((current) => {
-				if (current.some((b) => b.path === path)) {
-					result = { ok: false, reason: 'duplicate' };
-					return current;
-				}
-				if (current.length >= MAX_BOOKMARKS) {
-					result = { ok: false, reason: 'cap-exceeded' };
-					return current;
-				}
-				const next = [...current, { path, name: name?.trim() || basename(path) }];
-				persist(next);
-				return next;
-			});
-			return result;
+		refresh,
+		// Records the current trusted root as a bookmark. The native id is
+		// generated natively; the renderer never supplies a path or id. Throws
+		// with a native error message (e.g. "Maximum of 20 bookmarks reached")
+		// when the operation cannot complete.
+		addCurrent: async (name?: string): Promise<WorkspaceBookmark> => {
+			const ref = await desktopHost.bookmarkCurrentRoot(name ?? '');
+			await refresh();
+			return ref;
 		},
-		remove(path: string): void {
-			update((current) => {
-				if (!current.some((b) => b.path === path)) return current;
-				const next = current.filter((b) => b.path !== path);
-				persist(next);
-				return next;
-			});
+		rename: async (id: string, name: string): Promise<void> => {
+			await desktopHost.renameBookmark(id, name);
+			await refresh();
 		},
-		rename(path: string, newName: string): void {
-			update((current) => {
-				const idx = current.findIndex((b) => b.path === path);
-				if (idx === -1) return current;
-				const trimmed = newName.trim();
-				const finalName = trimmed === '' ? basename(path) : trimmed;
-				if (current[idx].name === finalName) return current;
-				const next = current.map((b, i) => (i === idx ? { ...b, name: finalName } : b));
-				persist(next);
-				return next;
-			});
+		remove: async (id: string): Promise<void> => {
+			await desktopHost.removeBookmark(id);
+			await refresh();
 		}
 	};
 }

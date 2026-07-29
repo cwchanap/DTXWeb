@@ -9,6 +9,7 @@
 	import { simFileService } from './services/simFileService';
 	import { simFileStore } from './stores/simFileStore';
 	import { workspaceStore, type WorkspaceState } from './stores/workspaceStore';
+	import { bookmarkStore } from './stores/bookmarkStore';
 	import { linkingService } from './services/linkingService';
 	import { workspaceService } from './services/workspaceService';
 	import { desktopHost } from './services/desktopHost';
@@ -91,6 +92,8 @@
 
 			workspaceStore.hydratePath(nativeWorkspace);
 			if (nativeWorkspace) {
+				workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
 				await workspaceService.loadSubWorkspaces();
 				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
 				await workspaceService.loadTreeStructure();
@@ -103,6 +106,10 @@
 		} finally {
 			if (!destroyed) {
 				workspaceHydrationSettled = true;
+				// Hydrate the bookmark cache from the native trust pool. This is
+				// display-only metadata; the authoritative bookmark set lives in
+				// native and is refreshed after every mutation.
+				void bookmarkStore.refresh();
 			}
 		}
 

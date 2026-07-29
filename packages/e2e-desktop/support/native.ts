@@ -34,6 +34,17 @@ export type ExportSongResult = {
 export type E2eDriveControl = GeneratedE2eDriveControl;
 export type E2eDriveSnapshot = GeneratedE2eDriveSnapshot;
 
+const waitForAppHydration = async (): Promise<void> => {
+	await browser.waitUntil(
+		async () =>
+			await browser.execute(() => {
+				const app = document.querySelector('#app');
+				return Boolean(app?.firstElementChild) && app?.querySelector('[role="status"]') === null;
+			}),
+		{ timeoutMsg: 'Expected desktop app hydration to finish before native IPC' }
+	);
+};
+
 export const pathExists = async (
 	basePath: string,
 	...pathParts: string[]
@@ -48,10 +59,12 @@ export const pathExists = async (
 		pathParts
 	);
 
-export const getWorkspaceRoot = async (): Promise<string | null> =>
-	await browser.tauri.execute<string | null, []>(
+export const getWorkspaceRoot = async (): Promise<string | null> => {
+	await waitForAppHydration();
+	return await browser.tauri.execute<string | null, []>(
 		({ core }) => core.invoke('get_workspace_root') as unknown as string | null
 	);
+};
 
 export const readFile = async (filePath: string): Promise<ReadFileResult> =>
 	await browser.tauri.execute<ReadFileResult, [string]>(

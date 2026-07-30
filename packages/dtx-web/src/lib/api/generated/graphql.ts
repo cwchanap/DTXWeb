@@ -1,235 +1,30 @@
-import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
-export type Maybe<T> = T | null;
-export type InputMaybe<T> = Maybe<T>;
-export type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
-export type MakeOptional<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]?: Maybe<T[SubKey]> };
-export type MakeMaybe<T, K extends keyof T> = Omit<T, K> & { [SubKey in K]: Maybe<T[SubKey]> };
-export type MakeEmpty<T extends { [key: string]: unknown }, K extends keyof T> = { [_ in K]?: never };
+/** Internal type. DO NOT USE DIRECTLY. */
+type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
+/** Internal type. DO NOT USE DIRECTLY. */
 export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
-/** All built-in and custom scalars, mapped to their actual values */
-export type Scalars = {
-  ID: { input: string; output: string; }
-  String: { input: string; output: string; }
-  Boolean: { input: boolean; output: boolean; }
-  Int: { input: number; output: number; }
-  Float: { input: number; output: number; }
-};
-
-export type ChartScore = {
-  clearCount: Scalars['Int']['output'];
-  id: Scalars['ID']['output'];
-  playCount: Scalars['Int']['output'];
-  scores: Array<Score>;
-};
-
+import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
 export type ChartScoresInput = {
-  chartId: Scalars['ID']['input'];
-  clearCount: Scalars['Int']['input'];
-  playCount: Scalars['Int']['input'];
+  chartId: string;
+  clearCount: number;
+  playCount: number;
   scores: Array<ScoreInput>;
 };
 
-export type CreateSimfileInput = {
-  artist?: InputMaybe<Scalars['String']['input']>;
-  bpm: Scalars['Float']['input'];
-  displayId?: InputMaybe<Scalars['Int']['input']>;
-  downloadUrl?: InputMaybe<Scalars['String']['input']>;
-  dtxFiles?: InputMaybe<Array<DtxFileInput>>;
-  isPublished?: InputMaybe<Scalars['Boolean']['input']>;
-  previewUrl?: InputMaybe<Scalars['String']['input']>;
-  publishDate?: InputMaybe<Scalars['String']['input']>;
-  title?: InputMaybe<Scalars['String']['input']>;
-  videoPreviewUrl?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type DeleteResult = {
-  deleted: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
-  message: Maybe<Scalars['String']['output']>;
-  partialDeletion: Maybe<Scalars['Boolean']['output']>;
-};
-
-export type DtxFile = {
-  fileEncoding: FileEncoding;
-  fileSizeBytes: Scalars['Int']['output'];
-  fileUrl: Maybe<Scalars['String']['output']>;
-  id: Scalars['ID']['output'];
-  label: Scalars['String']['output'];
-  level: Scalars['Float']['output'];
-  myChartScore: Maybe<ChartScore>;
-};
-
-export type DtxFileInput = {
-  label: Scalars['String']['input'];
-  level: Scalars['Float']['input'];
-};
-
-export enum FileEncoding {
-  ShiftJis = 'SHIFT_JIS',
-  Utf_8 = 'UTF_8'
-}
-
-export type MagicLinkResult = {
-  magicLinkUrl: Scalars['String']['output'];
-  success: Scalars['Boolean']['output'];
-};
-
-export type Mutation = {
-  createSimfile: Simfile;
-  deleteSimfile: DeleteResult;
-  generateMagicLink: MagicLinkResult;
-  updateSimfile: Simfile;
-  updateSimfileDriveFile: Simfile;
-  updateSimfileDriveFileGuarded: Simfile;
-  uploadScores: UploadScoresResult;
-  upsertUserProfile: UserProfile;
-};
-
-
-export type MutationCreateSimfileArgs = {
-  input: CreateSimfileInput;
-};
-
-
-export type MutationDeleteSimfileArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type MutationUpdateSimfileArgs = {
-  id: Scalars['ID']['input'];
-  input: UpdateSimfileInput;
-};
-
-
-export type MutationUpdateSimfileDriveFileArgs = {
-  downloadUrl: Scalars['String']['input'];
-  googleDriveFileId: Scalars['String']['input'];
-  id: Scalars['ID']['input'];
-};
-
-
-export type MutationUpdateSimfileDriveFileGuardedArgs = {
-  downloadUrl: Scalars['String']['input'];
-  expectNoExistingDriveFile?: InputMaybe<Scalars['Boolean']['input']>;
-  expectedPreviousDriveFileId?: InputMaybe<Scalars['String']['input']>;
-  googleDriveFileId: Scalars['String']['input'];
-  id: Scalars['ID']['input'];
-};
-
-
-export type MutationUploadScoresArgs = {
-  input: UploadScoresInput;
-};
-
-
-export type MutationUpsertUserProfileArgs = {
-  input: UpsertUserProfileInput;
-};
-
-export type Query = {
-  healthz: Scalars['String']['output'];
-  me: UserProfile;
-  myScoredSimfiles: SimfileConnection;
-  nextDisplayId: Scalars['Int']['output'];
-  simfile: Maybe<Simfile>;
-  simfileSearch: Array<SimfileSearchResult>;
-  simfiles: SimfileConnection;
-};
-
-
-export type QueryMyScoredSimfilesArgs = {
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
-};
-
-
-export type QuerySimfileArgs = {
-  id: Scalars['ID']['input'];
-};
-
-
-export type QuerySimfileSearchArgs = {
-  excludeIds?: InputMaybe<Array<Scalars['ID']['input']>>;
-  limit?: InputMaybe<Scalars['Int']['input']>;
-  query: Scalars['String']['input'];
-};
-
-
-export type QuerySimfilesArgs = {
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
-  scope: SimfileScope;
-  search?: InputMaybe<Scalars['String']['input']>;
-};
-
-export type R2File = {
-  key: Scalars['String']['output'];
-  size: Scalars['Int']['output'];
-  uploaded: Scalars['String']['output'];
-};
-
-export type Score = {
-  achievementRate: Maybe<Scalars['Float']['output']>;
-  cleared: Scalars['Boolean']['output'];
-  displayOrder: Maybe<Scalars['Int']['output']>;
-  fullCombo: Scalars['Boolean']['output'];
-  good: Maybe<Scalars['Int']['output']>;
-  great: Maybe<Scalars['Int']['output']>;
-  id: Scalars['ID']['output'];
-  isBest: Scalars['Boolean']['output'];
-  maxCombo: Maybe<Scalars['Int']['output']>;
-  miss: Maybe<Scalars['Int']['output']>;
-  perfect: Maybe<Scalars['Int']['output']>;
-  performedAt: Maybe<Scalars['String']['output']>;
-  poor: Maybe<Scalars['Int']['output']>;
-  rankLabel: Maybe<Scalars['String']['output']>;
-  score: Maybe<Scalars['Int']['output']>;
-};
-
 export type ScoreInput = {
-  achievementRate?: InputMaybe<Scalars['Float']['input']>;
-  cleared: Scalars['Boolean']['input'];
-  displayOrder?: InputMaybe<Scalars['Int']['input']>;
-  fullCombo: Scalars['Boolean']['input'];
-  good?: InputMaybe<Scalars['Int']['input']>;
-  great?: InputMaybe<Scalars['Int']['input']>;
-  isBest: Scalars['Boolean']['input'];
-  maxCombo?: InputMaybe<Scalars['Int']['input']>;
-  miss?: InputMaybe<Scalars['Int']['input']>;
-  perfect?: InputMaybe<Scalars['Int']['input']>;
-  performedAt?: InputMaybe<Scalars['String']['input']>;
-  poor?: InputMaybe<Scalars['Int']['input']>;
-  rankLabel?: InputMaybe<Scalars['String']['input']>;
-  score?: InputMaybe<Scalars['Int']['input']>;
-};
-
-export type Simfile = {
-  artist: Scalars['String']['output'];
-  bpm: Scalars['Float']['output'];
-  createdAt: Scalars['String']['output'];
-  displayId: Maybe<Scalars['Int']['output']>;
-  downloadUrl: Maybe<Scalars['String']['output']>;
-  dtxFiles: Array<DtxFile>;
-  durationSeconds: Maybe<Scalars['Int']['output']>;
-  files: Array<R2File>;
-  genre: Maybe<Scalars['String']['output']>;
-  googleDriveFileId: Maybe<Scalars['String']['output']>;
-  hasUploadedFiles: Scalars['Boolean']['output'];
-  id: Scalars['ID']['output'];
-  isPublished: Scalars['Boolean']['output'];
-  previewUrl: Maybe<Scalars['String']['output']>;
-  publishDate: Scalars['String']['output'];
-  tags: Array<Scalars['String']['output']>;
-  title: Scalars['String']['output'];
-  updatedAt: Scalars['String']['output'];
-  userId: Maybe<Scalars['ID']['output']>;
-  videoPreviewUrl: Maybe<Scalars['String']['output']>;
-};
-
-export type SimfileConnection = {
-  count: Scalars['Int']['output'];
-  data: Array<Simfile>;
+  achievementRate?: number | null | undefined;
+  cleared: boolean;
+  displayOrder?: number | null | undefined;
+  fullCombo: boolean;
+  good?: number | null | undefined;
+  great?: number | null | undefined;
+  isBest: boolean;
+  maxCombo?: number | null | undefined;
+  miss?: number | null | undefined;
+  perfect?: number | null | undefined;
+  performedAt?: string | null | undefined;
+  poor?: number | null | undefined;
+  rankLabel?: string | null | undefined;
+  score?: number | null | undefined;
 };
 
 export enum SimfileScope {
@@ -237,50 +32,24 @@ export enum SimfileScope {
   Published = 'PUBLISHED'
 }
 
-export type SimfileSearchResult = {
-  artist: Scalars['String']['output'];
-  bpm: Scalars['Float']['output'];
-  id: Scalars['ID']['output'];
-  isPublished: Scalars['Boolean']['output'];
-  title: Scalars['String']['output'];
-};
-
-/** A chart that was excluded from the upload. chartId is the requested chart ID, or the sentinel "*" when the entire payload was rejected (e.g. too many charts) rather than a single chart. */
-export type SkippedChart = {
-  /** The skipped chart ID, or "*" (sentinel) when the skip applies to the whole upload batch rather than a specific chart. */
-  chartId: Scalars['ID']['output'];
-  reason: Scalars['String']['output'];
-};
-
 export type UpdateSimfileInput = {
-  artist?: InputMaybe<Scalars['String']['input']>;
-  bpm?: InputMaybe<Scalars['Float']['input']>;
-  displayId?: InputMaybe<Scalars['Int']['input']>;
-  downloadUrl?: InputMaybe<Scalars['String']['input']>;
-  isPublished?: InputMaybe<Scalars['Boolean']['input']>;
-  previewUrl?: InputMaybe<Scalars['String']['input']>;
-  publishDate?: InputMaybe<Scalars['String']['input']>;
-  title?: InputMaybe<Scalars['String']['input']>;
-  videoPreviewUrl?: InputMaybe<Scalars['String']['input']>;
+  artist?: string | null | undefined;
+  bpm?: number | null | undefined;
+  displayId?: number | null | undefined;
+  downloadUrl?: string | null | undefined;
+  isPublished?: boolean | null | undefined;
+  previewUrl?: string | null | undefined;
+  publishDate?: string | null | undefined;
+  title?: string | null | undefined;
+  videoPreviewUrl?: string | null | undefined;
 };
 
 export type UploadScoresInput = {
   charts: Array<ChartScoresInput>;
 };
 
-export type UploadScoresResult = {
-  insertedScores: Scalars['Int']['output'];
-  skipped: Array<SkippedChart>;
-  updatedCharts: Scalars['Int']['output'];
-};
-
 export type UpsertUserProfileInput = {
-  username: Scalars['String']['input'];
-};
-
-export type UserProfile = {
-  userId: Scalars['ID']['output'];
-  username: Scalars['String']['output'];
+  username: string;
 };
 
 export type GenerateMagicLinkMutationVariables = Exact<{ [key: string]: never; }>;
@@ -291,7 +60,7 @@ export type GenerateMagicLinkMutation = { generateMagicLink: { magicLinkUrl: str
 export type SimfileFullFragment = { id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> };
 
 export type GetPreviewSimfileQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
@@ -301,23 +70,23 @@ export type SimfileWithFilesFragment = { hasUploadedFiles: boolean, id: string, 
 
 export type ListSimfilesQueryVariables = Exact<{
   scope: SimfileScope;
-  search?: InputMaybe<Scalars['String']['input']>;
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
+  search?: string | null | undefined;
+  page?: number | null | undefined;
+  pageSize?: number | null | undefined;
 }>;
 
 
 export type ListSimfilesQuery = { simfiles: { count: number, data: Array<{ hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> }> } };
 
 export type GetSimfileQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
 export type GetSimfileQuery = { simfile: { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } | null };
 
 export type UpdateSimfileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
   input: UpdateSimfileInput;
 }>;
 
@@ -325,28 +94,35 @@ export type UpdateSimfileMutationVariables = Exact<{
 export type UpdateSimfileMutation = { updateSimfile: { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } };
 
 export type UpdateSimfileDriveFileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  googleDriveFileId: Scalars['String']['input'];
-  downloadUrl: Scalars['String']['input'];
+  id: string;
+  googleDriveFileId: string;
+  downloadUrl: string;
 }>;
 
 
 export type UpdateSimfileDriveFileMutation = { updateSimfileDriveFile: { id: string, googleDriveFileId: string | null, downloadUrl: string | null } };
 
 export type DeleteSimfileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
 export type DeleteSimfileMutation = { deleteSimfile: { id: string, deleted: boolean, partialDeletion: boolean | null, message: string | null } };
 
 export type MyScoredSimfilesQueryVariables = Exact<{
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
+  page?: number | null | undefined;
+  pageSize?: number | null | undefined;
 }>;
 
 
 export type MyScoredSimfilesQuery = { myScoredSimfiles: { count: number, data: Array<{ id: string, title: string, artist: string, dtxFiles: Array<{ id: string, label: string, level: number, myChartScore: { playCount: number, clearCount: number, scores: Array<{ id: string, isBest: boolean, score: number | null, achievementRate: number | null, rankLabel: string | null, fullCombo: boolean, cleared: boolean, maxCombo: number | null, perfect: number | null, great: number | null, good: number | null, poor: number | null, miss: number | null, performedAt: string | null, displayOrder: number | null }> } | null }> }> } };
+
+export type UploadScoresMutationVariables = Exact<{
+  input: UploadScoresInput;
+}>;
+
+
+export type UploadScoresMutation = { uploadScores: { updatedCharts: number, insertedScores: number, skipped: Array<{ chartId: string, reason: string }> } };
 
 export type MeQueryVariables = Exact<{ [key: string]: never; }>;
 
@@ -370,5 +146,6 @@ export const UpdateSimfileDocument = {"kind":"Document","definitions":[{"kind":"
 export const UpdateSimfileDriveFileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpdateSimfileDriveFile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"googleDriveFileId"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"downloadUrl"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updateSimfileDriveFile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}},{"kind":"Argument","name":{"kind":"Name","value":"googleDriveFileId"},"value":{"kind":"Variable","name":{"kind":"Name","value":"googleDriveFileId"}}},{"kind":"Argument","name":{"kind":"Name","value":"downloadUrl"},"value":{"kind":"Variable","name":{"kind":"Name","value":"downloadUrl"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"googleDriveFileId"}},{"kind":"Field","name":{"kind":"Name","value":"downloadUrl"}}]}}]}}]} as unknown as DocumentNode<UpdateSimfileDriveFileMutation, UpdateSimfileDriveFileMutationVariables>;
 export const DeleteSimfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"DeleteSimfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"id"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"ID"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deleteSimfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"id"},"value":{"kind":"Variable","name":{"kind":"Name","value":"id"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"deleted"}},{"kind":"Field","name":{"kind":"Name","value":"partialDeletion"}},{"kind":"Field","name":{"kind":"Name","value":"message"}}]}}]}}]} as unknown as DocumentNode<DeleteSimfileMutation, DeleteSimfileMutationVariables>;
 export const MyScoredSimfilesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MyScoredSimfiles"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"page"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"pageSize"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"myScoredSimfiles"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"page"},"value":{"kind":"Variable","name":{"kind":"Name","value":"page"}}},{"kind":"Argument","name":{"kind":"Name","value":"pageSize"},"value":{"kind":"Variable","name":{"kind":"Name","value":"pageSize"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"count"}},{"kind":"Field","name":{"kind":"Name","value":"data"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"title"}},{"kind":"Field","name":{"kind":"Name","value":"artist"}},{"kind":"Field","name":{"kind":"Name","value":"dtxFiles"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"level"}},{"kind":"Field","name":{"kind":"Name","value":"myChartScore"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"playCount"}},{"kind":"Field","name":{"kind":"Name","value":"clearCount"}},{"kind":"Field","name":{"kind":"Name","value":"scores"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isBest"}},{"kind":"Field","name":{"kind":"Name","value":"score"}},{"kind":"Field","name":{"kind":"Name","value":"achievementRate"}},{"kind":"Field","name":{"kind":"Name","value":"rankLabel"}},{"kind":"Field","name":{"kind":"Name","value":"fullCombo"}},{"kind":"Field","name":{"kind":"Name","value":"cleared"}},{"kind":"Field","name":{"kind":"Name","value":"maxCombo"}},{"kind":"Field","name":{"kind":"Name","value":"perfect"}},{"kind":"Field","name":{"kind":"Name","value":"great"}},{"kind":"Field","name":{"kind":"Name","value":"good"}},{"kind":"Field","name":{"kind":"Name","value":"poor"}},{"kind":"Field","name":{"kind":"Name","value":"miss"}},{"kind":"Field","name":{"kind":"Name","value":"performedAt"}},{"kind":"Field","name":{"kind":"Name","value":"displayOrder"}}]}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<MyScoredSimfilesQuery, MyScoredSimfilesQueryVariables>;
+export const UploadScoresDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UploadScores"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UploadScoresInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"uploadScores"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"updatedCharts"}},{"kind":"Field","name":{"kind":"Name","value":"insertedScores"}},{"kind":"Field","name":{"kind":"Name","value":"skipped"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"chartId"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}}]}}]}}]}}]} as unknown as DocumentNode<UploadScoresMutation, UploadScoresMutationVariables>;
 export const MeDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"Me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"me"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]} as unknown as DocumentNode<MeQuery, MeQueryVariables>;
 export const UpsertUserProfileDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"UpsertUserProfile"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"UpsertUserProfileInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"upsertUserProfile"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"userId"}},{"kind":"Field","name":{"kind":"Name","value":"username"}}]}}]}}]} as unknown as DocumentNode<UpsertUserProfileMutation, UpsertUserProfileMutationVariables>;

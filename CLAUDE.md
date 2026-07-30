@@ -108,7 +108,7 @@ bun run clean                  # Remove all node_modules
 - **Styling**: TailwindCSS 4.x + Skeleton UI components
 - **API**: `dtx-api` — GraphQL on Cloudflare Workers (Pothos schema-builder + GraphQL Yoga); web client types generated via graphql-codegen
 - **Backend services**: Supabase (auth/database), Cloudflare D1 + R2 (simfile storage)
-- **Desktop**: Tauri 2 — Svelte/Vite webview frontend + Rust backend (`src-tauri/`), Rust 1.77 / edition 2021
+- **Desktop**: Tauri 2 — Svelte/Vite webview frontend + Rust backend (`src-tauri/`), Rust 1.88 / edition 2021
 - **Build**: Vite 6.x + Bun workspaces + Turborepo
 
 ### DTX File Processing

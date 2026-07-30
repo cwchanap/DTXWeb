@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Drumery desktop app"
 authors = ["Hapadona"]
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.88"
 
 [lib]
 name = "dtx_desktop"
@@ -25,7 +25,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 async-recursion = "1"
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 dirs = "6"
 encoding_rs = "0.8"
 futures-util = "0.3"
@@ -36,7 +36,7 @@ reqwest = { version = "=0.12.15", default-features = false, features = [
     "multipart",
     "rustls-tls",
 ] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 same-file = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -52,8 +52,8 @@ tauri-plugin-updater = "2"
 tauri-plugin-wdio = { version = "1.2", optional = true }
 tauri-plugin-wdio-webdriver = { version = "1.2", optional = true }
 thiserror = "2"
-ts-rs = "10.1"
-time = { version = "=0.3.37", features = ["formatting"] }
+ts-rs = "12.0"
+time = { version = "=0.3.47", features = ["formatting"] }
 tokio = { version = "1", features = [
     "fs",
     "io-util",

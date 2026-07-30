@@ -34,3 +34,14 @@ query MyScoredSimfiles($page: Int, $pageSize: Int) {
 		}
 	}
 }
+
+mutation UploadScores($input: UploadScoresInput!) {
+	uploadScores(input: $input) {
+		updatedCharts
+		insertedScores
+		skipped {
+			chartId
+			reason
+		}
+	}
+}

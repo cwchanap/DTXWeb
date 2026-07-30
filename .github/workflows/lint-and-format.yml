@@ -32,6 +32,12 @@ jobs:
       - name: Build packages
         run: bun run --filter=@dtx/common build
 
+      - name: Generate GraphQL schema
+        run: bun run --filter=dtx-api gen-schema
+
+      - name: Verify generated GraphQL client
+        run: bun run --filter=dtx-web lint:codegen
+
       - name: Typecheck e2e packages
         run: |
           bun run --filter=dtx-e2e-web check

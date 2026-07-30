@@ -5,7 +5,7 @@ const config: CodegenConfig = {
 	documents: ['src/lib/api/operations/**/*.graphql'],
 	generates: {
 		'src/lib/api/generated/graphql.ts': {
-			plugins: ['typescript', 'typescript-operations', 'typed-document-node'],
+			plugins: ['typescript-operations', 'typed-document-node'],
 			config: {
 				avoidOptionals: {
 					field: true,
@@ -15,7 +15,7 @@ const config: CodegenConfig = {
 				},
 				skipTypename: true,
 				useTypeImports: true,
-				enumsAsTypes: false,
+				enumType: 'native',
 				scalars: { ID: 'string' }
 			}
 		}

@@ -167,6 +167,19 @@
 		}
 	};
 
+	const handleRemoveStaleBookmark = async (id: string) => {
+		try {
+			await bookmarkStore.remove(id);
+			if (id === rootId) {
+				workspaceStore.hydrateRootId(null);
+			}
+			bookmarkSwitchError = null;
+		} catch (error) {
+			mutationError =
+				(error instanceof Error && error.message) || 'Could not remove bookmark';
+		}
+	};
+
 	const handleBrowse = () => {
 		closeDropdown();
 		void workspaceService.selectWorkspace();
@@ -242,10 +255,7 @@
 						<button
 							type="button"
 							class="text-red mt-1 font-medium underline hover:opacity-80"
-							onclick={() => {
-								void bookmarkStore.remove(bookmarkSwitchError.id!);
-								bookmarkSwitchError = null;
-							}}
+							onclick={() => handleRemoveStaleBookmark(bookmarkSwitchError.id!)}
 						>
 							Remove bookmark
 						</button>

@@ -102,7 +102,14 @@ const isWorkspaceSnapshotCurrent = (
 };
 
 const hydrateRootIdIfCurrent = async (transition: number): Promise<void> => {
-	const rootId = await desktopHost.getCurrentWorkspaceRootId();
+	// rootId is display-only metadata; a lookup failure must not abort the
+	// surrounding workspace load. Catch here, leave rootId null, and continue.
+	let rootId: string | null = null;
+	try {
+		rootId = await desktopHost.getCurrentWorkspaceRootId();
+	} catch (error) {
+		console.error('Failed to hydrate workspace root id:', error);
+	}
 	if (workspaceService.isTransitionCurrent(transition)) {
 		workspaceStore.hydrateRootId(rootId);
 	}
@@ -262,7 +269,11 @@ export const workspaceService = {
 					workspaceStore.reset();
 					restoreLoading(transition);
 					workspaceStore.setPath(selectedPath);
-					await hydrateRootIdIfCurrent(transition);
+					// After a successful switch by id, the bookmark id IS the
+					// authoritative root id. Hydrate synchronously without another
+					// IPC round-trip whose rejection would abort the load after the
+					// native root has already changed.
+					workspaceStore.hydrateRootId(bookmark.id);
 					if (!workspaceService.isTransitionCurrent(transition)) {
 						return { ok: false, error: 'Workspace selection was superseded' };
 					}

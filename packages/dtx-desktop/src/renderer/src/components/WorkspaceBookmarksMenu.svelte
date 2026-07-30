@@ -21,9 +21,21 @@
 		rootId ? (bookmarks.find((b) => b.id === rootId) ?? null) : null
 	);
 
-	const closeDropdown = (options?: { refocus?: boolean }) => {
-		if (editingId !== null) {
-			commitEditing();
+	// Tracks an in-flight rename started by commitEditing (e.g. from input
+	// blur) so closeDropdown can await it before deciding whether to close.
+	// Without this, a blur-fired rename that fails after the menu closes would
+	// write its error into hidden UI.
+	let pendingRename: Promise<boolean> | null = null;
+
+	const closeDropdown = async (options?: { refocus?: boolean }): Promise<boolean> => {
+		// If a rename is in flight (e.g. input blur fired commitEditing just
+		// before this close trigger) or editing is still active, await the
+		// commit so a failure keeps the menu open with the error visible.
+		if (editingId !== null || pendingRename !== null) {
+			const ok = await commitEditing();
+			if (!ok) {
+				return false;
+			}
 		}
 		isOpen = false;
 		addError = null;
@@ -32,6 +44,7 @@
 		if (options?.refocus !== false) {
 			queueMicrotask(() => triggerEl?.focus());
 		}
+		return true;
 	};
 
 	const handleSwitchTo = async (b: WorkspaceBookmark) => {
@@ -45,7 +58,7 @@
 			// Keep the menu open to show the error
 			return;
 		}
-		closeDropdown();
+		await closeDropdown();
 	};
 
 	const handleBookmarkCurrent = async () => {
@@ -54,7 +67,7 @@
 			const ref = await bookmarkStore.addCurrent();
 			workspaceStore.hydrateRootId(ref.id);
 			addError = null;
-			closeDropdown();
+			await closeDropdown();
 		} catch (error) {
 			const message = error instanceof Error ? error.message : '';
 			if (message.includes('Maximum of 20 bookmarks')) {
@@ -65,17 +78,17 @@
 		}
 	};
 
-	const handleTriggerClick = () => {
+	const handleTriggerClick = async () => {
 		if (isOpen) {
-			closeDropdown();
+			await closeDropdown();
 		} else {
 			isOpen = true;
 		}
 	};
 
-	const handleKeydown = (event: KeyboardEvent) => {
+	const handleKeydown = async (event: KeyboardEvent) => {
 		if (event.key === 'Escape' && isOpen) {
-			closeDropdown();
+			await closeDropdown();
 			return;
 		}
 
@@ -104,9 +117,9 @@
 		}
 	};
 
-	const handleOutsideMousedown = (event: MouseEvent) => {
+	const handleOutsideMousedown = async (event: MouseEvent) => {
 		if (isOpen && rootEl && !rootEl.contains(event.target as Node)) {
-			closeDropdown({ refocus: false });
+			await closeDropdown({ refocus: false });
 		}
 	};
 
@@ -138,16 +151,31 @@
 		editingValue = b.name;
 	};
 
-	const commitEditing = async () => {
-		if (editingId === null) return;
+	const commitEditing = async (): Promise<boolean> => {
+		if (editingId === null) {
+			// If a previous commit is in flight (e.g. fired by input blur just
+			// before this call), surface its result rather than reporting
+			// success prematurely.
+			if (pendingRename) return await pendingRename;
+			return true;
+		}
 		const id = editingId;
 		const value = editingValue;
 		editingId = null;
+		pendingRename = (async () => {
+			try {
+				await bookmarkStore.rename(id, value);
+				return true;
+			} catch (error) {
+				mutationError =
+					(error instanceof Error && error.message) || 'Could not rename bookmark';
+				return false;
+			}
+		})();
 		try {
-			await bookmarkStore.rename(id, value);
-		} catch (error) {
-			mutationError =
-				(error instanceof Error && error.message) || 'Could not rename bookmark';
+			return await pendingRename;
+		} finally {
+			pendingRename = null;
 		}
 	};
 
@@ -180,9 +208,11 @@
 		}
 	};
 
-	const handleBrowse = () => {
-		closeDropdown();
-		void workspaceService.selectWorkspace();
+	const handleBrowse = async () => {
+		const closed = await closeDropdown();
+		if (closed) {
+			void workspaceService.selectWorkspace();
+		}
 	};
 
 	const handleEditKeydown = (event: KeyboardEvent) => {

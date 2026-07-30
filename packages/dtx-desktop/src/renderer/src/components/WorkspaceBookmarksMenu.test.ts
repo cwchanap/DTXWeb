@@ -385,6 +385,46 @@ describe('WorkspaceBookmarksMenu', () => {
 
 			expect(bookmarkStore.rename).toHaveBeenCalledWith('a', 'OutsideSaved');
 		});
+
+		it('keeps the menu open with an error when a pending rename fails on outside click', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
+			(bookmarkStore.rename as any).mockRejectedValue(new Error('Native persistence failed'));
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'NewName' } });
+			await fireEvent.mouseDown(document.body);
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Native persistence failed')).toBeInTheDocument();
+			});
+			// The menu must stay open so the user can see the error.
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+		});
+
+		it('keeps the menu open with an error when a pending rename fails on trigger click', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
+			(bookmarkStore.rename as any).mockRejectedValue(new Error('Native persistence failed'));
+
+			render(WorkspaceBookmarksMenu);
+			const trigger = screen.getByRole('button', { name: /workspace menu/i });
+			await fireEvent.click(trigger);
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'NewName' } });
+			await fireEvent.click(trigger);
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Native persistence failed')).toBeInTheDocument();
+			});
+			expect(screen.getByRole('menu')).toBeInTheDocument();
+		});
 	});
 
 	describe('Child action button keyboard handling', () => {

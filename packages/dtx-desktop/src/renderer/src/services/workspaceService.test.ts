@@ -1375,8 +1375,7 @@ describe('WorkspaceService', () => {
 			expect(workspaceStore.reset).not.toHaveBeenCalled();
 		});
 
-		it('returns superseded when the transition is invalidated after hydrateRootId', async () => {
-			const rootIdDeferred = createDeferred<string | null>();
+		it('hydrates rootId from the bookmark id without an IPC round-trip', async () => {
 			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
 				cb({ path: '/bm/path', currentSubWorkspace: null, subWorkspaces: [], error: null });
 				return vi.fn();
@@ -1389,32 +1388,45 @@ describe('WorkspaceService', () => {
 				outcome: 'ok',
 				path: '/canonical/path'
 			});
-			host.getCurrentWorkspaceRootId.mockReturnValue(rootIdDeferred.promise);
-			host.getWorkspaceRoot.mockResolvedValue(null);
+			host.listDirectories.mockResolvedValue([]);
+			host.loadTreeStructure.mockResolvedValue([]);
 
-			const pending = workspaceService.switchToBookmark({
+			const result = await workspaceService.switchToBookmark({
 				id: 'bm-id',
 				path: '/bm/path',
 				name: 'BM'
 			});
 
-			// Wait until the native switch succeeds and hydrateRootId is awaiting.
-			await vi.waitFor(() => {
-				expect(host.getCurrentWorkspaceRootId).toHaveBeenCalledOnce();
+			expect(result).toEqual({ ok: true });
+			// After a successful switch by id, the bookmark id IS the authoritative
+			// root id; no extra IPC lookup is needed.
+			expect(host.getCurrentWorkspaceRootId).not.toHaveBeenCalled();
+			expect(workspaceStore.hydrateRootId).toHaveBeenCalledWith('bm-id');
+		});
+
+		it('continues loading the workspace when root-id hydration rejects after a folder selection', async () => {
+			host.selectWorkspaceFolder.mockResolvedValue({
+				canceled: false,
+				filePaths: ['/new/workspace']
 			});
-			// Supersede the transition while hydrateRootId is pending.
-			workspaceService.disposeOperations();
-			rootIdDeferred.resolve('bm-id');
+			host.getCurrentWorkspaceRootId.mockRejectedValue(new Error('root-id IPC failed'));
+			host.listDirectories.mockResolvedValue([]);
+			host.loadTreeStructure.mockResolvedValue([]);
+			(workspaceStore.subscribe as any).mockImplementation((cb: any) => {
+				cb({ path: '/new/workspace', currentSubWorkspace: null });
+				return vi.fn();
+			});
 
-			const result = await pending;
+			await workspaceService.selectWorkspace();
 
-			expect(result.ok).toBe(false);
-			if (!result.ok) {
-				expect(result.error).toBe('Workspace selection was superseded');
-				expect('path' in result).toBe(false);
-			}
-			// loadSubWorkspaces must not have been called after the supersede.
-			expect(host.listDirectories).not.toHaveBeenCalled();
+			// The root-id lookup is display-only; its failure must not abort the
+			// workspace load. rootId is hydrated to null and the tree still loads.
+			expect(workspaceStore.setPath).toHaveBeenCalledWith('/new/workspace');
+			expect(workspaceStore.hydrateRootId).toHaveBeenCalledWith(null);
+			expect(workspaceStore.setTreeStructure).toHaveBeenCalled();
+			expect(workspaceStore.setError).not.toHaveBeenCalledWith(
+				'Failed to select workspace directory'
+			);
 		});
 
 		it('returns superseded when the transition is invalidated after loadSubWorkspaces', async () => {

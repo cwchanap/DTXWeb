@@ -265,6 +265,25 @@ describe('App lifecycle', () => {
 		expect(mockWorkspaceService.loadTreeStructure).not.toHaveBeenCalled();
 	});
 
+	it('continues loading the workspace when root-id hydration rejects', async () => {
+		// rootId is display-only metadata; its lookup failure must not abort
+		// workspace hydration (the outer catch would clear the valid path).
+		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
+		mockDesktopHost.getCurrentWorkspaceRootId.mockRejectedValue(
+			new Error('root-id IPC failed')
+		);
+
+		render(App);
+
+		await waitFor(() => {
+			expect(mockWorkspaceService.loadSubWorkspaces).toHaveBeenCalledOnce();
+			expect(mockWorkspaceService.loadTreeStructure).toHaveBeenCalledOnce();
+		});
+		expect(get(workspaceStore).path).toBe('/native/canonical/workspace');
+		expect(get(workspaceStore).rootId).toBeNull();
+	});
+
 	it('drains pending auth events before restoring the session', async () => {
 		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 

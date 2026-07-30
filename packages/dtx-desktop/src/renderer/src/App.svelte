@@ -92,7 +92,14 @@
 
 			workspaceStore.hydratePath(nativeWorkspace);
 			if (nativeWorkspace) {
-				const nativeRootId = await desktopHost.getCurrentWorkspaceRootId();
+				// rootId is display-only metadata; a lookup failure must not
+				// abort workspace hydration (the outer catch clears the path).
+				let nativeRootId: string | null = null;
+				try {
+					nativeRootId = await desktopHost.getCurrentWorkspaceRootId();
+				} catch (error) {
+					console.error('Failed to hydrate workspace root id:', error);
+				}
 				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
 				workspaceStore.hydrateRootId(nativeRootId);
 				await workspaceService.loadSubWorkspaces();

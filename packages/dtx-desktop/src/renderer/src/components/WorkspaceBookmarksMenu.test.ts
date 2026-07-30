@@ -535,6 +535,34 @@ describe('WorkspaceBookmarksMenu', () => {
 			).toBeNull();
 		});
 
+		it('preserves the switch error and surfaces a mutation error when stale bookmark removal rejects', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const { workspaceService } = await import('../services/workspaceService');
+			(bookmarkStore as any).setValue([
+				{ id: 'stale-id', path: '/stale/path', name: 'Stale' }
+			]);
+			(workspaceService.switchToBookmark as any).mockResolvedValue({
+				ok: false,
+				error: 'The bookmarked folder is missing or not accessible. Remove it and re-add the folder.',
+				path: '/stale/path'
+			});
+			(bookmarkStore.remove as any).mockRejectedValue(new Error('Permission denied'));
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('menuitem', { name: /switch to stale/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /remove bookmark/i }));
+
+			expect(bookmarkStore.remove).toHaveBeenCalledWith('stale-id');
+			// The original switch error must remain visible so the user still
+			// knows the bookmark is stale and can retry removal.
+			await vi.waitFor(() => {
+				expect(screen.getByText('Permission denied')).toBeInTheDocument();
+			});
+			expect(screen.getByText(/bookmarked folder is missing/i)).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: /remove bookmark/i })).toBeInTheDocument();
+		});
+
 		it('shows error without remove option for non-path-specific failures', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
 			const { workspaceService } = await import('../services/workspaceService');

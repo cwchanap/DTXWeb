@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - chore/rust-1.88-dependency-stack
-  pull_request:
-    branches:
-      - main
 
 permissions:
   contents: write
@@ -48,86 +45,6 @@ jobs:
           toolchain: 1.88.0
           components: clippy, rustfmt
 
-      - name: Configure Git author
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-
-      - name: Apply coordinated toolchain and manifest changes
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          cargo_path = Path('packages/dtx-desktop/src-tauri/Cargo.toml')
-          cargo = cargo_path.read_text()
-          replacements = {
-              'rust-version = "1.77.2"': 'rust-version = "1.88"',
-              'base64 = "0.22"': 'base64 = "0.23"',
-              'rusqlite = { version = "0.32", features = ["bundled"] }': 'rusqlite = { version = "0.40", features = ["bundled"] }',
-              'ts-rs = "10.1"': 'ts-rs = "12.0"',
-              'time = { version = "=0.3.37", features = ["formatting"] }': 'time = { version = "=0.3.47", features = ["formatting"] }',
-          }
-          for old, new in replacements.items():
-              if old not in cargo:
-                  raise SystemExit(f'Missing expected Cargo.toml text: {old}')
-              cargo = cargo.replace(old, new, 1)
-          cargo_path.write_text(cargo)
-
-          Path('rust-toolchain.toml').write_text(
-              '[toolchain]\n'
-              'channel = "1.88.0"\n'
-              'profile = "minimal"\n'
-              'components = ["clippy", "rustfmt", "llvm-tools-preview"]\n'
-          )
-
-          docs_path = Path('CLAUDE.md')
-          docs = docs_path.read_text()
-          old_docs = 'Rust 1.77 / edition 2021'
-          if old_docs not in docs:
-              raise SystemExit(f'Missing expected CLAUDE.md text: {old_docs}')
-          docs_path.write_text(docs.replace(old_docs, 'Rust 1.88 / edition 2021', 1))
-
-          workflow_paths = [
-              Path('.github/workflows/tauri-rust-ci.yml'),
-              Path('.github/workflows/desktop-e2e-test.yml'),
-              Path('.github/workflows/desktop-build-deploy.yml'),
-          ]
-          for path in workflow_paths:
-              lines = path.read_text().splitlines()
-              output = []
-              index = 0
-              matched = 0
-              while index < len(lines):
-                  line = lines[index]
-                  output.append(line)
-                  if 'uses: dtolnay/rust-toolchain@' in line:
-                      matched += 1
-                      indent = line[: len(line) - len(line.lstrip())]
-                      if index + 1 < len(lines) and lines[index + 1].strip() == 'with:':
-                          index += 1
-                          output.append(lines[index])
-                          output.append(f'{indent}  toolchain: 1.88.0')
-                      else:
-                          output.append(f'{indent}with:')
-                          output.append(f'{indent}  toolchain: 1.88.0')
-                  index += 1
-              if matched == 0:
-                  raise SystemExit(f'No Rust setup step found in {path}')
-              path.write_text('\n'.join(output) + '\n')
-          PY
-
-      - name: Commit toolchain and manifest changes
-        run: |
-          git add \
-            rust-toolchain.toml \
-            CLAUDE.md \
-            .github/workflows/tauri-rust-ci.yml \
-            .github/workflows/desktop-e2e-test.yml \
-            .github/workflows/desktop-build-deploy.yml \
-            packages/dtx-desktop/src-tauri/Cargo.toml
-          git commit -m 'chore(desktop): pin Rust 1.88 toolchain'
-          git push origin HEAD:chore/rust-1.88-dependency-stack
-
       - name: Resolve coordinated Cargo updates
         working-directory: packages/dtx-desktop/src-tauri
         run: |
@@ -150,6 +67,8 @@ jobs:
 
       - name: Commit lockfile and generated bindings
         run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             packages/dtx-desktop/src-tauri/Cargo.lock \
             packages/e2e-desktop/support/generated/native-types.ts

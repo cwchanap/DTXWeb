@@ -52,9 +52,16 @@ jobs:
           toolchain: 1.88.0
           components: clippy, rustfmt
 
-      - name: Resolve coordinated Cargo updates
+      - name: Resolve manifest-required Cargo updates
         working-directory: packages/dtx-desktop/src-tauri
-        run: cargo update
+        run: cargo check
+
+      - name: Update reviewed transitive dependencies
+        working-directory: packages/dtx-desktop/src-tauri
+        run: |
+          cargo update -p quinn-proto@0.11.14 --precise 0.11.16
+          cargo update -p serde_with@3.13.0 --precise 3.21.0
+          cargo check --locked
 
       - name: Verify target dependency versions
         working-directory: packages/dtx-desktop/src-tauri
@@ -63,8 +70,8 @@ jobs:
           cargo tree -i rusqlite@0.40.1
           cargo tree -i ts-rs@12.0.1
           cargo tree -i time@0.3.47
-          cargo tree -i quinn-proto@0.11.16
-          cargo tree -i serde_with@3.17.0
+          cargo tree --target all -i quinn-proto@0.11.16
+          cargo tree --target all -i serde_with@3.21.0
 
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile

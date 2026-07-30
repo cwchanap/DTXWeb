@@ -50,13 +50,17 @@ jobs:
 
       - name: Resolve coordinated Cargo updates
         working-directory: packages/dtx-desktop/src-tauri
+        run: cargo update
+
+      - name: Verify target dependency versions
+        working-directory: packages/dtx-desktop/src-tauri
         run: |
-          cargo update -p base64@0.22.1 --precise 0.23.0
-          cargo update -p rusqlite@0.32.1 --precise 0.40.1
-          cargo update -p ts-rs@10.1.0 --precise 12.0.1
-          cargo update -p time@0.3.37 --precise 0.3.47
-          cargo update -p quinn-proto@0.11.14 --precise 0.11.16
-          cargo update -p serde_with@3.13.0 --precise 3.17.0
+          cargo tree -i base64@0.23.0
+          cargo tree -i rusqlite@0.40.1
+          cargo tree -i ts-rs@12.0.1
+          cargo tree -i time@0.3.47
+          cargo tree -i quinn-proto@0.11.16
+          cargo tree -i serde_with@3.17.0
 
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile

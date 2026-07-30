@@ -581,8 +581,8 @@ fn bookmark_current_root_enforces_the_cap() {
             .expect("bookmark");
     }
 
-    // Re-select the original current root so the next bookmark targets a new
-    // distinct directory without disturbing the existing 20 bookmarks.
+    // Select a new distinct directory so the next bookmark targets it
+    // without disturbing the existing 20 bookmarks.
     let extra = data_dir.path().join("ws-extra");
     fs::create_dir(&extra).expect("extra workspace dir");
     state

@@ -1356,7 +1356,7 @@ describe('WorkspaceService', () => {
 			expect(firstResult.ok).toBe(true);
 		});
 
-		it('returns a generic error WITHOUT a path when switchTrustedWorkspace throws (P2 fix)', async () => {
+		it('returns a generic error WITHOUT a path when switchTrustedWorkspace throws', async () => {
 			host.switchTrustedWorkspace.mockRejectedValue(new Error('IPC disconnected'));
 
 			const result = await workspaceService.switchToBookmark({

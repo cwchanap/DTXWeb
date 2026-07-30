@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: generate-rust-1-88-stack
+  cancel-in-progress: true
+
 permissions:
   contents: write
 

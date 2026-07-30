@@ -1456,7 +1456,7 @@ async fn read_callback_target_rejects_oversized_request_body() {
             "GET {GOOGLE_DRIVE_CALLBACK_PATH}?state=s&code=c HTTP/1.1\r\nHost: 127.0.0.1\r\n"
         )
         .into_bytes();
-        payload.extend(std::iter::repeat(b'X').take(MAX_CALLBACK_REQUEST_BYTES + 1));
+        payload.extend(std::iter::repeat_n(b'X', MAX_CALLBACK_REQUEST_BYTES + 1));
         stream.write_all(&payload).await.expect("write payload");
         tokio::time::sleep(Duration::from_millis(50)).await;
     });

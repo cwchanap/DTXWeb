@@ -1463,7 +1463,7 @@ async fn ensure_valid_access_token_with_config<R: Runtime>(
                 .and_then(session_access_token)
                 .map(|token| {
                     jwt_exp_seconds(token)
-                        .map_or(true, |exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)
+                        .is_none_or(|exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)
                 })
                 .unwrap_or(true);
             if still_stale {

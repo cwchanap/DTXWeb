@@ -34,10 +34,8 @@ jobs:
 
           auth_path = Path('packages/dtx-desktop/src-tauri/src/auth.rs')
           auth = auth_path.read_text()
-          old_auth = '''jwt_exp_seconds(token)
-                        .map_or(true, |exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)'''
-          new_auth = '''jwt_exp_seconds(token)
-                        .is_none_or(|exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)'''
+          old_auth = '.map_or(true, |exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)'
+          new_auth = '.is_none_or(|exp| exp - unix_now_secs() <= TOKEN_REFRESH_SKEW_SECS)'
           if old_auth not in auth and new_auth not in auth:
               raise SystemExit('Expected auth clippy expression was not found')
           auth_path.write_text(auth.replace(old_auth, new_auth, 1))

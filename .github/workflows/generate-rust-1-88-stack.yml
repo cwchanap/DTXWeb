@@ -45,6 +45,11 @@ jobs:
           toolchain: 1.88.0
           components: clippy, rustfmt
 
+      - name: Configure Git author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
       - name: Apply coordinated toolchain and manifest changes
         run: |
           python - <<'PY'
@@ -65,8 +70,12 @@ jobs:
               cargo = cargo.replace(old, new, 1)
           cargo_path.write_text(cargo)
 
-          toolchain = '''[toolchain]\nchannel = "1.88.0"\nprofile = "minimal"\ncomponents = ["clippy", "rustfmt", "llvm-tools-preview"]\n'''
-          Path('rust-toolchain.toml').write_text(toolchain)
+          Path('rust-toolchain.toml').write_text(
+              '[toolchain]\n'
+              'channel = "1.88.0"\n'
+              'profile = "minimal"\n'
+              'components = ["clippy", "rustfmt", "llvm-tools-preview"]\n'
+          )
 
           docs_path = Path('CLAUDE.md')
           docs = docs_path.read_text()
@@ -104,6 +113,18 @@ jobs:
               path.write_text('\n'.join(output) + '\n')
           PY
 
+      - name: Commit toolchain and manifest changes
+        run: |
+          git add \
+            rust-toolchain.toml \
+            CLAUDE.md \
+            .github/workflows/tauri-rust-ci.yml \
+            .github/workflows/desktop-e2e-test.yml \
+            .github/workflows/desktop-build-deploy.yml \
+            packages/dtx-desktop/src-tauri/Cargo.toml
+          git commit -m 'chore(desktop): pin Rust 1.88 toolchain'
+          git push origin HEAD:chore/rust-1.88-dependency-stack
+
       - name: Resolve coordinated Cargo updates
         working-directory: packages/dtx-desktop/src-tauri
         run: |
@@ -124,6 +145,18 @@ jobs:
           bun run gen:native-types
           cmp /tmp/native-types.ts packages/e2e-desktop/support/generated/native-types.ts
 
+      - name: Commit lockfile and generated bindings
+        run: |
+          git add \
+            packages/dtx-desktop/src-tauri/Cargo.lock \
+            packages/e2e-desktop/support/generated/native-types.ts
+          if git diff --cached --quiet; then
+            echo 'Cargo lockfile and native bindings already up to date'
+          else
+            git commit -m 'chore(desktop): update Rust dependency lockfile and bindings'
+            git push origin HEAD:chore/rust-1.88-dependency-stack
+          fi
+
       - name: Verify Rust formatting
         working-directory: packages/dtx-desktop/src-tauri
         run: cargo fmt --check
@@ -143,23 +176,3 @@ jobs:
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ''
           GOOGLE_DRIVE_OAUTH_CLIENT_ENV: ''
         run: cargo test --locked --no-default-features --features e2e
-
-      - name: Commit generated Rust stack
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            rust-toolchain.toml \
-            CLAUDE.md \
-            .github/workflows/tauri-rust-ci.yml \
-            .github/workflows/desktop-e2e-test.yml \
-            .github/workflows/desktop-build-deploy.yml \
-            packages/dtx-desktop/src-tauri/Cargo.toml \
-            packages/dtx-desktop/src-tauri/Cargo.lock \
-            packages/e2e-desktop/support/generated/native-types.ts
-          if git diff --cached --quiet; then
-            echo 'Rust stack already up to date'
-          else
-            git commit -m 'chore(desktop): upgrade Rust toolchain and dependency stack'
-            git push origin HEAD:chore/rust-1.88-dependency-stack
-          fi

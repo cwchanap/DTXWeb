@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - chore/rust-1.88-dependency-stack
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write

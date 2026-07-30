@@ -92,8 +92,9 @@
 
 			workspaceStore.hydratePath(nativeWorkspace);
 			if (nativeWorkspace) {
-				workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+				const nativeRootId = await desktopHost.getCurrentWorkspaceRootId();
 				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
+				workspaceStore.hydrateRootId(nativeRootId);
 				await workspaceService.loadSubWorkspaces();
 				if (destroyed || !workspaceService.isTransitionCurrent(hydrationTransition)) return;
 				await workspaceService.loadTreeStructure();
@@ -109,7 +110,9 @@
 				// Hydrate the bookmark cache from the native trust pool. This is
 				// display-only metadata; the authoritative bookmark set lives in
 				// native and is refreshed after every mutation.
-				void bookmarkStore.refresh();
+				void bookmarkStore.refresh().catch((error) => {
+					console.error('Failed to hydrate bookmarks:', error);
+				});
 			}
 		}
 

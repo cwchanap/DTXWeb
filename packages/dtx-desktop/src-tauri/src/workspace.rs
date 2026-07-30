@@ -208,6 +208,7 @@ impl WorkspaceRootState {
         let _operation = self.lock_operation();
         let canonical = self.current()?;
         let path_string = canonical.to_string_lossy().into_owned();
+        let next_root = Some(canonical);
         let trimmed_name = name.trim();
         let final_name = if trimmed_name.is_empty() {
             basename(&path_string)
@@ -228,7 +229,7 @@ impl WorkspaceRootState {
             let changed = original_name != final_name;
             if changed {
                 bookmarks[idx].name = final_name.clone();
-                self.commit_locked(self.current_optional(), bookmarks)?;
+                self.commit_locked(next_root, bookmarks)?;
             }
             let name = if changed { final_name } else { original_name };
             return Ok(BookmarkRef { id, path, name });
@@ -244,7 +245,7 @@ impl WorkspaceRootState {
             path: path_string.clone(),
             name: final_name.clone(),
         });
-        self.commit_locked(self.current_optional(), bookmarks)?;
+        self.commit_locked(next_root, bookmarks)?;
         Ok(BookmarkRef {
             id,
             path: path_string,
@@ -254,6 +255,7 @@ impl WorkspaceRootState {
 
     pub(crate) fn rename_bookmark(&self, id: &str, name: &str) -> Result<()> {
         let _operation = self.lock_operation();
+        let next_root = self.current_optional();
         let mut bookmarks = self
             .bookmarks
             .read()
@@ -273,7 +275,7 @@ impl WorkspaceRootState {
             return Ok(());
         }
         entry.name = final_name;
-        self.commit_locked(self.current_optional(), bookmarks)?;
+        self.commit_locked(next_root, bookmarks)?;
         Ok(())
     }
 
@@ -281,6 +283,7 @@ impl WorkspaceRootState {
     /// unknown id succeeds without mutating state.
     pub(crate) fn remove_bookmark(&self, id: &str) -> Result<()> {
         let _operation = self.lock_operation();
+        let next_root = self.current_optional();
         let mut bookmarks = self
             .bookmarks
             .read()
@@ -291,7 +294,7 @@ impl WorkspaceRootState {
         if bookmarks.len() == before {
             return Ok(());
         }
-        self.commit_locked(self.current_optional(), bookmarks)?;
+        self.commit_locked(next_root, bookmarks)?;
         Ok(())
     }
 

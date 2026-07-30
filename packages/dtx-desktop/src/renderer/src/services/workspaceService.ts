@@ -101,6 +101,13 @@ const isWorkspaceSnapshotCurrent = (
 	);
 };
 
+const hydrateRootIdIfCurrent = async (transition: number): Promise<void> => {
+	const rootId = await desktopHost.getCurrentWorkspaceRootId();
+	if (workspaceService.isTransitionCurrent(transition)) {
+		workspaceStore.hydrateRootId(rootId);
+	}
+};
+
 const queueAuthoritativeWorkspaceReconciliation = (): void => {
 	void queueTrustTransition(
 		async (transition) => {
@@ -116,7 +123,7 @@ const queueAuthoritativeWorkspaceReconciliation = (): void => {
 				}
 
 				workspaceStore.setPath(authoritativeRoot);
-				workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+				await hydrateRootIdIfCurrent(transition);
 				if (!workspaceService.isTransitionCurrent(transition)) return;
 				await workspaceService.loadSubWorkspaces();
 				if (!workspaceService.isTransitionCurrent(transition)) return;
@@ -156,7 +163,7 @@ export const workspaceService = {
 					workspaceStore.reset();
 					restoreLoading(transition);
 					workspaceStore.setPath(selectedPath);
-					workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+					await hydrateRootIdIfCurrent(transition);
 					if (!workspaceService.isTransitionCurrent(transition)) return;
 
 					// Load sub-workspaces and tree structure in the selected directory
@@ -255,7 +262,7 @@ export const workspaceService = {
 					workspaceStore.reset();
 					restoreLoading(transition);
 					workspaceStore.setPath(selectedPath);
-					workspaceStore.hydrateRootId(await desktopHost.getCurrentWorkspaceRootId());
+					await hydrateRootIdIfCurrent(transition);
 					if (!workspaceService.isTransitionCurrent(transition)) {
 						return { ok: false, error: 'Workspace selection was superseded' };
 					}

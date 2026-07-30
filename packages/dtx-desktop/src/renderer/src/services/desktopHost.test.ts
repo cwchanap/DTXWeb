@@ -72,7 +72,7 @@ describe('desktopHost', () => {
 		expect(runtime.invoke).toHaveBeenNthCalledWith(2, 'clear_workspace_root');
 	});
 
-	it('maps setWorkspaceRoot to the Tauri command with the bookmark path', async () => {
+	it('maps switchTrustedWorkspace to the Tauri command with the bookmark id', async () => {
 		vi.mocked(runtime.invoke).mockResolvedValue({ outcome: 'ok', path: '/canonical' });
 
 		await desktopHost.switchTrustedWorkspace('bookmark-id');

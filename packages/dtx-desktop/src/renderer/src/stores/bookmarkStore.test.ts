@@ -90,6 +90,47 @@ describe('bookmarkStore', () => {
 		expect(get(bookmarkStore)).toEqual([]);
 	});
 
+	it('addCurrent resolves and applies the ref locally when refresh fails', async () => {
+		host.bookmarkCurrentRoot.mockResolvedValue({ id: 'new-id', path: '/foo', name: 'Foo' });
+		host.listBookmarks.mockRejectedValue(new Error('IPC transient failure'));
+
+		// Seed the store so we can verify the optimistic append preserves
+		// existing entries.
+		host.listBookmarks.mockResolvedValueOnce([{ id: 'old', path: '/old', name: 'Old' }]);
+		await bookmarkStore.refresh();
+
+		const ref = await bookmarkStore.addCurrent('Foo');
+
+		expect(ref).toEqual({ id: 'new-id', path: '/foo', name: 'Foo' });
+		expect(get(bookmarkStore)).toEqual([
+			{ id: 'old', path: '/old', name: 'Old' },
+			{ id: 'new-id', path: '/foo', name: 'Foo' }
+		]);
+	});
+
+	it('rename resolves and updates the local name when refresh fails', async () => {
+		host.listBookmarks.mockResolvedValueOnce([{ id: 'a', path: '/a', name: 'Alpha' }]);
+		await bookmarkStore.refresh();
+		host.listBookmarks.mockRejectedValue(new Error('IPC transient failure'));
+
+		await bookmarkStore.rename('a', 'Renamed');
+
+		expect(get(bookmarkStore)).toEqual([{ id: 'a', path: '/a', name: 'Renamed' }]);
+	});
+
+	it('remove resolves and drops the bookmark locally when refresh fails', async () => {
+		host.listBookmarks.mockResolvedValueOnce([
+			{ id: 'a', path: '/a', name: 'Alpha' },
+			{ id: 'b', path: '/b', name: 'Beta' }
+		]);
+		await bookmarkStore.refresh();
+		host.listBookmarks.mockRejectedValue(new Error('IPC transient failure'));
+
+		await bookmarkStore.remove('a');
+
+		expect(get(bookmarkStore)).toEqual([{ id: 'b', path: '/b', name: 'Beta' }]);
+	});
+
 	it('basename extracts the final path segment', () => {
 		expect(basename('/foo/bar/MySongs')).toBe('MySongs');
 		expect(basename('C:\\Users\\jack\\Songs')).toBe('Songs');

@@ -20,7 +20,7 @@ export const basename = (p: string): string => {
 };
 
 function createBookmarkStore() {
-	const { subscribe, set } = writable<WorkspaceBookmark[]>([]);
+	const { subscribe, set, update } = writable<WorkspaceBookmark[]>([]);
 
 	// Hydrates the cache from the native trust pool. Called at app startup and
 	// after every native bookmark mutation so the renderer never owns the
@@ -28,6 +28,18 @@ function createBookmarkStore() {
 	const refresh = async (): Promise<void> => {
 		const bookmarks = await desktopHost.listBookmarks();
 		set(bookmarks);
+	};
+
+	// Best-effort reconciliation after a successful native mutation. The
+	// authoritative change is already committed natively and applied to the
+	// local store optimistically; a refresh failure must not be reported as a
+	// mutation failure to callers.
+	const reconcile = async (): Promise<void> => {
+		try {
+			await refresh();
+		} catch {
+			// best-effort — the local store already reflects the mutation
+		}
 	};
 
 	return {
@@ -39,16 +51,25 @@ function createBookmarkStore() {
 		// when the operation cannot complete.
 		addCurrent: async (name?: string): Promise<WorkspaceBookmark> => {
 			const ref = await desktopHost.bookmarkCurrentRoot(name ?? '');
-			await refresh();
+			// Apply the new bookmark to the local store immediately so the
+			// renderer reflects it even if the reconciliation refresh fails.
+			update((bookmarks) =>
+				bookmarks.some((b) => b.id === ref.id)
+					? bookmarks
+					: [...bookmarks, { id: ref.id, path: ref.path, name: ref.name }]
+			);
+			await reconcile();
 			return ref;
 		},
 		rename: async (id: string, name: string): Promise<void> => {
 			await desktopHost.renameBookmark(id, name);
-			await refresh();
+			update((bookmarks) => bookmarks.map((b) => (b.id === id ? { ...b, name } : b)));
+			await reconcile();
 		},
 		remove: async (id: string): Promise<void> => {
 			await desktopHost.removeBookmark(id);
-			await refresh();
+			update((bookmarks) => bookmarks.filter((b) => b.id !== id));
+			await reconcile();
 		}
 	};
 }

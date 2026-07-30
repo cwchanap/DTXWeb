@@ -159,6 +159,7 @@ impl WorkspaceRootState {
     }
 
     pub(crate) fn set_from_dialog_selection(&self, selected: &Path) -> Result<PathBuf> {
+        let _operation = self.lock_operation();
         let canonical = canonical_workspace_directory(selected).ok_or_else(|| {
             DesktopError::Message(
                 "The selected workspace must be an accessible directory".to_string(),
@@ -169,21 +170,20 @@ impl WorkspaceRootState {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        self.commit(Some(canonical.clone()), bookmarks)?;
+        self.commit_locked(Some(canonical.clone()), bookmarks)?;
         Ok(canonical)
     }
 
     /// Switches the trusted root to a previously-bookmarked root identified
     /// only by its opaque native id. The renderer never supplies a path here.
     pub(crate) fn switch_to_bookmark(&self, id: &str) -> Result<SwitchOutcome> {
-        let bookmark = self
+        let _operation = self.lock_operation();
+        let bookmarks = self
             .bookmarks
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .iter()
-            .find(|bookmark| bookmark.id == id)
-            .cloned();
-        let Some(bookmark) = bookmark else {
+            .clone();
+        let Some(bookmark) = bookmarks.iter().find(|b| b.id == id).cloned() else {
             return Ok(SwitchOutcome::UnknownId);
         };
 
@@ -194,12 +194,7 @@ impl WorkspaceRootState {
             });
         };
 
-        let bookmarks = self
-            .bookmarks
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .clone();
-        self.commit(Some(canonical.clone()), bookmarks)?;
+        self.commit_locked(Some(canonical.clone()), bookmarks)?;
         Ok(SwitchOutcome::Ok {
             path: canonical.to_string_lossy().into_owned(),
         })
@@ -210,6 +205,7 @@ impl WorkspaceRootState {
     /// name is updated and returned. The native id is generated here and never
     /// supplied by the renderer.
     pub(crate) fn bookmark_current_root(&self, name: &str) -> Result<BookmarkRef> {
+        let _operation = self.lock_operation();
         let canonical = self.current()?;
         let path_string = canonical.to_string_lossy().into_owned();
         let trimmed_name = name.trim();
@@ -232,7 +228,7 @@ impl WorkspaceRootState {
             let changed = original_name != final_name;
             if changed {
                 bookmarks[idx].name = final_name.clone();
-                self.commit(self.current_optional(), bookmarks)?;
+                self.commit_locked(self.current_optional(), bookmarks)?;
             }
             let name = if changed { final_name } else { original_name };
             return Ok(BookmarkRef { id, path, name });
@@ -248,7 +244,7 @@ impl WorkspaceRootState {
             path: path_string.clone(),
             name: final_name.clone(),
         });
-        self.commit(self.current_optional(), bookmarks)?;
+        self.commit_locked(self.current_optional(), bookmarks)?;
         Ok(BookmarkRef {
             id,
             path: path_string,
@@ -257,6 +253,7 @@ impl WorkspaceRootState {
     }
 
     pub(crate) fn rename_bookmark(&self, id: &str, name: &str) -> Result<()> {
+        let _operation = self.lock_operation();
         let mut bookmarks = self
             .bookmarks
             .read()
@@ -276,13 +273,14 @@ impl WorkspaceRootState {
             return Ok(());
         }
         entry.name = final_name;
-        self.commit(self.current_optional(), bookmarks)?;
+        self.commit_locked(self.current_optional(), bookmarks)?;
         Ok(())
     }
 
     /// Removes a bookmark from the native trust pool. Idempotent: removing an
     /// unknown id succeeds without mutating state.
     pub(crate) fn remove_bookmark(&self, id: &str) -> Result<()> {
+        let _operation = self.lock_operation();
         let mut bookmarks = self
             .bookmarks
             .read()
@@ -293,7 +291,7 @@ impl WorkspaceRootState {
         if bookmarks.len() == before {
             return Ok(());
         }
-        self.commit(self.current_optional(), bookmarks)?;
+        self.commit_locked(self.current_optional(), bookmarks)?;
         Ok(())
     }
 
@@ -311,24 +309,39 @@ impl WorkspaceRootState {
     }
 
     pub(crate) fn clear(&self) -> Result<()> {
+        let _operation = self.lock_operation();
         let bookmarks = self
             .bookmarks
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        self.commit(None, bookmarks)
+        self.commit_locked(None, bookmarks)
     }
 
-    fn commit(&self, next_root: Option<PathBuf>, next_bookmarks: Vec<BookmarkEntry>) -> Result<()> {
+    /// Acquires the operation lock that serializes the full
+    /// read-modify-write transaction of every mutating operation. The lock
+    /// must be held before reading `root` or `bookmarks` and kept through
+    /// `commit_locked` so concurrent mutations cannot interleave and lose
+    /// each other's changes.
+    fn lock_operation(&self) -> std::sync::MutexGuard<'_, ()> {
         #[cfg(test)]
         self.run_test_hook(
             &self.before_operation_lock_hook,
             "operation-lock acquisition rendezvous",
         );
-        let _operation = self
-            .operation_lock
+        self.operation_lock
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Persists the next state and replaces both in-memory fields. The
+    /// caller must already hold `operation_lock` (via `lock_operation`); this
+    /// helper does not attempt to reacquire it.
+    fn commit_locked(
+        &self,
+        next_root: Option<PathBuf>,
+        next_bookmarks: Vec<BookmarkEntry>,
+    ) -> Result<()> {
         self.persist(next_root.as_deref(), &next_bookmarks)?;
         #[cfg(test)]
         self.run_test_hook(&self.post_persist_hook, "post-persist rendezvous");

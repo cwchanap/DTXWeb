@@ -10,6 +10,7 @@
 	let rootId = $state<string | null>(null);
 	let bookmarks = $state<WorkspaceBookmark[]>([]);
 	let addError = $state<string | null>(null);
+	let mutationError = $state<string | null>(null);
 	let bookmarkSwitchError = $state<{ message: string; id?: string } | null>(null);
 	let triggerEl = $state<HTMLButtonElement | null>(null);
 	let menuEl = $state<HTMLDivElement | null>(null);
@@ -26,6 +27,7 @@
 		}
 		isOpen = false;
 		addError = null;
+		mutationError = null;
 		bookmarkSwitchError = null;
 		if (options?.refocus !== false) {
 			queueMicrotask(() => triggerEl?.focus());
@@ -49,7 +51,8 @@
 	const handleBookmarkCurrent = async () => {
 		if (!currentPath) return;
 		try {
-			await bookmarkStore.addCurrent();
+			const ref = await bookmarkStore.addCurrent();
+			workspaceStore.hydrateRootId(ref.id);
 			addError = null;
 			closeDropdown();
 		} catch (error) {
@@ -135,20 +138,33 @@
 		editingValue = b.name;
 	};
 
-	const commitEditing = () => {
+	const commitEditing = async () => {
 		if (editingId === null) return;
 		const id = editingId;
 		const value = editingValue;
 		editingId = null;
-		void bookmarkStore.rename(id, value);
+		try {
+			await bookmarkStore.rename(id, value);
+		} catch (error) {
+			mutationError =
+				(error instanceof Error && error.message) || 'Could not rename bookmark';
+		}
 	};
 
 	const cancelEditing = () => {
 		editingId = null;
 	};
 
-	const handleRemove = (b: WorkspaceBookmark) => {
-		void bookmarkStore.remove(b.id);
+	const handleRemove = async (b: WorkspaceBookmark) => {
+		try {
+			await bookmarkStore.remove(b.id);
+			if (b.id === rootId) {
+				workspaceStore.hydrateRootId(null);
+			}
+		} catch (error) {
+			mutationError =
+				(error instanceof Error && error.message) || 'Could not remove bookmark';
+		}
 	};
 
 	const handleBrowse = () => {
@@ -215,6 +231,9 @@
 			{/if}
 			{#if addError}
 				<div class="text-red px-2 py-1 text-xs">{addError}</div>
+			{/if}
+			{#if mutationError}
+				<div class="text-red px-2 py-1 text-xs">{mutationError}</div>
 			{/if}
 			{#if bookmarkSwitchError}
 				<div class="border-red/40 bg-red/10 mx-2 my-1 rounded p-2 text-xs">

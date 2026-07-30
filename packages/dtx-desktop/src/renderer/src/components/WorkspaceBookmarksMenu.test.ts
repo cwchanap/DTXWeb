@@ -16,6 +16,10 @@ vi.mock('../stores/workspaceStore', () => {
 			setState: (next: Partial<typeof state>) => {
 				state = { ...state, ...next };
 				listeners.forEach((cb) => cb(state));
+			},
+			hydrateRootId: (rootId: string | null) => {
+				state = { ...state, rootId };
+				listeners.forEach((cb) => cb(state));
 			}
 		}
 	};
@@ -35,7 +39,11 @@ vi.mock('../stores/bookmarkStore', () => {
 				value = next;
 				listeners.forEach((cb) => cb(value));
 			},
-			addCurrent: vi.fn().mockResolvedValue(undefined),
+			addCurrent: vi.fn().mockResolvedValue({
+				id: 'bm-default',
+				path: '/foo/bar/MySongs',
+				name: 'MySongs'
+			}),
 			remove: vi.fn().mockResolvedValue(undefined),
 			rename: vi.fn().mockResolvedValue(undefined),
 			refresh: vi.fn().mockResolvedValue(undefined)
@@ -103,7 +111,11 @@ describe('WorkspaceBookmarksMenu', () => {
 
 		it('calls bookmarkStore.addCurrent and closes dropdown on click', async () => {
 			const { bookmarkStore } = await import('../stores/bookmarkStore');
-			(bookmarkStore.addCurrent as any).mockResolvedValue(undefined);
+			(bookmarkStore.addCurrent as any).mockResolvedValue({
+				id: 'bm-1',
+				path: '/foo/bar/MySongs',
+				name: 'MySongs'
+			});
 
 			render(WorkspaceBookmarksMenu);
 			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
@@ -561,6 +573,88 @@ describe('WorkspaceBookmarksMenu', () => {
 
 			expect(screen.getByText(/failed to load workspace tree/i)).toBeInTheDocument();
 			expect(screen.queryByRole('button', { name: /remove bookmark/i })).toBeNull();
+		});
+	});
+
+	describe('rootId hydration after mutations', () => {
+		it('after bookmarking, reopening the menu shows the bookmarked state', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			const ref = { id: 'bm-new', path: '/foo/bar/MySongs', name: 'MySongs' };
+			(bookmarkStore.addCurrent as any).mockImplementation(async () => {
+				(bookmarkStore as any).setValue([ref]);
+				return ref;
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(
+				screen.getByRole('menuitem', { name: /bookmark this folder/i })
+			).toBeInTheDocument();
+
+			await fireEvent.click(screen.getByRole('menuitem', { name: /bookmark this folder/i }));
+
+			// Reopen the menu — rootId should now be hydrated from the ref.
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(screen.getByText(/bookmarked as mysongs/i)).toBeInTheDocument();
+			expect(screen.queryByRole('menuitem', { name: /bookmark this folder/i })).toBeNull();
+		});
+
+		it('after removing the active bookmark, the menu shows Bookmark this folder', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([
+				{ id: 'bm-active', path: '/foo/bar/MySongs', name: 'Active' }
+			]);
+			(workspaceStore as any).setState({ path: '/foo/bar/MySongs', rootId: 'bm-active' });
+			(bookmarkStore.remove as any).mockImplementation(async () => {
+				(bookmarkStore as any).setValue([]);
+			});
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			expect(screen.getByText(/bookmarked as active/i)).toBeInTheDocument();
+
+			await fireEvent.click(screen.getByRole('button', { name: /remove active/i }));
+
+			await vi.waitFor(() => {
+				expect(
+					screen.getByRole('menuitem', { name: /bookmark this folder/i })
+				).toBeInTheDocument();
+			});
+			expect(screen.queryByText(/bookmarked as active/i)).toBeNull();
+		});
+	});
+
+	describe('rename and remove error handling', () => {
+		it('surfaces a mutation error when rename rejects', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
+			(bookmarkStore.rename as any).mockRejectedValue(new Error('Native persistence failed'));
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /rename alpha/i }));
+
+			const input = screen.getByRole('textbox', { name: /rename alpha/i });
+			await fireEvent.input(input, { target: { value: 'Renamed' } });
+			await fireEvent.keyDown(input, { key: 'Enter' });
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Native persistence failed')).toBeInTheDocument();
+			});
+		});
+
+		it('surfaces a mutation error when remove rejects', async () => {
+			const { bookmarkStore } = await import('../stores/bookmarkStore');
+			(bookmarkStore as any).setValue([{ id: 'a', path: '/a', name: 'Alpha' }]);
+			(bookmarkStore.remove as any).mockRejectedValue(new Error('Permission denied'));
+
+			render(WorkspaceBookmarksMenu);
+			await fireEvent.click(screen.getByRole('button', { name: /workspace menu/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /remove alpha/i }));
+
+			await vi.waitFor(() => {
+				expect(screen.getByText('Permission denied')).toBeInTheDocument();
+			});
 		});
 	});
 });

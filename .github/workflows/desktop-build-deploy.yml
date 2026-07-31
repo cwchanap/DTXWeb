@@ -43,6 +43,8 @@ on:
 
 jobs:
   build-windows:
+    permissions:
+      contents: read
     name: Windows Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: windows-latest
@@ -190,6 +192,8 @@ jobs:
           retention-days: 5
 
   build-mac:
+    permissions:
+      contents: read
     name: macOS Tauri Build
     if: github.event_name != 'pull_request' || github.head_ref != 'preview'
     runs-on: macos-latest
@@ -310,6 +314,8 @@ jobs:
           retention-days: 5
 
   deploy:
+    permissions:
+      contents: write
     name: Deploy to Cloudflare R2
     needs: [build-windows, build-mac]
     runs-on: ubuntu-latest

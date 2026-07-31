@@ -8,9 +8,7 @@ const config: CodegenConfig = {
 			plugins: ['typescript-operations', 'typed-document-node'],
 			config: {
 				avoidOptionals: {
-					field: true,
 					inputValue: false,
-					object: false,
 					defaultValue: true
 				},
 				skipTypename: true,

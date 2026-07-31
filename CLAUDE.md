@@ -51,6 +51,8 @@ bun run --filter=dtx-web codegen      # Regenerate src/lib/api/generated/ after 
 bun run --filter=dtx-api gen-schema   # Regenerate the GraphQL schema from the API
 ```
 
+> **CI codegen sequence**: `lint-and-format.yml` regenerates the schema before verifying the client — it runs `bun run --filter=dtx-api gen-schema` (step "Generate GraphQL schema") and then `bun run --filter=dtx-web lint:codegen` (step "Verify generated GraphQL client"). `lint:codegen` runs `codegen` and then fails if `src/lib/api/generated/` has uncommitted changes, so when you change the API schema or any GraphQL operation, run `gen-schema` first (writes `packages/dtx-api/dist/schema.graphql`), then `codegen` (writes `packages/dtx-web/src/lib/api/generated/`), and commit both regenerated paths.
+
 ### Project-wide commands
 
 ```bash

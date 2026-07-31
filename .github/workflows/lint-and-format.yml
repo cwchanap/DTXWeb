@@ -32,8 +32,11 @@ jobs:
       - name: Build packages
         run: bun run --filter=@dtx/common build
 
-      - name: Generate GraphQL schema
-        run: bun run --filter=dtx-api gen-schema
+      - name: Generate and verify GraphQL schema
+        run: |
+          bun run --filter=dtx-api gen-schema
+          git ls-files --error-unmatch -- packages/dtx-api/dist/schema.graphql
+          git diff --exit-code -- packages/dtx-api/dist/schema.graphql
 
       - name: Verify generated GraphQL client
         run: bun run --filter=dtx-web lint:codegen

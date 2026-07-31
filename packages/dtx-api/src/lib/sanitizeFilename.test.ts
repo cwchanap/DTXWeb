@@ -66,6 +66,11 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('file\x01\x02name.wav')).toBe('filename.wav');
 	});
 
+	it('removes traversal sequences exposed by control-character removal', () => {
+		expect(sanitizeFilename('.\x00./secret.txt')).toBe('secret.txt');
+		expect(sanitizeFilename('audio/.\x01./song.wav')).toBe('audio/song.wav');
+	});
+
 	it('removes DEL character (0x7f)', () => {
 		expect(sanitizeFilename('file\x7fname.wav')).toBe('filename.wav');
 	});

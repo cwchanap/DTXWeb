@@ -3,6 +3,10 @@
 export const sanitizeFilename = (filename: string): string => {
 	let sanitized = filename;
 
+	// Remove control characters before path traversal checks because their removal can join segments.
+	// eslint-disable-next-line no-control-regex
+	sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
+
 	// Iteratively remove path traversal sequences until the string stabilizes.
 	let previousSanitized: string;
 	do {
@@ -19,10 +23,6 @@ export const sanitizeFilename = (filename: string): string => {
 
 	// Normalize path separators to forward slash for consistency
 	sanitized = sanitized.replace(/\\/g, '/');
-
-	// Remove null bytes, control characters, and DEL
-	// eslint-disable-next-line no-control-regex
-	sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
 
 	// Truncate to reasonable max length (1024 chars for S3/object storage compatibility)
 	const MAX_LENGTH = 1024;

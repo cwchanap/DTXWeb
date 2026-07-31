@@ -10,7 +10,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"codegen": "graphql-codegen --config codegen.ts",
-		"lint:codegen": "bun run codegen && git diff --exit-code -- src/lib/api/generated/ && test -z \"$(git ls-files --others --exclude-standard -- src/lib/api/generated/)\"",
+		"lint:codegen": "bun run codegen && git ls-files --error-unmatch -- src/lib/api/generated/graphql.ts && git diff --exit-code -- src/lib/api/generated/",
 		"test": "vitest --run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest --run --coverage",

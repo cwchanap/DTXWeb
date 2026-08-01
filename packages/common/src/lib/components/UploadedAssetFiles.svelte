@@ -311,6 +311,7 @@
 					status: 'new' as const,
 					userFile
 				});
+			});
 		}
 
 		return merged;

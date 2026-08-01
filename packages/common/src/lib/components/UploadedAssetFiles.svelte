@@ -134,7 +134,12 @@
 
 		// Only HTTP(S) bucket origins may reach an anchor href. Parsing first and
 		// positively allowlisting the protocol prevents executable URL schemes.
-		const url = new URL(simfileBucketUrl);
+		let url: URL;
+		try {
+			url = new URL(simfileBucketUrl);
+		} catch {
+			return null;
+		}
 		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
 			return null;
 		}

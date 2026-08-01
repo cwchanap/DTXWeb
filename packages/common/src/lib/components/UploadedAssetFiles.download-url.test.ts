@@ -56,4 +56,23 @@ describe('UploadedAssetFiles download URL validation', () => {
 			expect(screen.queryByTitle('Download file')).not.toBeInTheDocument();
 		});
 	});
+
+	it.each([
+		['non-empty placeholder from .env.example', 'my_awesome_simfile_bucket_url'],
+		['protocol-only string', 'https://'],
+		['whitespace-only string', '   ']
+	])('hides the download link for a malformed bucket URL (%s)', async (_label, bucketUrl) => {
+		render(UploadedAssetFiles, {
+			props: {
+				simfileId: 'sim-1',
+				simfileBucketUrl: bucketUrl,
+				loadAssetFiles: vi.fn().mockResolvedValue([cloudFile])
+			}
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText('snare#1.wav')).toBeInTheDocument();
+			expect(screen.queryByTitle('Download file')).not.toBeInTheDocument();
+		});
+	});
 });

@@ -1,42 +1,27 @@
-// Iteratively strip path-traversal sequences and collapse dot-runs that could
-// resolve to traversal after separator normalization. Runs until stable.
-// Handles both forward and back slashes so it is valid before separator
-// normalization as well as after.
-const normalizeTraversal = (value: string): string => {
-	let result = value;
-	// Iteratively remove path traversal sequences until the string stabilizes.
-	let previous: string;
-	do {
-		previous = result;
-		result = result
-			.replace(/\.\.(?:\/|\\)/g, '')
-			.replace(/[/\\]\.\.$/, '')
-			.replace(/^[/\\]+/, '')
-			.replace(/[/\\]+$/, '');
-	} while (result !== previous);
-
-	// Collapse runs of dots followed by slashes (e.g., "....//" -> "")
-	result = result.replace(/\.{2,}([/\\]+)/g, '');
-	return result;
-};
+// Normalize separators and discard empty or dot-only path segments.
+// This avoids removal-based traversal sanitization, where deleting one
+// substring can expose a new dangerous sequence at the same boundary.
+const normalizePathSegments = (value: string): string =>
+	value
+		.replace(/\\/g, '/')
+		.split('/')
+		.filter((segment) => segment.length > 0 && !/^\.+$/.test(segment))
+		.join('/');
 
 // Helper function to sanitize filename for safe storage keys.
 // Preserves directory structure and non-ASCII characters while preventing path traversal.
 export const sanitizeFilename = (filename: string): string => {
 	let sanitized = filename;
 
-	// Remove control characters before path traversal checks because their removal can join segments.
+	// Remove control characters before segment parsing because their removal can join tokens.
 	// eslint-disable-next-line no-control-regex
 	sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
 
-	sanitized = normalizeTraversal(sanitized);
-
-	// Normalize path separators to forward slash for consistency
-	sanitized = sanitized.replace(/\\/g, '/');
+	// Parse the path structurally rather than deleting traversal substrings.
+	sanitized = normalizePathSegments(sanitized);
 
 	// Truncate to reasonable max length (1024 chars for S3/object storage compatibility).
-	// Truncation can create new dot-only path segments (e.g. "aaa/..x/bbb" sliced to
-	// "aaa/.."), so traversal normalization MUST run again afterwards.
+	// Truncation can create a new dot-only trailing segment, so segment parsing runs again below.
 	const MAX_LENGTH = 1024;
 	if (sanitized.length > MAX_LENGTH) {
 		const lastSlash = sanitized.lastIndexOf('/');
@@ -55,30 +40,11 @@ export const sanitizeFilename = (filename: string): string => {
 		}
 	}
 
-	// Re-normalize after truncation: slicing can expose a trailing "/.." or "/."
-	// segment that wasn't present before the cut.
-	sanitized = normalizeTraversal(sanitized);
+	// Re-parse after truncation so newly exposed empty or dot-only segments cannot survive.
+	sanitized = normalizePathSegments(sanitized);
 
-	// Final guard: drop any remaining "." or ".." segments introduced by a
-	// transformation that changed segment boundaries. encodeURIComponent leaves
-	// "." and ".." untouched, so URL canonicalization would otherwise resolve
-	// them as directory traversal against the public bucket.
-	sanitized = sanitized
-		.split('/')
-		.filter((segment) => segment !== '.' && segment !== '..')
-		.join('/');
-
-	// Re-trim separators after the segment filter. Removing a leading or
-	// trailing "." / ".." segment leaves an adjacent empty segment, which
-	// join('/') turns back into a leading or trailing slash (e.g. ".//song"
-	// -> "/song", "folder//." -> "folder/"). That violates the sanitizer's
-	// no-leading/trailing-separator contract and, at the upload caller, also
-	// makes catalog discovery misclassify a top-level file as nested because
-	// the portion after the `${simfileId}/` prefix still contains a slash.
-	sanitized = normalizeTraversal(sanitized);
-
-	// Fallback if result is empty or just dots/slashes
-	if (!sanitized || /^[./\\_-]*$/.test(sanitized)) {
+	// Fallback if result is empty or contains no usable filename characters.
+	if (!sanitized || /^[._-]*$/.test(sanitized)) {
 		sanitized = `file_${Date.now()}`;
 	}
 

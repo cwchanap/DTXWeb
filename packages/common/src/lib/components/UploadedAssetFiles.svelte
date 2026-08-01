@@ -120,7 +120,7 @@
 		return dayjs(dateString).format('YYYY-MM-DD HH:mm');
 	}
 
-	function getDownloadUrl(key: string): string {
+	function getDownloadUrl(key: string): string | null {
 		const keySegments = key
 			.split('/')
 			.filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
@@ -132,9 +132,13 @@
 			return `/${keySegments.join('/')}`;
 		}
 
-		// Parse the configured web origin before appending untrusted key data so
-		// host, credentials, query, and fragment cannot be affected by the key.
+		// Only HTTP(S) bucket origins may reach an anchor href. Parsing first and
+		// positively allowlisting the protocol prevents executable URL schemes.
 		const url = new URL(simfileBucketUrl);
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+			return null;
+		}
+
 		const baseSegments = url.pathname.split('/').filter(Boolean);
 		url.pathname = `/${[...baseSegments, ...keySegments].join('/')}`;
 		return url.toString();
@@ -474,15 +478,22 @@
 										{/if}
 										<td class="px-4 py-2 text-center">
 											{#if file.source === 'cloud' && file.key}
-												<a
-													href={getDownloadUrl(file.key)}
-													target="_blank"
-													download={file.name}
-													class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-800/60"
-													title="Download file"
-												>
-													<DownloadCloud />
-												</a>
+												{@const downloadUrl = getDownloadUrl(file.key)}
+												{#if downloadUrl}
+													<a
+														href={downloadUrl}
+														target="_blank"
+														download={file.name}
+														class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-800/60"
+														title="Download file"
+													>
+														<DownloadCloud />
+													</a>
+												{:else}
+													<span class="text-gray-400 dark:text-slate-500"
+														>-</span
+													>
+												{/if}
 											{:else}
 												<span class="text-gray-400 dark:text-slate-500"
 													>-</span

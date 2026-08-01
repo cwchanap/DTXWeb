@@ -487,7 +487,7 @@
 												<span class="text-gray-400 dark:text-slate-500"
 													>-</span
 												>
-												{/if}
+											{/if}
 										</td>
 									</tr>
 								{/each}

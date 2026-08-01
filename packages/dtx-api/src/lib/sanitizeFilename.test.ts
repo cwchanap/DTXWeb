@@ -149,6 +149,17 @@ describe('sanitizeFilename', () => {
 		expect(result.endsWith('/')).toBe(false);
 	});
 
+	it('preserves a multi-segment dot/underscore/hyphen path rather than falling back to file_<timestamp>', () => {
+		// The fallback regex /^[._-]*$/ matches strings made only of '.', '_', '-'.
+		// A multi-segment path separated by real slashes contains '/' and so must NOT
+		// match the fallback — each segment keeps its non-traversal characters and the
+		// joined result is preserved instead of being replaced with `file_<timestamp>`.
+		const input = '._-/_-.';
+		const result = sanitizeFilename(input);
+		expect(result).toBe('._-/_-.');
+		expect(result).not.toMatch(/^file_\d+$/);
+	});
+
 	it('preserves complex directory structures with DTX-style paths', () => {
 		expect(sanitizeFilename('graphics/jacket.png')).toBe('graphics/jacket.png');
 		expect(sanitizeFilename('sound/snare.wav')).toBe('sound/snare.wav');

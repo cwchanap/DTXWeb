@@ -96,6 +96,42 @@ describe('sanitizeFilename', () => {
 		expect(result.endsWith('.wav')).toBe(true);
 	});
 
+	it('re-normalizes traversal after truncation exposes a trailing ".." segment', () => {
+		// Length 1045 > 1024. "..x/" is not a traversal segment before truncation
+		// (the dots are followed by "x", not a slash), so the pre-truncation loop
+		// leaves it intact. Slicing to 1024 cuts at "aaa/.." and would return a
+		// trailing "/.." segment without a final normalization pass.
+		const input = 'a'.repeat(1021) + '/..x/' + 'b'.repeat(20);
+		const result = sanitizeFilename(input);
+		expect(result.length).toBeLessThanOrEqual(1024);
+		// No path segment may resolve to parent-directory traversal.
+		const segments = result.split('/');
+		expect(segments).not.toContain('..');
+		expect(segments).not.toContain('.');
+		// The trailing "/.." must have been stripped, leaving the leading dir.
+		expect(result).toBe('a'.repeat(1021));
+	});
+
+	it('drops a trailing "." segment exposed by truncation', () => {
+		// Slicing to 1024 cuts at "aaa/." producing a trailing "/." segment.
+		const input = 'a'.repeat(1023) + '/.x' + 'b'.repeat(20);
+		const result = sanitizeFilename(input);
+		expect(result.length).toBeLessThanOrEqual(1024);
+		const segments = result.split('/');
+		expect(segments).not.toContain('.');
+		expect(segments).not.toContain('..');
+		expect(result).toBe('a'.repeat(1023));
+	});
+
+	it('drops single-dot segments the traversal regex loop does not match', () => {
+		// The regex loop only matches ".." (two dots). A single "." segment such as
+		// "foo/./bar" passes through it unchanged; the final segment guard must drop it
+		// so URL canonicalization does not collapse "/./" against the public bucket.
+		expect(sanitizeFilename('foo/./bar')).toBe('foo/bar');
+		expect(sanitizeFilename('./foo')).toBe('foo');
+		expect(sanitizeFilename('foo/.')).toBe('foo');
+	});
+
 	it('preserves complex directory structures with DTX-style paths', () => {
 		expect(sanitizeFilename('graphics/jacket.png')).toBe('graphics/jacket.png');
 		expect(sanitizeFilename('sound/snare.wav')).toBe('sound/snare.wav');

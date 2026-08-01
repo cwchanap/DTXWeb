@@ -476,12 +476,28 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
 
+      # Publish the fully-staged asset directory (build artifacts + latest.json)
+      # as a workflow artifact so the tag-only release job can attach exactly
+      # what was published to R2 — including the updater manifest, which the
+      # release job cannot reconstruct on its own. Gated to tags because the
+      # release job only runs on tag pushes; main-push continuous releases do
+      # not need a GitHub release.
+      - name: Upload Release Assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets
+          path: dist/artifacts/all/
+          retention-days: 5
+
   # GitHub release creation is split into its own tag-only job so the
   # `contents: write` permission is scoped to the single step that needs it
   # (softprops/action-gh-release). The R2 deploy job above runs with only
   # `contents: read`, limiting supply-chain exposure across checkout, artifact
   # processing, and the dynamically installed wrangler package. The release
-  # job runs only on tag pushes and re-downloads the build artifacts directly.
+  # job runs only on tag pushes and consumes the staged release-assets
+  # artifact (build artifacts + latest.json) produced by the deploy job, so it
+  # does not duplicate manifest generation or re-stage platform artifacts.
   release:
     permissions:
       contents: write
@@ -496,17 +512,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download Windows Artifacts
+      - name: Download Release Assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: tauri-app-win
-          path: dist/artifacts/win
-
-      - name: Download macOS Artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: tauri-app-mac
-          path: dist/artifacts/mac
+          name: release-assets
+          path: dist/artifacts/all
 
       - name: Set Release Version
         env:
@@ -526,15 +536,6 @@ jobs:
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
         shell: bash
-
-      - name: Stage Release Assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist/artifacts/all
-          cp dist/artifacts/win/* dist/artifacts/all/ 2>/dev/null || true
-          cp dist/artifacts/mac/* dist/artifacts/all/ 2>/dev/null || true
-          ls -la dist/artifacts/all/
 
       - name: Create Release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2

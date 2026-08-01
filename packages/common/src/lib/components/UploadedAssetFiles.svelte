@@ -488,6 +488,7 @@
 													<a
 														href={downloadUrl}
 														target="_blank"
+														rel="noopener noreferrer"
 														download={file.name}
 														class="inline-flex items-center rounded-full bg-blue-100 p-2 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:hover:bg-blue-800/60"
 														title="Download file"

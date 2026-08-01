@@ -68,6 +68,15 @@ export const sanitizeFilename = (filename: string): string => {
 		.filter((segment) => segment !== '.' && segment !== '..')
 		.join('/');
 
+	// Re-trim separators after the segment filter. Removing a leading or
+	// trailing "." / ".." segment leaves an adjacent empty segment, which
+	// join('/') turns back into a leading or trailing slash (e.g. ".//song"
+	// -> "/song", "folder//." -> "folder/"). That violates the sanitizer's
+	// no-leading/trailing-separator contract and, at the upload caller, also
+	// makes catalog discovery misclassify a top-level file as nested because
+	// the portion after the `${simfileId}/` prefix still contains a slash.
+	sanitized = normalizeTraversal(sanitized);
+
 	// Fallback if result is empty or just dots/slashes
 	if (!sanitized || /^[./\\_-]*$/.test(sanitized)) {
 		sanitized = `file_${Date.now()}`;

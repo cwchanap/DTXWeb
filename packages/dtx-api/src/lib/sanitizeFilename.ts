@@ -1,12 +1,37 @@
-// Normalize separators and discard empty or dot-only path segments.
-// This avoids removal-based traversal sanitization, where deleting one
-// substring can expose a new dangerous sequence at the same boundary.
-const normalizePathSegments = (value: string): string =>
-	value
-		.replace(/\\/g, '/')
-		.split('/')
-		.filter((segment) => segment.length > 0 && !/^\.+$/.test(segment))
-		.join('/');
+// Normalize separators and discard empty or traversal-only path segments.
+// This avoids removal-based sanitization, where deleting one substring can
+// expose a new dangerous sequence at the same boundary.
+const normalizePathSegments = (value: string): string => {
+	const rawSegments = value.replace(/\\/g, '/').split('/');
+	const normalized: string[] = [];
+	let safeDotPrefix = '';
+
+	for (let index = 0; index < rawSegments.length; index++) {
+		const segment = rawSegments[index];
+		if (!segment) {
+			safeDotPrefix = '';
+			continue;
+		}
+
+		if (/^\.+$/.test(segment)) {
+			// Exact dot segments are traversal syntax and are discarded. Longer
+			// dot runs followed by one separator retain only their non-traversal
+			// remainder as a prefix on the next filename segment ("..../x" -> "..x").
+			// A repeated separator clears that prefix ("....//x" -> "x").
+			if (segment.length > 2 && rawSegments[index + 1]) {
+				safeDotPrefix = segment.slice(2);
+			} else {
+				safeDotPrefix = '';
+			}
+			continue;
+		}
+
+		normalized.push(safeDotPrefix + segment);
+		safeDotPrefix = '';
+	}
+
+	return normalized.join('/');
+};
 
 // Helper function to sanitize filename for safe storage keys.
 // Preserves directory structure and non-ASCII characters while preventing path traversal.

@@ -121,16 +121,21 @@
 	}
 
 	function getDownloadUrl(key: string): string {
-		// Parse the configured origin before appending untrusted key data. This
-		// avoids treating the URL as a string-based sanitization problem and keeps
-		// the host, credentials, query, and fragment outside the key-controlled path.
-		const url = new URL(simfileBucketUrl);
-		const baseSegments = url.pathname.split('/').filter(Boolean);
 		const keySegments = key
 			.split('/')
 			.filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
 			.map(encodeURIComponent);
 
+		// Desktop intentionally omits a public bucket origin. Preserve its
+		// existing root-relative download path while still encoding each segment.
+		if (!simfileBucketUrl) {
+			return `/${keySegments.join('/')}`;
+		}
+
+		// Parse the configured web origin before appending untrusted key data so
+		// host, credentials, query, and fragment cannot be affected by the key.
+		const url = new URL(simfileBucketUrl);
+		const baseSegments = url.pathname.split('/').filter(Boolean);
 		url.pathname = `/${[...baseSegments, ...keySegments].join('/')}`;
 		return url.toString();
 	}
@@ -155,7 +160,7 @@
 		selectedFiles = new Set(selectedFiles);
 
 		if (checked) {
-			// Select all files that have userFile property (new or replacing)
+			// Select all files that have a userFile property (new or replacing)
 			for (const file of mergedFiles) {
 				if (file.userFile) {
 					selectedFiles.add(file.name);
@@ -306,7 +311,6 @@
 					status: 'new' as const,
 					userFile
 				});
-			});
 		}
 
 		return merged;
@@ -482,7 +486,7 @@
 												<span class="text-gray-400 dark:text-slate-500"
 													>-</span
 												>
-											{/if}
+												{/if}
 										</td>
 									</tr>
 								{/each}

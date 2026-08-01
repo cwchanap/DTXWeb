@@ -71,6 +71,13 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('audio/.\x01./song.wav')).toBe('audio/song.wav');
 	});
 
+	it('removes Windows-style backslash traversal sequences exposed by control-character removal', () => {
+		// ".\x00.\" collapses to "..\" after control-char stripping, which the iterative loop removes.
+		expect(sanitizeFilename('.\x00.\\secret.txt')).toBe('secret.txt');
+		expect(sanitizeFilename('audio\\.\x01.\\song.wav')).toBe('audio/song.wav');
+		expect(sanitizeFilename('..\\.\x00.\\secret.txt')).toBe('secret.txt');
+	});
+
 	it('removes DEL character (0x7f)', () => {
 		expect(sanitizeFilename('file\x7fname.wav')).toBe('filename.wav');
 	});

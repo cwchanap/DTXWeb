@@ -121,17 +121,18 @@
 	}
 
 	function getDownloadUrl(key: string): string {
-		// Encode each path segment at the URL-construction boundary. The key
-		// originates from the API (which stores the sanitizeFilename() output
-		// beneath the simfile prefix), and sanitizeFilename does NOT decode
-		// percent-encoding — so a key like `%2e%2e/secret.txt` passes through
-		// unchanged. Interpolating it raw lets browser URL canonicalization
-		// decode `%2e` to `.` and resolve `..` out of the simfile prefix.
-		// encodeURIComponent encodes the `%` to `%25`, so the browser treats
-		// `%2e%2e` as a literal segment rather than a traversal. Matches the
-		// API's R2 URL construction (toPublicUrl / cache-purge encoding).
-		const base = simfileBucketUrl.replace(/\/+$/, '');
-		return `${base}/${key.split('/').map(encodeURIComponent).join('/')}`;
+		// Parse the configured origin before appending untrusted key data. This
+		// avoids treating the URL as a string-based sanitization problem and keeps
+		// the host, credentials, query, and fragment outside the key-controlled path.
+		const url = new URL(simfileBucketUrl);
+		const baseSegments = url.pathname.split('/').filter(Boolean);
+		const keySegments = key
+			.split('/')
+			.filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
+			.map(encodeURIComponent);
+
+		url.pathname = `/${[...baseSegments, ...keySegments].join('/')}`;
+		return url.toString();
 	}
 
 	// Toggle selection of a file
@@ -154,7 +155,7 @@
 		selectedFiles = new Set(selectedFiles);
 
 		if (checked) {
-			// Select all files that have a userFile property (new or replacing)
+			// Select all files that have userFile property (new or replacing)
 			for (const file of mergedFiles) {
 				if (file.userFile) {
 					selectedFiles.add(file.name);

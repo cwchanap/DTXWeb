@@ -121,7 +121,17 @@
 	}
 
 	function getDownloadUrl(key: string): string {
-		return `${simfileBucketUrl}/${key}`;
+		// Encode each path segment at the URL-construction boundary. The key
+		// originates from the API (which stores the sanitizeFilename() output
+		// beneath the simfile prefix), and sanitizeFilename does NOT decode
+		// percent-encoding — so a key like `%2e%2e/secret.txt` passes through
+		// unchanged. Interpolating it raw lets browser URL canonicalization
+		// decode `%2e` to `.` and resolve `..` out of the simfile prefix.
+		// encodeURIComponent encodes the `%` to `%25`, so the browser treats
+		// `%2e%2e` as a literal segment rather than a traversal. Matches the
+		// API's R2 URL construction (toPublicUrl / cache-purge encoding).
+		const base = simfileBucketUrl.replace(/\/+$/, '');
+		return `${base}/${key.split('/').map(encodeURIComponent).join('/')}`;
 	}
 
 	// Toggle selection of a file

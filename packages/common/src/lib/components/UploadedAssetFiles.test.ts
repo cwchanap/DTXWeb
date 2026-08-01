@@ -122,6 +122,54 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
+	it('encodes each key segment in download URLs (special chars, spaces, non-ASCII)', async () => {
+		const loadAssetFiles = vi.fn().mockResolvedValue([
+			{
+				fileName: 'snare#1.wav',
+				size: 100,
+				lastModified: '2024-01-01T00:00:00Z',
+				key: 'songs/1/snare#1.wav'
+			}
+		]);
+		render(UploadedAssetFiles, { props: makeProps({ simfileId: 'sim-1', loadAssetFiles }) });
+		await waitFor(() => {
+			const link = screen.getByTitle('Download file');
+			// `#` must be encoded to %23, else the browser treats it as a URL fragment.
+			expect(link).toHaveAttribute('href', 'https://cdn.example.com/songs/1/snare%231.wav');
+		});
+	});
+
+	it('defeats percent-encoded path-traversal keys in download URLs', async () => {
+		// sanitizeFilename does not decode percent-encoding, so a stored key of
+		// `%2e%2e/secret.dtx` reaches the UI unchanged. The download URL must
+		// encode the `%` to `%25` so the browser treats `%2e%2e` as a literal
+		// segment instead of decoding it to `..` and escaping the simfile prefix.
+		const cases = [
+			{ key: '%2e%2e/secret.dtx', expected: '%252e%252e' },
+			{ key: '.%2e/secret.dtx', expected: '.%252e' },
+			{ key: '%2E%2E/secret.dtx', expected: '%252E%252E' } // mixed-case encoding
+		];
+		for (const { key, expected } of cases) {
+			const loadAssetFiles = vi
+				.fn()
+				.mockResolvedValue([
+					{ fileName: 'secret.dtx', size: 100, lastModified: '2024-01-01T00:00:00Z', key }
+				]);
+			const { unmount } = render(UploadedAssetFiles, {
+				props: makeProps({ simfileId: 'sim-1', loadAssetFiles })
+			});
+			await waitFor(() => {
+				const link = screen.getByTitle('Download file');
+				const href = link.getAttribute('href') ?? '';
+				// The traversal sequence is double-encoded (the `%` becomes `%25`),
+				// so the browser never decodes it back to `..`.
+				expect(href).toContain(expected);
+				expect(href).not.toMatch(/(?<!%25)\.\.(?=\/|$)/);
+			});
+			unmount();
+		}
+	});
+
 	it('shows error state when loadAssetFiles throws', async () => {
 		const loadAssetFiles = vi.fn().mockRejectedValue(new Error('Network failed'));
 		render(UploadedAssetFiles, {

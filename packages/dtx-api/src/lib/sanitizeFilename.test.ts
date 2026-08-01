@@ -132,6 +132,23 @@ describe('sanitizeFilename', () => {
 		expect(sanitizeFilename('foo/.')).toBe('foo');
 	});
 
+	it('re-trims separators after dropping dot segments adjacent to repeated slashes', () => {
+		// The final segment filter removes "." / ".." segments but preserves the
+		// empty segments next to them, so join('/') reintroduces a leading or
+		// trailing slash. A trailing normalizeTraversal pass must strip them.
+		expect(sanitizeFilename('.//song.dtx')).toBe('song.dtx');
+		expect(sanitizeFilename('...///song.dtx')).toBe('song.dtx');
+		expect(sanitizeFilename('folder//.')).toBe('folder');
+		expect(sanitizeFilename('./folder/.')).toBe('folder');
+		expect(sanitizeFilename('folder/./sub/.')).toBe('folder/sub');
+		// Leading/trailing separators must never survive sanitization, otherwise
+		// the upload caller builds keys like `42//song.dtx` and catalog discovery
+		// (r2Enrichment.isTopLevelKey) misclassifies a top-level file as nested.
+		const result = sanitizeFilename('.//song.dtx');
+		expect(result.startsWith('/')).toBe(false);
+		expect(result.endsWith('/')).toBe(false);
+	});
+
 	it('preserves complex directory structures with DTX-style paths', () => {
 		expect(sanitizeFilename('graphics/jacket.png')).toBe('graphics/jacket.png');
 		expect(sanitizeFilename('sound/snare.wav')).toBe('sound/snare.wav');

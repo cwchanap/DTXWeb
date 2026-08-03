@@ -1117,7 +1117,7 @@ dependencies = [
  "httpdate",
  "keyring",
  "png 0.18.1",
- "rand 0.8.7",
+ "rand 0.10.2",
  "reqwest 0.12.15",
  "rusqlite",
  "same-file",

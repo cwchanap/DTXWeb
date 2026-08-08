@@ -10,6 +10,7 @@
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
 	import { chartTitleHref, isPreviewable } from '$lib/components/ChartList.helpers';
+	import { createAudioPreview } from '$lib/audioPreview.svelte';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
@@ -35,6 +36,10 @@
 	const hasUploadedChart = $derived(item.id !== undefined && item.has_uploaded_files === true);
 	const previewable = $derived(isPreviewable(item));
 	const titleHref = $derived(chartTitleHref(item, isBlog));
+
+	const audio = createAudioPreview(() =>
+		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
+	);
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -280,7 +285,7 @@
 			{#if item.id !== undefined}
 				<ImageAudio
 					previewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'jpg')!}
-					soundPreviewUrl={buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')}
+					{audio}
 				/>
 			{:else}
 				<div

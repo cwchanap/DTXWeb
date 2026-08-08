@@ -19,7 +19,7 @@
 		imageError = false;
 	});
 
-	const controlVisible = $derived(audio.available);
+	const controlVisible = $derived(audio.isPlaying || audio.isLoading);
 	const controlLabel = $derived(
 		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
 	);

@@ -27,11 +27,21 @@ describe('ImageAudio', () => {
 		expect(screen.getByRole('img', { name: 'Preview' })).toBeInTheDocument();
 	});
 
-	it('renders the control when audio is available', () => {
+	it('omits the control when idle', () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio() } });
+		expect(screen.queryByRole('button')).not.toBeInTheDocument();
+	});
+
+	it('renders the control while playing', () => {
+		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ isPlaying: true }) } });
 		expect(
-			screen.getByRole('button', { name: 'chart_actions.play_audio' })
+			screen.getByRole('button', { name: 'chart_actions.pause_audio' })
 		).toBeInTheDocument();
+	});
+
+	it('renders the control while loading', () => {
+		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ isLoading: true }) } });
+		expect(screen.getByRole('button')).toBeInTheDocument();
 	});
 
 	it('omits the control when audio is unavailable', () => {
@@ -47,7 +57,7 @@ describe('ImageAudio', () => {
 	});
 
 	it('delegates clicks to the audio unit', async () => {
-		const audio = makeAudio();
+		const audio = makeAudio({ isPlaying: true });
 		render(ImageAudio, { props: { previewUrl, audio } });
 
 		await fireEvent.click(screen.getByRole('button'));

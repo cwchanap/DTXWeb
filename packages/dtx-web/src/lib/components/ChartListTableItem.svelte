@@ -1,12 +1,14 @@
 <script lang="ts">
 	import type { SimfileWithDtx } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
-	import { EllipsisVertical, ExternalLink } from '@lucide/svelte/icons';
+	import { EllipsisVertical, ExternalLink, Eye } from '@lucide/svelte/icons';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
+	import { isPreviewable } from '$lib/components/ChartList.helpers';
+	import { _ } from 'svelte-i18n';
 
 	type ChartListTableItemData = Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'> & {
 		has_uploaded_files?: boolean;
@@ -30,6 +32,7 @@
 	let modalOpen = $state(false);
 
 	const canOpenEditor = $derived(item.has_uploaded_files === true);
+	const previewable = $derived(isPreviewable(item));
 
 	function handleDeleteConfirm() {
 		onFileDelete(item.id);
@@ -76,12 +79,22 @@
 					</Button>
 				{/if}
 
+				{#if previewable}
+					<a
+						href={`/preview/${item.id}`}
+						class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+						role="menuitem"
+					>
+						{$_('preview.open')}
+					</a>
+				{/if}
+
 				<a
 					href={`/app/chart/${item.id}`}
 					class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
 					role="menuitem"
 				>
-					Edit
+					Edit details
 				</a>
 
 				<Button
@@ -99,32 +112,46 @@
 			</div>
 		{/snippet}
 	</Popover>
-{:else if enableDownload}
-	<DownloadDropdown
-		simfileId={item.id}
-		externalUrl={item.download_url ?? null}
-		hasUploadedFiles={item.has_uploaded_files}
-		compact={true}
-	/>
-{:else if item.download_url}
-	<a
-		href={item.download_url}
-		target="_blank"
-		rel="noopener noreferrer"
-		class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
-		aria-label="External download link"
-		title="External download link"
-	>
-		<ExternalLink size="16" />
-	</a>
 {:else}
-	<span
-		class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"
-		aria-disabled="true"
-		title="No external link available"
-	>
-		<ExternalLink size="16" />
-	</span>
+	<div class="flex items-center gap-2">
+		{#if previewable}
+			<a
+				href={`/preview/${item.id}`}
+				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+				aria-label={$_('preview.open')}
+				title={$_('preview.open')}
+			>
+				<Eye size="16" />
+			</a>
+		{/if}
+		{#if enableDownload}
+			<DownloadDropdown
+				simfileId={item.id}
+				externalUrl={item.download_url ?? null}
+				hasUploadedFiles={item.has_uploaded_files}
+				compact={true}
+			/>
+		{:else if item.download_url}
+			<a
+				href={item.download_url}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+				aria-label="External download link"
+				title="External download link"
+			>
+				<ExternalLink size="16" />
+			</a>
+		{:else}
+			<span
+				class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"
+				aria-disabled="true"
+				title="No external link available"
+			>
+				<ExternalLink size="16" />
+			</span>
+		{/if}
+	</div>
 {/if}
 
 <!-- Delete Confirmation Modal -->

@@ -159,7 +159,38 @@ describe('ChartListTableItem', () => {
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
 		expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
-		expect(screen.getByRole('menuitem', { name: 'Edit' })).toBeInTheDocument();
+		expect(screen.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
+	});
+
+	it('shows a compact Preview link in blog mode for a previewable chart', () => {
+		render(ChartListTableItem, {
+			props: {
+				...defaultProps,
+				isBlog: true,
+				item: { ...mockItem, is_published: true }
+			}
+		});
+
+		expect(screen.getByRole('link', { name: 'preview.open' })).toHaveAttribute(
+			'href',
+			'/preview/10'
+		);
+	});
+
+	it('shows Preview and Edit details in owner mode for a published uploaded chart', () => {
+		render(ChartListTableItem, {
+			props: { ...defaultProps, item: { ...mockItem, is_published: true } }
+		});
+
+		// PopoverStub always renders its content.
+		expect(screen.getByRole('menuitem', { name: 'preview.open' })).toHaveAttribute(
+			'href',
+			'/preview/10'
+		);
+		expect(screen.getByRole('menuitem', { name: 'Edit details' })).toHaveAttribute(
+			'href',
+			'/app/chart/10'
+		);
 	});
 
 	describe('Navigation', () => {

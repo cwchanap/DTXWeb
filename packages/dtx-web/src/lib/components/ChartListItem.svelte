@@ -40,6 +40,7 @@
 	const audio = createAudioPreview(() =>
 		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
 	);
+	const blogMenuVisible = $derived(isBlog && (audio.available || previewable));
 	const audioLabel = $derived(
 		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
 	);
@@ -94,7 +95,7 @@
 					{/if}
 				</h2>
 			</div>
-			{#if !isBlog}
+			{#if !isBlog || blogMenuVisible}
 				<Popover
 					open={popoverOpen}
 					onOpenChange={(details) => (popoverOpen = details.open)}
@@ -137,7 +138,7 @@
 									{/snippet}
 								</Button>
 							{/if}
-							{#if hasUploadedChart}
+							{#if !isBlog && hasUploadedChart}
 								<Button
 									onclick={handleOpenInEditor}
 									variant="menuItem"
@@ -185,7 +186,7 @@
 									{$_('preview.open')}
 								</a>
 							{/if}
-							{#if item.id !== undefined}
+							{#if !isBlog && item.id !== undefined}
 								<a
 									href={`/app/chart/${item.id}`}
 									class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-purple-600/20 hover:text-purple-200"
@@ -208,7 +209,7 @@
 								</a>
 							{/if}
 
-							{#if item.id !== undefined && item.is_published !== undefined}
+							{#if !isBlog && item.id !== undefined && item.is_published !== undefined}
 								<Button
 									onclick={() => {
 										togglePublishChart(item.id!, item.is_published!);
@@ -239,7 +240,7 @@
 								</Button>
 							{/if}
 
-							{#if item.id !== undefined}
+							{#if !isBlog && item.id !== undefined}
 								<Button
 									onclick={handleOpenModal}
 									variant="menuItem"
@@ -347,14 +348,6 @@
 
 		{#if isBlog && item.id !== undefined}
 			<div class="mt-4 flex flex-wrap items-center gap-3">
-				{#if previewable}
-					<a
-						href={`/preview/${item.id}`}
-						class="music-btn-secondary inline-flex items-center gap-2 px-4 py-2 text-sm"
-					>
-						{$_('preview.open')}
-					</a>
-				{/if}
 				{#if enableDownload}
 					<DownloadDropdown
 						simfileId={item.id}

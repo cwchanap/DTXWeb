@@ -292,8 +292,19 @@ describe('ChartListItem Component Logic', () => {
 			expect(menuButtons[0]).toHaveAccessibleName('chart_actions.play_audio');
 		});
 
-		it('does not render action menu in blog mode', () => {
+		it('renders the action menu in blog mode when entries apply', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+		});
+
+		it('renders no action menu on a blog card with no id', () => {
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItem, id: undefined }
+				}
+			});
 			expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
 		});
 
@@ -451,18 +462,29 @@ describe('ChartListItem Component Logic', () => {
 			);
 		});
 
-		it('shows an explicit blog Preview CTA for a previewable card', () => {
-			render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
-			expect(screen.getByRole('link', { name: 'preview.open' })).toHaveAttribute(
+		it('offers Preview from the blog menu for a previewable card', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+			expect(screen.getByRole('menuitem', { name: 'preview.open' })).toHaveAttribute(
 				'href',
 				'/preview/1'
 			);
 		});
 
-		it('omits the blog Preview CTA for a non-previewable card', () => {
+		it('omits the Preview entry for a non-previewable blog card', () => {
 			render(ChartListItem, {
-				props: { ...renderProps, isBlog: true, item: { ...mockItem, is_published: false } }
+				props: {
+					...renderProps,
+					isBlog: true,
+					item: { ...mockItem, is_published: false }
+				}
 			});
+			expect(
+				screen.queryByRole('menuitem', { name: 'preview.open' })
+			).not.toBeInTheDocument();
+		});
+
+		it('no longer renders a Preview call-to-action in the blog footer', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 			expect(screen.queryByRole('link', { name: 'preview.open' })).not.toBeInTheDocument();
 		});
 	});

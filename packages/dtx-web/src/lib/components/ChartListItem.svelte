@@ -40,6 +40,9 @@
 	const audio = createAudioPreview(() =>
 		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
 	);
+	const audioLabel = $derived(
+		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
+	);
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -106,6 +109,34 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="py-2">
+							{#if audio.available}
+								<Button
+									onclick={() => audio.toggle()}
+									variant="menuItem"
+									fullWidth
+									justify="start"
+									class="text-slate-300 hover:bg-purple-600/20 hover:text-purple-200"
+								>
+									{#snippet children()}
+										<svg
+											class="mr-3 h-4 w-4"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												stroke-linecap="round"
+												stroke-linejoin="round"
+												stroke-width="2"
+												d={audio.isPlaying
+													? 'M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z'
+													: 'M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z'}
+											></path>
+										</svg>
+										{audioLabel}
+									{/snippet}
+								</Button>
+							{/if}
 							{#if hasUploadedChart}
 								<Button
 									onclick={handleOpenInEditor}

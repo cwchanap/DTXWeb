@@ -267,6 +267,18 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
+		it('offers the audio entry first in the owner menu', () => {
+			render(ChartListItem, { props: renderProps });
+
+			// PopoverStub always renders its content; no trigger click required.
+			// ButtonStub (see src/tests/stubs/ButtonStub.svelte) renders a plain
+			// <button> with no role="menuitem" override, so the accessible-name
+			// form is used here rather than an ordering assertion over menuitem role.
+			expect(
+				screen.getByRole('button', { name: 'chart_actions.play_audio' })
+			).toBeInTheDocument();
+		});
+
 		it('does not render action menu in blog mode', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 			expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();

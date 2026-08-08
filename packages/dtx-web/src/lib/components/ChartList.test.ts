@@ -587,6 +587,29 @@ describe('ChartList Rendering', () => {
 		});
 	});
 
+	const renderSingleChartInTableMode = async (isBlog: boolean) => {
+		mockApi.listSimfiles.mockResolvedValue({ data: [mockListedChart], count: 1 });
+		render(ChartList, { props: { isBlog } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await screen.findByText(mockListedChart.title, { exact: false });
+	};
+
+	it('wires the blog table title to preview', async () => {
+		await renderSingleChartInTableMode(true);
+		expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
+			'href',
+			'/preview/1'
+		);
+	});
+
+	it('wires the owner table title to editor', async () => {
+		await renderSingleChartInTableMode(false);
+		expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
+			'href',
+			'/editor/1'
+		);
+	});
+
 	it('shows loading state while fetching', async () => {
 		let resolveList!: (value: { data: unknown[]; count: number }) => void;
 		mockApi.listSimfiles.mockReturnValueOnce(

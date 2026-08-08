@@ -16,6 +16,7 @@
 		MAX_BULK_DOWNLOAD_CHARTS,
 		canBulkSelect,
 		changePage as getChangedPage,
+		chartTitleHref,
 		handlePageSizeChange as getChangedPageSize,
 		isAbortError,
 		resetBulkSelection as createEmptySelection,
@@ -363,6 +364,7 @@
 {:else if viewMode === 'table'}
 	<div class="space-y-4">
 		{#each filteredItems as item (item.id)}
+			{@const titleHref = chartTitleHref(item, isBlog)}
 			<div
 				class="music-card group relative z-0 p-6 transition-all duration-300 focus-within:z-30 hover:z-30 hover:scale-[1.02]"
 			>
@@ -375,9 +377,9 @@
 							<h3
 								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
 							>
-								{#if item.has_uploaded_files === true}
+								{#if titleHref}
 									<a
-										href={`/editor/${item.id}`}
+										href={titleHref}
 										class="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
 									>
 										{item.display_id}. {item.title}

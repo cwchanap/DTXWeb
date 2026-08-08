@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { PAGES } from './constants';
@@ -15,7 +16,20 @@ const __dirname = path.dirname(__filename);
 // the local fixture — the surfaces under test (real VexFlow SVG + a live
 // browser AudioContext) are exercised end-to-end; only the chart-file HTTP
 // transport is stubbed, which is exactly what page.route is for.
-const dtxFixture = path.join(__dirname, 'fixtures', 'test-sample.dtx');
+//
+// Uses its own dedicated fixture (not the shared test-sample.dtx) so it can
+// carry real playable notes plus a channel-08 tempo change without touching
+// the converter/upload fixture other specs depend on.
+const dtxFixture = path.join(__dirname, 'fixtures', 'preview-tempo.dtx');
+// DTXFile.parseFromText (packages/common/src/lib/chart/dtx.ts) splits raw
+// text on a literal '\r\n', matching real DTXMania files. Git's CRLF
+// normalization on commit would silently degrade a checked-in CRLF fixture
+// back to LF-only on every other clone/CI, which breaks note + tempo parsing
+// invisibly (the page falls back to a single default measure instead of
+// erroring). Keep the checked-in fixture as plain, git-safe text and
+// normalize its line endings to CRLF here, at fulfill time, so parsing is
+// exercised for real regardless of the checkout's line endings.
+const dtxFixtureContent = readFileSync(dtxFixture, 'utf-8').replace(/\r?\n/g, '\r\n');
 
 // End-to-end coverage for the /preview/[id] route's two surfaces that the
 // unit tests cannot exercise with real implementations:
@@ -34,7 +48,7 @@ test.describe('Preview page', () => {
 		await page.route('https://chart.hapadona.com/**', (route) => {
 			const url = route.request().url();
 			if (url.endsWith('.dtx')) {
-				return route.fulfill({ path: dtxFixture, status: 200 });
+				return route.fulfill({ body: dtxFixtureContent, status: 200 });
 			}
 			return route.continue();
 		});
@@ -94,5 +108,25 @@ test.describe('Preview page', () => {
 		// Pause -> the button flips back to Play and the clock stops advancing.
 		await page.getByRole('button', { name: 'Pause' }).click();
 		await expect(page.getByRole('button', { name: 'Play' })).toBeVisible();
+	});
+
+	test('renders the starting tempo and a channel-08 tempo change', async ({ page }) => {
+		// Wait for the page to leave the loading state and mount NotationView.
+		const container = page.getByTestId('notation-container');
+		await expect(container).toBeVisible({ timeout: 15000 });
+
+		// NotationView draws BPM marks via VexFlow's StaveTempo (packages/dtx-web/
+		// src/lib/components/preview/NotationView.svelte), which is only stubbed
+		// in unit tests. StaveTempo's real SVG renderer (vexflow/src/stavetempo.ts)
+		// emits a single <text> node per mark whose textContent ends " = <bpm>" —
+		// there is no separate glyph-only element to key off, so matching that
+		// substring on the notation container's own <text> nodes (never a global
+		// getByText, which is brittle against VexFlow's non-DOM-friendly glyph
+		// spans) is the real, non-pixel-based proof that VexFlow rendered both
+		// the base #BPM:120 tempo and the measure-2 channel-08 change to 180
+		// defined by #BPMAA:180 / #00208: AA in fixtures/preview-tempo.dtx.
+		const svgText = container.locator('svg text');
+		await expect(svgText.filter({ hasText: '= 120' })).toHaveCount(1);
+		await expect(svgText.filter({ hasText: '= 180' })).toHaveCount(1);
 	});
 });

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { PAGES } from './constants';
+import { CHART_B_ID, CHART_B_TITLE } from './test-config';
 
 test.describe('Blog page', () => {
 	test.beforeEach(async ({ page }) => {
@@ -45,5 +46,15 @@ test.describe('Blog page', () => {
 
 		// Language switcher button present
 		await expect(page.getByRole('button', { name: 'Language' })).toBeVisible();
+	});
+
+	test('opens a published uploaded chart in the public notation preview', async ({ page }) => {
+		// Blog card titles route to /preview/[id] (never /editor/[id]) once the
+		// chart is published + has an uploaded file (ChartList.helpers.ts
+		// isPreviewable/chartTitleHref) — the seeded CHART_B_ID (1002) is both.
+		const chartLink = page.getByRole('link', { name: CHART_B_TITLE }).first();
+		await expect(chartLink).toHaveAttribute('href', `/preview/${CHART_B_ID}`);
+		await chartLink.click();
+		await expect(page).toHaveURL(PAGES.PREVIEW(CHART_B_ID));
 	});
 });

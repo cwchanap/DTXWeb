@@ -14,6 +14,7 @@
 - No desktop/Tauri or Phaser gameplay-preview changes.
 - No generic notation-event framework; add only `NotationTempoEvent`.
 - `ChartTiming.tempoEvents` is the single normalized effective tempo sequence used by both timing and notation.
+- The first normalized tempo event is also the timing engine's initial BPM; do not separately initialize timing from raw `input.bpm`.
 - Support base BPM, channel `08` (`#BPMxx`) changes, and legacy channel `03` direct-hex changes.
 - Exact-position ties preserve input order; `buildNotationChart()` supplies channel `08` before converted channel `03`, so channel `03` wins an exact tie.
 - Invalid, non-finite, non-positive, or unresolved BPM changes are ignored and retain the prior effective tempo.
@@ -110,6 +111,19 @@ it('normalizes the base bpm into an initial tempo event', () => {
 	});
 
 	expect(events).toEqual([{ measure: 0, fraction: 0, bpm: 120 }]);
+});
+
+it('falls back an invalid base bpm to 120 for both events and timing', () => {
+	const t = buildChartTiming({
+		bpm: Number.NaN,
+		bpmValueMap: {},
+		bpmChanges: [],
+		measureLengths: [1],
+		measureCount: 1
+	});
+
+	expect(t.tempoEvents).toEqual([{ measure: 0, fraction: 0, bpm: 120 }]);
+	expect(t.totalDuration).toBe(2);
 });
 
 it('normalizes mid-measure changes and collapses duplicate effective bpm values', () => {
@@ -305,10 +319,21 @@ const bounds = tempoEvents.filter(
 );
 ```
 
-In `buildChartTiming()`:
+At the start of `buildChartTiming()` initialize from the normalized sequence:
 
 ```ts
 const tempoEvents = normalizeTempoEvents(input);
+const initialBpm = tempoEvents[0]?.bpm ?? 120;
+const measureStartSeconds: number[] = [];
+const measureBpmAtStart: number[] = [];
+let elapsed = 0;
+let bpm = initialBpm;
+```
+
+Use `initialBpm` as the fallback in both public conversion functions:
+
+```ts
+const startBpm = measureBpmAtStart[measure] ?? initialBpm;
 ```
 
 Pass `tempoEvents` into both helpers and return it:
@@ -341,7 +366,7 @@ export interface ChartTiming {
 bun run --filter=@dtx/common test -- src/lib/notation/timing.test.ts
 ```
 
-Expected: PASS, including existing downbeat and mid-measure round-trip coverage.
+Expected: PASS, including invalid-base fallback plus existing downbeat and mid-measure round-trip coverage.
 
 - [ ] **Step 7: Commit Task 1**
 
@@ -539,7 +564,6 @@ it('renders a measure-start tempo with VexFlow StaveTempo', async () => {
 	render(NotationView, { props: { chart: tempoChart } });
 	await tick();
 
-	// Mocked note start x is 30.
 	expect(tempoCalls).toContainEqual({ x: 30, bpm: 120, duration: 'q' });
 });
 
@@ -552,13 +576,12 @@ it('renders a mid-measure tempo at proportional stave x without adding voice not
 	render(NotationView, { props: { chart: tempoChart } });
 	await tick();
 
-	// Mocked note range is 30..200; halfway = 115.
 	expect(tempoCalls).toContainEqual({ x: 115, bpm: 180, duration: 'q' });
 	expect(staveNoteArgs).toHaveLength(chart.measures[0].entries.length);
 });
 ```
 
-Clear `begBarTypes`, `endBarTypes`, and `tempoCalls` in `beforeEach()`.
+The mocked note range is `30..200`, so fraction `0.5` resolves to x `115`. Clear the new capture arrays in `beforeEach()`.
 
 - [ ] **Step 2: Update the error-path VexFlow mock so new calls are supported**
 
@@ -648,7 +671,7 @@ Keep the existing percussion-clef and time-signature behavior unchanged.
 
 - [ ] **Step 7: Draw all BPM markings after base notation drawing**
 
-After `voice.draw()`, beams, and tuplets are drawn, add:
+After `voice.draw()`, beams, and tuplets are drawn:
 
 ```ts
 const tempoEvents = tempoEventsByMeasure.get(measure.index) ?? [];
@@ -664,16 +687,14 @@ for (const event of tempoEvents) {
 }
 ```
 
-This uses standard VexFlow tempo glyphs for both downbeat and mid-measure events but keeps them outside the `Voice`, so a tempo failure cannot invalidate `stave.draw()` or rhythmic layout.
+This keeps start and mid-measure tempo marks on the same VexFlow path and outside the rhythmic `Voice`, so an annotation failure cannot invalidate `stave.draw()` or rhythmic layout.
 
-Increase fixed vertical headroom only:
+Increase only fixed vertical headroom:
 
 ```ts
 const SYSTEM_HEIGHT = 160;
 const TOP = 30;
 ```
-
-Do not add dynamic annotation measurement.
 
 - [ ] **Step 8: Add a non-fatal tempo-draw error test**
 
@@ -785,11 +806,7 @@ it('shows an explicit Preview action on previewable blog cards', () => {
 	const previewLinks = screen.getAllByRole('link', { name: 'preview.open' });
 	expect(previewLinks.some((link) => link.getAttribute('href') === '/preview/1')).toBe(true);
 });
-```
 
-Add an owner-action test using the existing Popover stub:
-
-```ts
 it('shows owner Preview and Edit details actions for a published uploaded chart', async () => {
 	render(ChartListItem, { props: renderProps });
 	await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
@@ -872,7 +889,7 @@ Change the existing `/app/chart/${item.id}` text from `Edit` to `Edit details`.
 
 - [ ] **Step 5: Add the explicit blog Preview CTA next to download**
 
-Wrap public footer actions in one flex row:
+Replace the current blog footer action block with this structure, preserving the current external download anchor exactly:
 
 ```svelte
 {#if isBlog && item.id !== undefined}
@@ -893,15 +910,28 @@ Wrap public footer actions in one flex row:
 				hasUploadedFiles={item.has_uploaded_files}
 			/>
 		{:else if item.download_url}
-			<!-- retain the existing external download anchor unchanged -->
+			<a
+				href={item.download_url}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="music-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"
+			>
+				<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+					<path
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						stroke-width="2"
+						d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+					></path>
+				</svg>
+				{$_('blog.download')}
+			</a>
 		{:else}
 			<div class="text-sm text-slate-500 italic">Download not available</div>
 		{/if}
 	</div>
 {/if}
 ```
-
-The external-download anchor body remains byte-for-byte equivalent to the current implementation; only its parent layout changes.
 
 - [ ] **Step 6: Run card tests**
 
@@ -956,11 +986,7 @@ it('keeps an uploaded owner table title pointed at /editor/:id', async () => {
 	const link = screen.getByRole('link', { name: /Test Song 1/ });
 	expect(link).toHaveAttribute('href', '/editor/1');
 });
-```
 
-Add a defensive non-previewable blog test by overriding the item:
-
-```ts
 it('keeps an unpublished blog table title non-clickable', async () => {
 	mockApi.listSimfiles.mockResolvedValue({
 		data: [{ ...mockListedChart, is_published: false }],
@@ -976,7 +1002,7 @@ it('keeps an unpublished blog table title non-clickable', async () => {
 
 - [ ] **Step 2: Create a focused failing `ChartListTableItem.test.ts`**
 
-Create the file with these mocks and tests:
+Create:
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
@@ -1019,7 +1045,6 @@ describe('ChartListTableItem', () => {
 		render(ChartListTableItem, {
 			props: { ...baseProps, isBlog: true, enableDownload: false }
 		});
-
 		expect(screen.getByRole('link', { name: 'preview.open' })).toHaveAttribute(
 			'href',
 			'/preview/1'
@@ -1035,7 +1060,6 @@ describe('ChartListTableItem', () => {
 				item: { ...item, has_uploaded_files: false }
 			}
 		});
-
 		expect(screen.queryByRole('link', { name: 'preview.open' })).not.toBeInTheDocument();
 	});
 
@@ -1043,7 +1067,6 @@ describe('ChartListTableItem', () => {
 		render(ChartListTableItem, {
 			props: { ...baseProps, isBlog: false }
 		});
-
 		await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
 		expect(screen.getByRole('link', { name: 'preview.open' })).toHaveAttribute(
 			'href',
@@ -1067,7 +1090,7 @@ Expected: FAIL on blog title routing and missing Preview actions.
 
 - [ ] **Step 4: Make the table title contextual in `ChartList.svelte`**
 
-Replace the current title link branch with:
+Replace the current title branch with:
 
 ```svelte
 {#if item.has_uploaded_files === true && (!isBlog || item.is_published === true)}
@@ -1082,7 +1105,7 @@ Replace the current title link branch with:
 {/if}
 ```
 
-This intentionally leaves a defensive unpublished blog row non-clickable instead of falling back to Editor.
+A defensive unpublished blog row therefore stays non-clickable instead of falling back to Editor.
 
 - [ ] **Step 5: Add Preview/Edit-details actions to `ChartListTableItem.svelte`**
 
@@ -1102,7 +1125,11 @@ In owner mode, after **Open in Editor**:
 
 ```svelte
 {#if previewable}
-	<a href={`/preview/${item.id}`} role="menuitem" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+	<a
+		href={`/preview/${item.id}`}
+		role="menuitem"
+		class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+	>
 		{$_('preview.open')}
 	</a>
 {/if}
@@ -1110,7 +1137,7 @@ In owner mode, after **Open in Editor**:
 
 Rename the existing `/app/chart/${item.id}` link to `Edit details`.
 
-Restructure the blog branch into one action row:
+Replace the current blog action conditional chain with:
 
 ```svelte
 {:else}
@@ -1134,15 +1161,30 @@ Restructure the blog branch into one action row:
 				compact={true}
 			/>
 		{:else if item.download_url}
-			<!-- retain the current external-download anchor unchanged -->
+			<a
+				href={item.download_url}
+				target="_blank"
+				rel="noopener noreferrer"
+				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+				aria-label="External download link"
+				title="External download link"
+			>
+				<ExternalLink size="16" />
+			</a>
 		{:else}
-			<!-- retain the current disabled external-link span unchanged -->
+			<span
+				class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"
+				aria-disabled="true"
+				title="No external link available"
+			>
+				<ExternalLink size="16" />
+			</span>
 		{/if}
 	</div>
 {/if}
 ```
 
-Only the parent conditional/layout changes; download eligibility and URLs stay unchanged.
+Download eligibility and URLs remain unchanged.
 
 - [ ] **Step 6: Run navigation unit tests and web checking**
 
@@ -1215,7 +1257,7 @@ This checks only browser-visible VexFlow output; edge-case tempo semantics stay 
 
 - [ ] **Step 3: Add Blog → Preview navigation coverage**
 
-Update `blog.spec.ts`:
+Update `blog.spec.ts` imports:
 
 ```ts
 import { test, expect } from '@playwright/test';
@@ -1281,6 +1323,7 @@ git commit -m "test(e2e): cover preview tempo and blog navigation"
 ## Final Acceptance Checklist
 
 - [ ] `ChartTiming.tempoEvents` exists and is the source used by both forward and inverse timing.
+- [ ] The timing engine initializes from `ChartTiming.tempoEvents[0].bpm`, not raw `input.bpm`.
 - [ ] `NotationChart.tempoEvents === timing.tempoEvents` for `buildNotationChart()` output.
 - [ ] Base BPM, channel `08`, and channel `03` changes normalize correctly.
 - [ ] Exact channel `08`/`03` ties use the documented input-order rule.

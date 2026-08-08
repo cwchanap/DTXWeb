@@ -21,14 +21,20 @@ const __dirname = path.dirname(__filename);
 // carry real playable notes plus a channel-08 tempo change without touching
 // the converter/upload fixture other specs depend on.
 const dtxFixture = path.join(__dirname, 'fixtures', 'preview-tempo.dtx');
-// DTXFile.parseFromText (packages/common/src/lib/chart/dtx.ts) splits raw
-// text on a literal '\r\n', matching real DTXMania files. Git's CRLF
-// normalization on commit would silently degrade a checked-in CRLF fixture
-// back to LF-only on every other clone/CI, which breaks note + tempo parsing
-// invisibly (the page falls back to a single default measure instead of
-// erroring). Keep the checked-in fixture as plain, git-safe text and
-// normalize its line endings to CRLF here, at fulfill time, so parsing is
-// exercised for real regardless of the checkout's line endings.
+// DTXFile.parseFromText (packages/common/src/lib/chart/dtx.ts:145) splits raw
+// text on a literal '\r\n' instead of /\r?\n/ (as simFile.ts:170 already
+// does) — a parser bug, not a real DTXMania requirement. On an LF-only file
+// this collapses the whole text into a single array element, so parsing
+// doesn't error, it silently produces garbage (dtx.title becomes the entire
+// rest of the file, bpm is 0, zero notes parse). Git's CRLF normalization on
+// commit would degrade a checked-in CRLF fixture back to LF-only on every
+// other clone/CI, which would trip that bug invisibly (the page falls back
+// to a single default measure instead of erroring). Keep the checked-in
+// fixture as plain, git-safe text and normalize its line endings to CRLF
+// here, at fulfill time, so parsing is exercised for real regardless of the
+// checkout's line endings. This is a known parser bug pending a follow-up
+// fix (switching dtx.ts to split(/\r?\n/)); once fixed, this normalization
+// can be deleted.
 const dtxFixtureContent = readFileSync(dtxFixture, 'utf-8').replace(/\r?\n/g, '\r\n');
 
 // End-to-end coverage for the /preview/[id] route's two surfaces that the

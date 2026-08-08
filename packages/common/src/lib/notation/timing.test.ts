@@ -244,6 +244,35 @@ describe('buildChartTiming', () => {
 		).toEqual([{ measure: 0, fraction: 0, bpm: 240 }]);
 	});
 
+	it('collapses a duplicate created when an exact-position tie restores the preceding effective bpm', () => {
+		// e0 is the initial event (120bpm). The change at (0, 0.5) establishes a
+		// genuinely new effective tempo (180). Two changes then tie at the exact
+		// same later position (1, 0): the first bumps to 200, but the second
+		// (which wins the tie, per input order) restores 180 -- the same value
+		// as the preceding effective event. The in-loop check only compares a
+		// new change against the *previous array entry* before a tie overwrites
+		// it in place, so that comparison never sees the restored value; only
+		// the final dedup pass can catch the now-redundant (1, 0, 180) event.
+		const bpmChanges = [
+			new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0.5 }]),
+			new LaneMeasureNote(1, '08', [{ noteID: 'BB', position: 0 }]),
+			new LaneMeasureNote(1, '08', [{ noteID: 'CC', position: 0 }])
+		];
+
+		const events = normalizeTempoEvents({
+			bpm: 120,
+			bpmValueMap: { AA: 180, BB: 200, CC: 180 },
+			bpmChanges,
+			measureLengths: [1, 1],
+			measureCount: 2
+		});
+
+		expect(events).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 0, fraction: 0.5, bpm: 180 }
+		]);
+	});
+
 	it('ignores unresolved and non-positive bpm changes for events and duration', () => {
 		const bpmChanges = [
 			new LaneMeasureNote(0, '08', [

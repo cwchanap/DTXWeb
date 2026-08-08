@@ -3,6 +3,7 @@ name: Desktop App Cross-Platform Build and Deploy
 on:
   pull_request:
     branches: [main, master]
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - preview
@@ -46,7 +47,7 @@ jobs:
     permissions:
       contents: read
     name: Windows Tauri Build
-    if: github.event_name != 'pull_request' || github.head_ref != 'preview'
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.head_ref != 'preview')
     runs-on: windows-latest
     # Each platform build targets its own GitHub environment so concurrent
     # build-windows / build-mac runs each get their own "active" deployment
@@ -195,7 +196,7 @@ jobs:
     permissions:
       contents: read
     name: macOS Tauri Build
-    if: github.event_name != 'pull_request' || github.head_ref != 'preview'
+    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.head_ref != 'preview')
     runs-on: macos-latest
     # See build-windows for the rationale on per-platform environments.
     environment: Desktop-macOS

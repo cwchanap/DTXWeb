@@ -34,3 +34,9 @@ export interface NotationMeasure {
 export interface NotationChart {
 	measures: NotationMeasure[];
 }
+
+export interface NotationTempoEvent {
+	measure: number;
+	fraction: number;
+	bpm: number;
+}

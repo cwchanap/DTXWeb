@@ -48,6 +48,7 @@ class FakeContext {
 }
 
 const timing: ChartTiming = {
+	tempoEvents: [{ measure: 0, fraction: 0, bpm: 120 }],
 	measureStartSeconds: [0, 2],
 	totalDuration: 4,
 	positionToTime: (m, f) => m * 2 + f * 2,

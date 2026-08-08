@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildChartTiming } from './timing';
+import { buildChartTiming, normalizeTempoEvents } from './timing';
 import { LaneMeasureNote } from '../chart/note';
 
 const noBpmChanges: LaneMeasureNote[] = [];
@@ -83,6 +83,10 @@ describe('buildChartTiming', () => {
 		});
 		// measure is 1.5s: 1s at 120 + 0.5s at 240.
 		expect(t.totalDuration).toBeCloseTo(1.5, 6);
+		expect(t.tempoEvents).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 0, fraction: 0.5, bpm: 240 }
+		]);
 		// The boundary time (1s) corresponds to fraction 0.5 exactly.
 		expect(t.positionToTime(0, 0.5)).toBeCloseTo(1, 6);
 		expect(t.timeToPosition(1)).toEqual({ measure: 0, fraction: 0.5 });
@@ -172,5 +176,92 @@ describe('buildChartTiming', () => {
 		// (fallback-length) measure on top of totalDuration. Without the clamp
 		// this would return 3 (= 2s total + 1s for half a 120bpm measure).
 		expect(t.positionToTime(99, 0.5)).toBe(t.totalDuration);
+	});
+
+	it('normalizes the base bpm into an initial tempo event', () => {
+		const events = normalizeTempoEvents({
+			bpm: 120,
+			bpmValueMap: {},
+			bpmChanges: [],
+			measureLengths: [1],
+			measureCount: 1
+		});
+
+		expect(events).toEqual([{ measure: 0, fraction: 0, bpm: 120 }]);
+	});
+
+	it('falls back an invalid base bpm to 120 for both events and timing', () => {
+		const timing = buildChartTiming({
+			bpm: Number.NaN,
+			bpmValueMap: {},
+			bpmChanges: [],
+			measureLengths: [1],
+			measureCount: 1
+		});
+
+		expect(timing.tempoEvents).toEqual([{ measure: 0, fraction: 0, bpm: 120 }]);
+		expect(timing.totalDuration).toBe(2);
+	});
+
+	it('normalizes mid-measure changes and collapses duplicate effective bpm values', () => {
+		const bpmChanges = [
+			new LaneMeasureNote(0, '08', [
+				{ noteID: 'AA', position: 0.5 },
+				{ noteID: 'BB', position: 0.75 }
+			]),
+			new LaneMeasureNote(1, '08', [{ noteID: 'CC', position: 0 }])
+		];
+
+		const events = normalizeTempoEvents({
+			bpm: 120,
+			bpmValueMap: { AA: 180, BB: 180, CC: 240 },
+			bpmChanges,
+			measureLengths: [1, 1],
+			measureCount: 2
+		});
+
+		expect(events).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 0, fraction: 0.5, bpm: 180 },
+			{ measure: 1, fraction: 0, bpm: 240 }
+		]);
+	});
+
+	it('keeps only the final valid change at an exact musical position', () => {
+		const bpmChanges = [
+			new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0 }]),
+			new LaneMeasureNote(0, '08', [{ noteID: 'BB', position: 0 }])
+		];
+
+		expect(
+			normalizeTempoEvents({
+				bpm: 120,
+				bpmValueMap: { AA: 180, BB: 240 },
+				bpmChanges,
+				measureLengths: [1],
+				measureCount: 1
+			})
+		).toEqual([{ measure: 0, fraction: 0, bpm: 240 }]);
+	});
+
+	it('ignores unresolved and non-positive bpm changes for events and duration', () => {
+		const bpmChanges = [
+			new LaneMeasureNote(0, '08', [
+				{ noteID: 'MISSING', position: 0.25 },
+				{ noteID: 'ZERO', position: 0.5 },
+				{ noteID: 'NEG', position: 0.75 }
+			])
+		];
+
+		const timing = buildChartTiming({
+			bpm: 120,
+			bpmValueMap: { ZERO: 0, NEG: -10 },
+			bpmChanges,
+			measureLengths: [1],
+			measureCount: 1
+		});
+
+		expect(timing.tempoEvents).toEqual([{ measure: 0, fraction: 0, bpm: 120 }]);
+		expect(timing.totalDuration).toBe(2);
 	});
 });

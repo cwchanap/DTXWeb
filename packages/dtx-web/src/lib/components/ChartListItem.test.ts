@@ -379,6 +379,57 @@ describe('ChartListItem Component Logic', () => {
 				screen.queryByRole('link', { name: /external download link/i })
 			).not.toBeInTheDocument();
 		});
+
+		it('routes a previewable blog card title to preview', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
+			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
+				'href',
+				'/preview/1'
+			);
+		});
+
+		it('keeps an owner card title editor-first', () => {
+			render(ChartListItem, { props: renderProps });
+			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
+				'href',
+				'/editor/1'
+			);
+		});
+
+		it('does not fall back to editor for a non-previewable blog card', () => {
+			render(ChartListItem, {
+				props: { ...renderProps, isBlog: true, item: { ...mockItem, is_published: false } }
+			});
+			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
+		});
+
+		it('shows owner Preview and Edit details actions for a published uploaded chart', () => {
+			render(ChartListItem, { props: renderProps });
+			// PopoverStub always renders its content; no trigger click is required.
+			expect(screen.getByRole('menuitem', { name: 'preview.open' })).toHaveAttribute(
+				'href',
+				'/preview/1'
+			);
+			expect(screen.getByRole('menuitem', { name: 'Edit details' })).toHaveAttribute(
+				'href',
+				'/app/chart/1'
+			);
+		});
+
+		it('shows an explicit blog Preview CTA for a previewable card', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
+			expect(screen.getByRole('link', { name: 'preview.open' })).toHaveAttribute(
+				'href',
+				'/preview/1'
+			);
+		});
+
+		it('omits the blog Preview CTA for a non-previewable card', () => {
+			render(ChartListItem, {
+				props: { ...renderProps, isBlog: true, item: { ...mockItem, is_published: false } }
+			});
+			expect(screen.queryByRole('link', { name: 'preview.open' })).not.toBeInTheDocument();
+		});
 	});
 
 	describe('Handler coverage', () => {

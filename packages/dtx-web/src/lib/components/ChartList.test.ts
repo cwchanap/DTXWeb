@@ -332,6 +332,23 @@ describe('ChartList helpers', () => {
 			selectedIds: new Set<number>()
 		});
 	});
+
+	it('derives chart title destinations from public-vs-owner context', () => {
+		const previewable = { id: 1, is_published: true, has_uploaded_files: true };
+		const unpublished = { ...previewable, is_published: false };
+		const withoutUpload = { ...previewable, has_uploaded_files: false };
+
+		expect(chartListHelpers.isPreviewable(previewable)).toBe(true);
+		expect(chartListHelpers.isPreviewable(unpublished)).toBe(false);
+		expect(chartListHelpers.isPreviewable(withoutUpload)).toBe(false);
+
+		expect(chartListHelpers.chartTitleHref(previewable, true)).toBe('/preview/1');
+		expect(chartListHelpers.chartTitleHref(unpublished, true)).toBeNull();
+		expect(chartListHelpers.chartTitleHref(withoutUpload, true)).toBeNull();
+		expect(chartListHelpers.chartTitleHref(previewable, false)).toBe('/editor/1');
+		expect(chartListHelpers.chartTitleHref(unpublished, false)).toBe('/editor/1');
+		expect(chartListHelpers.chartTitleHref(withoutUpload, false)).toBeNull();
+	});
 });
 
 describe('ChartList component bulk download behavior', () => {

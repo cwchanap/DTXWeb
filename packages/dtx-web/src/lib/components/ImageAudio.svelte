@@ -1,23 +1,17 @@
 <script lang="ts">
-	import store from '../store';
-	import { get } from 'svelte/store';
-	import { onMount, untrack } from 'svelte';
-
+	import { _ } from 'svelte-i18n';
 	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
+	import type { AudioPreview } from '$lib/audioPreview.svelte';
 
 	interface Props {
 		previewUrl: string;
-		soundPreviewUrl: string | null;
+		audio: AudioPreview;
 		preview?: import('svelte').Snippet;
 	}
 
-	let { previewUrl, soundPreviewUrl, preview }: Props = $props();
+	let { previewUrl, audio, preview }: Props = $props();
 
-	let isPlaying = $state(false);
-	let isLoading = $state(false);
-	let audio: HTMLAudioElement | null = $state(null);
 	let imageError = $state(false);
-	let audioError = $state(false);
 
 	// Reset imageError when previewUrl changes so new images can load
 	$effect(() => {
@@ -25,96 +19,26 @@
 		imageError = false;
 	});
 
-	// Reset audioError and clean up audio when soundPreviewUrl changes
-	$effect(() => {
-		soundPreviewUrl;
-		audioError = false;
-		// Clean up existing audio playback - use untrack to prevent re-triggering when audio/isPlaying change
-		untrack(() => {
-			if (audio) {
-				audio.pause();
-				audio.currentTime = 0;
-				audio.src = '';
-				audio.load();
-			}
-			if (isPlaying) {
-				isPlaying = false;
-				store.playingAudio.set(null);
-			}
-		});
-	});
-
-	const handlePlayPause = async () => {
-		if (isPlaying) {
-			audio?.pause();
-			isPlaying = false;
-			store.playingAudio.set(null);
-		} else {
-			try {
-				isLoading = true;
-				console.log('Playing audio from URL:', soundPreviewUrl);
-				const playingAudio = get(store.playingAudio);
-				if (playingAudio) {
-					playingAudio.pause();
-					playingAudio.remove();
-					store.playingAudio.set(null);
-				}
-				if (audio) {
-					audio.pause();
-					audio.remove();
-				}
-				audio = new Audio(soundPreviewUrl!);
-				console.log('Audio element created:', audio);
-				await audio.play();
-				console.log('Audio started playing');
-				isPlaying = true;
-				isLoading = false;
-				store.playingAudio.set(audio);
-				audio.addEventListener('ended', () => {
-					store.playingAudio.set(null);
-					isPlaying = false;
-				});
-				audio.addEventListener('error', () => {
-					console.error('Audio load error');
-					audioError = true;
-					isLoading = false;
-					isPlaying = false;
-					store.playingAudio.set(null);
-				});
-			} catch (error) {
-				console.error('Error playing audio:', error);
-				audioError = true;
-				isLoading = false;
-				isPlaying = false;
-				store.playingAudio.set(null);
-			}
-		}
-	};
-
-	// Use onMount to properly handle store subscription
-	onMount(() => {
-		const unsubscribe = store.playingAudio.subscribe((playingAudio) => {
-			if (playingAudio === null) {
-				isPlaying = false;
-			}
-		});
-
-		return unsubscribe;
-	});
+	const controlVisible = $derived(audio.available);
+	const controlLabel = $derived(
+		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
+	);
 </script>
 
 {#snippet playButton()}
 	<button
 		class="group absolute top-1/2 left-1/2 inline-flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 via-cyan-600 to-amber-600 p-3 shadow-xl backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:shadow-2xl hover:shadow-purple-500/25 focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 focus:outline-none disabled:pointer-events-none disabled:opacity-50"
-		onclick={handlePlayPause}
-		disabled={isLoading}
+		onclick={() => audio.toggle()}
+		disabled={audio.isLoading}
+		aria-label={controlLabel}
+		title={controlLabel}
 	>
 		<div
 			class="relative z-10 text-white drop-shadow-sm transition-transform duration-200 group-hover:scale-110"
 		>
-			{#if isPlaying}
+			{#if audio.isPlaying}
 				<CirclePause size={20} />
-			{:else if isLoading}
+			{:else if audio.isLoading}
 				<Ellipsis size={20} class="animate-pulse" />
 			{:else}
 				<Play size={20} />
@@ -130,7 +54,7 @@
 <div class="relative">
 	{#if preview}
 		{@render preview()}
-		{#if soundPreviewUrl && !audioError}
+		{#if controlVisible}
 			{@render playButton()}
 		{/if}
 	{:else}
@@ -164,7 +88,7 @@
 					onerror={() => (imageError = true)}
 				/>
 			{/if}
-			{#if soundPreviewUrl && !audioError}
+			{#if controlVisible}
 				{@render playButton()}
 			{/if}
 		</div>

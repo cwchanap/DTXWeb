@@ -10,6 +10,21 @@ import path from 'node:path';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+const mockPlayingAudio = vi.hoisted(() => ({
+	subscribe: vi.fn((cb: (v: unknown) => void) => {
+		cb(null);
+		return () => {};
+	}),
+	set: vi.fn()
+}));
+
+// ChartListItem now creates its own audio preview unit (via createAudioPreview),
+// which subscribes to the shared playingAudio store. Mock $lib/store directly
+// rather than relying on the auto-mocked @dtx/common (which doesn't export `store`).
+vi.mock('$lib/store', () => ({
+	default: { playingAudio: mockPlayingAudio }
+}));
+
 vi.mock('svelte-i18n');
 vi.mock('@skeletonlabs/skeleton-svelte', async () => {
 	const { default: PopoverStub } = await import('../../tests/stubs/PopoverStub.svelte');
@@ -32,13 +47,8 @@ vi.mock('$lib/api', () => ({
 	bulkDownloadHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' })
 }));
 
-// Track ImageAudio props to test URL construction
-let capturedImageAudioProps: { previewUrl?: string; soundPreviewUrl?: string | null } | null = null;
 vi.mock('$lib/components/ImageAudio.svelte', () => ({
-	default: (props: { previewUrl: string; soundPreviewUrl: string | null }) => {
-		capturedImageAudioProps = props;
-		return {};
-	}
+	default: () => ({})
 }));
 
 vi.mock('$lib/utils', () => ({

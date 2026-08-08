@@ -273,10 +273,23 @@ describe('ChartListItem Component Logic', () => {
 			// PopoverStub always renders its content; no trigger click required.
 			// ButtonStub (see src/tests/stubs/ButtonStub.svelte) renders a plain
 			// <button> with no role="menuitem" override, so the accessible-name
-			// form is used here rather than an ordering assertion over menuitem role.
+			// form is used here rather than the menuitem role.
 			expect(
 				screen.getByRole('button', { name: 'chart_actions.play_audio' })
 			).toBeInTheDocument();
+		});
+
+		it('leads the owner menu with the audio entry, ahead of Open in Editor', () => {
+			render(ChartListItem, { props: renderProps });
+
+			// A plain <button> (ButtonStub has no role="menuitem" override) still carries
+			// the implicit ARIA role "button", so getAllByRole('button') already returns
+			// every menu entry in DOM order. Excluding the Popover trigger (aria-label
+			// "Actions") isolates the menu entries themselves.
+			const menuButtons = screen
+				.getAllByRole('button')
+				.filter((button) => button.getAttribute('aria-label') !== 'Actions');
+			expect(menuButtons[0]).toHaveAccessibleName('chart_actions.play_audio');
 		});
 
 		it('does not render action menu in blog mode', () => {

@@ -128,19 +128,26 @@ const makeDtx = () => ({
 	parseSoundChips: () => []
 });
 
-const readyChart = () => ({
-	chart: {
-		measures: [{ index: 0, measureTicks: 192, beatsPerMeasure: 4, entries: [], tuplets: [] }]
-	},
-	timing: {
-		totalDuration: 2,
-		measureStartSeconds: [0],
-		positionToTime: () => 0,
-		timeToPosition: () => ({ measure: 0, fraction: 0 })
-	},
-	notesByLane: {},
-	measureCount: 1
-});
+const readyChart = () => {
+	const tempoEvents = [{ measure: 0, fraction: 0, bpm: 120 }];
+	return {
+		chart: {
+			measures: [
+				{ index: 0, measureTicks: 192, beatsPerMeasure: 4, entries: [], tuplets: [] }
+			],
+			tempoEvents: [...tempoEvents]
+		},
+		timing: {
+			tempoEvents,
+			totalDuration: 2,
+			measureStartSeconds: [0],
+			positionToTime: () => 0,
+			timeToPosition: () => ({ measure: 0, fraction: 0 })
+		},
+		notesByLane: {},
+		measureCount: 1
+	};
+};
 
 describe('/preview page', () => {
 	beforeEach(() => {

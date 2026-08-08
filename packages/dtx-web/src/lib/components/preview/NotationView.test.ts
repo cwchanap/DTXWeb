@@ -107,7 +107,8 @@ const chart: NotationChart = {
 			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
 			tuplets: []
 		}
-	]
+	],
+	tempoEvents: []
 };
 
 describe('NotationView', () => {
@@ -135,7 +136,7 @@ describe('NotationView', () => {
 		// a degenerate empty chart can't produce aria-valuemax=-1 (invalid for a
 		// slider, where valuemin=0 and valuemax must be >= valuemin).
 		const { container } = render(NotationView, {
-			props: { chart: { measures: [] } as NotationChart }
+			props: { chart: { measures: [], tempoEvents: [] } as NotationChart }
 		});
 		await tick();
 		const slider = container.querySelector('[data-testid="notation-container"]');
@@ -166,7 +167,8 @@ describe('NotationView', () => {
 					],
 					tuplets: []
 				}
-			]
+			],
+			tempoEvents: []
 		};
 		render(NotationView, { props: { chart: beamChart } });
 		await tick();
@@ -202,7 +204,8 @@ describe('NotationView', () => {
 					],
 					tuplets: []
 				}
-			]
+			],
+			tempoEvents: []
 		};
 		render(NotationView, { props: { chart: offGridChart } });
 		await tick();
@@ -223,7 +226,8 @@ describe('NotationView', () => {
 					entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['g/5/x3'] }],
 					tuplets: []
 				}
-			]
+			],
+			tempoEvents: []
 		};
 		render(NotationView, { props: { chart: openHatChart } });
 		await tick();
@@ -251,7 +255,8 @@ describe('NotationView', () => {
 						}
 					]
 				}
-			]
+			],
+			tempoEvents: []
 		};
 
 		render(NotationView, { props: { chart: tripletChart } });
@@ -337,7 +342,8 @@ const richChart: NotationChart = {
 			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
 			tuplets: []
 		}
-	]
+	],
+	tempoEvents: []
 };
 
 describe('NotationView layout & interaction', () => {

@@ -87,7 +87,8 @@ const chart: NotationChart = {
 			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
 			tuplets: []
 		}
-	]
+	],
+	tempoEvents: []
 };
 
 describe('NotationView error paths', () => {

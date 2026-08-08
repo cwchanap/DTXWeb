@@ -31,12 +31,13 @@ export interface NotationMeasure {
 	tuplets: NotationTuplet[];
 }
 
-export interface NotationChart {
-	measures: NotationMeasure[];
-}
-
 export interface NotationTempoEvent {
 	measure: number;
 	fraction: number;
 	bpm: number;
+}
+
+export interface NotationChart {
+	measures: NotationMeasure[];
+	tempoEvents: NotationTempoEvent[];
 }

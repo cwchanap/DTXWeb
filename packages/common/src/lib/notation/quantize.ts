@@ -330,5 +330,10 @@ export const buildNotationChart = (
 		measureCount
 	});
 
-	return { chart: { measures }, timing, notesByLane, measureCount };
+	return {
+		chart: { measures, tempoEvents: [...timing.tempoEvents] },
+		timing,
+		notesByLane,
+		measureCount
+	};
 };

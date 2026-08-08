@@ -860,4 +860,36 @@ describe('buildNotationChart', () => {
 		expect(timing.totalDuration).toBe(4);
 		expect(chart.measures.every((m) => m.measureTicks === 192)).toBe(true);
 	});
+
+	it('exposes channel 08 bpm changes on the notation chart', () => {
+		const dtx = makeDtx(['#BPMAA: 180', '#00108: AA'], 120);
+		const { chart, timing } = buildNotationChart(dtx);
+
+		expect(chart.tempoEvents).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 1, fraction: 0, bpm: 180 }
+		]);
+		expect(chart.tempoEvents).toEqual(timing.tempoEvents);
+	});
+
+	it('lets converted channel 03 win an exact same-position tie after channel 08', () => {
+		const dtx = makeDtx(['#BPMAA: 180', '#00108: AA', '#00103: F0'], 120);
+		const { chart, timing } = buildNotationChart(dtx);
+
+		expect(chart.tempoEvents).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 1, fraction: 0, bpm: 240 }
+		]);
+		expect(chart.tempoEvents).toEqual(timing.tempoEvents);
+	});
+
+	it('preserves the exact fraction of a mid-measure bpm change', () => {
+		const dtx = makeDtx(['#BPMAA: 180', '#00008: 00AA'], 120);
+		const { chart } = buildNotationChart(dtx);
+
+		expect(chart.tempoEvents).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 0, fraction: 0.5, bpm: 180 }
+		]);
+	});
 });

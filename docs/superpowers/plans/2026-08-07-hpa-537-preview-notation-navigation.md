@@ -1198,7 +1198,7 @@ test('renders the starting tempo and a channel-08 tempo change', async ({ page }
 
 If VexFlow groups text differently, inspect text contents inside `container.locator('svg text')`; do not assert exact x/y positions and do not snapshot SVG.
 
-The existing preview E2E still exercises real VexFlow rendering; the valid fixture now ensures the tempo assertion runs alongside real playable notes rather than three rest-only measures.
+The existing preview E2E still exercises real VexFlow rendering; the valid fixture now ensures the tempo assertion runs alongside real playable notes rather than rest-only measures.
 
 - [ ] **Step 4: Add Blog -> Preview navigation coverage**
 

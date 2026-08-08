@@ -32,27 +32,17 @@ describe('ImageAudio', () => {
 		expect(screen.queryByRole('button')).not.toBeInTheDocument();
 	});
 
-	it('renders the control while playing', () => {
+	it('renders the control and labels it as pause while playing', () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ isPlaying: true }) } });
 		expect(
 			screen.getByRole('button', { name: 'chart_actions.pause_audio' })
 		).toBeInTheDocument();
 	});
 
-	it('renders the control while loading', () => {
+	it('renders the control and labels it as play while loading', () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ isLoading: true }) } });
-		expect(screen.getByRole('button')).toBeInTheDocument();
-	});
-
-	it('omits the control when audio is unavailable', () => {
-		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ available: false }) } });
-		expect(screen.queryByRole('button')).not.toBeInTheDocument();
-	});
-
-	it('labels the control as pause while playing', () => {
-		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ isPlaying: true }) } });
 		expect(
-			screen.getByRole('button', { name: 'chart_actions.pause_audio' })
+			screen.getByRole('button', { name: 'chart_actions.play_audio' })
 		).toBeInTheDocument();
 	});
 

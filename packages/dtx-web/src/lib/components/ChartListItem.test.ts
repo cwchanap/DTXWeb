@@ -489,6 +489,40 @@ describe('ChartListItem Component Logic', () => {
 		});
 	});
 
+	describe('Owner-only menu guards in blog mode', () => {
+		// Each owner-only entry is individually gated with its own `!isBlog &&`
+		// prefix (there is no longer a single structural barrier around the whole
+		// menu), so each guard needs its own regression coverage. Delete and
+		// Publish/Unpublish are rendered via ButtonStub, which has no
+		// role="menuitem" override, so they are queryable only via role="button".
+		// Edit details is a plain <a role="menuitem">.
+		const blogRenderProps = {
+			item: mockItem,
+			isBlog: true,
+			togglePublishChart: vi.fn().mockResolvedValue(undefined),
+			simfileBucketUrl: 'https://cdn.example.com',
+			onFileDelete: vi.fn()
+		};
+
+		it('omits the Delete entry on a blog card', () => {
+			render(ChartListItem, { props: blogRenderProps });
+			expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+		});
+
+		it('omits the Publish/Unpublish entry on a blog card', () => {
+			render(ChartListItem, { props: blogRenderProps });
+			expect(screen.queryByRole('button', { name: /unpublish/i })).not.toBeInTheDocument();
+			expect(screen.queryByRole('button', { name: /^publish$/i })).not.toBeInTheDocument();
+		});
+
+		it('omits the Edit details entry on a blog card', () => {
+			render(ChartListItem, { props: blogRenderProps });
+			expect(
+				screen.queryByRole('menuitem', { name: 'Edit details' })
+			).not.toBeInTheDocument();
+		});
+	});
+
 	describe('Handler coverage', () => {
 		const handlerProps = {
 			item: mockItem,

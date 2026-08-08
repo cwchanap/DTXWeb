@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
-	import type { AudioPreview } from '$lib/audioPreview.svelte';
+	import { CirclePause, Ellipsis } from '@lucide/svelte/icons';
+	import { audioToggleLabelKey, type AudioPreview } from '$lib/audioPreview.svelte';
 
 	interface Props {
 		previewUrl: string;
@@ -20,9 +20,7 @@
 	});
 
 	const controlVisible = $derived(audio.isPlaying || audio.isLoading);
-	const controlLabel = $derived(
-		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
-	);
+	const controlLabel = $derived($_(audioToggleLabelKey(audio)));
 </script>
 
 {#snippet playButton()}
@@ -38,10 +36,8 @@
 		>
 			{#if audio.isPlaying}
 				<CirclePause size={20} />
-			{:else if audio.isLoading}
-				<Ellipsis size={20} class="animate-pulse" />
 			{:else}
-				<Play size={20} />
+				<Ellipsis size={20} class="animate-pulse" />
 			{/if}
 		</div>
 		<!-- Animated background overlay -->

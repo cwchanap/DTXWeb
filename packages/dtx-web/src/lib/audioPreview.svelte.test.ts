@@ -10,6 +10,10 @@ const mockPlayingAudio = vi.hoisted(() => ({
 	set: vi.fn()
 }));
 
+// Retained by the subscribe mock below so tests can drive the
+// store-subscription branch directly (see "another card takes over").
+let retainedPlayingAudioCallback: ((v: unknown) => void) | null = null;
+
 vi.mock('$lib/store', () => ({
 	default: { playingAudio: mockPlayingAudio }
 }));
@@ -48,7 +52,9 @@ describe('createAudioPreview', () => {
 			'Audio',
 			vi.fn(() => mockAudio)
 		);
+		retainedPlayingAudioCallback = null;
 		mockPlayingAudio.subscribe.mockImplementation((cb: (v: unknown) => void) => {
+			retainedPlayingAudioCallback = cb;
 			cb(null);
 			return () => {};
 		});
@@ -195,6 +201,70 @@ describe('createAudioPreview', () => {
 		expect(mockAudio.pause).toHaveBeenCalled();
 		expect(mockAudio.remove).toHaveBeenCalled();
 		expect(global.Audio).toHaveBeenCalledTimes(2);
+		dispose();
+	});
+
+	it('ignores a second toggle while the first one is still loading', async () => {
+		// Two distinct elements so we can tell whether the second toggle acted on
+		// the first (in-flight) element at all.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn(),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		let resolvePlay!: () => void;
+		const pendingPlay = new Promise<void>((resolve) => {
+			resolvePlay = resolve;
+		});
+		elements[0].play.mockReturnValue(pendingPlay);
+		elements[1].play.mockResolvedValue(undefined);
+
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		const firstToggle = audio.toggle();
+		const secondToggle = audio.toggle();
+
+		resolvePlay();
+		await firstToggle;
+		await secondToggle;
+
+		expect(global.Audio).toHaveBeenCalledTimes(1);
+		expect(elements[0].pause).not.toHaveBeenCalled();
+		expect(elements[0].remove).not.toHaveBeenCalled();
+		expect(audio.isPlaying).toBe(true);
+		dispose();
+	});
+
+	it('clears isPlaying when another card takes over the shared store', async () => {
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+		await audio.toggle();
+		expect(audio.isPlaying).toBe(true);
+
+		// Simulate another card claiming the shared store by re-invoking the
+		// retained subscription callback, rather than only relying on the
+		// subscribe-time call captured at mount.
+		expect(retainedPlayingAudioCallback).not.toBeNull();
+		retainedPlayingAudioCallback!(null);
+
+		expect(audio.isPlaying).toBe(false);
 		dispose();
 	});
 

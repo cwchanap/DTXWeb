@@ -18,6 +18,7 @@ on:
     branches:
       - main
       - master
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'packages/dtx-desktop/**'
       - 'packages/e2e-desktop/**'
@@ -33,6 +34,7 @@ permissions:
 
 jobs:
   desktop-e2e:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Tauri Integration Test
     runs-on: ubuntu-latest
     timeout-minutes: 30

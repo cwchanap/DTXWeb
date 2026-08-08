@@ -1,7 +1,7 @@
 # HPA-537 Preview Notation and Navigation Enhancement
 
 **Date:** 2026-08-07  
-**Status:** Approved design  
+**Status:** Approved design, revised after repository review  
 **Linear:** HPA-537  
 **Package(s):** `@dtx/common`, `dtx-web`, `dtx-e2e-web`
 
@@ -9,23 +9,23 @@
 
 HPA-537 improves the public music-tab preview in two related ways:
 
-1. Increase notation fidelity by showing explicit measure boundaries and BPM markings, including mid-song tempo changes.
-2. Make navigation match user intent: public browsing should lead to the read-only notation preview, while owner/management surfaces should continue to lead to the editor.
+1. Improve notation readability by removing doubled measure boundaries and rendering the effective BPM, including mid-song tempo changes.
+2. Make navigation match user intent: public browsing leads to the read-only notation preview, while owner/management surfaces continue to lead to the editor.
 
 The existing `/preview/[id]` route remains the public read-only viewer. The existing `/editor/[simfileID]` route remains the creator/editor surface. No new route, API endpoint, database field, or permission model is introduced.
 
-The central design rule is:
+The central UX rule is:
 
 > **Preview is the public/read-only consumption surface. Editor is the creator/owner surface.**
 
 ## Goals
 
-- Render clear measure barlines in the VexFlow notation view.
-- Render the effective initial BPM and all effective BPM changes in musical position.
-- Keep notation tempo markings and playback timing derived from one normalization path.
-- Make blog card and table navigation open `/preview/[id]` for previewable published charts.
+- Remove doubled barlines between adjacent measures in the same rendered system.
+- Render the effective initial BPM and all effective BPM changes at their musical positions.
+- Derive notation tempo markings and playback timing from one normalized tempo sequence.
+- Make blog card/table navigation open `/preview/[id]` for previewable published charts.
 - Keep owner chart-list navigation focused on `/editor/[id]`, with Preview as a secondary action.
-- Clarify the existing owner metadata action by renaming `Edit` to `Edit details`.
+- Rename the ambiguous owner metadata action from `Edit` to `Edit details`.
 - Keep the implementation narrow and local to existing notation/chart-list boundaries.
 
 ## Non-goals
@@ -39,14 +39,15 @@ The central design rule is:
 - New GraphQL fields, API endpoints, database changes, or codegen changes.
 - Desktop/Tauri changes.
 - Changes to the Phaser gameplay-style Preview scene.
-- A universal shared `ChartActions` abstraction.
+- A universal shared `ChartActions` component.
 - Redesigning routes or changing `/preview/[id]` URL semantics.
+- Solving dense/multiple tempo-label collision in the same measure.
 
 ## Current State
 
-The public preview is already a separate Songsterr-style notation experience using VexFlow. It loads one published DTX level, builds a pure notation/timing model in `@dtx/common`, renders notation through `NotationView.svelte`, and drives playback/cursor synchronization from `ChartTiming`.
+The public preview already provides a Songsterr-style notation experience using VexFlow. It loads one published DTX level, builds a pure notation/timing model in `@dtx/common`, renders notation through `NotationView.svelte`, and drives playback/cursor synchronization from `ChartTiming`.
 
-Relevant existing files:
+Relevant files:
 
 - `packages/common/src/lib/notation/model.ts`
 - `packages/common/src/lib/notation/quantize.ts`
@@ -56,6 +57,14 @@ Relevant existing files:
 
 The preview already parses the selected DTX file, so all tempo information is available without extending `getPreviewSimfile()` or GraphQL.
 
+### Existing barline behavior
+
+VexFlow 4.2.5 creates a `Stave` with both `left_bar: true` and `right_bar: true` by default. `NotationView.svelte` packs measure staves edge-to-edge in a system. Therefore measure boundaries are **already rendered**, but two adjacent staves produce a doubled boundary: the previous measure's end bar plus the next measure's begin bar.
+
+HPA-537 does not add missing barlines. It removes the redundant begin bar for non-first measures in a rendered row while leaving VexFlow's existing end bars intact.
+
+### Existing navigation behavior
+
 Navigation is currently inconsistent with the public/owner distinction:
 
 - Blog card titles can navigate to `/editor/[id]`.
@@ -63,7 +72,7 @@ Navigation is currently inconsistent with the public/owner distinction:
 - Owner card/table titles also navigate to `/editor/[id]`, which is appropriate for that context.
 - The authenticated chart-detail page already exposes `/preview/[id]` separately for published charts.
 
-HPA-537 makes the list views follow the same distinction consistently.
+HPA-537 makes the list views follow that distinction consistently.
 
 ## Design Decisions
 
@@ -73,15 +82,16 @@ HPA-537 makes the list views follow the same distinction consistently.
 | Tempo model | Add narrow `NotationTempoEvent { measure, fraction, bpm }` data |
 | Timing exposure | `ChartTiming.tempoEvents` is the normalized effective tempo sequence |
 | Initial tempo | Always expose one effective event at measure `0`, fraction `0` |
-| Tempo changes | Support both channel `08` (`#BPMxx`) and legacy channel `03` |
+| Tempo changes | Support channel `08` (`#BPMxx`) and legacy channel `03` |
 | Duplicate tempo | Collapse consecutive effective events with the same BPM |
 | Invalid tempo | Ignore invalid/non-positive/non-finite changes and retain prior effective BPM |
-| Measure lines | Explicit single VexFlow end bar on every measure; no custom SVG overlay |
-| Measure-start tempo | Use VexFlow stave tempo rendering |
-| Mid-measure tempo | Draw tempo text above the stave at the musical fraction after layout |
+| Measure boundary fix | Keep VexFlow end bars; suppress begin bar only for non-first staves in a row |
+| Tempo rendering | Use VexFlow `StaveTempo` outside the rhythmic `Voice` |
+| Mid-measure positioning | Position from the measure's normalized fraction after layout |
 | Blog primary route | `/preview/[id]` |
 | Owner primary route | `/editor/[id]` |
 | Owner preview | Secondary action only when published + uploaded |
+| Navigation policy reuse | Small pure helpers in existing `ChartList.helpers.ts` |
 | Preview-page editor action | Excluded |
 | Editor-shell preview action | Excluded |
 
@@ -89,7 +99,7 @@ HPA-537 makes the list views follow the same distinction consistently.
 
 ### Types
 
-Extend the notation model with a deliberately narrow tempo event:
+Add a deliberately narrow tempo event:
 
 ```ts
 export interface NotationTempoEvent {
@@ -97,7 +107,23 @@ export interface NotationTempoEvent {
 	fraction: number;
 	bpm: number;
 }
+```
 
+Extend the timing result:
+
+```ts
+export interface ChartTiming {
+	tempoEvents: NotationTempoEvent[];
+	measureStartSeconds: number[];
+	totalDuration: number;
+	positionToTime(measure: number, fraction: number): number;
+	timeToPosition(t: number): { measure: number; fraction: number };
+}
+```
+
+When DTX notation is built, expose the normalized sequence on the chart:
+
+```ts
 export interface NotationChart {
 	measures: NotationMeasure[];
 	tempoEvents: NotationTempoEvent[];
@@ -106,52 +132,53 @@ export interface NotationChart {
 
 `fraction` is normalized to `0..1` within the measure. The event describes the effective tempo beginning at that musical position.
 
-Do not introduce a generic `NotationEvent`, annotation registry, discriminated event hierarchy, or renderer plug-in mechanism. HPA-537 only needs tempo markings.
+Do not introduce a generic `NotationEvent`, annotation registry, discriminated event hierarchy, or renderer plug-in mechanism.
 
-### Single Normalization Path
+### Single normalization path
 
-The current timing pipeline already combines:
+The current timing pipeline already interprets:
 
 - the base DTX BPM;
 - channel `08` BPM-reference changes;
-- channel `03` direct-hex legacy BPM changes.
+- channel `03` direct-hex legacy BPM changes after the existing synthetic-key conversion in `buildNotationChart()`.
 
-Refactor that interpretation into one pure helper in the notation/timing module:
+Extract the timing interpretation into one pure helper:
 
 ```ts
 normalizeTempoEvents(input: TimingInput): NotationTempoEvent[]
 ```
 
-`buildChartTiming()` consumes this normalized sequence and exposes it as `ChartTiming.tempoEvents`. `buildNotationChart()` sets `NotationChart.tempoEvents = timing.tempoEvents`.
+`buildChartTiming()` consumes that normalized sequence for both forward and inverse timing and exposes it as `ChartTiming.tempoEvents`. `buildNotationChart()` exposes an equivalent `tempoEvents` sequence on `NotationChart`.
+
+The contract is **value equivalence**, not array identity. A future defensive copy must be allowed as long as the effective sequence is unchanged.
 
 Conceptually:
 
 ```text
-DTX base BPM + channel 08 + channel 03
-                 |
-                 v
-        normalizeTempoEvents()
-                 |
-          +------+------+
-          |             |
-          v             v
-     ChartTiming    NotationChart
-       playback       engraving
+DTX base BPM + channel 08 + converted channel 03
+                         |
+                         v
+                normalizeTempoEvents()
+                         |
+                  +------+------+
+                  |             |
+                  v             v
+             ChartTiming    NotationChart
+               playback       engraving
 ```
 
-This avoids two independent interpretations of DTX tempo semantics.
+### Normalization rules
 
-### Normalization Rules
-
-1. Resolve the initial BPM using the same effective fallback currently used by preview timing (`dtx.bpm || 120`).
-2. Convert channel `08` references through `bpmValueMap`.
-3. Convert legacy channel `03` note IDs to their direct hexadecimal BPM values using the existing legacy conversion path.
-4. Sort changes by measure and fraction while preserving input order for exact ties. `buildNotationChart()` supplies channel `08` changes before converted channel `03` changes, so a channel `03` change is the final effective value at an exact same-position tie.
-5. Treat only finite BPM values greater than zero as valid changes.
-6. Invalid or unresolved changes leave the previous effective BPM unchanged and do not produce a notation event.
-7. A valid change at measure `0`, fraction `0` replaces the initial effective event rather than adding a duplicate mark at the same position.
-8. If multiple valid changes occur at the same musical position, apply them in the deterministic order above and keep only the final effective BPM for that position.
-9. Collapse consecutive events when the effective BPM does not change.
+1. Resolve the initial BPM to a finite positive value; otherwise use `120`.
+2. Resolve channel `08` references through `bpmValueMap`.
+3. Reuse the existing channel `03` synthetic-key conversion rather than parsing legacy BPM again in the renderer.
+4. Sort by measure and fraction while preserving input order for exact ties.
+5. `buildNotationChart()` supplies channel `08` changes before converted channel `03` changes, so channel `03` is the final effective value at an exact same-position tie.
+6. Treat only finite BPM values greater than zero as valid changes.
+7. Invalid or unresolved changes leave the previous effective BPM unchanged and do not produce a notation event.
+8. A valid change at measure `0`, fraction `0` replaces the initial effective event rather than adding a duplicate mark.
+9. If multiple valid changes occur at the same musical position, keep only the final effective BPM at that position.
+10. Collapse consecutive events when the effective BPM does not change.
 
 Example:
 
@@ -171,70 +198,45 @@ produces:
 ]
 ```
 
-### Timing Consumption
+### Timing consumption
 
-Extend `ChartTiming` with:
+`secondsIntoMeasure()` and `fractionAtSeconds()` must consume the normalized sequence rather than independently walking raw `bpmChanges`.
 
-```ts
-tempoEvents: NotationTempoEvent[];
-```
-
-Its existing timing API remains unchanged:
-
-- `measureStartSeconds`
-- `totalDuration`
-- `positionToTime()`
-- `timeToPosition()`
-
-`secondsIntoMeasure()` and `fractionAtSeconds()` must consume the normalized effective tempo sequence instead of resolving raw BPM notes independently. This keeps forward and inverse timing on the same source as notation.
+The first normalized tempo event is also the timing engine's initial BPM. Timing must not initialize separately from the raw `input.bpm` after normalization.
 
 The important invariant is:
 
-> The tempo sequence used to compute time is exactly the sequence rendered as notation markings.
+> The effective tempo values used to compute time are the same values exposed to notation rendering.
 
 No BPM-specific logic is added to the preview Svelte page.
 
 ## Notation Rendering
 
-### Measure Boundaries
+### Remove doubled measure boundaries
 
-`NotationView.svelte` already creates one VexFlow `Stave` per `NotationMeasure`. Measure lines therefore belong to the stave configuration itself.
+`NotationView.svelte` already creates one VexFlow `Stave` per `NotationMeasure`, and VexFlow already supplies a single begin and end bar by default.
 
-For every measure stave:
+For each laid-out measure:
 
-- explicitly configure a single VexFlow end barline;
-- rely on that end bar as the boundary between adjacent measures;
-- do not draw an additional beginning boundary for following measures;
-- do not draw a custom SVG/HTML barline overlay;
-- preserve the existing responsive wrapping and geometry recording.
-
-Use the same single boundary for the final measure in HPA-537. A special final/double barline is not part of this ticket.
-
-The visual intent is:
-
-```text
-measure 1 | measure 2 | measure 3 |
+```ts
+const firstInRow = x === LEFT;
+const stave = new Stave(x, y, width);
+if (!firstInRow) stave.setBegBarType(BarlineType.NONE);
 ```
 
-### Initial and Measure-start Tempo
+Do not re-set the end bar to `SINGLE`; that is already the VexFlow default and would be a no-op.
 
-For a `NotationTempoEvent` where `fraction === 0`, render a conventional tempo marking above that measure's stave using VexFlow's stave-tempo support.
+Do not draw custom SVG/HTML barline overlays.
 
-The first measure therefore shows the effective starting tempo, for example:
+At the start of a wrapped system, retain the normal begin bar. Between adjacent measures, the previous measure's end bar becomes the single visible boundary.
 
-```text
-quarter note = 120
-```
+Suppressing a begin bar may change VexFlow's formatted `getNoteStartX()`. The renderer already recomputes geometry in the same render pass, so cursor/seek geometry should remain internally consistent, but preview cursor/seek regression tests remain in the verification blast radius.
 
-Use VexFlow's musical tempo glyph/rendering instead of manually drawing a Unicode quarter-note symbol when the stave-tempo API supports the desired output.
+### Tempo annotations
 
-A later tempo event exactly on a measure boundary is rendered the same way above that measure.
+Render all tempo events through the same post-layout VexFlow `StaveTempo` path, outside the rhythmic `Voice`.
 
-### Mid-measure Tempo
-
-A tempo event with `fraction > 0` must not split the measure or participate in the rhythmic voice.
-
-After the stave and voice have been formatted, derive an annotation x-coordinate from the laid-out stave:
+After the stave and voice have been formatted, derive the nominal annotation coordinate:
 
 ```ts
 const x =
@@ -242,32 +244,33 @@ const x =
 	event.fraction * (stave.getNoteEndX() - stave.getNoteStartX());
 ```
 
-Render the tempo text above the stave using the VexFlow render context/text support at that x position.
+Then draw:
 
-Do not use a `TextNote` in the musical `Voice`: tempo annotations must not change note spacing, rhythmic duration, beam generation, or cursor geometry.
+```ts
+new StaveTempo({ bpm: event.bpm, duration: 'q' }, x, 0).draw(stave, 0);
+```
 
-This proportional x placement is intentionally simple. It matches the existing measure-fraction geometry model and avoids introducing tick-context coupling solely for annotations.
+Using `StaveTempo` rather than `TextNote` keeps tempo annotations out of note spacing, rhythmic duration, beam generation, and cursor geometry.
 
-### Layout
+### Known rendering limitations
 
-Tempo markings need additional vertical headroom. Adjust the existing local layout constants in `NotationView.svelte` (`TOP`, `SYSTEM_HEIGHT`, or equivalent) so markings do not collide with the preceding system.
+VexFlow 4.2.5 internally applies a `+10px` `StaveTempo.shift_x`, so the final glyph position is offset from the nominal proportional x. Tests must not assert exact browser pixel placement.
 
-Do not introduce dynamic annotation measurement or a separate layout engine. A fixed small increase to system headroom is sufficient for this feature.
+Multiple tempo events in one measure currently share the same top-text baseline and may overlap if they are close together. Do not add dynamic label measurement, vertical staggering, or collision avoidance in HPA-537. If real charts demonstrate a readability problem, handle that as a focused follow-up.
 
-### Failure Behavior
+Tempo markings need additional vertical headroom. Adjust only the existing local layout constants (`TOP`, `SYSTEM_HEIGHT`, or equivalent); do not introduce a separate layout engine.
+
+### Failure behavior
 
 Notation annotation failure must not prevent the chart from rendering or playing.
 
-- Tempo normalization returns a valid effective sequence whenever the chart timing itself is usable.
-- Invalid tempo directives are ignored as described above.
-- A rendering failure for a tempo mark should be contained to that annotation and follow the existing non-fatal rendering posture.
+- Invalid tempo directives are ignored during normalization.
+- A rendering failure for one tempo mark is logged/skipped independently.
 - Audio loading, seek, playback, level switching, and cursor behavior remain unchanged.
 
 ## Public Blog Navigation
 
-### Public Mental Model
-
-The public browsing path becomes:
+### Public mental model
 
 ```text
 /blog -> /preview/[id] -> optional download
@@ -275,30 +278,38 @@ The public browsing path becomes:
 
 The editor is not the primary destination from the public blog.
 
-### Card View
+### Shared pure policy
 
-In `ChartListItem.svelte`, derive the title destination from context:
-
-- `isBlog && previewable` -> `/preview/[id]`
-- `!isBlog && has_uploaded_files` -> `/editor/[id]`
-- otherwise -> non-link title
-
-For blog cards, add an explicit **Preview** action in the footer near the existing Download action so preview is discoverable even when users do not click titles.
-
-A chart is previewable when it is published and has uploaded files:
+Keep card/table UI separate, but centralize the tiny route policy in existing `ChartList.helpers.ts`:
 
 ```ts
-item.is_published === true && item.has_uploaded_files === true
+isPreviewable(item): boolean
+chartTitleHref(item, isBlog): string | null
 ```
 
-The published check is defensive in blog mode because the blog query is already scoped to published items.
+Rules:
 
-### Table View
+- blog + published + uploaded -> `/preview/[id]`;
+- owner + uploaded -> `/editor/[id]`;
+- otherwise -> no title link.
+
+This prevents the card title, table title, and table action visibility from drifting without introducing a shared UI component.
+
+### Card view
+
+For blog cards:
+
+- title uses `chartTitleHref()`;
+- add an explicit **Preview** action near the current Download action when `isPreviewable()` is true;
+- non-previewable blog items remain non-clickable and never fall back to Editor.
+
+### Table view
 
 For blog table rows:
 
-- chart title -> `/preview/[id]` when previewable;
+- title uses the same `chartTitleHref()` helper;
 - add a compact Preview action beside the existing download/external-link action;
+- use a visually distinct Preview icon such as `Eye`; reserve `ExternalLink` for external download;
 - keep the public row compact; do not add the owner action popover.
 
 ## Owner Navigation
@@ -313,38 +324,34 @@ For non-blog card and table views:
 
 - uploaded chart title remains `/editor/[id]`;
 - existing **Open in Editor** remains the primary action;
-- add **Preview** as a secondary action when `is_published && has_uploaded_files`;
+- add **Preview** as a secondary action when published + uploaded;
 - keep `/app/chart/[id]` as the metadata/details destination;
-- rename the generic **Edit** action to **Edit details** to distinguish it from the DTX editor.
+- rename **Edit** to **Edit details**.
 
-Do not create a reusable cross-surface `ChartActions` component for this ticket. The number of touched actions is small and the card/table components already own their contextual rendering.
+Do not create a reusable `ChartActions` component.
 
 ## Preview and Editor Navigation Exclusions
 
-### No Editor Action on Public Preview
+### No Editor action on public Preview
 
-Do not add an Editor button to `/preview/[id]`.
+Do not add an Editor button to `/preview/[id]`. The route is intentionally public and anonymous for published charts; ownership/auth state is otherwise unnecessary there.
 
-The preview route is intentionally public and anonymous for published charts. Showing an editor action correctly would require ownership/auth state that is otherwise unnecessary for the page. Adding that state solely for one button is outside HPA-537.
+### No Preview action in editor shell
 
-### No Preview Action in Editor Shell
-
-Do not add a public-preview button to `EditorNavigation.svelte` in this ticket.
-
-The remote editor shell currently does not carry publication state. Obtaining it solely to decide whether a Preview action should appear adds coupling without improving the main public browsing flow. The owner chart list and chart-detail page already provide suitable preview entry points.
+Do not add a public-preview button to `EditorNavigation.svelte`. The remote editor shell currently does not carry publication state, and owner list/detail surfaces already provide suitable entry points.
 
 ## Error Handling
 
 HPA-537 introduces no new page-level error state.
 
-Preserve the existing preview behavior:
+Preserve existing preview behavior:
 
 - metadata/chart load failure -> existing preview unavailable state;
 - level load failure -> keep committed chart and restore transport state;
 - audio failure -> existing visual-only fallback;
 - partial sound-file failure -> existing non-fatal notification.
 
-Tempo-specific behavior:
+Tempo behavior:
 
 - unresolved BPM reference -> retain prior effective BPM;
 - non-finite or non-positive BPM -> retain prior effective BPM;
@@ -353,75 +360,60 @@ Tempo-specific behavior:
 
 ## Testing Strategy
 
-### `@dtx/common` Unit Tests
+### `@dtx/common`
 
-Extend notation/timing tests to verify the meaningful tempo semantics:
+Unit tests must verify:
 
-1. Base BPM creates an event at measure `0`, fraction `0`.
-2. Channel `08` BPM references resolve correctly.
-3. Legacy channel `03` direct-hex BPM changes resolve correctly.
-4. A valid position-zero change replaces the initial effective mark.
-5. Mid-measure changes preserve their exact fraction.
-6. Same-BPM consecutive changes collapse.
-7. Effective tempo carries across measure boundaries.
-8. Invalid/unresolved/non-positive/non-finite BPM changes are ignored.
-9. Same-position changes resolve deterministically, including the channel `08` then channel `03` tie rule.
-10. Forward and inverse timing calculations consume `ChartTiming.tempoEvents` rather than a second raw-note interpretation.
+1. Base BPM creates the initial event.
+2. Invalid base BPM falls back to 120.
+3. Channel `08` references resolve correctly.
+4. Legacy channel `03` changes resolve through the existing conversion path.
+5. Position-zero changes replace the initial effective mark.
+6. Mid-measure changes preserve their fraction.
+7. Same-BPM consecutive changes collapse.
+8. Exact same-position changes resolve deterministically, including the `08` then `03` rule.
+9. Invalid/unresolved/non-positive/non-finite changes are ignored.
+10. A mapped `0` BPM does not poison duration; a 4/4 measure at 120 BPM remains two seconds.
+11. Forward and inverse timing use the normalized sequence.
+12. `NotationChart.tempoEvents` and `ChartTiming.tempoEvents` are equal by value. Do not require reference identity.
 
-Do not test trivial object construction.
+### `NotationView`
 
-### `NotationView.test.ts`
+Continue orchestration tests with VexFlow mocked.
 
-Continue the current orchestration-test style with VexFlow mocked.
+Assert:
 
-Add assertions that:
-
-- measure staves receive explicit single end-bar configuration;
-- the initial tempo uses the stave-tempo rendering path;
-- a later measure-start change is attached to the correct stave;
-- a mid-measure change is rendered at the expected proportional x-coordinate;
-- tempo rendering does not add entries to the musical `Voice` or alter the existing rhythmic note array;
-- a chart with `tempoEvents: []` still renders without annotation work.
+- the second adjacent stave has its begin bar changed to `BarlineType.NONE`;
+- do not assert explicit end-bar setters because VexFlow already supplies them;
+- tempo events instantiate/draw `StaveTempo` outside the rhythmic `Voice`;
+- a mid-measure event uses the expected nominal proportional x in the unit-level constructor call;
+- tempo rendering does not add voice entries;
+- tempo draw failure remains non-fatal;
+- chart fixtures use `tempoEvents: []` when no marks are needed.
 
 Do not snapshot VexFlow SVG output.
 
-### Preview Page Tests
+### Preview page tests
 
-No new page-level BPM test is required. The preview page should continue treating `buildNotationChart()` as its model boundary; adding a test that merely proves a returned field is assigned through `chart = built.chart` would be trivial.
+No new page-level BPM test is required. Update existing typed fixtures when `NotationChart.tempoEvents` becomes required and keep existing audio/transport/level-switch behavior tests unchanged.
 
-Update existing preview test fixtures/types only where the required `NotationChart.tempoEvents` field makes that necessary. Existing audio loading, transport, level-switch, and stale-load tests must continue to pass unchanged in behavior.
+### Chart-list tests
 
-### Chart List Unit Tests
-
-Cover the context matrix explicitly:
-
-| Context | Uploaded | Published | Primary destination |
-| --- | --- | --- | --- |
-| Blog | yes | yes | `/preview/[id]` |
-| Blog | no | yes | no preview link |
-| Owner | yes | yes/no | `/editor/[id]` |
-| Owner | no | yes/no | no editor title link |
-
-Also verify:
-
-- blog Preview CTA visibility;
-- owner secondary Preview visibility only for published + uploaded charts;
-- `Edit details` targets `/app/chart/[id]`;
-- equivalent public-vs-owner behavior in table mode.
+Test the route matrix once at the pure-helper seam, then keep lightweight card/table integration assertions. Extend the existing `ChartListTableItem.test.ts`; do not recreate its mock scaffolding. Update its existing `Edit` assertion to `Edit details`.
 
 ### E2E
 
-Keep E2E coverage intentionally small.
+Use a dedicated `preview-tempo.dtx` fixture; leave shared `test-sample.dtx` unchanged.
 
-Extend the existing preview fixture with at least one BPM change and assert that visible tempo information is rendered by real VexFlow/browser rendering.
+The dedicated fixture must contain valid DTX object lines beginning with `#NNNCC:` so `DTXFile.parseNotes()` produces real playable notes. Put a channel `08` tempo change in a measure that also contains playable notes.
 
-Add one public navigation path:
+Verify:
 
-```text
-/blog -> click previewable published chart -> /preview/[id]
-```
+- the existing real-VexFlow preview journey still renders notation;
+- visible tempo text includes the initial and changed BPM;
+- Blog -> published uploaded chart navigates to `/preview/[id]`.
 
-Do not duplicate all tempo edge cases in Playwright; unit tests own those semantics.
+Browser assertions must not depend on exact tempo-label pixel positions.
 
 ## Expected File Impact
 
@@ -431,24 +423,28 @@ Likely production files:
 - `packages/common/src/lib/notation/timing.ts`
 - `packages/common/src/lib/notation/quantize.ts`
 - `packages/dtx-web/src/lib/components/preview/NotationView.svelte`
+- `packages/dtx-web/src/lib/components/ChartList.helpers.ts`
 - `packages/dtx-web/src/lib/components/ChartList.svelte`
 - `packages/dtx-web/src/lib/components/ChartListItem.svelte`
 - `packages/dtx-web/src/lib/components/ChartListTableItem.svelte`
 
 Likely tests/fixtures:
 
-- `packages/common/src/lib/notation/timing.test.ts` and/or existing notation tests
+- `packages/common/src/lib/notation/timing.test.ts`
 - `packages/common/src/lib/notation/quantize.test.ts`
 - `packages/dtx-web/src/lib/components/preview/NotationView.test.ts`
-- `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
+- `packages/dtx-web/src/lib/components/preview/NotationView.errors.test.ts`
+- `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts`
 - `packages/dtx-web/src/lib/components/ChartList.test.ts`
-- table-item tests only if a focused test already exists or the table behavior cannot be covered cleanly through `ChartList.test.ts`
+- `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
+- existing `packages/dtx-web/src/lib/components/ChartListTableItem.test.ts`
+- new `packages/e2e-web/fixtures/preview-tempo.dtx`
 - `packages/e2e-web/preview.spec.ts`
 - `packages/e2e-web/blog.spec.ts`
-- `packages/e2e-web/fixtures/test-sample.dtx`
 
 No expected changes:
 
+- `packages/e2e-web/fixtures/test-sample.dtx`
 - `packages/dtx-api/**`
 - GraphQL operations/generated client
 - database migrations
@@ -460,21 +456,22 @@ No expected changes:
 
 1. `/preview/[id]` visibly renders the selected DTX's effective starting BPM.
 2. Valid channel `03` and `08` tempo changes render BPM markings at their musical positions.
-3. Tempo markings use exactly `ChartTiming.tempoEvents`, the same normalized effective tempo sequence used by playback timing.
-4. Notation shows clear VexFlow-rendered single measure boundaries without custom overlay lines or doubled boundaries.
-5. Tempo markings do not alter note spacing, beam grouping, cursor geometry, seek behavior, or playback timing.
-6. Switching difficulty rebuilds notation and therefore shows the newly selected DTX level's tempo sequence.
-7. Blog card titles for previewable charts navigate to `/preview/[id]`, not `/editor/[id]`.
-8. Blog table titles follow the same rule.
-9. Blog cards expose an explicit Preview action; table rows expose a compact Preview action.
-10. Owner chart titles continue to open `/editor/[id]` when uploaded files exist.
-11. Published owner charts with uploaded files expose Preview as a secondary action.
-12. The owner metadata action is labelled `Edit details` and continues to open `/app/chart/[id]`.
-13. No API, GraphQL, database, desktop, or auth changes are required.
-14. Existing preview transport/audio/level-switch behavior continues to pass its tests.
+3. Timing and notation expose equivalent normalized effective tempo sequences.
+4. Adjacent measures in the same rendered system no longer show a doubled boundary.
+5. Removing the redundant begin bar does not break cursor/seek behavior.
+6. Tempo markings do not alter note spacing, beam grouping, cursor geometry, seek behavior, or playback timing.
+7. Switching difficulty rebuilds notation and shows the selected DTX level's tempo sequence.
+8. Blog card/table titles for previewable charts navigate to `/preview/[id]`, not `/editor/[id]`.
+9. Blog cards expose an explicit Preview action; table rows expose a compact, visually distinct Preview action.
+10. Non-previewable blog items remain non-clickable and never fall back to Editor.
+11. Owner chart titles continue to open `/editor/[id]` when uploaded files exist.
+12. Published owner charts with uploaded files expose Preview as a secondary action.
+13. The owner metadata action is labelled `Edit details` and continues to open `/app/chart/[id]`.
+14. No API, GraphQL, database, desktop, auth, public-preview ownership, or editor-shell changes are required.
+15. Existing preview transport/audio/level-switch behavior continues to pass its tests.
 
 ## Scope Check
 
-This design is intentionally one implementation unit: a small shared tempo-normalization/model extension plus localized VexFlow and chart-list UI changes. It does not create new infrastructure or broaden into general notation/editor architecture.
+This remains one focused implementation unit: a small shared tempo-normalization/model extension plus localized VexFlow and chart-list UI changes. The barline work is intentionally only removal of the redundant adjacent begin bar, not a notation-layout rewrite.
 
-Future work, if desired, should be separate tickets for measure numbers, richer musical directives, owner-aware actions on the public preview, editor-shell preview navigation, or generalized chart-action components.
+Future work, if desired, should be separate tickets for measure numbers, dense tempo-label collision handling, richer musical directives, owner-aware actions on public preview, editor-shell preview navigation, or generalized chart-action components.

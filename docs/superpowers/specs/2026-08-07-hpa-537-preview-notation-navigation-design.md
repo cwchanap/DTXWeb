@@ -71,11 +71,12 @@ HPA-537 makes the list views follow the same distinction consistently.
 | --- | --- |
 | Tempo source | Normalize tempo once in `@dtx/common` and reuse it for timing + notation |
 | Tempo model | Add narrow `NotationTempoEvent { measure, fraction, bpm }` data |
+| Timing exposure | `ChartTiming.tempoEvents` is the normalized effective tempo sequence |
 | Initial tempo | Always expose one effective event at measure `0`, fraction `0` |
 | Tempo changes | Support both channel `08` (`#BPMxx`) and legacy channel `03` |
 | Duplicate tempo | Collapse consecutive effective events with the same BPM |
 | Invalid tempo | Ignore invalid/non-positive/non-finite changes and retain prior effective BPM |
-| Measure lines | Use VexFlow stave barline APIs; no custom SVG overlay |
+| Measure lines | Explicit single VexFlow end bar on every measure; no custom SVG overlay |
 | Measure-start tempo | Use VexFlow stave tempo rendering |
 | Mid-measure tempo | Draw tempo text above the stave at the musical fraction after layout |
 | Blog primary route | `/preview/[id]` |
@@ -115,13 +116,13 @@ The current timing pipeline already combines:
 - channel `08` BPM-reference changes;
 - channel `03` direct-hex legacy BPM changes.
 
-Refactor that interpretation into one pure helper in the notation/timing module, for example:
+Refactor that interpretation into one pure helper in the notation/timing module:
 
 ```ts
 normalizeTempoEvents(input: TimingInput): NotationTempoEvent[]
 ```
 
-`buildChartTiming()` consumes the normalized sequence rather than independently resolving raw BPM change notes. `buildNotationChart()` then exposes that same normalized sequence on `NotationChart`.
+`buildChartTiming()` consumes this normalized sequence and exposes it as `ChartTiming.tempoEvents`. `buildNotationChart()` sets `NotationChart.tempoEvents = timing.tempoEvents`.
 
 Conceptually:
 
@@ -145,11 +146,11 @@ This avoids two independent interpretations of DTX tempo semantics.
 1. Resolve the initial BPM using the same effective fallback currently used by preview timing (`dtx.bpm || 120`).
 2. Convert channel `08` references through `bpmValueMap`.
 3. Convert legacy channel `03` note IDs to their direct hexadecimal BPM values using the existing legacy conversion path.
-4. Sort changes by measure and fraction using deterministic source order for ties.
+4. Sort changes by measure and fraction while preserving input order for exact ties. `buildNotationChart()` supplies channel `08` changes before converted channel `03` changes, so a channel `03` change is the final effective value at an exact same-position tie.
 5. Treat only finite BPM values greater than zero as valid changes.
 6. Invalid or unresolved changes leave the previous effective BPM unchanged and do not produce a notation event.
 7. A valid change at measure `0`, fraction `0` replaces the initial effective event rather than adding a duplicate mark at the same position.
-8. If multiple valid changes occur at the same musical position, apply them in the same deterministic order used by timing and keep only the final effective BPM for that position.
+8. If multiple valid changes occur at the same musical position, apply them in the deterministic order above and keep only the final effective BPM for that position.
 9. Collapse consecutive events when the effective BPM does not change.
 
 Example:
@@ -172,18 +173,24 @@ produces:
 
 ### Timing Consumption
 
-`ChartTiming` continues to expose its existing public behavior:
+Extend `ChartTiming` with:
+
+```ts
+tempoEvents: NotationTempoEvent[];
+```
+
+Its existing timing API remains unchanged:
 
 - `measureStartSeconds`
 - `totalDuration`
 - `positionToTime()`
 - `timeToPosition()`
 
-It may expose the normalized tempo sequence internally/publicly if that produces the simplest implementation, but callers should not need a second tempo parser.
+`secondsIntoMeasure()` and `fractionAtSeconds()` must consume the normalized effective tempo sequence instead of resolving raw BPM notes independently. This keeps forward and inverse timing on the same source as notation.
 
 The important invariant is:
 
-> The tempo sequence used to compute time must be the same sequence rendered as notation markings.
+> The tempo sequence used to compute time is exactly the sequence rendered as notation markings.
 
 No BPM-specific logic is added to the preview Svelte page.
 
@@ -193,20 +200,21 @@ No BPM-specific logic is added to the preview Svelte page.
 
 `NotationView.svelte` already creates one VexFlow `Stave` per `NotationMeasure`. Measure lines therefore belong to the stave configuration itself.
 
-For each stave:
+For every measure stave:
 
-- use VexFlow barline APIs to produce a single measure boundary;
-- avoid drawing an additional custom SVG/HTML line;
-- avoid doubled visual boundaries between adjacent staves;
+- explicitly configure a single VexFlow end barline;
+- rely on that end bar as the boundary between adjacent measures;
+- do not draw an additional beginning boundary for following measures;
+- do not draw a custom SVG/HTML barline overlay;
 - preserve the existing responsive wrapping and geometry recording.
 
-The visual intent is conventional adjacent measures:
+Use the same single boundary for the final measure in HPA-537. A special final/double barline is not part of this ticket.
+
+The visual intent is:
 
 ```text
-| measure 1 | measure 2 | measure 3 |
+measure 1 | measure 2 | measure 3 |
 ```
-
-The last measure may use the normal final/end barline supported by the selected VexFlow API, but this should remain a small renderer detail rather than a new model field.
 
 ### Initial and Measure-start Tempo
 
@@ -357,8 +365,8 @@ Extend notation/timing tests to verify the meaningful tempo semantics:
 6. Same-BPM consecutive changes collapse.
 7. Effective tempo carries across measure boundaries.
 8. Invalid/unresolved/non-positive/non-finite BPM changes are ignored.
-9. Same-position changes resolve deterministically to the same final effective tempo used by timing.
-10. Timing calculations and exposed notation tempo events consume the same normalized sequence.
+9. Same-position changes resolve deterministically, including the channel `08` then channel `03` tie rule.
+10. Forward and inverse timing calculations consume `ChartTiming.tempoEvents` rather than a second raw-note interpretation.
 
 Do not test trivial object construction.
 
@@ -368,22 +376,20 @@ Continue the current orchestration-test style with VexFlow mocked.
 
 Add assertions that:
 
-- measure staves receive explicit barline configuration;
+- measure staves receive explicit single end-bar configuration;
 - the initial tempo uses the stave-tempo rendering path;
 - a later measure-start change is attached to the correct stave;
 - a mid-measure change is rendered at the expected proportional x-coordinate;
 - tempo rendering does not add entries to the musical `Voice` or alter the existing rhythmic note array;
-- a chart with no/empty tempo-event data remains safe for defensive compatibility inside tests/helpers.
+- a chart with `tempoEvents: []` still renders without annotation work.
 
 Do not snapshot VexFlow SVG output.
 
-### Preview Page Unit Tests
+### Preview Page Tests
 
-The preview page should only be tested for its orchestration responsibility:
+No new page-level BPM test is required. The preview page should continue treating `buildNotationChart()` as its model boundary; adding a test that merely proves a returned field is assigned through `chart = built.chart` would be trivial.
 
-- level switching commits the newly built chart, including its tempo events;
-- no independent page-level BPM parsing/state is introduced;
-- existing audio loading, transport, and stale-load guards continue to pass.
+Update existing preview test fixtures/types only where the required `NotationChart.tempoEvents` field makes that necessary. Existing audio loading, transport, level-switch, and stale-load tests must continue to pass unchanged in behavior.
 
 ### Chart List Unit Tests
 
@@ -436,7 +442,7 @@ Likely tests/fixtures:
 - `packages/dtx-web/src/lib/components/preview/NotationView.test.ts`
 - `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
 - `packages/dtx-web/src/lib/components/ChartList.test.ts`
-- table-item tests if a focused test already exists or is justified
+- table-item tests only if a focused test already exists or the table behavior cannot be covered cleanly through `ChartList.test.ts`
 - `packages/e2e-web/preview.spec.ts`
 - `packages/e2e-web/blog.spec.ts`
 - `packages/e2e-web/fixtures/test-sample.dtx`
@@ -448,14 +454,14 @@ No expected changes:
 - database migrations
 - `packages/dtx-desktop/**`
 - `packages/common/src/lib/game/scenes/Preview.ts`
-- editor route/navigation unless an implementation detail proves strictly necessary
+- editor route/navigation
 
 ## Acceptance Criteria
 
 1. `/preview/[id]` visibly renders the selected DTX's effective starting BPM.
 2. Valid channel `03` and `08` tempo changes render BPM markings at their musical positions.
-3. Tempo markings use the same normalized effective tempo sequence as playback timing.
-4. Notation shows clear VexFlow-rendered measure boundaries without doubled custom overlay lines.
+3. Tempo markings use exactly `ChartTiming.tempoEvents`, the same normalized effective tempo sequence used by playback timing.
+4. Notation shows clear VexFlow-rendered single measure boundaries without custom overlay lines or doubled boundaries.
 5. Tempo markings do not alter note spacing, beam grouping, cursor geometry, seek behavior, or playback timing.
 6. Switching difficulty rebuilds notation and therefore shows the newly selected DTX level's tempo sequence.
 7. Blog card titles for previewable charts navigate to `/preview/[id]`, not `/editor/[id]`.

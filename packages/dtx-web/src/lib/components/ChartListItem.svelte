@@ -10,7 +10,7 @@
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
 	import { chartTitleHref, isPreviewable } from '$lib/components/ChartList.helpers';
-	import { createAudioPreview } from '$lib/audioPreview.svelte';
+	import { createAudioPreview, audioToggleLabelKey } from '$lib/audioPreview.svelte';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
@@ -41,9 +41,7 @@
 		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
 	);
 	const blogMenuVisible = $derived(isBlog && (audio.available || previewable));
-	const audioLabel = $derived(
-		audio.isPlaying ? $_('chart_actions.pause_audio') : $_('chart_actions.play_audio')
-	);
+	const audioLabel = $derived($_(audioToggleLabelKey(audio)));
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -53,6 +51,11 @@
 
 	const handleOpenModal = () => {
 		modalOpen = true;
+		popoverOpen = false;
+	};
+
+	const handleToggleAudio = () => {
+		audio.toggle();
 		popoverOpen = false;
 	};
 
@@ -112,7 +115,7 @@
 						<div class="py-2">
 							{#if audio.available}
 								<Button
-									onclick={() => audio.toggle()}
+									onclick={handleToggleAudio}
 									variant="menuItem"
 									fullWidth
 									justify="start"

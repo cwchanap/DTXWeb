@@ -49,6 +49,8 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 	);
 
 	const toggle = async () => {
+		if (isLoading) return;
+
 		const url = getUrl();
 		if (!url) return;
 
@@ -112,3 +114,7 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 		toggle
 	};
 };
+
+/** Resolves the i18n key for the audio toggle control, shared by every surface that renders it. */
+export const audioToggleLabelKey = (audio: AudioPreview): string =>
+	audio.isPlaying ? 'chart_actions.pause_audio' : 'chart_actions.play_audio';

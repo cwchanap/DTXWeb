@@ -169,4 +169,54 @@ describe('createAudioPreview', () => {
 		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(null);
 		dispose();
 	});
+
+	it('cleans up the stale element when replaying after it ended', async () => {
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+		await audio.toggle();
+
+		const endedCall = mockAudio.addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'ended'
+		);
+		expect(endedCall).toBeDefined();
+		endedCall![1]();
+		expect(audio.isPlaying).toBe(false);
+
+		mockAudio.pause.mockClear();
+		mockAudio.remove.mockClear();
+
+		await audio.toggle();
+
+		// The stale element from the ended playback is paused and removed before
+		// a fresh Audio instance is constructed for the replay.
+		expect(mockAudio.pause).toHaveBeenCalled();
+		expect(mockAudio.remove).toHaveBeenCalled();
+		expect(global.Audio).toHaveBeenCalledTimes(2);
+		dispose();
+	});
+
+	it('stops playback and clears error state when the source url changes', async () => {
+		let url = $state(URL_A);
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => url);
+		});
+		flushSync();
+		await audio.toggle();
+		expect(audio.isPlaying).toBe(true);
+
+		url = 'https://cdn.example.com/b.mp3';
+		flushSync();
+
+		expect(mockAudio.pause).toHaveBeenCalled();
+		expect(audio.isPlaying).toBe(false);
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(null);
+		// hasError is unconditionally reset alongside the playback cleanup, so a
+		// fresh source is reported available rather than stuck behind a stale error.
+		expect(audio.available).toBe(true);
+		dispose();
+	});
 });

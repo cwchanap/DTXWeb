@@ -1,7 +1,17 @@
 <script lang="ts">
 	import { onMount, onDestroy } from 'svelte';
 	import { _ } from 'svelte-i18n';
-	import { Renderer, Stave, StaveNote, Voice, Formatter, Beam, Tuplet } from 'vexflow';
+	import {
+		Renderer,
+		Stave,
+		StaveNote,
+		Voice,
+		Formatter,
+		Beam,
+		Tuplet,
+		BarlineType,
+		StaveTempo
+	} from 'vexflow';
 	import type { NotationChart, NotationMeasure } from '@dtx/common';
 	import {
 		cursorPoint,
@@ -27,9 +37,11 @@
 	let container = $state<HTMLDivElement>();
 	let highlightEl = $state<HTMLDivElement>();
 
-	const SYSTEM_HEIGHT = 140;
+	// Headroom above each stave leaves room for a StaveTempo BPM marking to
+	// draw without clipping against the previous row or the container edge.
+	const SYSTEM_HEIGHT = 160;
 	const LEFT = 10;
-	const TOP = 20;
+	const TOP = 30;
 	// A measure's width scales with how many onsets it holds, so dense measures
 	// get the room they need instead of cramming notes together.
 	const MIN_STAVE_WIDTH = 160;
@@ -183,9 +195,22 @@
 		renderer.resize(containerWidth, TOP + rows * SYSTEM_HEIGHT + 40);
 		const context = renderer.getContext();
 
+		// Group tempo events by measure once per render so each stave looks up
+		// its own marks in O(1) instead of filtering the whole chart per measure.
+		const tempoEventsByMeasure = new Map<number, typeof chart.tempoEvents>();
+		for (const event of chart.tempoEvents) {
+			const events = tempoEventsByMeasure.get(event.measure);
+			if (events) events.push(event);
+			else tempoEventsByMeasure.set(event.measure, [event]);
+		}
+
 		layout.forEach(({ measure, x, y, width, row }, i) => {
 			const firstInRow = x === LEFT;
 			const stave = new Stave(x, y, width);
+			// VexFlow draws a begin bar on every stave by default, which doubles up
+			// with the previous stave's end bar for adjacent measures in the same
+			// row. Only the first stave in a row needs its (implicit) begin bar.
+			if (!firstInRow) stave.setBegBarType(BarlineType.NONE);
 			if (firstInRow) stave.addClef('percussion');
 			if (i === 0) stave.addTimeSignature(`${measure.beatsPerMeasure}/4`);
 			stave.setContext(context).draw();
@@ -231,6 +256,23 @@
 				voice.draw(context, stave);
 				beams.forEach((b) => b.setContext(context).draw());
 				tuplets.forEach((tuplet) => tuplet.setContext(context).draw());
+				// Draw BPM markings via isolated StaveTempo annotations, never as
+				// rhythmic Voice tickables — they must not affect note spacing or
+				// cursor geometry. One path covers both measure-start (fraction 0)
+				// and mid-measure marks: the fraction interpolates linearly between
+				// the stave's note start/end x. Each annotation is caught
+				// independently so a failing tempo mark can't drop the measure.
+				const tempoEvents = tempoEventsByMeasure.get(measure.index) ?? [];
+				for (const event of tempoEvents) {
+					try {
+						const startX = stave.getNoteStartX();
+						const endX = stave.getNoteEndX();
+						const xPos = startX + event.fraction * (endX - startX);
+						new StaveTempo({ bpm: event.bpm, duration: 'q' }, xPos, 0).draw(stave, 0);
+					} catch (error) {
+						console.warn(`Failed to render tempo in measure ${measure.index}`, error);
+					}
+				}
 				// Capture rendered note x-extents for the active-note highlight.
 				measure.entries.forEach((entry, idx) => {
 					if (entry.kind !== 'note') return;

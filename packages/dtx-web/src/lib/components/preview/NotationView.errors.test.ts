@@ -13,6 +13,9 @@ vi.mock('svelte-i18n');
 const draw = vi.fn();
 const setContext = vi.fn(() => ({ draw }));
 let drawThrows = false;
+// Toggled per-test to exercise the tempo-annotation catch: StaveTempo.draw
+// throws on demand so a failing tempo mark must not drop the whole measure.
+let throwTempoDraw = false;
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -27,6 +30,9 @@ vi.mock('vexflow', () => {
 		}
 		getNoteEndX() {
 			return 200;
+		}
+		setBegBarType() {
+			return this;
 		}
 	}
 	class StaveNote {
@@ -74,7 +80,15 @@ vi.mock('vexflow', () => {
 			}
 			draw() {}
 		},
-		Stem: { UP: 1, DOWN: -1 }
+		Stem: { UP: 1, DOWN: -1 },
+		BarlineType: { SINGLE: 1, NONE: 7 },
+		StaveTempo: class {
+			constructor(_tempo: unknown, _x: number) {}
+			draw() {
+				if (throwTempoDraw) throw new Error('tempo draw failed');
+				return this;
+			}
+		}
 	};
 });
 
@@ -96,6 +110,7 @@ describe('NotationView error paths', () => {
 		draw.mockClear();
 		setContext.mockClear();
 		drawThrows = false;
+		throwTempoDraw = false;
 	});
 
 	it('skips unmeasurable note bounding boxes (inner catch) without crashing', async () => {
@@ -126,6 +141,26 @@ describe('NotationView error paths', () => {
 		await tick();
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 		expect(warnSpy).toHaveBeenCalled();
+		warnSpy.mockRestore();
+	});
+
+	it('skips a failing tempo annotation without dropping the measure', async () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+		throwTempoDraw = true;
+		const tempoChart: NotationChart = {
+			...chart,
+			tempoEvents: [{ measure: 0, fraction: 0, bpm: 120 }]
+		};
+
+		const { container } = render(NotationView, { props: { chart: tempoChart } });
+		await tick();
+
+		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
+		expect(draw).toHaveBeenCalled();
+		expect(warnSpy).toHaveBeenCalledWith(
+			'Failed to render tempo in measure 0',
+			expect.any(Error)
+		);
 		warnSpy.mockRestore();
 	});
 });

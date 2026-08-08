@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render } from '@testing-library/svelte';
 import { tick } from 'svelte';
+import { BarlineType } from 'vexflow';
 import NotationView from './NotationView.svelte';
 import type { NotationChart } from '@dtx/common';
 // NotationView now uses `$_` for the seek aria-label; activate the global
@@ -22,6 +23,12 @@ const tupletArgs = vi.hoisted(
 		}>
 );
 const tupletDraw = vi.hoisted(() => vi.fn());
+// Captures Stave.setBegBarType calls so tests can assert redundant begin bars
+// are suppressed on non-first staves in a row.
+const begBarTypes = vi.hoisted(() => [] as number[]);
+// Captures StaveTempo constructor args so tests can assert BPM markings are
+// drawn at the expected x position without joining the rhythmic Voice.
+const tempoCalls = vi.hoisted(() => [] as Array<{ x: number; bpm?: number; duration?: string }>);
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -39,6 +46,10 @@ vi.mock('vexflow', () => {
 		}
 		getYForLine() {
 			return 40;
+		}
+		setBegBarType(type: number) {
+			begBarTypes.push(type);
+			return this;
 		}
 	}
 	class StaveNote {
@@ -94,7 +105,16 @@ vi.mock('vexflow', () => {
 				tupletDraw();
 			}
 		},
-		Stem: { UP: 1, DOWN: -1 }
+		Stem: { UP: 1, DOWN: -1 },
+		BarlineType: { SINGLE: 1, NONE: 7 },
+		StaveTempo: class {
+			constructor(tempo: { bpm?: number; duration?: string }, x: number) {
+				tempoCalls.push({ x, ...tempo });
+			}
+			draw() {
+				return this;
+			}
+		}
 	};
 });
 
@@ -119,6 +139,8 @@ describe('NotationView', () => {
 		generateBeamsCalls.length = 0;
 		tupletArgs.length = 0;
 		tupletDraw.mockClear();
+		begBarTypes.length = 0;
+		tempoCalls.length = 0;
 	});
 
 	it('renders a container and draws at least one stave', async () => {
@@ -267,6 +289,45 @@ describe('NotationView', () => {
 		expect(tupletArgs[0].notes).toHaveLength(3);
 		expect(tupletArgs[0].options).toEqual({ num_notes: 3, notes_occupied: 2 });
 		expect(tupletDraw).toHaveBeenCalledTimes(1);
+	});
+
+	it('suppresses the redundant begin bar on the second adjacent measure', async () => {
+		const twoMeasureChart: NotationChart = {
+			measures: [chart.measures[0], { ...chart.measures[0], index: 1 }],
+			tempoEvents: []
+		};
+
+		render(NotationView, { props: { chart: twoMeasureChart } });
+		await tick();
+
+		expect(begBarTypes).toEqual([BarlineType.NONE]);
+	});
+
+	it('renders the starting tempo with VexFlow StaveTempo', async () => {
+		const tempoChart: NotationChart = {
+			...chart,
+			tempoEvents: [{ measure: 0, fraction: 0, bpm: 120 }]
+		};
+
+		render(NotationView, { props: { chart: tempoChart } });
+		await tick();
+
+		expect(tempoCalls).toContainEqual({ x: 30, bpm: 120, duration: 'q' });
+	});
+
+	it('renders a mid-measure tempo at the nominal proportional x without adding voice notes', async () => {
+		const tempoChart: NotationChart = {
+			...chart,
+			tempoEvents: [{ measure: 0, fraction: 0.5, bpm: 180 }]
+		};
+
+		render(NotationView, { props: { chart: tempoChart } });
+		await tick();
+
+		// Mocked note range is 30..200, so the constructor receives 115.
+		// Real StaveTempo later applies its own internal +10px shift; browser tests do not assert pixels.
+		expect(tempoCalls).toContainEqual({ x: 115, bpm: 180, duration: 'q' });
+		expect(staveNoteArgs).toHaveLength(chart.measures[0].entries.length);
 	});
 });
 

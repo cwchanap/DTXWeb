@@ -267,19 +267,19 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
-		it('offers the audio entry first in the owner menu', () => {
+		it('keeps audio off the owner menu — it lives on the cover button', () => {
 			render(ChartListItem, { props: renderProps });
 
 			// PopoverStub always renders its content; no trigger click required.
-			// ButtonStub (see src/tests/stubs/ButtonStub.svelte) renders a plain
-			// <button> with no role="menuitem" override, so the accessible-name
-			// form is used here rather than the menuitem role.
 			expect(
-				screen.getByRole('button', { name: 'chart_actions.play_audio' })
-			).toBeInTheDocument();
+				screen.queryByRole('button', { name: 'chart_actions.play_audio' })
+			).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_actions.pause_audio' })
+			).not.toBeInTheDocument();
 		});
 
-		it('leads the owner menu with the audio entry, ahead of Open in Editor', () => {
+		it('leads the owner menu with Open in Editor', () => {
 			render(ChartListItem, { props: renderProps });
 
 			// A plain <button> (ButtonStub has no role="menuitem" override) still carries
@@ -289,12 +289,28 @@ describe('ChartListItem Component Logic', () => {
 			const menuButtons = screen
 				.getAllByRole('button')
 				.filter((button) => button.getAttribute('aria-label') !== 'Actions');
-			expect(menuButtons[0]).toHaveAccessibleName('chart_actions.play_audio');
+			expect(menuButtons[0]).toHaveAccessibleName('Open in Editor');
 		});
 
 		it('renders the action menu in blog mode when entries apply', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+		});
+
+		it('offers exactly Open in Editor and Open in Preview on a blog card', () => {
+			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
+
+			// Every menu entry, in DOM order: Button-rendered entries carry the
+			// implicit role "button", anchors carry an explicit role="menuitem".
+			// Excluding the Popover trigger leaves the entries themselves.
+			const entries = [
+				...screen
+					.getAllByRole('button')
+					.filter((button) => button.getAttribute('aria-label') !== 'Actions'),
+				...screen.getAllByRole('menuitem')
+			].map((element) => element.textContent?.trim());
+
+			expect(entries).toEqual(['Open in Editor', 'preview.open']);
 		});
 
 		it('renders no action menu on a blog card with no id', () => {
@@ -579,11 +595,9 @@ describe('ChartListItem Component Logic', () => {
 			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
-		it('"Open in Editor" menu item is not shown in blog mode', () => {
+		it('"Open in Editor" menu item is shown in blog mode', () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
-			).not.toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
 		});
 
 		it('"Open in Editor" menu item is not shown when item.id is undefined', () => {

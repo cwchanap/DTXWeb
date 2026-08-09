@@ -246,10 +246,10 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
 		});
 
-		it('renders the title as an editor link when uploaded files are available', () => {
+		it('renders the title as plain text, never a link', () => {
 			render(ChartListItem, { props: renderProps });
-			const editorLink = screen.getByRole('link', { name: 'Test Song 1' });
-			expect(editorLink).toHaveAttribute('href', '/editor/1');
+			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
+			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
 		});
 
 		it('renders artist', () => {
@@ -442,26 +442,15 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('routes a previewable blog card title to preview', () => {
+		it('leaves the blog card title unlinked — navigation lives in the menu', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
-			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
-				'href',
-				'/preview/1'
-			);
+			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
+			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
 		});
 
-		it('keeps an owner card title editor-first', () => {
+		it('leaves the owner card title unlinked — navigation lives in the menu', () => {
 			render(ChartListItem, { props: renderProps });
-			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
-				'href',
-				'/editor/1'
-			);
-		});
-
-		it('does not fall back to editor for a non-previewable blog card', () => {
-			render(ChartListItem, {
-				props: { ...renderProps, isBlog: true, item: { ...mockItem, is_published: false } }
-			});
+			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
 			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
 		});
 

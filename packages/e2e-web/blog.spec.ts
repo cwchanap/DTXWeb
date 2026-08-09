@@ -49,12 +49,19 @@ test.describe('Blog page', () => {
 	});
 
 	test('opens a published uploaded chart in the public notation preview', async ({ page }) => {
-		// Blog card titles route to /preview/[id] (never /editor/[id]) once the
-		// chart is published + has an uploaded file (ChartList.helpers.ts
-		// isPreviewable/chartTitleHref) — the seeded CHART_B_ID (1002) is both.
-		const chartLink = page.getByRole('link', { name: CHART_B_TITLE }).first();
-		await expect(chartLink).toHaveAttribute('href', `/preview/${CHART_B_ID}`);
-		await chartLink.click();
+		// Card titles are plain text; navigation lives in the card's [⋮] menu.
+		// The Preview entry appears only for a published chart with an uploaded
+		// file (ChartList.helpers.ts isPreviewable) — seeded CHART_B_ID is both.
+		const card = page.locator('.music-card').filter({ hasText: CHART_B_TITLE }).first();
+		await card.getByRole('button', { name: 'Actions' }).click();
+
+		const previewEntry = page.getByRole('menuitem', { name: 'Open in Preview' });
+		await expect(previewEntry).toHaveAttribute('href', `/preview/${CHART_B_ID}`);
+		await previewEntry.click();
 		await expect(page).toHaveURL(PAGES.PREVIEW(CHART_B_ID));
+	});
+
+	test('does not link the card title', async ({ page }) => {
+		await expect(page.getByRole('link', { name: CHART_B_TITLE })).toHaveCount(0);
 	});
 });

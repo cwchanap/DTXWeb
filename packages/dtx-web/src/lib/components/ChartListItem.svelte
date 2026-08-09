@@ -9,7 +9,7 @@
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
-	import { chartTitleHref, isPreviewable } from '$lib/components/ChartList.helpers';
+	import { isPreviewable } from '$lib/components/ChartList.helpers';
 	import { createAudioPreview } from '$lib/audioPreview.svelte';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
@@ -35,7 +35,6 @@
 
 	const hasUploadedChart = $derived(item.id !== undefined && item.has_uploaded_files === true);
 	const previewable = $derived(isPreviewable(item));
-	const titleHref = $derived(chartTitleHref(item, isBlog));
 
 	const audio = createAudioPreview(() =>
 		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
@@ -80,16 +79,7 @@
 				<h2
 					class="text-xl leading-tight font-bold text-slate-100 transition-colors duration-200 group-hover:text-purple-300"
 				>
-					{#if titleHref}
-						<a
-							href={titleHref}
-							class="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-400"
-						>
-							{item.title}
-						</a>
-					{:else}
-						{item.title}
-					{/if}
+					{item.title}
 				</h2>
 			</div>
 			{#if !isBlog || blogMenuVisible}

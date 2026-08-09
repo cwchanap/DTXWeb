@@ -144,6 +144,60 @@ describe('createAudioPreview', () => {
 		consoleSpy.mockRestore();
 	});
 
+	it('does not clear another card ownership when this playback fails', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+		// Two distinct elements: B plays successfully, A's play rejects.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn(),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		elements[0].play.mockResolvedValue(undefined);
+		elements[1].play.mockRejectedValueOnce(new Error('NotAllowedError'));
+
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		// B's post-await get sees no owner; A never reaches the post-await get
+		// because its play() rejects.
+		vi.mocked(mockGet).mockReturnValue(undefined);
+
+		let audioA!: ReturnType<typeof createAudioPreview>;
+		let audioB!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audioA = createAudioPreview(() => URL_A);
+			audioB = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		// B plays first and claims the store.
+		await audioB.toggle();
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[0]);
+		expect(audioB.isPlaying).toBe(true);
+
+		// A's playback fails.
+		await audioA.toggle();
+		expect(audioA.isPlaying).toBe(false);
+		expect(audioA.available).toBe(false);
+
+		// The store still reflects B's ownership — the failed attempt did
+		// not clear it, so B's audio keeps playing with its UI intact.
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[0]);
+		expect(mockPlayingAudio.set).not.toHaveBeenCalledWith(null);
+		expect(audioB.isPlaying).toBe(true);
+
+		dispose();
+		consoleSpy.mockRestore();
+	});
+
 	it('becomes unavailable when the element emits an error', async () => {
 		let audio!: ReturnType<typeof createAudioPreview>;
 		const dispose = $effect.root(() => {
@@ -273,6 +327,29 @@ describe('createAudioPreview', () => {
 		// subscribe-time call captured at mount.
 		expect(retainedPlayingAudioCallback).not.toBeNull();
 		retainedPlayingAudioCallback!(null);
+
+		expect(audio.isPlaying).toBe(false);
+		dispose();
+	});
+
+	it('clears isPlaying when another card emits its element, not null', async () => {
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+		await audio.toggle();
+		expect(audio.isPlaying).toBe(true);
+
+		// A successful takeover sets the store to the new element, not null.
+		// The subscription must treat any non-self value as loss of ownership
+		// so a stale Pause button here cannot later clear the real owner.
+		const foreignElement = {
+			pause: vi.fn(),
+			remove: vi.fn()
+		} as unknown as HTMLAudioElement;
+		expect(retainedPlayingAudioCallback).not.toBeNull();
+		retainedPlayingAudioCallback!(foreignElement);
 
 		expect(audio.isPlaying).toBe(false);
 		dispose();

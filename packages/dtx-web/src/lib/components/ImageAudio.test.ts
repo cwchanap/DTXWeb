@@ -27,11 +27,9 @@ describe('ImageAudio', () => {
 		expect(screen.getByRole('img', { name: 'Preview' })).toBeInTheDocument();
 	});
 
-	it('renders the control when idle, labelled as play', () => {
+	it('omits the control when idle', () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio() } });
-		expect(
-			screen.getByRole('button', { name: 'chart_actions.play_audio' })
-		).toBeInTheDocument();
+		expect(screen.queryByRole('button')).not.toBeInTheDocument();
 	});
 
 	it('omits the control when audio is unavailable', () => {

@@ -16,6 +16,7 @@
 		MAX_BULK_DOWNLOAD_CHARTS,
 		canBulkSelect,
 		changePage as getChangedPage,
+		chartTitleHref,
 		handlePageSizeChange as getChangedPageSize,
 		isAbortError,
 		resetBulkSelection as createEmptySelection,
@@ -375,7 +376,15 @@
 							<h3
 								class="text-lg font-semibold text-slate-100 transition-colors group-hover:text-purple-300"
 							>
-								{item.display_id}. {item.title}
+								{#if chartTitleHref(item, isBlog)}
+									<a
+										href={chartTitleHref(item, isBlog)}
+										class="hover:text-purple-300"
+										>{item.display_id}. {item.title}</a
+									>
+								{:else}
+									{item.display_id}. {item.title}
+								{/if}
 							</h3>
 						</div>
 						<div class="flex flex-wrap items-center gap-6 text-sm">

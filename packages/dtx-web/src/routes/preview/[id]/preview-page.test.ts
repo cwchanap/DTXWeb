@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/svelte';
+import type { NotationChart, ChartTiming, LaneMeasureNote } from '@dtx/common';
 import PreviewPage from './+page.svelte';
 
 const getPreviewSimfileMock = vi.hoisted(() => vi.fn());
@@ -128,7 +129,14 @@ const makeDtx = () => ({
 	parseSoundChips: () => []
 });
 
-const readyChart = () => {
+type NotationChartFixture = {
+	chart: NotationChart;
+	timing: ChartTiming;
+	notesByLane: Record<string, LaneMeasureNote[]>;
+	measureCount: number;
+};
+
+const readyChart = (): NotationChartFixture => {
 	const tempoEvents = [{ measure: 0, fraction: 0, bpm: 120 }];
 	return {
 		chart: {

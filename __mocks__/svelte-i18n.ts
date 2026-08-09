@@ -11,3 +11,9 @@ export const locale = {
 		return () => {};
 	}
 };
+
+// Callable no-op stubs so modules that import { init, register } from
+// svelte-i18n (e.g. $lib/i18n/index.ts) do not crash on undefined exports
+// when this manual mock replaces the real module in tests.
+export const init = (_options?: Record<string, unknown>): void => {};
+export const register = (_locale: string, _loader: () => unknown): void => {};

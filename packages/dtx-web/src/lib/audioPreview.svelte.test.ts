@@ -28,7 +28,7 @@ const mockAudio = vi.hoisted(() => ({
 	load: vi.fn()
 }));
 
-import { createAudioPreview } from './audioPreview.svelte';
+import { createAudioPreview } from '$lib/audioPreview.svelte';
 
 const URL_A = 'https://cdn.example.com/a.mp3';
 
@@ -48,6 +48,12 @@ const URL_A = 'https://cdn.example.com/a.mp3';
 describe('createAudioPreview', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// `get` is auto-mocked globally (src/tests/setup.ts). Reset its
+		// implementation each run so a per-test `mockReturnValue` cannot leak
+		// into the next test; the default `() => undefined` matches the
+		// auto-mock, and tests that need a specific return value configure it
+		// explicitly below.
+		vi.mocked(mockGet).mockReset();
 		vi.stubGlobal(
 			'Audio',
 			vi.fn(() => mockAudio)
@@ -163,6 +169,10 @@ describe('createAudioPreview', () => {
 			audio = createAudioPreview(() => URL_A);
 		});
 		flushSync();
+		// The ended handler only clears the store when `get(store.playingAudio)`
+		// still returns this element, so make the auto-mocked `get` report the
+		// created element as the active owner.
+		vi.mocked(mockGet).mockReturnValue(mockAudio);
 		await audio.toggle();
 
 		const endedCall = mockAudio.addEventListener.mock.calls.find(
@@ -287,6 +297,122 @@ describe('createAudioPreview', () => {
 		// hasError is unconditionally reset alongside the playback cleanup, so a
 		// fresh source is reported available rather than stuck behind a stale error.
 		expect(audio.available).toBe(true);
+		dispose();
+	});
+
+	it('only the latest element owns the store when two cards race to play', async () => {
+		// Two distinct elements so the second card's playback can be observed
+		// stopping the first card's element after both play() promises resolve.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn(),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		let resolvePlayA!: () => void;
+		let resolvePlayB!: () => void;
+		const pendingPlayA = new Promise<void>((resolve) => {
+			resolvePlayA = resolve;
+		});
+		const pendingPlayB = new Promise<void>((resolve) => {
+			resolvePlayB = resolve;
+		});
+		elements[0].play.mockReturnValue(pendingPlayA);
+		elements[1].play.mockReturnValue(pendingPlayB);
+
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		// Card A's post-await `get` sees no owner yet; card B's post-await
+		// `get` sees A's element (which A claimed in between), so B stops it.
+		vi.mocked(mockGet).mockReturnValueOnce(undefined).mockReturnValueOnce(elements[0]);
+
+		let audioA!: ReturnType<typeof createAudioPreview>;
+		let audioB!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audioA = createAudioPreview(() => URL_A);
+			audioB = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		// Start both toggles before either play() resolves, so both are
+		// in-flight concurrently.
+		const toggleA = audioA.toggle();
+		const toggleB = audioB.toggle();
+
+		// A resolves first and claims the store.
+		resolvePlayA();
+		await toggleA;
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[0]);
+		expect(audioA.isPlaying).toBe(true);
+
+		// B resolves next, stops A's element, and takes ownership of the store.
+		resolvePlayB();
+		await toggleB;
+		expect(elements[0].pause).toHaveBeenCalled();
+		expect(elements[0].remove).toHaveBeenCalled();
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+		expect(audioB.isPlaying).toBe(true);
+
+		dispose();
+	});
+
+	it('a stale ended completion does not clear a newer card playback', async () => {
+		// Card A plays, then card B takes over the store. When A's element
+		// later emits 'ended', the ownership guard must keep B's playback
+		// intact rather than clearing the shared store out from under it.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn().mockResolvedValue(undefined),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		// A's post-await get sees no owner; B's post-await get sees A's
+		// element. The later 'ended' handler get still reports B's element as
+		// owner, so A's handler must NOT clear the store.
+		vi.mocked(mockGet)
+			.mockReturnValueOnce(undefined)
+			.mockReturnValueOnce(elements[0])
+			.mockReturnValue(elements[1]);
+
+		let audioA!: ReturnType<typeof createAudioPreview>;
+		let audioB!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audioA = createAudioPreview(() => URL_A);
+			audioB = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		await audioA.toggle();
+		await audioB.toggle();
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+
+		// Fire A's 'ended' listener — a stale completion from the superseded card.
+		const aEnded = elements[0].addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'ended'
+		);
+		expect(aEnded).toBeDefined();
+		aEnded![1]();
+
+		// B still owns the store: the last `set` is still elements[1], not null.
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+		expect(audioB.isPlaying).toBe(true);
+
 		dispose();
 	});
 });

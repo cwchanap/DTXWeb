@@ -15,7 +15,7 @@
 
 	// Reset imageError when previewUrl changes so new images can load
 	$effect(() => {
-		previewUrl;
+		void previewUrl;
 		imageError = false;
 	});
 
@@ -25,7 +25,7 @@
 
 {#snippet playButton()}
 	<button
-		class="group absolute top-1/2 left-1/2 inline-flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 via-cyan-600 to-amber-600 p-3 shadow-xl backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:shadow-2xl hover:shadow-purple-500/25 focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 focus:outline-none disabled:pointer-events-none disabled:opacity-50"
+		class="group audio-toggle"
 		onclick={() => audio.toggle()}
 		disabled={audio.isLoading}
 		aria-label={controlLabel}
@@ -92,3 +92,11 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	@reference 'tailwindcss';
+
+	.audio-toggle {
+		@apply absolute top-1/2 left-1/2 inline-flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 via-cyan-600 to-amber-600 p-3 shadow-xl backdrop-blur-sm transition-all duration-300 hover:scale-110 hover:shadow-2xl hover:shadow-purple-500/25 focus:ring-2 focus:ring-purple-400 focus:ring-offset-2 focus:ring-offset-slate-900 focus:outline-none disabled:pointer-events-none disabled:opacity-50;
+	}
+</style>

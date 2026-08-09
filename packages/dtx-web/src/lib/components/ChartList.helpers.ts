@@ -57,7 +57,10 @@ export type ChartNavigationItem = {
 	has_uploaded_files?: boolean;
 };
 
-export const isPreviewable = (item: ChartNavigationItem): boolean =>
+/** A `ChartNavigationItem` whose `id` is a defined number, narrowed by `isPreviewable`. */
+export type PreviewableChartItem = ChartNavigationItem & { id: number };
+
+export const isPreviewable = (item: ChartNavigationItem): item is PreviewableChartItem =>
 	item.id !== undefined && item.is_published === true && item.has_uploaded_files === true;
 
 export const changePage = (newPage: number, totalPages: number) => {

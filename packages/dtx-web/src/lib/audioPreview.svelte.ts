@@ -48,7 +48,7 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 		})
 	);
 
-	const toggle = async () => {
+	const toggle = async (): Promise<void> => {
 		if (isLoading) return;
 
 		const url = getUrl();
@@ -64,33 +64,42 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 		try {
 			isLoading = true;
 
-			const playing = get(store.playingAudio);
-			if (playing) {
-				playing.pause();
-				playing.remove();
-				store.playingAudio.set(null);
-			}
+			// Stop this unit's previous element before constructing a fresh one.
 			if (element) {
 				element.pause();
 				element.remove();
 			}
 
-			element = new Audio(url);
-			await element.play();
+			const created = new Audio(url);
+			await created.play();
 
+			// After the async play() resolves, another card may have claimed the
+			// shared store during the await. Stop whatever is now active (unless
+			// it is already our new element) so the latest playback owns the
+			// store exclusively, then claim it for `created`.
+			const activeNow = get(store.playingAudio);
+			if (activeNow && activeNow !== created) {
+				activeNow.pause();
+				activeNow.remove();
+			}
+
+			element = created;
 			isPlaying = true;
 			isLoading = false;
-			store.playingAudio.set(element);
+			store.playingAudio.set(created);
 
-			element.addEventListener('ended', () => {
-				store.playingAudio.set(null);
-				isPlaying = false;
+			// Capture `created` so a stale ended/error completion from a
+			// superseded element cannot clear a newer card's playback: only
+			// touch the store / isPlaying when this element still owns them.
+			created.addEventListener('ended', () => {
+				if (element === created) isPlaying = false;
+				if (get(store.playingAudio) === created) store.playingAudio.set(null);
 			});
-			element.addEventListener('error', () => {
+			created.addEventListener('error', () => {
 				hasError = true;
 				isLoading = false;
-				isPlaying = false;
-				store.playingAudio.set(null);
+				if (element === created) isPlaying = false;
+				if (get(store.playingAudio) === created) store.playingAudio.set(null);
 			});
 		} catch (error) {
 			console.error('Error playing audio:', error);

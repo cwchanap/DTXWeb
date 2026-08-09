@@ -29,7 +29,7 @@
 	},
 	"chart_actions": {
 		"download": "Download",
-		"downloading": "Downloading...",
+		"downloading": "Downloading…",
 		"play_audio": "Play audio",
 		"pause_audio": "Pause audio"
 	},

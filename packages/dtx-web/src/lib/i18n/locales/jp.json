@@ -29,7 +29,7 @@
 	},
 	"chart_actions": {
 		"download": "ダウンロード",
-		"downloading": "ダウンロード中...",
+		"downloading": "ダウンロード中…",
 		"play_audio": "音声を再生",
 		"pause_audio": "音声を一時停止"
 	},

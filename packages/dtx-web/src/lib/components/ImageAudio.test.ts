@@ -32,8 +32,10 @@ describe('ImageAudio', () => {
 		expect(screen.queryByRole('button')).not.toBeInTheDocument();
 	});
 
-	it('omits the control when audio is unavailable', () => {
-		render(ImageAudio, { props: { previewUrl, audio: makeAudio({ available: false }) } });
+	it('omits the control when audio is unavailable, even while playing', () => {
+		render(ImageAudio, {
+			props: { previewUrl, audio: makeAudio({ available: false, isPlaying: true }) }
+		});
 		expect(screen.queryByRole('button')).not.toBeInTheDocument();
 	});
 

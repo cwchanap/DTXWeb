@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
-	import { CirclePause, Ellipsis } from '@lucide/svelte/icons';
+	import { Play, CirclePause, Ellipsis } from '@lucide/svelte/icons';
 	import { audioToggleLabelKey, type AudioPreview } from '$lib/audioPreview.svelte';
 
 	interface Props {
@@ -19,7 +19,7 @@
 		imageError = false;
 	});
 
-	const controlVisible = $derived(audio.isPlaying || audio.isLoading);
+	const controlVisible = $derived(audio.available);
 	const controlLabel = $derived($_(audioToggleLabelKey(audio)));
 </script>
 
@@ -36,8 +36,10 @@
 		>
 			{#if audio.isPlaying}
 				<CirclePause size={20} />
-			{:else}
+			{:else if audio.isLoading}
 				<Ellipsis size={20} class="animate-pulse" />
+			{:else}
+				<Play size={20} />
 			{/if}
 		</div>
 		<!-- Animated background overlay -->

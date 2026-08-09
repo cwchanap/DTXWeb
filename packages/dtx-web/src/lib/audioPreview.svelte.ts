@@ -9,6 +9,13 @@ export interface AudioPreview {
 	toggle(): Promise<void>;
 }
 
+// Monotonic counter shared across every audio-preview unit. Each play request
+// captures the current value before awaiting `play()`; after the await, if a
+// newer request has incremented it, the stale request abandons its element so
+// the latest user selection always wins — even when an older click's slower
+// `play()` resolves after a newer click's faster one.
+let playbackRequestToken = 0;
+
 /**
  * Owns preview-audio playback for one chart card.
  *
@@ -74,8 +81,23 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 				element.remove();
 			}
 
+			// Stamp this request so a stale (older) `play()` that resolves after
+			// a newer click can be detected and discarded below.
+			const requestToken = ++playbackRequestToken;
+
 			const created = new Audio(url);
 			await created.play();
+
+			// A newer toggle incremented the token while this `play()` was
+			// pending. Abandon this element — the newer request is the one the
+			// user actually wants to own the store — and leave the current owner
+			// untouched.
+			if (requestToken !== playbackRequestToken) {
+				created.pause();
+				created.remove();
+				isLoading = false;
+				return;
+			}
 
 			// After the async play() resolves, another card may have claimed the
 			// shared store during the await. Stop whatever is now active (unless

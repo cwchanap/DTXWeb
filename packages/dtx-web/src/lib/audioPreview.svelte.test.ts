@@ -377,7 +377,7 @@ describe('createAudioPreview', () => {
 		dispose();
 	});
 
-	it('only the latest element owns the store when two cards race to play', async () => {
+	it('only the latest click owns the store when two cards race to play', async () => {
 		// Two distinct elements so the second card's playback can be observed
 		// stopping the first card's element after both play() promises resolve.
 		const elements = [0, 1].map(() => ({
@@ -406,9 +406,10 @@ describe('createAudioPreview', () => {
 			vi.fn(() => elements[constructCount++])
 		);
 
-		// Card A's post-await `get` sees no owner yet; card B's post-await
-		// `get` sees A's element (which A claimed in between), so B stops it.
-		vi.mocked(mockGet).mockReturnValueOnce(undefined).mockReturnValueOnce(elements[0]);
+		// B is clicked after A, so B holds the newer request token. Only B
+		// calls `get` (A abandons at the token check before reaching it); B
+		// sees no owner and claims the store.
+		vi.mocked(mockGet).mockReturnValue(undefined);
 
 		let audioA!: ReturnType<typeof createAudioPreview>;
 		let audioB!: ReturnType<typeof createAudioPreview>;
@@ -419,22 +420,91 @@ describe('createAudioPreview', () => {
 		flushSync();
 
 		// Start both toggles before either play() resolves, so both are
-		// in-flight concurrently.
+		// in-flight concurrently. Click order — not resolution order —
+		// decides ownership.
 		const toggleA = audioA.toggle();
 		const toggleB = audioB.toggle();
 
-		// A resolves first and claims the store.
+		// A resolves first, but B's newer request is still pending, so A
+		// abandons its element without claiming the store.
 		resolvePlayA();
 		await toggleA;
-		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[0]);
-		expect(audioA.isPlaying).toBe(true);
-
-		// B resolves next, stops A's element, and takes ownership of the store.
-		resolvePlayB();
-		await toggleB;
+		expect(mockPlayingAudio.set).not.toHaveBeenCalledWith(elements[0]);
+		expect(audioA.isPlaying).toBe(false);
 		expect(elements[0].pause).toHaveBeenCalled();
 		expect(elements[0].remove).toHaveBeenCalled();
+
+		// B resolves next and claims the store as the latest click.
+		resolvePlayB();
+		await toggleB;
 		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+		expect(audioB.isPlaying).toBe(true);
+
+		dispose();
+	});
+
+	it('a slower older click does not override a faster newer click', async () => {
+		// Click A, then click B. B's play() resolves first and claims the
+		// store; A's slower play() resolves afterward and must abandon rather
+		// than pausing B and claiming the store for itself. This is the
+		// reverse of the test above and guards the specific race the
+		// post-await ownership check alone could not.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn(),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		let resolvePlayA!: () => void;
+		let resolvePlayB!: () => void;
+		const pendingPlayA = new Promise<void>((resolve) => {
+			resolvePlayA = resolve;
+		});
+		const pendingPlayB = new Promise<void>((resolve) => {
+			resolvePlayB = resolve;
+		});
+		elements[0].play.mockReturnValue(pendingPlayA);
+		elements[1].play.mockReturnValue(pendingPlayB);
+
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		// B's get (first call) sees no owner and claims. Under the bug, A's
+		// get (second call) would see B's element and pause it; with the token
+		// fix A abandons before ever calling get, so the second mock is never
+		// consumed.
+		vi.mocked(mockGet).mockReturnValueOnce(undefined).mockReturnValueOnce(elements[1]);
+
+		let audioA!: ReturnType<typeof createAudioPreview>;
+		let audioB!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audioA = createAudioPreview(() => URL_A);
+			audioB = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		const toggleA = audioA.toggle();
+		const toggleB = audioB.toggle();
+
+		// B resolves first and claims the store as the latest click.
+		resolvePlayB();
+		await toggleB;
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+		expect(audioB.isPlaying).toBe(true);
+
+		// A resolves later but is stale; it must abandon without touching B.
+		resolvePlayA();
+		await toggleA;
+		expect(elements[1].pause).not.toHaveBeenCalled();
+		expect(elements[1].remove).not.toHaveBeenCalled();
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+		expect(audioA.isPlaying).toBe(false);
 		expect(audioB.isPlaying).toBe(true);
 
 		dispose();

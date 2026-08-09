@@ -41,10 +41,14 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 		});
 	});
 
-	// Another card taking over clears the shared store; follow it.
+	// Another card taking over clears the shared store; follow it. A
+	// successful takeover sets the store to the new element (not null), so
+	// treat any value that is not this unit's own element as loss of
+	// ownership — otherwise a stale Pause button here would clear the real
+	// owner's state.
 	$effect(() =>
 		store.playingAudio.subscribe((playing) => {
-			if (playing === null) isPlaying = false;
+			if (playing !== element) isPlaying = false;
 		})
 	);
 
@@ -106,7 +110,9 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 			hasError = true;
 			isLoading = false;
 			isPlaying = false;
-			store.playingAudio.set(null);
+			// A rejected play() never claimed the shared store, so do not clear
+			// it here — doing so would wipe another card's ownership while its
+			// audio keeps playing.
 		}
 	};
 

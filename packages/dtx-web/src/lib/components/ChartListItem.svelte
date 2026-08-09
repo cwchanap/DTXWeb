@@ -9,8 +9,8 @@
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
-	import { isPreviewable } from '$lib/components/ChartList.helpers';
-	import { createAudioPreview } from '$lib/audioPreview.svelte';
+	import { isPreviewable, chartTitleHref } from '$lib/components/ChartList.helpers';
+	import { createAudioPreview, audioToggleLabelKey } from '$lib/audioPreview.svelte';
 
 	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
 
@@ -35,11 +35,12 @@
 
 	const hasUploadedChart = $derived(item.id !== undefined && item.has_uploaded_files === true);
 	const previewable = $derived(isPreviewable(item));
+	const titleHref = $derived(chartTitleHref(item, isBlog));
 
 	const audio = createAudioPreview(() =>
 		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
 	);
-	const blogMenuVisible = $derived(isBlog && (previewable || hasUploadedChart));
+	const blogMenuVisible = $derived(isBlog && (previewable || audio.available));
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -79,7 +80,11 @@
 				<h2
 					class="text-xl leading-tight font-bold text-slate-100 transition-colors duration-200 group-hover:text-purple-300"
 				>
-					{item.title}
+					{#if titleHref}
+						<a href={titleHref} class="hover:text-purple-300">{item.title}</a>
+					{:else}
+						{item.title}
+					{/if}
 				</h2>
 			</div>
 			{#if !isBlog || blogMenuVisible}
@@ -97,7 +102,49 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="py-2">
-							{#if hasUploadedChart}
+							{#if audio.available}
+								<Button
+									onclick={() => audio.toggle()}
+									variant="menuItem"
+									fullWidth
+									justify="start"
+									class="text-slate-300 hover:bg-purple-600/20 hover:text-purple-200"
+								>
+									{#snippet children()}
+										{#if audio.isPlaying}
+											<svg
+												class="mr-3 h-4 w-4"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
+												></path>
+											</svg>
+										{:else}
+											<svg
+												class="mr-3 h-4 w-4"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													stroke-linecap="round"
+													stroke-linejoin="round"
+													stroke-width="2"
+													d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+												></path>
+											</svg>
+										{/if}
+										{$_(audioToggleLabelKey(audio))}
+									{/snippet}
+								</Button>
+							{/if}
+							{#if !isBlog && hasUploadedChart}
 								<Button
 									onclick={handleOpenInEditor}
 									variant="menuItem"

@@ -246,10 +246,12 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
 		});
 
-		it('renders the title as plain text, never a link', () => {
+		it('links the owner card title to the editor route', () => {
 			render(ChartListItem, { props: renderProps });
-			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
-			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
+				'href',
+				'/editor/1'
+			);
 		});
 
 		it('renders artist', () => {
@@ -267,19 +269,17 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
-		it('keeps audio off the owner menu — it lives on the cover button', () => {
+		it('places the audio entry first in the owner menu', () => {
 			render(ChartListItem, { props: renderProps });
 
 			// PopoverStub always renders its content; no trigger click required.
+			// The audio entry is a Button rendered when audio.available.
 			expect(
-				screen.queryByRole('button', { name: 'chart_actions.play_audio' })
-			).not.toBeInTheDocument();
-			expect(
-				screen.queryByRole('button', { name: 'chart_actions.pause_audio' })
-			).not.toBeInTheDocument();
+				screen.getByRole('button', { name: 'chart_actions.play_audio' })
+			).toBeInTheDocument();
 		});
 
-		it('leads the owner menu with Open in Editor', () => {
+		it('leads the owner menu with the audio entry, then Open in Editor', () => {
 			render(ChartListItem, { props: renderProps });
 
 			// A plain <button> (ButtonStub has no role="menuitem" override) still carries
@@ -289,7 +289,8 @@ describe('ChartListItem Component Logic', () => {
 			const menuButtons = screen
 				.getAllByRole('button')
 				.filter((button) => button.getAttribute('aria-label') !== 'Actions');
-			expect(menuButtons[0]).toHaveAccessibleName('Open in Editor');
+			expect(menuButtons[0]).toHaveAccessibleName('chart_actions.play_audio');
+			expect(menuButtons[1]).toHaveAccessibleName('Open in Editor');
 		});
 
 		it('renders the action menu in blog mode when entries apply', () => {
@@ -297,7 +298,7 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
-		it('offers exactly Open in Editor and Open in Preview on a blog card', () => {
+		it('offers Play/Pause audio and Open in Preview on a blog card, never Open in Editor', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 
 			// Every menu entry, in DOM order: Button-rendered entries carry the
@@ -310,7 +311,7 @@ describe('ChartListItem Component Logic', () => {
 				...screen.getAllByRole('menuitem')
 			].map((element) => element.textContent?.trim());
 
-			expect(entries).toEqual(['Open in Editor', 'preview.open']);
+			expect(entries).toEqual(['chart_actions.play_audio', 'preview.open']);
 		});
 
 		it('renders no action menu on a blog card with no id', () => {
@@ -442,16 +443,20 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('leaves the blog card title unlinked — navigation lives in the menu', () => {
+		it('links the blog card title to the preview route', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
-			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
-			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
+				'href',
+				'/preview/1'
+			);
 		});
 
-		it('leaves the owner card title unlinked — navigation lives in the menu', () => {
+		it('links the owner card title to the editor route', () => {
 			render(ChartListItem, { props: renderProps });
-			expect(screen.getByText('Test Song 1')).toBeInTheDocument();
-			expect(screen.queryByRole('link', { name: 'Test Song 1' })).not.toBeInTheDocument();
+			expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
+				'href',
+				'/editor/1'
+			);
 		});
 
 		it('shows owner Preview and Edit details actions for a published uploaded chart', () => {
@@ -584,9 +589,11 @@ describe('ChartListItem Component Logic', () => {
 			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
-		it('"Open in Editor" menu item is shown in blog mode', () => {
+		it('"Open in Editor" menu item is not shown in blog mode', () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'Open in Editor' })
+			).not.toBeInTheDocument();
 		});
 
 		it('"Open in Editor" menu item is not shown when item.id is undefined', () => {

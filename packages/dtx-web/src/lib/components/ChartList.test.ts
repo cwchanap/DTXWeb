@@ -333,7 +333,7 @@ describe('ChartList helpers', () => {
 		});
 	});
 
-	it('derives chart title destinations from public-vs-owner context', () => {
+	it('treats a chart as previewable only when published and uploaded', () => {
 		const previewable = { id: 1, is_published: true, has_uploaded_files: true };
 		const unpublished = { ...previewable, is_published: false };
 		const withoutUpload = { ...previewable, has_uploaded_files: false };
@@ -341,13 +341,7 @@ describe('ChartList helpers', () => {
 		expect(chartListHelpers.isPreviewable(previewable)).toBe(true);
 		expect(chartListHelpers.isPreviewable(unpublished)).toBe(false);
 		expect(chartListHelpers.isPreviewable(withoutUpload)).toBe(false);
-
-		expect(chartListHelpers.chartTitleHref(previewable, true)).toBe('/preview/1');
-		expect(chartListHelpers.chartTitleHref(unpublished, true)).toBeNull();
-		expect(chartListHelpers.chartTitleHref(withoutUpload, true)).toBeNull();
-		expect(chartListHelpers.chartTitleHref(previewable, false)).toBe('/editor/1');
-		expect(chartListHelpers.chartTitleHref(unpublished, false)).toBe('/editor/1');
-		expect(chartListHelpers.chartTitleHref(withoutUpload, false)).toBeNull();
+		expect(chartListHelpers.isPreviewable({ ...previewable, id: undefined })).toBe(false);
 	});
 });
 
@@ -582,9 +576,9 @@ describe('ChartList Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
 
 		await waitFor(() => {
-			const editorLink = screen.getByRole('link', { name: '1. My Song' });
-			expect(editorLink).toHaveAttribute('href', '/editor/1');
+			expect(screen.getByText('1. My Song')).toBeInTheDocument();
 		});
+		expect(screen.queryByRole('link', { name: '1. My Song' })).not.toBeInTheDocument();
 	});
 
 	const renderSingleChartInTableMode = async (isBlog: boolean) => {
@@ -594,20 +588,14 @@ describe('ChartList Rendering', () => {
 		await screen.findByText(mockListedChart.title, { exact: false });
 	};
 
-	it('wires the blog table title to preview', async () => {
+	it('leaves the blog table title unlinked', async () => {
 		await renderSingleChartInTableMode(true);
-		expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
-			'href',
-			'/preview/1'
-		);
+		expect(screen.queryByRole('link', { name: /Test Song 1/ })).not.toBeInTheDocument();
 	});
 
-	it('wires the owner table title to editor', async () => {
+	it('leaves the owner table title unlinked', async () => {
 		await renderSingleChartInTableMode(false);
-		expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
-			'href',
-			'/editor/1'
-		);
+		expect(screen.queryByRole('link', { name: /Test Song 1/ })).not.toBeInTheDocument();
 	});
 
 	it('shows loading state while fetching', async () => {

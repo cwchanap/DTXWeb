@@ -60,12 +60,6 @@ export type ChartNavigationItem = {
 export const isPreviewable = (item: ChartNavigationItem): boolean =>
 	item.id !== undefined && item.is_published === true && item.has_uploaded_files === true;
 
-export const chartTitleHref = (item: ChartNavigationItem, isBlog: boolean): string | null => {
-	if (item.id === undefined) return null;
-	if (isBlog) return isPreviewable(item) ? `/preview/${item.id}` : null;
-	return item.has_uploaded_files === true ? `/editor/${item.id}` : null;
-};
-
 export const changePage = (newPage: number, totalPages: number) => {
 	if (newPage < 1 || newPage > totalPages) {
 		return null;

@@ -35,54 +35,54 @@
 ### Shared notation/timing
 
 - `packages/common/src/lib/notation/model.ts`
-  - Task 1 adds `NotationTempoEvent`; Task 2 extends `NotationChart` only when all chart producers/fixtures are updated in the same commit.
+    - Task 1 adds `NotationTempoEvent`; Task 2 extends `NotationChart` only when all chart producers/fixtures are updated in the same commit.
 - `packages/common/src/lib/notation/timing.ts`
-  - Owns `normalizeTempoEvents()` and uses it for forward/inverse timing.
+    - Owns `normalizeTempoEvents()` and uses it for forward/inverse timing.
 - `packages/common/src/lib/notation/timing.test.ts`
-  - Owns normalization and timing invariants independent of DTX parsing.
+    - Owns normalization and timing invariants independent of DTX parsing.
 - `packages/common/src/lib/notation/quantize.ts`
-  - Keeps existing channel `03` synthetic-key conversion, calls `buildChartTiming()`, and exposes equivalent tempo events on `NotationChart`.
+    - Keeps existing channel `03` synthetic-key conversion, calls `buildChartTiming()`, and exposes equivalent tempo events on `NotationChart`.
 - `packages/common/src/lib/notation/quantize.test.ts`
-  - Owns DTX integration coverage for channels `08` / `03`, exact-tie ordering, and value equivalence.
+    - Owns DTX integration coverage for channels `08` / `03`, exact-tie ordering, and value equivalence.
 
 ### Web preview rendering
 
 - `packages/dtx-web/src/lib/components/preview/NotationView.svelte`
-  - Suppresses redundant begin bars and draws VexFlow tempo annotations.
+    - Suppresses redundant begin bars and draws VexFlow tempo annotations.
 - `packages/dtx-web/src/lib/components/preview/NotationView.test.ts`
-  - Happy-path renderer orchestration with VexFlow mocked.
+    - Happy-path renderer orchestration with VexFlow mocked.
 - `packages/dtx-web/src/lib/components/preview/NotationView.errors.test.ts`
-  - Error-path VexFlow mock and non-fatal tempo annotation coverage.
+    - Error-path VexFlow mock and non-fatal tempo annotation coverage.
 - `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts`
-  - Updates existing chart/timing fixtures when `NotationChart.tempoEvents` becomes required; no trivial page-level BPM test.
+    - Updates existing chart/timing fixtures when `NotationChart.tempoEvents` becomes required; no trivial page-level BPM test.
 
 ### Navigation
 
 - `packages/dtx-web/src/lib/components/ChartList.helpers.ts`
-  - Existing helper module; add only `isPreviewable()` and `chartTitleHref()` pure navigation helpers.
+    - Existing helper module; add only `isPreviewable()` and `chartTitleHref()` pure navigation helpers.
 - `packages/dtx-web/src/lib/components/ChartList.test.ts`
-  - Test the navigation matrix at the pure-helper seam and keep one table-title integration check per context.
+    - Test the navigation matrix at the pure-helper seam and keep one table-title integration check per context.
 - `packages/dtx-web/src/lib/components/ChartListItem.svelte`
-  - Uses helpers for card title destination and Preview visibility.
+    - Uses helpers for card title destination and Preview visibility.
 - `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
-  - Verifies card wiring and explicit Preview/Edit-details actions.
+    - Verifies card wiring and explicit Preview/Edit-details actions.
 - `packages/dtx-web/src/lib/components/ChartList.svelte`
-  - Uses `chartTitleHref()` for table-row title destination.
+    - Uses `chartTitleHref()` for table-row title destination.
 - `packages/dtx-web/src/lib/components/ChartListTableItem.svelte`
-  - Uses `isPreviewable()` for compact table actions and a distinct Preview icon.
+    - Uses `isPreviewable()` for compact table actions and a distinct Preview icon.
 - `packages/dtx-web/src/lib/components/ChartListTableItem.test.ts`
-  - Existing test file; extend current navigation/download/delete coverage and update the existing `Edit` assertion.
+    - Existing test file; extend current navigation/download/delete coverage and update the existing `Edit` assertion.
 
 ### Browser coverage
 
 - `packages/e2e-web/fixtures/preview-tempo.dtx`
-  - New preview-only fixture containing real playable `#NNNCC:` note lines plus a channel `08` tempo change.
+    - New preview-only fixture containing real playable `#NNNCC:` note lines plus a channel `08` tempo change.
 - `packages/e2e-web/preview.spec.ts`
-  - Uses only the preview-specific fixture and verifies real VexFlow tempo text.
+    - Uses only the preview-specific fixture and verifies real VexFlow tempo text.
 - `packages/e2e-web/blog.spec.ts`
-  - Verifies the seeded published chart navigates from Blog to `/preview/[id]`.
+    - Verifies the seeded published chart navigates from Blog to `/preview/[id]`.
 - `packages/e2e-web/fixtures/test-sample.dtx`
-  - Unchanged; remains shared by converter/upload specs and `setup/prepare-stack.ts`.
+    - Unchanged; remains shared by converter/upload specs and `setup/prepare-stack.ts`.
 
 ---
 
@@ -106,11 +106,13 @@
 ### Task 1: Normalize effective tempo once in `ChartTiming`
 
 **Files:**
+
 - Modify: `packages/common/src/lib/notation/model.ts`
 - Modify: `packages/common/src/lib/notation/timing.ts`
 - Test: `packages/common/src/lib/notation/timing.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `TimingInput { bpm, bpmValueMap, bpmChanges, measureLengths, measureCount }`.
 - Produces: `NotationTempoEvent`, `normalizeTempoEvents(input): NotationTempoEvent[]`, and `ChartTiming.tempoEvents: NotationTempoEvent[]`.
 - Does **not** change `NotationChart` yet; Task 1 must compile independently.
@@ -278,9 +280,7 @@ export const normalizeTempoEvents = (input: TimingInput): NotationTempoEvent[] =
 		}
 	}
 
-	changes.sort(
-		(a, b) => a.measure - b.measure || a.fraction - b.fraction || a.order - b.order
-	);
+	changes.sort((a, b) => a.measure - b.measure || a.fraction - b.fraction || a.order - b.order);
 
 	const events: NotationTempoEvent[] = [{ measure: 0, fraction: 0, bpm: initialBpm }];
 	for (const change of changes) {
@@ -397,6 +397,7 @@ git commit -m "feat(common): normalize preview tempo events"
 ### Task 2: Expose normalized tempo events through `NotationChart`
 
 **Files:**
+
 - Modify: `packages/common/src/lib/notation/model.ts`
 - Modify: `packages/common/src/lib/notation/quantize.ts`
 - Test: `packages/common/src/lib/notation/quantize.test.ts`
@@ -405,6 +406,7 @@ git commit -m "feat(common): normalize preview tempo events"
 - Test fixture update: `packages/dtx-web/src/lib/components/preview/NotationView.errors.test.ts`
 
 **Interfaces:**
+
 - Consumes: `ChartTiming.tempoEvents` from Task 1.
 - Produces: required `NotationChart.tempoEvents` with values equal to `timing.tempoEvents`.
 - Preserves existing channel `03` conversion to synthetic `03:${noteID}` keys.
@@ -549,11 +551,13 @@ git commit -m "feat(common): expose notation tempo events"
 ### Task 3: Remove doubled measure boundaries and render BPM markings
 
 **Files:**
+
 - Modify: `packages/dtx-web/src/lib/components/preview/NotationView.svelte`
 - Test: `packages/dtx-web/src/lib/components/preview/NotationView.test.ts`
 - Test: `packages/dtx-web/src/lib/components/preview/NotationView.errors.test.ts`
 
 **Interfaces:**
+
 - Consumes: `chart.tempoEvents` from Task 2.
 - Produces: single visible boundary between adjacent measure staves plus isolated VexFlow `StaveTempo` annotations.
 - Uses VexFlow 4.2.5 `BarlineType` and `StaveTempo`.
@@ -564,9 +568,7 @@ In `NotationView.test.ts` add captures:
 
 ```ts
 const begBarTypes = vi.hoisted(() => [] as number[]);
-const tempoCalls = vi.hoisted(
-	() => [] as Array<{ x: number; bpm?: number; duration?: string }>
-);
+const tempoCalls = vi.hoisted(() => [] as Array<{ x: number; bpm?: number; duration?: string }>);
 ```
 
 Extend mocked `Stave` only with the method production will actually call:
@@ -772,10 +774,7 @@ it('skips a failing tempo annotation without dropping the measure', async () => 
 
 	expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 	expect(draw).toHaveBeenCalled();
-	expect(warnSpy).toHaveBeenCalledWith(
-		'Failed to render tempo in measure 0',
-		expect.any(Error)
-	);
+	expect(warnSpy).toHaveBeenCalledWith('Failed to render tempo in measure 0', expect.any(Error));
 	warnSpy.mockRestore();
 });
 ```
@@ -806,12 +805,14 @@ git commit -m "feat(web): render preview tempo without doubled bars"
 ### Task 4: Centralize chart destination rules and apply them to card view
 
 **Files:**
+
 - Modify: `packages/dtx-web/src/lib/components/ChartList.helpers.ts`
 - Test: `packages/dtx-web/src/lib/components/ChartList.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartListItem.svelte`
 - Test: `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
 
 **Interfaces:**
+
 - Produces: `isPreviewable(item): boolean` and `chartTitleHref(item, isBlog): string | null`.
 - Card, table title, and table actions consume the same policy.
 - No shared UI/action component.
@@ -859,14 +860,9 @@ export type ChartNavigationItem = {
 };
 
 export const isPreviewable = (item: ChartNavigationItem): boolean =>
-	item.id !== undefined &&
-	item.is_published === true &&
-	item.has_uploaded_files === true;
+	item.id !== undefined && item.is_published === true && item.has_uploaded_files === true;
 
-export const chartTitleHref = (
-	item: ChartNavigationItem,
-	isBlog: boolean
-): string | null => {
+export const chartTitleHref = (item: ChartNavigationItem, isBlog: boolean): string | null => {
 	if (item.id === undefined) return null;
 	if (isBlog) return isPreviewable(item) ? `/preview/${item.id}` : null;
 	return item.has_uploaded_files === true ? `/editor/${item.id}` : null;
@@ -880,18 +876,12 @@ In `ChartListItem.test.ts` add:
 ```ts
 it('routes a previewable blog card title to preview', () => {
 	render(ChartListItem, { props: { ...renderProps, isBlog: true, item: mockItem } });
-	expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
-		'href',
-		'/preview/1'
-	);
+	expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute('href', '/preview/1');
 });
 
 it('keeps an owner card title editor-first', () => {
 	render(ChartListItem, { props: renderProps });
-	expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute(
-		'href',
-		'/editor/1'
-	);
+	expect(screen.getByRole('link', { name: 'Test Song 1' })).toHaveAttribute('href', '/editor/1');
 });
 
 it('does not fall back to editor for a non-previewable blog card', () => {
@@ -978,12 +968,14 @@ git commit -m "feat(web): route chart cards by context"
 ### Task 5: Apply the shared navigation rules to table view
 
 **Files:**
+
 - Modify: `packages/dtx-web/src/lib/components/ChartList.svelte`
 - Modify: `packages/dtx-web/src/lib/components/ChartListTableItem.svelte`
 - Test: `packages/dtx-web/src/lib/components/ChartList.test.ts`
 - Modify existing: `packages/dtx-web/src/lib/components/ChartListTableItem.test.ts`
 
 **Interfaces:**
+
 - Consumes: `chartTitleHref()` / `isPreviewable()` from Task 4.
 - Produces: blog table title `/preview/[id]`, owner table title `/editor/[id]`, compact public Preview action, and owner Preview/Edit-details actions.
 
@@ -1001,18 +993,12 @@ const renderSingleChartInTableMode = async (isBlog: boolean) => {
 
 it('wires the blog table title to preview', async () => {
 	await renderSingleChartInTableMode(true);
-	expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
-		'href',
-		'/preview/1'
-	);
+	expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute('href', '/preview/1');
 });
 
 it('wires the owner table title to editor', async () => {
 	await renderSingleChartInTableMode(false);
-	expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute(
-		'href',
-		'/editor/1'
-	);
+	expect(screen.getByRole('link', { name: /Test Song 1/ })).toHaveAttribute('href', '/editor/1');
 });
 ```
 
@@ -1139,12 +1125,14 @@ git commit -m "feat(web): route chart table actions by context"
 ### Task 6: Verify real VexFlow tempo rendering and Blog -> Preview navigation
 
 **Files:**
+
 - Create: `packages/e2e-web/fixtures/preview-tempo.dtx`
 - Modify: `packages/e2e-web/preview.spec.ts`
 - Modify: `packages/e2e-web/blog.spec.ts`
 - Leave unchanged: `packages/e2e-web/fixtures/test-sample.dtx`
 
 **Interfaces:**
+
 - Consumes: existing seeded published chart `CHART_B_ID = 1002`, `CHART_B_TITLE = 'E2E Download Chart'`, and preview.spec's R2 request interception.
 - Produces: browser-level real-rendering coverage without changing shared converter/upload fixtures.
 

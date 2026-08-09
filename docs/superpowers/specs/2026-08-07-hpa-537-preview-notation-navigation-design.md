@@ -76,24 +76,24 @@ HPA-537 makes the list views follow that distinction consistently.
 
 ## Design Decisions
 
-| Topic | Decision |
-| --- | --- |
-| Tempo source | Normalize tempo once in `@dtx/common` and reuse it for timing + notation |
-| Tempo model | Add narrow `NotationTempoEvent { measure, fraction, bpm }` data |
-| Timing exposure | `ChartTiming.tempoEvents` is the normalized effective tempo sequence |
-| Initial tempo | Always expose one effective event at measure `0`, fraction `0` |
-| Tempo changes | Support channel `08` (`#BPMxx`) and legacy channel `03` |
-| Duplicate tempo | Collapse consecutive effective events with the same BPM |
-| Invalid tempo | Ignore invalid/non-positive/non-finite changes and retain prior effective BPM |
-| Measure boundary fix | Keep VexFlow end bars; suppress begin bar only for non-first staves in a row |
-| Tempo rendering | Use VexFlow `StaveTempo` outside the rhythmic `Voice` |
-| Mid-measure positioning | Position from the measure's normalized fraction after layout |
-| Blog primary route | `/preview/[id]` |
-| Owner primary route | `/editor/[id]` |
-| Owner preview | Secondary action only when published + uploaded |
-| Navigation policy reuse | Small pure helpers in existing `ChartList.helpers.ts` |
-| Preview-page editor action | Excluded |
-| Editor-shell preview action | Excluded |
+| Topic                       | Decision                                                                      |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Tempo source                | Normalize tempo once in `@dtx/common` and reuse it for timing + notation      |
+| Tempo model                 | Add narrow `NotationTempoEvent { measure, fraction, bpm }` data               |
+| Timing exposure             | `ChartTiming.tempoEvents` is the normalized effective tempo sequence          |
+| Initial tempo               | Always expose one effective event at measure `0`, fraction `0`                |
+| Tempo changes               | Support channel `08` (`#BPMxx`) and legacy channel `03`                       |
+| Duplicate tempo             | Collapse consecutive effective events with the same BPM                       |
+| Invalid tempo               | Ignore invalid/non-positive/non-finite changes and retain prior effective BPM |
+| Measure boundary fix        | Keep VexFlow end bars; suppress begin bar only for non-first staves in a row  |
+| Tempo rendering             | Use VexFlow `StaveTempo` outside the rhythmic `Voice`                         |
+| Mid-measure positioning     | Position from the measure's normalized fraction after layout                  |
+| Blog primary route          | `/preview/[id]`                                                               |
+| Owner primary route         | `/editor/[id]`                                                                |
+| Owner preview               | Secondary action only when published + uploaded                               |
+| Navigation policy reuse     | Small pure helpers in existing `ChartList.helpers.ts`                         |
+| Preview-page editor action  | Excluded                                                                      |
+| Editor-shell preview action | Excluded                                                                      |
 
 ## Tempo Model
 
@@ -195,7 +195,7 @@ produces:
 	{ measure: 0, fraction: 0, bpm: 120 },
 	{ measure: 3, fraction: 0.5, bpm: 160 },
 	{ measure: 6, fraction: 0, bpm: 180 }
-]
+];
 ```
 
 ### Timing consumption
@@ -239,9 +239,7 @@ Render all tempo events through the same post-layout VexFlow `StaveTempo` path, 
 After the stave and voice have been formatted, derive the nominal annotation coordinate:
 
 ```ts
-const x =
-	stave.getNoteStartX() +
-	event.fraction * (stave.getNoteEndX() - stave.getNoteStartX());
+const x = stave.getNoteStartX() + event.fraction * (stave.getNoteEndX() - stave.getNoteStartX());
 ```
 
 Then draw:

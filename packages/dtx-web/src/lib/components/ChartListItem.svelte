@@ -62,6 +62,11 @@
 			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
 		}
 	};
+
+	const handleAudioToggle = () => {
+		popoverOpen = false;
+		audio.toggle();
+	};
 </script>
 
 <div class="music-card group relative flex min-h-[280px] flex-col" style="overflow: visible">
@@ -104,7 +109,7 @@
 						<div class="py-2">
 							{#if audio.available}
 								<Button
-									onclick={() => audio.toggle()}
+									onclick={handleAudioToggle}
 									variant="menuItem"
 									fullWidth
 									justify="start"

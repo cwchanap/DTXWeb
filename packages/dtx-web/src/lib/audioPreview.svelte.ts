@@ -122,9 +122,14 @@ export const createAudioPreview = (getUrl: () => string | null): AudioPreview =>
 				if (get(store.playingAudio) === created) store.playingAudio.set(null);
 			});
 			created.addEventListener('error', () => {
+				// A stale error from a superseded element must not flip this card's
+				// hasError/isLoading — that would make `available` false and remove
+				// the Pause control while the newer element is still playing. Guard
+				// first, then mutate state only for the current element.
+				if (element !== created) return;
 				hasError = true;
 				isLoading = false;
-				if (element === created) isPlaying = false;
+				isPlaying = false;
 				if (get(store.playingAudio) === created) store.playingAudio.set(null);
 			});
 		} catch (error) {

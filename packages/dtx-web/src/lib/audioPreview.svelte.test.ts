@@ -562,4 +562,77 @@ describe('createAudioPreview', () => {
 
 		dispose();
 	});
+
+	it('a stale error completion does not clear a newer replay playback', async () => {
+		// Card plays element A, then replays with element B after A ends. When
+		// A later emits 'error', the stale-element guard must keep B's playback
+		// intact and the card available — the old bug set hasError/isLoading
+		// unconditionally before the guard, flipping available to false and
+		// removing the Pause control while B was still playing.
+		const elements = [0, 1].map(() => ({
+			play: vi.fn().mockResolvedValue(undefined),
+			pause: vi.fn(),
+			addEventListener: vi.fn(),
+			remove: vi.fn(),
+			currentTime: 0,
+			src: '',
+			load: vi.fn()
+		}));
+		let constructCount = 0;
+		vi.stubGlobal(
+			'Audio',
+			vi.fn(() => elements[constructCount++])
+		);
+
+		// Call order for get(store.playingAudio): 1st toggle post-await (no
+		// owner), A's ended handler (A is owner → clears store), 2nd toggle
+		// post-await (no owner again). Any later get — only reached without the
+		// fix, when A's error handler falls past the guard — reports B as owner
+		// so the store-clear check still does not fire.
+		vi.mocked(mockGet)
+			.mockReturnValueOnce(undefined)
+			.mockReturnValueOnce(elements[0])
+			.mockReturnValueOnce(undefined)
+			.mockReturnValue(elements[1]);
+
+		let audio!: ReturnType<typeof createAudioPreview>;
+		const dispose = $effect.root(() => {
+			audio = createAudioPreview(() => URL_A);
+		});
+		flushSync();
+
+		// First play → element A owns the card.
+		await audio.toggle();
+		expect(audio.isPlaying).toBe(true);
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[0]);
+
+		// A ends → isPlaying and the shared store clear, so a replay can start B.
+		const aEnded = elements[0].addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'ended'
+		);
+		expect(aEnded).toBeDefined();
+		aEnded![1]();
+		expect(audio.isPlaying).toBe(false);
+
+		// Replay → element B supersedes A as the card's current element.
+		await audio.toggle();
+		expect(audio.isPlaying).toBe(true);
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+
+		// Fire A's 'error' listener — a stale error from the superseded element.
+		const aError = elements[0].addEventListener.mock.calls.find(
+			(args: unknown[]) => args[0] === 'error'
+		);
+		expect(aError).toBeDefined();
+		aError![1]();
+
+		// B is still playing and the card is still available: the stale error
+		// did not flip hasError (which would have made available false and
+		// removed the Pause control) nor clear the shared store.
+		expect(audio.isPlaying).toBe(true);
+		expect(audio.available).toBe(true);
+		expect(mockPlayingAudio.set).toHaveBeenLastCalledWith(elements[1]);
+
+		dispose();
+	});
 });

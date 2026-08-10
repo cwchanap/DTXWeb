@@ -80,7 +80,7 @@ keyring = { version = "=3.6.3", default-features = false, features = ["windows-n
 keyring = { version = "=3.6.3", default-features = false, features = ["sync-secret-service", "crypto-rust"], optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 png = "0.18"

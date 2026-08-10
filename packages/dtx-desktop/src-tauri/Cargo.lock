@@ -1143,7 +1143,7 @@ dependencies = [
  "ts-rs",
  "url",
  "uuid",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
  "wiremock",
  "zeroize",
  "zip 3.0.0",

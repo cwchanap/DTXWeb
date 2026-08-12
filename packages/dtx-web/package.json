@@ -25,7 +25,7 @@
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250620.0",
 		"@graphql-codegen/cli": "^7.2.0",
-		"@graphql-codegen/typescript-operations": "^6.1.2",
+		"@graphql-codegen/typescript-operations": "^6.1.5",
 		"@graphql-codegen/typed-document-node": "^7.1.0",
 		"@iconify/svelte": "^5.2.2",
 		"@lucide/svelte": "^1.31.0",
@@ -41,7 +41,7 @@
 		"@vitest/coverage-v8": "^3.0.0",
 		"jsdom": "^26.1.0",
 		"svelte": "^5.56.8",
-		"svelte-check": "^4.7.4",
+		"svelte-check": "^4.7.5",
 		"tailwindcss": "^4.1.4",
 		"tslib": "^2.8.1",
 		"typescript": "^5.8.3",
@@ -52,11 +52,11 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1100.0",
+		"@aws-sdk/client-s3": "^3.1106.0",
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
 		"@supabase/ssr": "^0.12.4",
-		"@supabase/supabase-js": "^2.111.0",
+		"@supabase/supabase-js": "^2.112.2",
 		"dayjs": "^1.11.21",
 		"drizzle-orm": "^0.45.2",
 		"graphql": "^16.10.0",
@@ -71,7 +71,7 @@
 		"zod": "^3.25.67"
 	},
 	"optionalDependencies": {
-		"@rollup/rollup-linux-x64-gnu": "^4.62.3",
+		"@rollup/rollup-linux-x64-gnu": "^4.62.4",
 		"lightningcss-linux-x64-gnu": "^1.33.0"
 	}
 }

@@ -28,7 +28,7 @@
 		"@graphql-codegen/typescript-operations": "^6.1.2",
 		"@graphql-codegen/typed-document-node": "^7.1.0",
 		"@iconify/svelte": "^5.2.2",
-		"@lucide/svelte": "^1.28.0",
+		"@lucide/svelte": "^1.31.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",

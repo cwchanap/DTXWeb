@@ -16,9 +16,10 @@ export const ScoreRef = builder.objectRef<ScoreRow>('Score').implement({
 		score: t.int({ nullable: true, resolve: (s) => s.score }),
 		achievementRate: t.float({ nullable: true, resolve: (s) => s.achievement_rate }),
 		rankLabel: t.string({ nullable: true, resolve: (s) => s.rank_label }),
-		fullCombo: t.boolean({ resolve: (s) => s.full_combo === 1 }),
-		cleared: t.boolean({ resolve: (s) => s.cleared === 1 }),
-		maxCombo: t.int({ nullable: true, resolve: (s) => s.max_combo }),
+		cleared: t.boolean({
+			nullable: true,
+			resolve: (s) => (s.cleared == null ? null : s.cleared === 1)
+		}),
 		perfect: t.int({ nullable: true, resolve: (s) => s.perfect }),
 		great: t.int({ nullable: true, resolve: (s) => s.great }),
 		good: t.int({ nullable: true, resolve: (s) => s.good }),
@@ -36,6 +37,14 @@ export const ChartScoreRef = builder.objectRef<ChartScoreParent>('ChartScore').i
 		id: t.id({ resolve: (c) => String(c.chartScore.id) }),
 		playCount: t.int({ resolve: (c) => c.chartScore.play_count }),
 		clearCount: t.int({ resolve: (c) => c.chartScore.clear_count }),
+		fullCombo: t.boolean({ resolve: (c) => c.chartScore.full_combo === 1 }),
+		maxCombo: t.int({ resolve: (c) => c.chartScore.max_combo }),
+		bestAchievementRate: t.float({
+			nullable: true,
+			resolve: (c) => c.chartScore.best_achievement_rate
+		}),
+		bestRankLabel: t.string({ nullable: true, resolve: (c) => c.chartScore.best_rank_label }),
+		lastPlayedAt: t.string({ nullable: true, resolve: (c) => c.chartScore.last_played_at }),
 		scores: t.field({ type: [ScoreRef], resolve: (c) => c.scores })
 	})
 });
@@ -46,9 +55,7 @@ const ScoreInput = builder.inputType('ScoreInput', {
 		score: t.int({ required: false }),
 		achievementRate: t.float({ required: false }),
 		rankLabel: t.string({ required: false }),
-		fullCombo: t.boolean({ required: true }),
-		cleared: t.boolean({ required: true }),
-		maxCombo: t.int({ required: false }),
+		cleared: t.boolean({ required: false }),
 		perfect: t.int({ required: false }),
 		great: t.int({ required: false }),
 		good: t.int({ required: false }),
@@ -64,6 +71,11 @@ const ChartScoresInput = builder.inputType('ChartScoresInput', {
 		chartId: t.id({ required: true }),
 		playCount: t.int({ required: true }),
 		clearCount: t.int({ required: true }),
+		fullCombo: t.boolean({ required: true }),
+		maxCombo: t.int({ required: true }),
+		bestAchievementRate: t.float({ required: false }),
+		bestRankLabel: t.string({ required: false }),
+		lastPlayedAt: t.string({ required: false }),
 		scores: t.field({ type: [ScoreInput], required: true })
 	})
 });
@@ -173,9 +185,7 @@ type InputScore = {
 	score?: number | null;
 	achievementRate?: number | null;
 	rankLabel?: string | null;
-	fullCombo: boolean;
-	cleared: boolean;
-	maxCombo?: number | null;
+	cleared?: boolean | null;
 	perfect?: number | null;
 	great?: number | null;
 	good?: number | null;
@@ -185,7 +195,14 @@ type InputScore = {
 	displayOrder?: number | null;
 };
 
-type ValidationResult = { ok: true; scores: InputScore[] } | { ok: false; reason: string };
+type ValidationResult =
+	| {
+			ok: true;
+			scores: InputScore[];
+			sanitizedBestRankLabel: string | null;
+			normalizedLastPlayedAt: string | null;
+	  }
+	| { ok: false; reason: string };
 
 // Per-row field validation. Returns a reason string for an invalid row, or
 // null when valid. Structural checks (best/non-best coupling, displayOrder
@@ -216,7 +233,7 @@ const validateScoreFields = (s: InputScore): string | null => {
 		const parsed = Date.parse(s.performedAt);
 		if (Number.isNaN(parsed)) return 'invalid performedAt';
 	}
-	const counts = [s.maxCombo, s.perfect, s.great, s.good, s.poor, s.miss];
+	const counts = [s.perfect, s.great, s.good, s.poor, s.miss];
 	for (const c of counts) {
 		if (c != null && (!Number.isSafeInteger(c) || c < 0)) {
 			return 'judgment counts must be non-negative integers';
@@ -228,6 +245,10 @@ const validateScoreFields = (s: InputScore): string | null => {
 const validateChartScores = (
 	playCount: number,
 	clearCount: number,
+	maxCombo: number,
+	bestAchievementRate: number | null | undefined,
+	bestRankLabel: string | null | undefined,
+	lastPlayedAt: string | null | undefined,
 	scores: InputScore[]
 ): ValidationResult => {
 	// Chart-level aggregate validation.
@@ -236,6 +257,28 @@ const validateChartScores = (
 	if (!Number.isInteger(clearCount) || clearCount < 0)
 		return { ok: false, reason: 'clearCount must be a non-negative integer' };
 	if (clearCount > playCount) return { ok: false, reason: 'clearCount cannot exceed playCount' };
+	if (!Number.isSafeInteger(maxCombo) || maxCombo < 0) {
+		return { ok: false, reason: 'maxCombo must be a non-negative integer' };
+	}
+	if (
+		bestAchievementRate != null &&
+		(!Number.isFinite(bestAchievementRate) ||
+			bestAchievementRate < 0 ||
+			bestAchievementRate > 100)
+	) {
+		return { ok: false, reason: 'bestAchievementRate out of range' };
+	}
+
+	const sanitizedBestRankLabel =
+		bestRankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(bestRankLabel)
+			? null
+			: (bestRankLabel ?? null);
+	let normalizedLastPlayedAt: string | null = lastPlayedAt ?? null;
+	if (lastPlayedAt != null) {
+		const parsed = Date.parse(lastPlayedAt);
+		if (Number.isNaN(parsed)) return { ok: false, reason: 'invalid lastPlayedAt' };
+		if (parsed > Date.now()) normalizedLastPlayedAt = new Date().toISOString();
+	}
 
 	// An empty scores[] would wipe prior scores via the replace-all batch
 	// (DELETE + INSERT none). Reject so a buggy client can't destroy data.
@@ -271,10 +314,16 @@ const validateChartScores = (
 	let bestDropped = false;
 
 	for (const s of scores) {
-		// Best rows must not carry a displayOrder. Strip it rather than
-		// dropping the row — a stray displayOrder is benign, the best score
-		// is the most valuable row.
-		let row: InputScore = s.isBest && s.displayOrder != null ? { ...s, displayOrder: null } : s;
+		let row: InputScore = s.isBest
+			? {
+					...s,
+					achievementRate: null,
+					rankLabel: null,
+					cleared: null,
+					performedAt: null,
+					displayOrder: null
+				}
+			: s;
 
 		// Unknown rankLabel is cosmetic — strip to null, keep the row.
 		if (
@@ -333,7 +382,7 @@ const validateChartScores = (
 		return { ok: false, reason: 'best score row invalid' };
 	}
 
-	return { ok: true, scores: valid };
+	return { ok: true, scores: valid, sanitizedBestRankLabel, normalizedLastPlayedAt };
 };
 
 builder.mutationField('uploadScores', (t) =>
@@ -385,6 +434,11 @@ builder.mutationField('uploadScores', (t) =>
 				numericId: number;
 				playCount: number;
 				clearCount: number;
+				fullCombo: boolean;
+				maxCombo: number;
+				bestAchievementRate: number | null;
+				bestRankLabel: string | null;
+				lastPlayedAt: string | null;
 				inserts: ScoreInsert[];
 			}[] = [];
 
@@ -413,14 +467,16 @@ builder.mutationField('uploadScores', (t) =>
 				const result = validateChartScores(
 					chart.playCount,
 					chart.clearCount,
+					chart.maxCombo,
+					chart.bestAchievementRate,
+					chart.bestRankLabel,
+					chart.lastPlayedAt,
 					chart.scores.map((s) => ({
 						isBest: s.isBest,
 						score: s.score,
 						achievementRate: s.achievementRate,
 						rankLabel: s.rankLabel,
-						fullCombo: s.fullCombo,
 						cleared: s.cleared,
-						maxCombo: s.maxCombo,
 						perfect: s.perfect,
 						great: s.great,
 						good: s.good,
@@ -452,9 +508,7 @@ builder.mutationField('uploadScores', (t) =>
 					score: s.score ?? null,
 					achievement_rate: s.achievementRate ?? null,
 					rank_label: s.rankLabel ?? null,
-					full_combo: s.fullCombo,
-					cleared: s.cleared,
-					max_combo: s.maxCombo ?? null,
+					cleared: s.cleared ?? null,
 					perfect: s.perfect ?? null,
 					great: s.great ?? null,
 					good: s.good ?? null,
@@ -468,6 +522,11 @@ builder.mutationField('uploadScores', (t) =>
 					numericId,
 					playCount: chart.playCount,
 					clearCount: chart.clearCount,
+					fullCombo: chart.fullCombo,
+					maxCombo: chart.maxCombo,
+					bestAchievementRate: chart.bestAchievementRate ?? null,
+					bestRankLabel: result.sanitizedBestRankLabel,
+					lastPlayedAt: result.normalizedLastPlayedAt,
 					inserts
 				});
 			}
@@ -501,6 +560,11 @@ builder.mutationField('uploadScores', (t) =>
 							userId: ctx.user!.id,
 							playCount: w.playCount,
 							clearCount: w.clearCount,
+							fullCombo: w.fullCombo,
+							maxCombo: w.maxCombo,
+							bestAchievementRate: w.bestAchievementRate,
+							bestRankLabel: w.bestRankLabel,
+							lastPlayedAt: w.lastPlayedAt,
 							scores: w.inserts
 						}).then(() => w.inserts.length)
 					)

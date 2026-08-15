@@ -127,6 +127,11 @@ describe('DtxFile.myChartScore', () => {
 				user_id: 'user-1',
 				play_count: 10,
 				clear_count: 4,
+				full_combo: 1,
+				max_combo: 812,
+				best_achievement_rate: 96.25,
+				best_rank_label: 'SS',
+				last_played_at: '2026-08-14T13:00:00Z',
 				created_at: 't',
 				updated_at: 't'
 			},
@@ -136,17 +141,15 @@ describe('DtxFile.myChartScore', () => {
 					chart_score_id: 3,
 					is_best: 1,
 					score: 912380,
-					achievement_rate: 91.3,
-					rank_label: 'S',
-					full_combo: 0,
-					cleared: 1,
-					max_combo: 903,
+					achievement_rate: null,
+					rank_label: null,
+					cleared: null,
 					perfect: 1300,
 					great: 120,
 					good: 20,
 					poor: 5,
 					miss: 5,
-					performed_at: 't',
+					performed_at: null,
 					display_order: null,
 					created_at: 't'
 				}
@@ -157,22 +160,37 @@ describe('DtxFile.myChartScore', () => {
 		const result = await runQuery(ctx, {
 			query: `query {
 				simfile(id: "42") {
-					dtxFiles { id myChartScore { playCount clearCount scores { isBest score achievementRate rankLabel } } }
+				dtxFiles { id myChartScore { playCount clearCount fullCombo maxCombo bestAchievementRate bestRankLabel lastPlayedAt scores { isBest score achievementRate rankLabel cleared } } }
 				}
 			}`
 		});
 
 		const dtx = (result.data?.simfile as { dtxFiles: unknown[] }).dtxFiles[0] as {
 			id: string;
-			myChartScore: { playCount: number; clearCount: number; scores: unknown[] };
+			myChartScore: {
+				playCount: number;
+				clearCount: number;
+				fullCombo: boolean;
+				maxCombo: number;
+				bestAchievementRate: number | null;
+				bestRankLabel: string | null;
+				lastPlayedAt: string | null;
+				scores: unknown[];
+			};
 		};
 		expect(dtx.id).toBe('10');
 		expect(dtx.myChartScore.playCount).toBe(10);
+		expect(dtx.myChartScore.fullCombo).toBe(true);
+		expect(dtx.myChartScore.maxCombo).toBe(812);
+		expect(dtx.myChartScore.bestAchievementRate).toBe(96.25);
+		expect(dtx.myChartScore.bestRankLabel).toBe('SS');
+		expect(dtx.myChartScore.lastPlayedAt).toBe('2026-08-14T13:00:00Z');
 		expect(dtx.myChartScore.scores[0]).toMatchObject({
 			isBest: true,
 			score: 912380,
-			achievementRate: 91.3,
-			rankLabel: 'S'
+			achievementRate: null,
+			rankLabel: null,
+			cleared: null
 		});
 		// Guards against a file.index-vs-file.id mixup: must resolve using the
 		// chart's id (10), not its position in the dtxFiles array.
@@ -224,6 +242,11 @@ const chartScoreRow = {
 	user_id: 'user-1',
 	play_count: 10,
 	clear_count: 4,
+	full_combo: 1 as const,
+	max_combo: 812,
+	best_achievement_rate: 96.25,
+	best_rank_label: 'SS',
+	last_played_at: '2026-08-14T13:00:00Z',
 	created_at: 't',
 	updated_at: 't'
 };
@@ -253,7 +276,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -276,7 +301,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -305,15 +332,15 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 10,
 							clearCount: 4,
+							fullCombo: false,
+							maxCombo: 903,
 							scores: [
 								{
 									isBest: true,
 									score: 912380,
 									achievementRate: 91.3,
 									rankLabel: 'S',
-									fullCombo: false,
 									cleared: true,
-									maxCombo: 903,
 									perfect: 1300,
 									great: 120,
 									good: 20,
@@ -325,7 +352,6 @@ describe('uploadScores', () => {
 									isBest: false,
 									achievementRate: 82.4,
 									rankLabel: 'A',
-									fullCombo: false,
 									cleared: true,
 									displayOrder: 1,
 									performedAt: '2026-06-02T00:00:00'
@@ -344,21 +370,133 @@ describe('uploadScores', () => {
 		expect(payload.updatedCharts).toBe(1);
 		expect(payload.insertedScores).toBe(2);
 		expect(payload.skipped).toEqual([]);
-		// Single atomic call with all params (guards against swapped playCount/clearCount).
+		// Single atomic call with all chart-owned params (guards against swapped playCount/clearCount).
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
 		expect(mockedUpsertReplace).toHaveBeenCalledWith(
 			{}, // db is {} in ctx
-			{
+			expect.objectContaining({
 				chartId: 10,
 				userId: 'user-1',
 				playCount: 10,
 				clearCount: 4,
+				fullCombo: false,
+				maxCombo: 903,
+				bestAchievementRate: null,
+				bestRankLabel: null,
+				lastPlayedAt: null,
 				scores: expect.arrayContaining([
-					expect.objectContaining({ is_best: true, score: 912380 }),
+					expect.objectContaining({
+						is_best: true,
+						score: 912380,
+						achievement_rate: null,
+						rank_label: null,
+						cleared: null,
+						performed_at: null,
+						display_order: null
+					}),
 					expect.objectContaining({ is_best: false, display_order: 1 })
 				])
-			}
+			})
 		);
+	});
+
+	it('canonicalizes best-row metadata and passes chart score records to D1', async () => {
+		mockedVisibility.mockResolvedValue(visibleMap([10]));
+		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
+		const ctx = makeCtx({ user: { id: 'user-1' } as never });
+		const result = await runQuery(ctx, {
+			query: uploadMutation,
+			variables: {
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 7,
+							clearCount: 4,
+							fullCombo: true,
+							maxCombo: 812,
+							bestAchievementRate: 96.25,
+							bestRankLabel: 'SS',
+							lastPlayedAt: '2026-08-14T13:00:00Z',
+							scores: [
+								{
+									isBest: true,
+									score: 987654,
+									achievementRate: 72,
+									rankLabel: 'B',
+									cleared: true,
+									performedAt: '2026-08-14T12:00:00Z',
+									displayOrder: 5,
+									perfect: 700,
+									great: 80,
+									good: 20,
+									poor: 8,
+									miss: 4
+								},
+								{
+									isBest: false,
+									achievementRate: 81.5,
+									rankLabel: 'S',
+									cleared: null,
+									performedAt: '2026-08-14T13:00:00Z',
+									displayOrder: 1
+								}
+							]
+						}
+					]
+				}
+			}
+		});
+
+		const payload = result.data?.uploadScores as {
+			updatedCharts: number;
+			insertedScores: number;
+			skipped: unknown[];
+		};
+		expect(payload.updatedCharts).toBe(1);
+		expect(payload.insertedScores).toBe(2);
+		expect(payload.skipped).toEqual([]);
+		expect(mockedUpsertReplace).toHaveBeenCalledWith(ctx.db, {
+			chartId: 10,
+			userId: 'user-1',
+			playCount: 7,
+			clearCount: 4,
+			fullCombo: true,
+			maxCombo: 812,
+			bestAchievementRate: 96.25,
+			bestRankLabel: 'SS',
+			lastPlayedAt: '2026-08-14T13:00:00Z',
+			scores: [
+				{
+					is_best: true,
+					score: 987654,
+					achievement_rate: null,
+					rank_label: null,
+					cleared: null,
+					perfect: 700,
+					great: 80,
+					good: 20,
+					poor: 8,
+					miss: 4,
+					performed_at: null,
+					display_order: null
+				},
+				{
+					is_best: false,
+					score: null,
+					achievement_rate: 81.5,
+					rank_label: 'S',
+					cleared: null,
+					perfect: null,
+					great: null,
+					good: null,
+					poor: null,
+					miss: null,
+					performed_at: '2026-08-14T13:00:00Z',
+					display_order: 1
+				}
+			]
+		});
 	});
 
 	it('skips a chart that is not visible to the caller', async () => {
@@ -367,7 +505,18 @@ describe('uploadScores', () => {
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
 			variables: {
-				input: { charts: [{ chartId: '999', playCount: 0, clearCount: 0, scores: [] }] }
+				input: {
+					charts: [
+						{
+							chartId: '999',
+							playCount: 0,
+							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
+							scores: []
+						}
+					]
+				}
 			}
 		});
 		const payload = result.data?.uploadScores as {
@@ -382,12 +531,11 @@ describe('uploadScores', () => {
 	it('skips a chart with more than 5 recent scores', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
-		const best = { isBest: true, score: 900, fullCombo: false, cleared: true };
+		const best = { isBest: true, score: 900, cleared: true };
 		const recent = Array.from({ length: 6 }, (_v, i) => ({
 			isBest: false,
 			achievementRate: 50,
 			rankLabel: 'E',
-			fullCombo: false,
 			cleared: false,
 			displayOrder: i + 1
 		}));
@@ -396,7 +544,14 @@ describe('uploadScores', () => {
 			variables: {
 				input: {
 					charts: [
-						{ chartId: '10', playCount: 7, clearCount: 0, scores: [best, ...recent] }
+						{
+							chartId: '10',
+							playCount: 7,
+							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [best, ...recent]
+						}
 					]
 				}
 			}
@@ -420,9 +575,11 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 2,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
-								{ isBest: true, score: 900, fullCombo: false, cleared: true },
-								{ isBest: true, score: 950, fullCombo: false, cleared: true }
+								{ isBest: true, score: 900, cleared: true },
+								{ isBest: true, score: 950, cleared: true }
 							]
 						}
 					]
@@ -448,11 +605,12 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: false,
 									achievementRate: 80,
-									fullCombo: false,
 									cleared: true,
 									displayOrder: 1
 								}
@@ -482,11 +640,12 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									fullCombo: false,
 									cleared: true,
 									displayOrder: 1
 								}
@@ -528,9 +687,11 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 2,
 							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
-								{ isBest: true, score: 900, fullCombo: false, cleared: true },
-								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 6 }
+								{ isBest: true, score: 900, cleared: true },
+								{ isBest: false, cleared: false, displayOrder: 6 }
 							]
 						}
 					]
@@ -561,15 +722,16 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 3,
 							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
-								{ isBest: true, score: 900, fullCombo: false, cleared: true },
+								{ isBest: true, score: 900, cleared: true },
 								{
 									isBest: false,
-									fullCombo: false,
 									cleared: false,
 									displayOrder: 1
 								},
-								{ isBest: false, fullCombo: false, cleared: false, displayOrder: 1 }
+								{ isBest: false, cleared: false, displayOrder: 1 }
 							]
 						}
 					]
@@ -600,12 +762,13 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
+							bestAchievementRate: 150,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									achievementRate: 150,
-									fullCombo: false,
 									cleared: true
 								}
 							]
@@ -617,7 +780,7 @@ describe('uploadScores', () => {
 		const payload = result.data?.uploadScores as {
 			skipped: { chartId: string; reason: string }[];
 		};
-		expect(payload.skipped[0].reason).toBe('achievementRate out of range');
+		expect(payload.skipped[0].reason).toBe('bestAchievementRate out of range');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
@@ -634,12 +797,13 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
 									rankLabel: 'X',
-									fullCombo: false,
 									cleared: true
 								}
 							]
@@ -675,12 +839,13 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
 									rankLabel: 'SS',
-									fullCombo: false,
 									cleared: true
 								}
 							]
@@ -703,7 +868,16 @@ describe('uploadScores', () => {
 			query: uploadMutation,
 			variables: {
 				input: {
-					charts: [{ chartId: 'not-a-number', playCount: 0, clearCount: 0, scores: [] }]
+					charts: [
+						{
+							chartId: 'not-a-number',
+							playCount: 0,
+							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
+							scores: []
+						}
+					]
 				}
 			}
 		});
@@ -724,7 +898,9 @@ describe('uploadScores', () => {
 			chartId: String(i + 1),
 			playCount: 1,
 			clearCount: 1,
-			scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+			fullCombo: false,
+			maxCombo: 0,
+			scores: [{ isBest: true, score: 900, cleared: true }]
 		}));
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -745,14 +921,24 @@ describe('uploadScores', () => {
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const scores = Array.from({ length: 11 }, () => ({
 			isBest: false,
-			fullCombo: false,
 			cleared: false,
 			displayOrder: 1
 		}));
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
 			variables: {
-				input: { charts: [{ chartId: '10', playCount: 11, clearCount: 0, scores }] }
+				input: {
+					charts: [
+						{
+							chartId: '10',
+							playCount: 11,
+							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
+							scores
+						}
+					]
+				}
 			}
 		});
 		const payload = result.data?.uploadScores as {
@@ -777,13 +963,17 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						},
 						{
 							chartId: '11',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 950, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 950, cleared: true }]
 						}
 					]
 				}
@@ -818,7 +1008,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -875,7 +1067,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -914,7 +1108,9 @@ describe('uploadScores', () => {
 						chartId: String(id),
 						playCount: 1,
 						clearCount: 1,
-						scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+						fullCombo: false,
+						maxCombo: 0,
+						scores: [{ isBest: true, score: 900, cleared: true }]
 					}))
 				}
 			}
@@ -937,7 +1133,9 @@ describe('uploadScores', () => {
 			chartId: String(i + 1),
 			playCount: 1,
 			clearCount: 1,
-			scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+			fullCombo: false,
+			maxCombo: 0,
+			scores: [{ isBest: true, score: 900, cleared: true }]
 		}));
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -970,7 +1168,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -997,7 +1197,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -1035,7 +1237,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: -1,
 							clearCount: 0,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -1060,7 +1264,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 5,
 							clearCount: -1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -1085,7 +1291,9 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 3,
 							clearCount: 5,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						}
 					]
 				}
@@ -1110,11 +1318,12 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									fullCombo: false,
 									cleared: true,
 									perfect: -5
 								}
@@ -1143,11 +1352,12 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: -100,
-									fullCombo: false,
 									cleared: true
 								}
 							]
@@ -1175,13 +1385,13 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: -1,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									fullCombo: false,
-									cleared: true,
-									maxCombo: -1
+									cleared: true
 								}
 							]
 						}
@@ -1192,11 +1402,11 @@ describe('uploadScores', () => {
 		const payload = result.data?.uploadScores as {
 			skipped: { chartId: string; reason: string }[];
 		};
-		expect(payload.skipped[0].reason).toBe('judgment counts must be non-negative integers');
+		expect(payload.skipped[0].reason).toBe('maxCombo must be a non-negative integer');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('skips a chart with an unparseable performedAt', async () => {
+	it('skips a chart with an unparseable lastPlayedAt', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
 		const result = await runQuery(ctx, {
@@ -1208,13 +1418,14 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
+							lastPlayedAt: 'not-a-date',
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									fullCombo: false,
-									cleared: true,
-									performedAt: 'not-a-date'
+									cleared: true
 								}
 							]
 						}
@@ -1225,16 +1436,15 @@ describe('uploadScores', () => {
 		const payload = result.data?.uploadScores as {
 			skipped: { chartId: string; reason: string }[];
 		};
-		expect(payload.skipped[0].reason).toBe('invalid performedAt');
+		expect(payload.skipped[0].reason).toBe('invalid lastPlayedAt');
 		expect(mockedUpsertReplace).not.toHaveBeenCalled();
 	});
 
-	it('clamps a future performedAt to now instead of dropping the row', async () => {
+	it('clamps a future recent performedAt to now instead of dropping the row', async () => {
 		mockedVisibility.mockResolvedValue(visibleMap([10, 11]));
 		mockedUpsertReplace.mockResolvedValue(chartScoreRow);
 		const ctx = makeCtx({ user: { id: 'user-1' } as never });
-		// A desktop clock 1 hour ahead of the Worker. The old 60s tolerance
-		// would drop this best row → "no best score" → entire chart skipped.
+		// A desktop clock 1 hour ahead of the Worker must not drop the recent row.
 		const future = new Date(Date.now() + 3_600_000).toISOString();
 		const result = await runQuery(ctx, {
 			query: uploadMutation,
@@ -1245,13 +1455,19 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: 900,
-									fullCombo: false,
+									cleared: true
+								},
+								{
+									isBest: false,
 									cleared: true,
-									performedAt: future
+									performedAt: future,
+									displayOrder: 1
 								}
 							]
 						}
@@ -1269,10 +1485,11 @@ describe('uploadScores', () => {
 		expect(mockedUpsertReplace).toHaveBeenCalledTimes(1);
 		// The clamped performedAt should be <= now (within test slack).
 		const call = mockedUpsertReplace.mock.calls[0][1] as {
-			scores: { performed_at: string | null }[];
+			scores: { is_best: boolean; performed_at: string | null }[];
 		};
-		expect(call.scores[0].performed_at).not.toBe(future);
-		expect(Date.parse(call.scores[0].performed_at!)).toBeLessThanOrEqual(Date.now());
+		const recent = call.scores.find((score) => !score.is_best)!;
+		expect(recent.performed_at).not.toBe(future);
+		expect(Date.parse(recent.performed_at!)).toBeLessThanOrEqual(Date.now());
 	});
 
 	it('skips a duplicate chartId within one payload (defense-in-depth)', async () => {
@@ -1288,13 +1505,17 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 1,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 900, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 900, cleared: true }]
 						},
 						{
 							chartId: '10',
 							playCount: 2,
 							clearCount: 1,
-							scores: [{ isBest: true, score: 950, fullCombo: false, cleared: true }]
+							fullCombo: false,
+							maxCombo: 0,
+							scores: [{ isBest: true, score: 950, cleared: true }]
 						}
 					]
 				}
@@ -1326,21 +1547,20 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 3,
 							clearCount: 2,
+							fullCombo: false,
+							maxCombo: 432,
 							scores: [
 								{
 									isBest: true,
 									score: 983400,
 									achievementRate: 98.34,
 									rankLabel: 'SS',
-									fullCombo: false,
-									cleared: true,
-									maxCombo: 432
+									cleared: true
 								},
 								{
 									isBest: false,
 									achievementRate: 92.1,
 									rankLabel: 'S',
-									fullCombo: false,
 									cleared: true,
 									displayOrder: 1
 								},
@@ -1348,7 +1568,6 @@ describe('uploadScores', () => {
 									isBest: false,
 									achievementRate: 150, // invalid: > 100
 									rankLabel: 'S',
-									fullCombo: false,
 									cleared: false,
 									displayOrder: 2
 								}
@@ -1396,18 +1615,18 @@ describe('uploadScores', () => {
 							chartId: '10',
 							playCount: 3,
 							clearCount: 2,
+							fullCombo: false,
+							maxCombo: 0,
 							scores: [
 								{
 									isBest: true,
 									score: -1, // invalid: negative
-									fullCombo: false,
 									cleared: true
 								},
 								{
 									isBest: false,
 									achievementRate: 92.1,
 									rankLabel: 'S',
-									fullCombo: false,
 									cleared: true,
 									displayOrder: 1
 								}
@@ -1437,7 +1656,16 @@ describe('uploadScores', () => {
 			query: uploadMutation,
 			variables: {
 				input: {
-					charts: [{ chartId: '10', playCount: 0, clearCount: 0, scores: [] }]
+					charts: [
+						{
+							chartId: '10',
+							playCount: 0,
+							clearCount: 0,
+							fullCombo: false,
+							maxCombo: 0,
+							scores: []
+						}
+					]
 				}
 			}
 		});
@@ -1594,6 +1822,11 @@ describe('DtxFile.myChartScore batching (N+1)', () => {
 							user_id: 'user-1',
 							play_count: 10,
 							clear_count: 4,
+							full_combo: 1,
+							max_combo: 812,
+							best_achievement_rate: 96.25,
+							best_rank_label: 'SS',
+							last_played_at: '2026-08-14T13:00:00Z',
 							created_at: 't',
 							updated_at: 't'
 						},
@@ -1603,17 +1836,15 @@ describe('DtxFile.myChartScore batching (N+1)', () => {
 								chart_score_id: 3,
 								is_best: 1,
 								score: 900000,
-								achievement_rate: 90,
-								rank_label: 'A',
-								full_combo: 0,
-								cleared: 1,
-								max_combo: 800,
+								achievement_rate: null,
+								rank_label: null,
+								cleared: null,
 								perfect: 1,
 								great: 1,
 								good: 1,
 								poor: 1,
 								miss: 1,
-								performed_at: 't',
+								performed_at: null,
 								display_order: null,
 								created_at: 't'
 							}

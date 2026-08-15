@@ -12,15 +12,18 @@ query MyScoredSimfiles($page: Int, $pageSize: Int) {
 				myChartScore {
 					playCount
 					clearCount
+					fullCombo
+					maxCombo
+					bestAchievementRate
+					bestRankLabel
+					lastPlayedAt
 					scores {
 						id
 						isBest
 						score
 						achievementRate
 						rankLabel
-						fullCombo
 						cleared
-						maxCombo
 						perfect
 						great
 						good

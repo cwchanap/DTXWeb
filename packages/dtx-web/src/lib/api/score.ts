@@ -7,9 +7,7 @@ export type ScoreView = {
 	score: number | null;
 	achievementRate: number | null;
 	rankLabel: string | null;
-	fullCombo: boolean;
-	cleared: boolean;
-	maxCombo: number | null;
+	cleared: boolean | null;
 	perfect: number | null;
 	great: number | null;
 	good: number | null;
@@ -22,6 +20,11 @@ export type ScoreView = {
 export type ChartScoreView = {
 	playCount: number;
 	clearCount: number;
+	fullCombo: boolean;
+	maxCombo: number;
+	bestAchievementRate: number | null;
+	bestRankLabel: string | null;
+	lastPlayedAt: string | null;
 	best: ScoreView | null;
 	recent: ScoreView[];
 };
@@ -56,19 +59,17 @@ const toScoreView = (s: RawScore): ScoreView => {
 	return {
 		id: numId,
 		isBest: s.isBest,
-		score: s.score,
-		achievementRate: s.achievementRate,
-		rankLabel: s.rankLabel,
-		fullCombo: s.fullCombo,
-		cleared: s.cleared,
-		maxCombo: s.maxCombo,
-		perfect: s.perfect,
-		great: s.great,
-		good: s.good,
-		poor: s.poor,
-		miss: s.miss,
-		performedAt: s.performedAt,
-		displayOrder: s.displayOrder
+		score: s.score ?? null,
+		achievementRate: s.achievementRate ?? null,
+		rankLabel: s.rankLabel ?? null,
+		cleared: s.cleared ?? null,
+		perfect: s.perfect ?? null,
+		great: s.great ?? null,
+		good: s.good ?? null,
+		poor: s.poor ?? null,
+		miss: s.miss ?? null,
+		performedAt: s.performedAt ?? null,
+		displayOrder: s.displayOrder ?? null
 	};
 };
 
@@ -79,6 +80,11 @@ const toChartScoreView = (cs: RawChartScore): ChartScoreView => {
 	return {
 		playCount: cs.playCount,
 		clearCount: cs.clearCount,
+		fullCombo: cs.fullCombo,
+		maxCombo: cs.maxCombo,
+		bestAchievementRate: cs.bestAchievementRate ?? null,
+		bestRankLabel: cs.bestRankLabel ?? null,
+		lastPlayedAt: cs.lastPlayedAt ?? null,
 		best: scores.find((s) => s.isBest) ?? null,
 		recent: scores.filter((s) => !s.isBest)
 	};

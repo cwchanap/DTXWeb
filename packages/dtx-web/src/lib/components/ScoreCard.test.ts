@@ -17,21 +17,24 @@ const song: ScoredSimfile = {
 			chartScore: {
 				playCount: 10,
 				clearCount: 4,
+				fullCombo: true,
+				maxCombo: 903,
+				bestAchievementRate: 96.25,
+				bestRankLabel: 'SS',
+				lastPlayedAt: '2026-08-14T13:00:00Z',
 				best: {
 					id: 1,
 					isBest: true,
 					score: 912380,
-					achievementRate: 91.3,
-					rankLabel: 'S',
-					fullCombo: true,
-					cleared: true,
-					maxCombo: 903,
+					achievementRate: null,
+					rankLabel: null,
+					cleared: null,
 					perfect: 1300,
 					great: 120,
 					good: 20,
 					poor: 5,
 					miss: 5,
-					performedAt: '2026-06-02T00:00:00Z',
+					performedAt: null,
 					displayOrder: null
 				},
 				recent: [
@@ -41,9 +44,7 @@ const song: ScoredSimfile = {
 						score: null,
 						achievementRate: 82.4,
 						rankLabel: 'A',
-						fullCombo: false,
 						cleared: false,
-						maxCombo: null,
 						perfect: null,
 						great: null,
 						good: null,
@@ -60,7 +61,7 @@ const song: ScoredSimfile = {
 };
 
 describe('ScoreCard', () => {
-	it('renders the song, chart, best score, badges, and recent plays', () => {
+	it('renders chart best achievement/rank separately from the best score', () => {
 		render(ScoreCard, { props: { song } });
 		expect(screen.getByText('Test Song')).toBeInTheDocument();
 		expect(screen.getByText('Test Artist')).toBeInTheDocument();
@@ -68,11 +69,42 @@ describe('ScoreCard', () => {
 		// The aggregate best row is labeled so it's clearly not a single play.
 		expect(screen.getByText('score.chart_bests')).toBeInTheDocument();
 		expect(screen.getByText('912,380')).toBeInTheDocument();
-		expect(screen.getByText('91.30%')).toBeInTheDocument();
-		expect(screen.getByText('S')).toBeInTheDocument();
-		expect(screen.getByText('score.full_combo')).toBeInTheDocument();
-		// The single recent play was a failure.
+		expect(screen.getByText('96.25%')).toBeInTheDocument();
+		expect(screen.getByText('SS')).toBeInTheDocument();
+		expect(screen.getAllByText('score.max_combo 903')).toHaveLength(1);
+		expect(screen.getAllByText('score.full_combo')).toHaveLength(1);
+		expect(screen.getByText('score.perfect 1300')).toBeInTheDocument();
+		expect(screen.getByText('score.great 120')).toBeInTheDocument();
+		expect(screen.getByText('score.good 20')).toBeInTheDocument();
+		expect(screen.getByText('score.poor 5')).toBeInTheDocument();
+		expect(screen.getByText('score.miss 5')).toBeInTheDocument();
+		// The best row has null rate/rank/result/time and therefore does not
+		// render those values as if they belonged to the best score.
+		expect(screen.queryByText('91.30%')).not.toBeInTheDocument();
 		expect(screen.getByText('score.failed')).toBeInTheDocument();
+	});
+
+	it('renders clear, failed, and unknown recent results distinctly', () => {
+		const songWithRecentResults: ScoredSimfile = {
+			...song,
+			charts: [
+				{
+					...song.charts[0],
+					chartScore: {
+						...song.charts[0].chartScore!,
+						recent: [
+							{ ...song.charts[0].chartScore!.recent[0], id: 2, cleared: true },
+							{ ...song.charts[0].chartScore!.recent[0], id: 3, cleared: false },
+							{ ...song.charts[0].chartScore!.recent[0], id: 4, cleared: null }
+						]
+					}
+				}
+			]
+		};
+		render(ScoreCard, { props: { song: songWithRecentResults } });
+		expect(screen.getByText('score.cleared')).toBeInTheDocument();
+		expect(screen.getByText('score.failed')).toBeInTheDocument();
+		expect(screen.getByText('—')).toBeInTheDocument();
 	});
 
 	it('shows an empty best-score message for a chart with a score record but no best', () => {
@@ -85,7 +117,17 @@ describe('ScoreCard', () => {
 					id: 11,
 					label: 'EXTREME',
 					level: 80,
-					chartScore: { playCount: 2, clearCount: 0, best: null, recent: [] }
+					chartScore: {
+						playCount: 2,
+						clearCount: 0,
+						fullCombo: false,
+						maxCombo: 0,
+						bestAchievementRate: null,
+						bestRankLabel: null,
+						lastPlayedAt: null,
+						best: null,
+						recent: []
+					}
 				}
 			]
 		};
@@ -110,9 +152,7 @@ describe('ScoreCard', () => {
 			score: null,
 			achievementRate: 50,
 			rankLabel: 'E',
-			fullCombo: false,
 			cleared: true,
-			maxCombo: null,
 			perfect: null,
 			great: null,
 			good: null,
@@ -131,6 +171,11 @@ describe('ScoreCard', () => {
 					chartScore: {
 						playCount: 6,
 						clearCount: 6,
+						fullCombo: false,
+						maxCombo: 0,
+						bestAchievementRate: null,
+						bestRankLabel: null,
+						lastPlayedAt: null,
 						best: null,
 						recent: sixRecent
 					}

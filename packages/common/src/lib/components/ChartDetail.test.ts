@@ -20,14 +20,16 @@ const mockSimfile = {
 	title: 'Test Song',
 	artist: 'Test Artist',
 	bpm: 140,
-	is_published: true,
-	display_id: 1,
-	download_url: 'https://example.com/download',
-	publish_date: '2024-01-01',
-	video_preview_url: null,
-	dtx_files: [
-		{ id: 1, label: 'BASIC', level: 30, simfile_id: 1 },
-		{ id: 2, label: 'ADVANCED', level: 60, simfile_id: 1 }
+	isPublished: true,
+	displayId: 1,
+	downloadUrl: 'https://example.com/download',
+	publishDate: '2024-01-01',
+	createdAt: '2024-01-01T00:00:00Z',
+	updatedAt: '2024-01-02T00:00:00Z',
+	videoPreviewUrl: null,
+	dtxFiles: [
+		{ id: 1, label: 'BASIC', level: 30 },
+		{ id: 2, label: 'ADVANCED', level: 60 }
 	]
 };
 
@@ -63,15 +65,15 @@ describe('ChartDetail', () => {
 		expect(screen.queryByText('Published:')).not.toBeInTheDocument();
 	});
 
-	it('renders DTX file list when dtx_files present', () => {
+	it('renders DTX file list when dtxFiles present', () => {
 		render(ChartDetail, { props: { simfile: mockSimfile } });
 		expect(screen.getByText('BASIC')).toBeInTheDocument();
 		expect(screen.getByText('ADVANCED')).toBeInTheDocument();
 	});
 
-	it('renders with empty dtx_files array shows no DTX entries', () => {
+	it('renders with empty dtxFiles array shows no DTX entries', () => {
 		render(ChartDetail, {
-			props: { simfile: { ...mockSimfile, dtx_files: [] } }
+			props: { simfile: { ...mockSimfile, dtxFiles: [] } }
 		});
 		expect(screen.queryByText('BASIC')).not.toBeInTheDocument();
 		expect(screen.queryByText('ADVANCED')).not.toBeInTheDocument();

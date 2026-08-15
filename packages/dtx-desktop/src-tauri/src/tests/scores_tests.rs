@@ -21,15 +21,10 @@ fn derive_rank_label_covers_all_bands() {
     assert_eq!(derive_rank_label(0.0), "E");
 }
 
-/// `build_best` reads `best_achievement_rate` straight from songs.db
-/// (BestAchievementRate REAL). A corrupt NaN/Inf is not JSON-serializable and
-/// would abort the whole ScorePayload across the Tauri IPC boundary, failing
-/// the entire database parse for one bad row. Mirror `parse_history_line`'s
-/// finiteness guard: drop both `achievement_rate` and the derived `rank_label`
-/// (a rank derived from NaN/Inf would be misleading) instead of propagating
-/// the non-finite value.
+/// Best rows are sparse: chart-level aggregates own rate/rank/combo/result/time,
+/// while this row carries only the numeric best score and judgement counts.
 #[test]
-fn build_best_drops_non_finite_achievement_rate() {
+fn build_best_is_sparse_regardless_of_achievement_rate() {
     let mut row = DrumsScoreRow {
         best_score: 950000,
         best_achievement_rate: 91.3,
@@ -45,20 +40,22 @@ fn build_best_drops_non_finite_achievement_rate() {
         last_played_at: Some("2026-06-02".to_string()),
     };
 
-    // Sanity: a finite rate round-trips with a derived rank label.
+    // Chart-level achievement metadata does not leak into the best score row.
     let finite = build_best(&row).expect("best present");
-    assert_eq!(finite.achievement_rate, Some(91.3));
-    assert_eq!(finite.rank_label.as_deref(), Some("S"));
+    assert_eq!(finite.achievement_rate, None);
+    assert_eq!(finite.rank_label, None);
+    assert_eq!(finite.cleared, None);
+    assert_eq!(finite.performed_at, None);
 
     // NaN: must NOT propagate as Some(NaN); both rate and rank drop to None.
     row.best_achievement_rate = f64::NAN;
     let nan = build_best(&row).expect("best present");
     assert_eq!(nan.achievement_rate, None);
     assert_eq!(nan.rank_label, None);
-    // Other fields are unaffected — the row still loads.
+    // Other sparse fields are unaffected — the row still loads.
     assert_eq!(nan.score, Some(950000));
-    assert!(nan.cleared);
-    assert_eq!(nan.max_combo, Some(800));
+    assert_eq!(nan.cleared, None);
+    assert_eq!(nan.performed_at, None);
 
     // +Inf: same guard.
     row.best_achievement_rate = f64::INFINITY;
@@ -175,12 +172,12 @@ fn parse_history_line_rejects_outcome_token_without_left_word_boundary() {
 
 // A realistic history line with a valid date and rank/rate but NO
 // "Cleared"/"Failed" outcome token. `parse_history_line` returns
-// `cleared: None`, and `group_joined_rows` applies the safe default
-// `cleared: false` (the `unwrap_or(false)` tolerance contract): the row
-// exists in the user's DTXMania DB so a play happened, but the outcome is
-// unknown — render the safe default without overclaiming a clear. This
-// complements `parse_maps_best_recent_and_ignores_non_drums` (which pins the
-// same default for a fully garbage line) with a realistic partial-parse case.
+// `cleared: None`. The row exists in the user's DTXMania DB so a play
+// happened, but the outcome is unknown; preserving None keeps that state
+// distinct from a known failure. This complements
+// `parse_maps_best_recent_and_ignores_non_drums` (which pins the same
+// tri-state behavior for a fully garbage line) with a realistic partial-parse
+// case.
 #[test]
 fn parse_history_line_without_outcome_token_yields_cleared_none() {
     let parsed = parse_history_line("10.26/6/2 (S: 91.30)");
@@ -238,8 +235,9 @@ fn seed_db(path: &std::path::Path) {
          -- Song 2: chart 3 never played (drums score exists, all zero).
          INSERT INTO SongCharts VALUES (3, 2, 1, '', 33, 0, 'hash-np');
 
-         -- Drums score for chart 1 (played), with judgement breakdown.
-         INSERT INTO SongScores VALUES (10, 1, 0, 950000, 91.3, 1, 7, 5, 800, 500, 30, 10, 5, 2, '2026-06-02');
+         -- Drums score for chart 1 (played), with deliberately distinct chart
+         -- aggregates and best-row judgement facts.
+         INSERT INTO SongScores VALUES (10, 1, 0, 987654, 96.25, 1, 7, 4, 812, 700, 80, 20, 8, 4, '2026-08-14T13:00:00Z');
          -- Guitar score for chart 2 (Instrument=1) -> must be ignored, no drums row.
          INSERT INTO SongScores VALUES (11, 2, 1, 111, 50.0, 0, 3, 1, 100, 0, 0, 0, 0, 0, '2026-06-01');
          -- Drums score for chart 3 (never played -> PlayCount 0).
@@ -274,38 +272,41 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(chart.drum_level_dec, 0);
     assert_eq!(chart.difficulty_label, "BASIC");
     assert_eq!(chart.aggregate.play_count, 7);
-    assert_eq!(chart.aggregate.clear_count, 5);
+    assert_eq!(chart.aggregate.clear_count, 4);
+    assert!(chart.aggregate.full_combo);
+    assert_eq!(chart.aggregate.max_combo, 812);
+    assert_eq!(chart.aggregate.best_achievement_rate, Some(96.25));
+    assert_eq!(chart.aggregate.best_rank_label.as_deref(), Some("SS"));
+    assert_eq!(
+        chart.aggregate.last_played_at.as_deref(),
+        Some("2026-08-14T13:00:00Z")
+    );
 
     let best = chart.best.as_ref().expect("best present");
     assert!(best.is_best);
-    assert_eq!(best.score, Some(950000));
-    assert_eq!(best.rank_label.as_deref(), Some("S")); // 91.3 -> S (DTXManiaCX: >= 80)
-    assert!(best.cleared); // clear_count > 0
-    assert!(best.full_combo);
-    assert_eq!(best.max_combo, Some(800));
-    assert_eq!(best.perfect, Some(500));
-    assert_eq!(best.performed_at.as_deref(), Some("2026-06-02"));
+    assert_eq!(best.score, Some(987654));
+    assert_eq!(best.achievement_rate, None);
+    assert_eq!(best.rank_label, None);
+    assert_eq!(best.cleared, None);
+    assert_eq!(best.performed_at, None);
+    assert_eq!(best.perfect, Some(700));
     assert_eq!(best.display_order, None);
 
     // Recent: 2 rows, ordered by DisplayOrder; score NULL; garbage tolerated.
-    // The malformed row is KEPT (not dropped) with cleared=false: the row
+    // The malformed row is KEPT (not dropped) with an unknown result: the row
     // exists in the user's DTXMania DB, so a play happened — we just can't
-    // parse the outcome. This pins the deliberate tolerance contract
-    // documented at the `unwrap_or(false)` call site in `group_joined_rows`.
-    // An unparseable line is not the same as a known failure, but the binary
-    // `cleared: bool` field admits no "unknown" state without a schema/UI
-    // change. If you change this assertion, update that comment too.
+    // parse the outcome.
     assert_eq!(chart.recent.len(), 2);
     let r1 = &chart.recent[0];
     assert!(!r1.is_best);
     assert_eq!(r1.score, None);
     assert_eq!(r1.rank_label.as_deref(), Some("S"));
     assert_eq!(r1.achievement_rate, Some(91.30));
-    assert!(r1.cleared);
+    assert_eq!(r1.cleared, Some(true));
     assert_eq!(r1.display_order, Some(1));
     let r2 = &chart.recent[1];
     assert_eq!(r2.rank_label, None); // malformed line
-    assert!(!r2.cleared); // unparseable -> safe default (NOT a known failure)
+    assert_eq!(r2.cleared, None); // unparseable -> unknown, not a known failure
     assert_eq!(r2.performed_at.as_deref(), Some("2026-05-28T00:00:00"));
 
     // Never-played chart: present, best null, recent empty.
@@ -665,11 +666,17 @@ fn parse_tolerates_null_integer_columns() {
     assert_eq!(chart.drum_level_dec, 0);
     assert_eq!(chart.aggregate.play_count, 5);
     assert_eq!(chart.aggregate.clear_count, 2);
+    assert!(!chart.aggregate.full_combo);
+    assert_eq!(chart.aggregate.max_combo, 0);
+    assert_eq!(chart.aggregate.best_achievement_rate, Some(0.0));
+    assert_eq!(chart.aggregate.best_rank_label.as_deref(), Some("E"));
+    assert_eq!(chart.aggregate.last_played_at, None);
     let best = chart.best.as_ref().expect("best present");
     assert_eq!(best.score, Some(0));
-    assert_eq!(best.achievement_rate, Some(0.0));
-    assert!(!best.full_combo);
-    assert_eq!(best.max_combo, Some(0));
+    assert_eq!(best.achievement_rate, None);
+    assert_eq!(best.rank_label, None);
+    assert_eq!(best.cleared, None);
+    assert_eq!(best.performed_at, None);
 }
 
 /// Seed a DTXMania-shaped DB WITHOUT the `PerformanceHistory` table, simulating
@@ -710,9 +717,21 @@ fn parse_degrades_to_best_only_when_performance_history_missing() {
     assert_eq!(songs.len(), 1);
     let chart = &songs[0].charts[0];
     assert_eq!(chart.aggregate.play_count, 7);
+    assert_eq!(chart.aggregate.clear_count, 5);
+    assert!(chart.aggregate.full_combo);
+    assert_eq!(chart.aggregate.max_combo, 800);
+    assert_eq!(chart.aggregate.best_achievement_rate, Some(91.3));
+    assert_eq!(chart.aggregate.best_rank_label.as_deref(), Some("S"));
+    assert_eq!(
+        chart.aggregate.last_played_at.as_deref(),
+        Some("2026-06-02")
+    );
     let best = chart.best.as_ref().expect("best present");
     assert_eq!(best.score, Some(950000));
-    assert_eq!(best.rank_label.as_deref(), Some("S"));
+    assert_eq!(best.achievement_rate, None);
+    assert_eq!(best.rank_label, None);
+    assert_eq!(best.cleared, None);
+    assert_eq!(best.performed_at, None);
     // No PerformanceHistory rows -> recent is empty, but the chart still loads.
     assert!(chart.recent.is_empty());
 }
@@ -760,9 +779,21 @@ fn parse_degrades_to_best_only_when_performance_history_lacks_song_score_id() {
     assert_eq!(songs.len(), 1);
     let chart = &songs[0].charts[0];
     assert_eq!(chart.aggregate.play_count, 7);
+    assert_eq!(chart.aggregate.clear_count, 5);
+    assert!(chart.aggregate.full_combo);
+    assert_eq!(chart.aggregate.max_combo, 800);
+    assert_eq!(chart.aggregate.best_achievement_rate, Some(91.3));
+    assert_eq!(chart.aggregate.best_rank_label.as_deref(), Some("S"));
+    assert_eq!(
+        chart.aggregate.last_played_at.as_deref(),
+        Some("2026-06-02")
+    );
     let best = chart.best.as_ref().expect("best present");
     assert_eq!(best.score, Some(950000));
-    assert_eq!(best.rank_label.as_deref(), Some("S"));
+    assert_eq!(best.achievement_rate, None);
+    assert_eq!(best.rank_label, None);
+    assert_eq!(best.cleared, None);
+    assert_eq!(best.performed_at, None);
     // Legacy history rows are not joined -> recent is empty, but the chart
     // still loads with its best score.
     assert!(chart.recent.is_empty());

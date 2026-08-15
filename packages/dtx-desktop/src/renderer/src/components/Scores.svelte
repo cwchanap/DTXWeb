@@ -564,6 +564,11 @@
 			chartId: string;
 			playCount: number;
 			clearCount: number;
+			fullCombo: boolean;
+			maxCombo: number;
+			bestAchievementRate: number | null;
+			bestRankLabel: string | null;
+			lastPlayedAt: string | null;
 			scores: ScorePayload[];
 		}>;
 		clientSkipped: { chartId: string; reason: string }[];
@@ -572,6 +577,11 @@
 			chartId: string;
 			playCount: number;
 			clearCount: number;
+			fullCombo: boolean;
+			maxCombo: number;
+			bestAchievementRate: number | null;
+			bestRankLabel: string | null;
+			lastPlayedAt: string | null;
 			scores: ScorePayload[];
 		}> = [];
 		const clientSkipped: { chartId: string; reason: string }[] = [];
@@ -606,6 +616,11 @@
 					chartId,
 					playCount: chart.aggregate.playCount,
 					clearCount: chart.aggregate.clearCount,
+					fullCombo: chart.aggregate.fullCombo,
+					maxCombo: chart.aggregate.maxCombo,
+					bestAchievementRate: chart.aggregate.bestAchievementRate,
+					bestRankLabel: chart.aggregate.bestRankLabel,
+					lastPlayedAt: chart.aggregate.lastPlayedAt,
 					scores
 				});
 			});

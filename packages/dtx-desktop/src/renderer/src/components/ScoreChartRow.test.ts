@@ -12,21 +12,27 @@ const makeChart = (overrides: Partial<LocalChartData> = {}): LocalChartData => (
 	drumLevel: 55,
 	drumLevelDec: 0,
 	fileHash: 'hash-basic',
-	aggregate: { playCount: 7, clearCount: 5 },
+	aggregate: {
+		playCount: 7,
+		clearCount: 5,
+		fullCombo: true,
+		maxCombo: 800,
+		bestAchievementRate: 75,
+		bestRankLabel: 'A',
+		lastPlayedAt: '2026-06-02T00:00:00Z'
+	},
 	best: {
 		isBest: true,
 		score: 950000,
-		achievementRate: 75.0,
-		rankLabel: 'A',
-		fullCombo: false,
-		cleared: true,
-		maxCombo: 800,
+		achievementRate: null,
+		rankLabel: null,
+		cleared: null,
 		perfect: 500,
 		great: 30,
 		good: 10,
 		poor: 5,
 		miss: 2,
-		performedAt: '2026-06-02',
+		performedAt: null,
 		displayOrder: null
 	},
 	recent: [],
@@ -42,93 +48,86 @@ const baseProps = {
 };
 
 // The best-score line is rendered inside `<div class="text-dim text-xs">`.
-// It should be a clean ` · `-joined list with no leading/trailing/duplicate
-// separators, regardless of which optional fields (rankLabel, maxCombo,
-// fullCombo) are present.
+// It owns only the numeric best score, so removing chart-level records cannot
+// leave doubled or trailing separators.
 const bestLine = (): string => {
 	const el = document.querySelector('div.text-dim.text-xs');
 	return el?.textContent?.trim() ?? '';
 };
 
-describe('ScoreChartRow best-score separator', () => {
+describe('ScoreChartRow score ownership', () => {
 	beforeEach(() => {
 		baseProps.onOverrideMatch.mockReset();
 	});
 	afterEach(() => cleanup());
 
-	it('joins all present parts with single · separators', () => {
+	it('renders the numeric best separately from chart-level records', () => {
 		render(ScoreChartRow, {
 			props: { ...baseProps, chart: makeChart() }
 		});
-		// Chart bests: 950,000 · A · 75% · combo 800
-		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · combo 800');
+		expect(bestLine()).toBe('Chart bests: 950,000');
+		expect(screen.getByText('A')).toBeInTheDocument();
+		expect(screen.getByText('75%')).toBeInTheDocument();
+		expect(screen.getByText('combo 800')).toBeInTheDocument();
+		expect(screen.getByText('FC')).toBeInTheDocument();
 	});
 
-	it('does not emit a trailing · when maxCombo is null and fullCombo is false', () => {
+	it('keeps the best row sparse when chart records are absent', () => {
 		render(ScoreChartRow, {
 			props: {
 				...baseProps,
 				chart: makeChart({
-					best: {
-						...makeChart().best!,
-						maxCombo: null,
-						fullCombo: false
+					aggregate: {
+						...makeChart().aggregate,
+						bestRankLabel: null,
+						bestAchievementRate: null,
+						fullCombo: false,
+						maxCombo: 0
 					}
 				})
 			}
 		});
-		// Chart bests: 950,000 · A · 75%  (no trailing ·)
-		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75%');
+		expect(bestLine()).toBe('Chart bests: 950,000');
+		expect(screen.queryByText('A')).not.toBeInTheDocument();
+		expect(screen.queryByText('75%')).not.toBeInTheDocument();
+		expect(screen.getByText('combo 0')).toBeInTheDocument();
+		expect(screen.queryByText('FC')).not.toBeInTheDocument();
 	});
 
-	it('does not emit a double · when maxCombo is null but fullCombo is true', () => {
+	it('renders cleared, failed, and unknown recent results explicitly', () => {
 		render(ScoreChartRow, {
 			props: {
 				...baseProps,
 				chart: makeChart({
-					best: {
-						...makeChart().best!,
-						maxCombo: null,
-						fullCombo: true
-					}
+					recent: [
+						{
+							...makeChart().best!,
+							isBest: false,
+							score: null,
+							cleared: true,
+							displayOrder: 1
+						},
+						{
+							...makeChart().best!,
+							isBest: false,
+							score: null,
+							cleared: false,
+							displayOrder: 2
+						},
+						{
+							...makeChart().best!,
+							isBest: false,
+							score: null,
+							cleared: null,
+							displayOrder: 3
+						}
+					]
 				})
 			}
 		});
-		// Chart bests: 950,000 · A · 75% · FC  (single · before FC, no double)
-		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · FC');
-	});
-
-	it('appends fullCombo with a single · when maxCombo is also present', () => {
-		render(ScoreChartRow, {
-			props: {
-				...baseProps,
-				chart: makeChart({
-					best: {
-						...makeChart().best!,
-						maxCombo: 800,
-						fullCombo: true
-					}
-				})
-			}
-		});
-		expect(bestLine()).toBe('Chart bests: 950,000 · A · 75% · combo 800 · FC');
-	});
-
-	it('omits the rankLabel segment when rankLabel is null', () => {
-		render(ScoreChartRow, {
-			props: {
-				...baseProps,
-				chart: makeChart({
-					best: {
-						...makeChart().best!,
-						rankLabel: null,
-						maxCombo: null,
-						fullCombo: false
-					}
-				})
-			}
-		});
-		expect(bestLine()).toBe('Chart bests: 950,000 · 75%');
+		expect(screen.getByText('Cleared')).toBeInTheDocument();
+		expect(screen.getByText('Failed')).toBeInTheDocument();
+		expect(screen.getByText('—')).toBeInTheDocument();
 	});
 
 	it('renders the placeholder when best is null', () => {
@@ -138,9 +137,6 @@ describe('ScoreChartRow best-score separator', () => {
 				chart: makeChart({ best: null })
 			}
 		});
-		// The no_best_score placeholder lives in a different element
-		// (text-faint, not text-dim), so bestLine() returns ''.
-		expect(bestLine()).toBe('');
 		// The svelte-i18n mock resolves score.no_best_score from en.json.
 		expect(screen.getByText('No best score recorded.')).toBeInTheDocument();
 	});

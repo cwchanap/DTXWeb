@@ -5,9 +5,7 @@ export interface ScorePayload {
 	score: number | null;
 	achievementRate: number | null;
 	rankLabel: string | null;
-	fullCombo: boolean;
-	cleared: boolean;
-	maxCombo: number | null;
+	cleared: boolean | null;
 	perfect: number | null;
 	great: number | null;
 	good: number | null;
@@ -24,7 +22,15 @@ export interface LocalChartData {
 	/** DTXMania DrumLevelDec — decimal part (0-99). Combined with drumLevel for display/matching. */
 	drumLevelDec: number;
 	fileHash: string;
-	aggregate: { playCount: number; clearCount: number };
+	aggregate: {
+		playCount: number;
+		clearCount: number;
+		fullCombo: boolean;
+		maxCombo: number;
+		bestAchievementRate: number | null;
+		bestRankLabel: string | null;
+		lastPlayedAt: string | null;
+	};
 	best: ScorePayload | null;
 	recent: ScorePayload[];
 }

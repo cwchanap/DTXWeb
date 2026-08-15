@@ -19,17 +19,10 @@
 	const formatScore = (value: number | null): string =>
 		value === null ? '—' : value.toLocaleString('en-US');
 
-	// Build the best-score summary as a joined list so optional segments
-	// (rankLabel, maxCombo, fullCombo) don't leave stray/doubled `·`
-	// separators when they're absent. Mirrors the join pattern used in the
-	// recent-plays list below.
+	// Keep the best-score summary limited to the numeric best row. Chart-level
+	// rate, rank, combo, and full-combo records render separately below.
 	const bestParts = (best: NonNullable<LocalChartData['best']>): string[] => {
-		const parts: string[] = [`${$_('score.best')}: ${formatScore(best.score)}`];
-		if (best.rankLabel) parts.push(best.rankLabel);
-		parts.push(best.achievementRate != null ? `${best.achievementRate}%` : '—');
-		if (best.maxCombo != null) parts.push(`${$_('score.combo')} ${best.maxCombo}`);
-		if (best.fullCombo) parts.push($_('score.full_combo'));
-		return parts;
+		return [`${$_('score.best')}: ${formatScore(best.score)}`];
 	};
 </script>
 
@@ -88,13 +81,30 @@
 		<div class="text-faint text-xs">{$_('score.no_best_score')}</div>
 	{/if}
 
+	<div class="text-dim flex items-center gap-2 text-xs">
+		{#if chart.aggregate.bestRankLabel}
+			<span class="text-amber-300">{chart.aggregate.bestRankLabel}</span>
+		{/if}
+		{#if chart.aggregate.bestAchievementRate != null}
+			<span class="text-cyan">{chart.aggregate.bestAchievementRate}%</span>
+		{/if}
+		<span class="text-dim">{$_('score.combo')} {chart.aggregate.maxCombo}</span>
+		{#if chart.aggregate.fullCombo}
+			<span class="text-green">{$_('score.full_combo')}</span>
+		{/if}
+	</div>
+
 	{#if chart.recent.length > 0}
 		<ul class="text-faint mt-1 text-xs">
 			{#each chart.recent as recent (recent.performedAt + '-' + recent.displayOrder)}
 				<li>
-					<span class:text-green-300={recent.cleared} class:text-red-300={!recent.cleared}
-						>{recent.cleared ? $_('score.cleared') : $_('score.failed')}</span
-					>
+					{#if recent.cleared === true}
+						<span class="text-green-300">{$_('score.cleared')}</span>
+					{:else if recent.cleared === false}
+						<span class="text-red-300">{$_('score.failed')}</span>
+					{:else}
+						<span class="text-faint">—</span>
+					{/if}
 					· {recent.rankLabel ?? '—'} · {recent.achievementRate ?? '—'}% · {recent.performedAt}
 				</li>
 			{/each}

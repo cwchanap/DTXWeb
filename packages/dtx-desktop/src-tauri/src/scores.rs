@@ -21,9 +21,7 @@ pub struct ScorePayload {
     pub score: Option<i64>,
     pub achievement_rate: Option<f64>,
     pub rank_label: Option<String>,
-    pub full_combo: bool,
-    pub cleared: bool,
-    pub max_combo: Option<i64>,
+    pub cleared: Option<bool>,
     pub perfect: Option<i64>,
     pub great: Option<i64>,
     pub good: Option<i64>,
@@ -33,13 +31,18 @@ pub struct ScorePayload {
     pub display_order: Option<i64>,
 }
 
-/// Per-chart aggregate counts. Constructed by `group_joined_rows` from the
+/// Per-chart aggregate records. Constructed by `group_joined_rows` from the
 /// joined DTXMania `SongScores` row.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartAggregate {
     pub play_count: i64,
     pub clear_count: i64,
+    pub full_combo: bool,
+    pub max_combo: i64,
+    pub best_achievement_rate: Option<f64>,
+    pub best_rank_label: Option<String>,
+    pub last_played_at: Option<String>,
 }
 
 /// One chart within a DTXMania song. Constructed by `group_joined_rows` from
@@ -82,7 +85,8 @@ pub struct DtxmaniaSong {
 /// rate below 45, so it is included in `VALID_RANK_LABELS` and returned here
 /// (unlike the previous implementation which only produced SS…D).
 ///
-/// Called by `build_best`. Unit-tested directly (see `tests/scores_tests.rs`).
+/// Called when building chart-level aggregate records. Unit-tested directly
+/// (see `tests/scores_tests.rs`).
 pub fn derive_rank_label(rate: f64) -> &'static str {
     if rate >= 95.0 {
         "SS"
@@ -336,28 +340,18 @@ fn build_best(score: &DrumsScoreRow) -> Option<ScorePayload> {
     if score.play_count == 0 {
         return None;
     }
-    // `best_achievement_rate` is read straight from songs.db (BestAchievementRate
-    // REAL). A corrupt NaN/Inf is not JSON-serializable and would abort the
-    // whole ScorePayload across the Tauri IPC boundary, failing the entire
-    // database parse for one bad row. Mirror `parse_history_line`'s finiteness
-    // guard: drop both `achievement_rate` and the derived `rank_label` (a rank
-    // derived from NaN/Inf would be misleading) instead of propagating it.
-    let achievement_rate = Some(score.best_achievement_rate).filter(|v| v.is_finite());
-    let rank_label = achievement_rate.map(|r| derive_rank_label(r).to_string());
     Some(ScorePayload {
         is_best: true,
         score: Some(score.best_score),
-        achievement_rate,
-        rank_label,
-        full_combo: score.full_combo != 0,
-        cleared: score.clear_count > 0,
-        max_combo: Some(score.max_combo),
+        achievement_rate: None,
+        rank_label: None,
+        cleared: None,
         perfect: Some(score.best_perfect),
         great: Some(score.best_great),
         good: Some(score.best_good),
         poor: Some(score.best_poor),
         miss: Some(score.best_miss),
-        performed_at: score.last_played_at.clone(),
+        performed_at: None,
         display_order: None,
     })
 }
@@ -553,6 +547,10 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
             cur_chart_id = Some(row.chart_id);
             recent_count = 0;
             let best = build_best(&row.score);
+            let best_achievement_rate = Some(row.score.best_achievement_rate)
+                .filter(|value| value.is_finite() && *value >= 0.0 && *value <= 100.0);
+            let best_rank_label =
+                best_achievement_rate.map(|rate| derive_rank_label(rate).to_string());
             cur_chart = Some(DtxmaniaChart {
                 difficulty_level: row.difficulty_level,
                 difficulty_label: row.difficulty_label.clone(),
@@ -562,6 +560,11 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
                 aggregate: ChartAggregate {
                     play_count: row.score.play_count,
                     clear_count: row.score.clear_count,
+                    full_combo: row.score.full_combo != 0,
+                    max_combo: row.score.max_combo,
+                    best_achievement_rate,
+                    best_rank_label,
+                    last_played_at: row.score.last_played_at.clone(),
                 },
                 best,
                 recent: Vec::new(),
@@ -598,21 +601,7 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
                         score: None,
                         achievement_rate: parsed.achievement_rate,
                         rank_label: parsed.rank_label,
-                        full_combo: false,
-                        // A history row that can't be parsed (no "Cleared"/"Failed"
-                        // token) is kept rather than dropped — the row exists in the
-                        // user's DTXMania DB, so a play happened; we just can't tell
-                        // the outcome. We render the safe default (not cleared) so the
-                        // entry stays visible without overclaiming a clear. This is a
-                        // deliberate tolerance contract: an unparseable line is NOT the
-                        // same as a known failure, but the binary `cleared: bool` field
-                        // (mirrored by the GraphQL `cleared: Boolean!` schema) leaves no
-                        // room for an "unknown" state without a schema/UI change. See
-                        // `parse_maps_best_recent_and_ignores_non_drums` for the pinned
-                        // behavior and `parse_history_line_tolerates_garbage` for the
-                        // parser contract.
-                        cleared: parsed.cleared.unwrap_or(false),
-                        max_combo: None,
+                        cleared: parsed.cleared,
                         perfect: None,
                         great: None,
                         good: None,

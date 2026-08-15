@@ -73,9 +73,9 @@ export const userProfiles = sqliteTable(
 // tables rather than these Drizzle builders, so these exports are not imported
 // by the service layer — only by tests. They are kept here so the schema
 // definition lives in one place and test fixtures can use the typed builders.
-// CHECK constraints and partial unique indexes mirror the raw SQL migration
-// (0002_scores.sql) so tests inserting via Drizzle builders are subject to
-// the same integrity rules as production raw-SQL writes.
+// CHECK constraints and partial unique indexes mirror the raw SQL migrations
+// (0002_scores.sql + 0007_score_semantics.sql) so tests inserting via Drizzle
+// builders are subject to the same integrity rules as production raw-SQL writes.
 export const chartScores = sqliteTable(
 	'chart_scores',
 	{
@@ -86,6 +86,11 @@ export const chartScores = sqliteTable(
 		userId: text('user_id').notNull(),
 		playCount: integer('play_count').notNull().default(0),
 		clearCount: integer('clear_count').notNull().default(0),
+		fullCombo: integer('full_combo').$type<0 | 1>().notNull().default(0),
+		maxCombo: integer('max_combo').notNull().default(0),
+		bestAchievementRate: real('best_achievement_rate'),
+		bestRankLabel: text('best_rank_label'),
+		lastPlayedAt: text('last_played_at'),
 		createdAt: text('created_at')
 			.notNull()
 			.default(sql`(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))`),
@@ -103,6 +108,16 @@ export const chartScores = sqliteTable(
 		clearCountCheck: check(
 			'chart_scores_clear_count_check',
 			sql`${table.clearCount} >= 0 AND ${table.clearCount} <= ${table.playCount}`
+		),
+		fullComboCheck: check('chart_scores_full_combo_check', sql`${table.fullCombo} IN (0, 1)`),
+		maxComboCheck: check('chart_scores_max_combo_check', sql`${table.maxCombo} >= 0`),
+		bestAchievementRateCheck: check(
+			'chart_scores_best_achievement_rate_check',
+			sql`${table.bestAchievementRate} IS NULL OR (${table.bestAchievementRate} >= 0 AND ${table.bestAchievementRate} <= 100)`
+		),
+		bestRankLabelCheck: check(
+			'chart_scores_best_rank_label_check',
+			sql`${table.bestRankLabel} IS NULL OR ${table.bestRankLabel} IN ('SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F')`
 		)
 	})
 );
@@ -118,9 +133,7 @@ export const scores = sqliteTable(
 		score: integer('score'),
 		achievementRate: real('achievement_rate'),
 		rankLabel: text('rank_label'),
-		fullCombo: integer('full_combo').$type<0 | 1>().notNull().default(0),
-		cleared: integer('cleared').$type<0 | 1>().notNull().default(0),
-		maxCombo: integer('max_combo'),
+		cleared: integer('cleared').$type<0 | 1>(),
 		perfect: integer('perfect'),
 		great: integer('great'),
 		good: integer('good'),
@@ -150,11 +163,9 @@ export const scores = sqliteTable(
 			'scores_rank_label_check',
 			sql`${table.rankLabel} IS NULL OR ${table.rankLabel} IN ('SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F')`
 		),
-		fullComboCheck: check('scores_full_combo_check', sql`${table.fullCombo} IN (0, 1)`),
-		clearedCheck: check('scores_cleared_check', sql`${table.cleared} IN (0, 1)`),
-		maxComboCheck: check(
-			'scores_max_combo_check',
-			sql`${table.maxCombo} IS NULL OR ${table.maxCombo} >= 0`
+		clearedCheck: check(
+			'scores_cleared_check',
+			sql`${table.cleared} IS NULL OR ${table.cleared} IN (0, 1)`
 		),
 		perfectCheck: check(
 			'scores_perfect_check',
@@ -167,6 +178,10 @@ export const scores = sqliteTable(
 		displayOrderCheck: check(
 			'scores_display_order_check',
 			sql`${table.displayOrder} IS NULL OR (${table.displayOrder} >= 1 AND ${table.displayOrder} <= 5)`
+		),
+		bestMetadataCheck: check(
+			'scores_best_metadata_check',
+			sql`${table.isBest} = 0 OR (${table.achievementRate} IS NULL AND ${table.rankLabel} IS NULL AND ${table.cleared} IS NULL AND ${table.performedAt} IS NULL AND ${table.displayOrder} IS NULL)`
 		)
 	})
 );

@@ -63,6 +63,11 @@ export interface ChartScoreRow {
 	user_id: string;
 	play_count: number;
 	clear_count: number;
+	full_combo: 0 | 1;
+	max_combo: number;
+	best_achievement_rate: number | null;
+	best_rank_label: string | null;
+	last_played_at: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -74,9 +79,7 @@ export interface ScoreRow {
 	score: number | null;
 	achievement_rate: number | null;
 	rank_label: string | null;
-	full_combo: 0 | 1;
-	cleared: 0 | 1;
-	max_combo: number | null;
+	cleared: 0 | 1 | null;
 	perfect: number | null;
 	great: number | null;
 	good: number | null;
@@ -92,9 +95,7 @@ export interface ScoreInsert {
 	score?: number | null;
 	achievement_rate?: number | null;
 	rank_label?: string | null;
-	full_combo?: boolean;
-	cleared?: boolean;
-	max_combo?: number | null;
+	cleared?: boolean | null | undefined;
 	perfect?: number | null;
 	great?: number | null;
 	good?: number | null;

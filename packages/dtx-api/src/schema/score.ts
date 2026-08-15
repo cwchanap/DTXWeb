@@ -180,6 +180,22 @@ const UploadScoresResultRef = builder
 // bad row, preserving valid rows including the best).
 const VALID_RANK_LABELS = ['SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F'] as const;
 
+/// Derives a rank label from a validated achievement rate (0..100).
+/// Thresholds match DTXManiaCX `ResultScreenModel.ComputeRank` and the
+/// desktop importer's `derive_rank_label` (scores.rs):
+///   SS >= 95, S >= 80, A >= 73, B >= 63, C >= 53, D >= 45, E < 45.
+/// There is no "F" rank from a rate; F is kept in VALID_RANK_LABELS only
+/// for DB CHECK / recent-row sanitization compatibility.
+const deriveRankLabel = (rate: number): string => {
+	if (rate >= 95) return 'SS';
+	if (rate >= 80) return 'S';
+	if (rate >= 73) return 'A';
+	if (rate >= 63) return 'B';
+	if (rate >= 53) return 'C';
+	if (rate >= 45) return 'D';
+	return 'E';
+};
+
 type InputScore = {
 	isBest: boolean;
 	score?: number | null;
@@ -199,7 +215,7 @@ type ValidationResult =
 	| {
 			ok: true;
 			scores: InputScore[];
-			sanitizedBestRankLabel: string | null;
+			derivedBestRankLabel: string | null;
 			normalizedLastPlayedAt: string | null;
 	  }
 	| { ok: false; reason: string };
@@ -269,10 +285,12 @@ const validateChartScores = (
 		return { ok: false, reason: 'bestAchievementRate out of range' };
 	}
 
-	const sanitizedBestRankLabel =
-		bestRankLabel != null && !(VALID_RANK_LABELS as readonly string[]).includes(bestRankLabel)
-			? null
-			: (bestRankLabel ?? null);
+	// Derive bestRankLabel exclusively from the validated bestAchievementRate
+	// so a client cannot store a label that contradicts its own rate (e.g.
+	// bestRankLabel "SS" with bestAchievementRate 10). The client-supplied
+	// bestRankLabel is ignored. Returns null when no rate exists.
+	const derivedBestRankLabel =
+		bestAchievementRate != null ? deriveRankLabel(bestAchievementRate) : null;
 	let normalizedLastPlayedAt: string | null = lastPlayedAt ?? null;
 	if (lastPlayedAt != null) {
 		const parsed = Date.parse(lastPlayedAt);
@@ -382,7 +400,7 @@ const validateChartScores = (
 		return { ok: false, reason: 'best score row invalid' };
 	}
 
-	return { ok: true, scores: valid, sanitizedBestRankLabel, normalizedLastPlayedAt };
+	return { ok: true, scores: valid, derivedBestRankLabel, normalizedLastPlayedAt };
 };
 
 builder.mutationField('uploadScores', (t) =>
@@ -525,7 +543,7 @@ builder.mutationField('uploadScores', (t) =>
 					fullCombo: chart.fullCombo,
 					maxCombo: chart.maxCombo,
 					bestAchievementRate: chart.bestAchievementRate ?? null,
-					bestRankLabel: result.sanitizedBestRankLabel,
+					bestRankLabel: result.derivedBestRankLabel,
 					lastPlayedAt: result.normalizedLastPlayedAt,
 					inserts
 				});

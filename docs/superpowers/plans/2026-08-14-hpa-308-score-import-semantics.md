@@ -30,6 +30,7 @@
 ## Task 1: Move records into the D1/common contract and prove migration 0007
 
 **Files:**
+
 - Create: `packages/dtx-api/d1-migrations/0007_score_semantics.sql`
 - Modify: `packages/common/src/lib/server/db/schema.ts`
 - Modify: `packages/common/src/lib/types/d1.types.ts`
@@ -38,6 +39,7 @@
 - Test: `packages/common/src/lib/server/db.integration.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `upsertChartScoreAndReplaceScores(db, params)`, `getUserChartScore`, and `listUserChartScores`.
 - Produces: chart-level `full_combo`, `max_combo`, `best_achievement_rate`, `best_rank_label`, `last_played_at`; nullable score `cleared`; D1 best-row CHECK; updated atomic write parameters.
 
@@ -101,19 +103,7 @@ it('0007 relocates chart records and canonicalizes the best row', async () => {
 			  performed_at, display_order)
 			 VALUES (?, 1, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, NULL)`
 		)
-		.bind(
-			chartScore!.id,
-			987654,
-			96.25,
-			'SS',
-			812,
-			700,
-			80,
-			20,
-			8,
-			4,
-			'2026-08-14T13:00:00Z'
-		)
+		.bind(chartScore!.id, 987654, 96.25, 'SS', 812, 700, 80, 20, 8, 4, '2026-08-14T13:00:00Z')
 		.run();
 
 	const before = await db
@@ -367,8 +357,7 @@ const migrationChecks = parseMigrationChecks(`${chartScoresCreate}\n${chartScore
 For `scores`, compare against 0007's rebuilt table:
 
 ```ts
-const scoresBlock =
-	migration7.match(/CREATE TABLE scores_v2 \([\s\S]*?\);/)?.[0] ?? '';
+const scoresBlock = migration7.match(/CREATE TABLE scores_v2 \([\s\S]*?\);/)?.[0] ?? '';
 const migrationChecks = parseMigrationChecks(scoresBlock);
 ```
 
@@ -398,7 +387,7 @@ Upsert the chart fields in the existing first D1 statement and remove `full_comb
 Preserve tri-state clear when binding:
 
 ```ts
-s.cleared == null ? null : s.cleared ? 1 : 0
+s.cleared == null ? null : s.cleared ? 1 : 0;
 ```
 
 Do not use `s.cleared ? 1 : 0`; that destroys `null`.
@@ -473,11 +462,13 @@ git commit -m "fix: separate chart score records"
 ## Task 2: Move the GraphQL/API contract to truthful ownership
 
 **Files:**
+
 - Modify: `packages/dtx-api/src/schema/score.ts`
 - Test: `packages/dtx-api/src/schema/score.test.ts`
 - Regenerate: `packages/dtx-api/dist/schema.graphql`
 
 **Interfaces:**
+
 - Consumes: Task 1 `ChartScoreRow` fields and updated atomic write parameters.
 - Produces: `ChartScore.fullCombo/maxCombo/bestAchievementRate/bestRankLabel/lastPlayedAt`; nullable `Score.cleared`; best-row canonicalization; matching upload input.
 
@@ -617,15 +608,13 @@ if (!Number.isSafeInteger(maxCombo) || maxCombo < 0) {
 }
 if (
 	bestAchievementRate != null &&
-	(!Number.isFinite(bestAchievementRate) ||
-		bestAchievementRate < 0 ||
-		bestAchievementRate > 100)
+	(!Number.isFinite(bestAchievementRate) || bestAchievementRate < 0 || bestAchievementRate > 100)
 ) {
 	return { ok: false, reason: 'bestAchievementRate out of range' };
 }
 ```
 
-Sanitize an unknown `bestRankLabel` to `null` using the existing `VALID_RANK_LABELS` policy. Validate `lastPlayedAt` with `Date.parse`; reject an unparseable value and clamp a future value to the Worker's `Date.now()` using the same policy already used for recent `performedAt`.
+Derive `bestRankLabel` exclusively from the validated `bestAchievementRate` using a server-side `deriveRankLabel` function (thresholds: SS >= 95, S >= 80, A >= 73, B >= 63, C >= 53, D >= 45, E < 45, matching DTXManiaCX `ComputeRank` and the desktop `derive_rank_label`). The client-supplied `bestRankLabel` is ignored; return `null` when no rate exists. Validate `lastPlayedAt` with `Date.parse`; reject an unparseable value and clamp a future value to the Worker's `Date.now()` using the same policy already used for recent `performedAt`.
 
 - [ ] **Step 6: Canonicalize best rows at the existing normalization seam**
 
@@ -663,7 +652,7 @@ await upsertChartScoreAndReplaceScores(ctx.env.DB, {
 	fullCombo: chart.fullCombo,
 	maxCombo: chart.maxCombo,
 	bestAchievementRate: chart.bestAchievementRate ?? null,
-	bestRankLabel: sanitizedBestRankLabel,
+	bestRankLabel: derivedBestRankLabel,
 	lastPlayedAt: normalizedLastPlayedAt,
 	scores: validScores.map((score) => ({
 		is_best: score.isBest,
@@ -696,15 +685,15 @@ Verify `packages/dtx-api/dist/schema.graphql` exposes:
 
 ```graphql
 type ChartScore {
-  fullCombo: Boolean!
-  maxCombo: Int!
-  bestAchievementRate: Float
-  bestRankLabel: String
-  lastPlayedAt: String
+	fullCombo: Boolean!
+	maxCombo: Int!
+	bestAchievementRate: Float
+	bestRankLabel: String
+	lastPlayedAt: String
 }
 
 type Score {
-  cleared: Boolean
+	cleared: Boolean
 }
 ```
 
@@ -726,6 +715,7 @@ Task-local API checks pass here; desktop/web generated clients are still expecte
 ## Task 3: Correct desktop parsing, upload payloads, and local preview
 
 **Files:**
+
 - Modify: `packages/dtx-desktop/src-tauri/src/scores.rs`
 - Test: `packages/dtx-desktop/src-tauri/src/tests/scores_tests.rs`
 - Modify: `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts`
@@ -735,6 +725,7 @@ Task-local API checks pass here; desktop/web generated clients are still expecte
 - Test: `packages/dtx-desktop/src/renderer/src/components/ScoreChartRow.test.ts`
 
 **Interfaces:**
+
 - Consumes: Task 2 chart-level upload contract.
 - Produces: parsed `ChartAggregate` with all chart records and sparse best/recent `ScorePayload` rows.
 
@@ -873,7 +864,7 @@ aggregate: {
 	bestAchievementRate: number | null;
 	bestRankLabel: string | null;
 	lastPlayedAt: string | null;
-};
+}
 ```
 
 Best `ScorePayload` fixtures use:
@@ -996,6 +987,7 @@ git commit -m "fix: preserve score import semantics"
 ## Task 4: Update web query, adapter, presentation, and the existing score E2E flow
 
 **Files:**
+
 - Modify: `packages/dtx-web/src/lib/api/operations/score.graphql`
 - Regenerate: `packages/dtx-web/src/lib/api/generated/graphql.ts`
 - Modify: `packages/dtx-web/src/lib/api/score.ts`
@@ -1006,6 +998,7 @@ git commit -m "fix: preserve score import semantics"
 - Test: `packages/e2e-web/score.spec.ts`
 
 **Interfaces:**
+
 - Consumes: committed Task 2 API schema.
 - Produces: web `ChartScoreView` ownership matching the API and an updated existing Playwright round trip.
 
@@ -1217,9 +1210,11 @@ git commit -m "fix: render truthful chart scores"
 ## Task 5: Run the complete existing regression gate
 
 **Files:**
+
 - No planned changes; fix failures in the task that owns the boundary.
 
 **Interfaces:**
+
 - Consumes: Tasks 1–4.
 - Produces: one green breaking contract ready for deployment.
 
@@ -1278,9 +1273,11 @@ Expected: no whitespace errors.
 ## Task 6: Deploy the breaking contract in dependency order
 
 **Files:**
+
 - No source changes. This is the release sequence after Task 5 is green and the implementation PR is approved/merged.
 
 **Interfaces:**
+
 - Consumes: merged implementation on `main`.
 - Produces: migrated API, matching web bundle, then updated desktop clients.
 

@@ -6,47 +6,57 @@
 
 ## 1. Problem
 
-The desktop score importer currently constructs one `is_best = true` `Score` row from fields in DTXManiaCX `SongScores` that do not all describe the same play.
+The desktop score importer currently constructs one `is_best = true` `Score` row from DTXManiaCX `SongScores` fields that do not all describe the same play.
 
 `packages/dtx-desktop/src-tauri/src/scores.rs::build_best` currently combines:
 
-- `BestScore`, `BestAchievementRate`, and `BestPerfect/BestGreat/BestGood/BestPoor/BestMiss`, which are updated together for the highest-scoring play;
-- `FullCombo`, which is cumulative and stays true after any full-combo play;
-- `MaxCombo`, which is an independent all-time maximum;
-- `ClearCount > 0`, which means the chart has ever been cleared;
-- `LastPlayedAt`, which is the most recent play timestamp.
+- `BestScore` and `BestPerfect/BestGreat/BestGood/BestPoor/BestMiss`;
+- `BestAchievementRate` and a rank derived from it;
+- cumulative `FullCombo`;
+- all-time `MaxCombo`;
+- `ClearCount > 0`;
+- latest-play `LastPlayedAt`.
 
-The resulting row is persisted and rendered as if it were one historical performance even though that performance may never have existed.
+The modern DTXManiaCX gameplay writer does **not** update all of these under one condition. The resulting DTXWeb row can therefore combine multiple chart records and the latest play while presenting them as one historical performance.
 
-The original score-page design already has the correct high-level seam: `chart_scores` owns per-user chart aggregates while `scores` owns individual score/history rows. HPA-308 should correct the data semantics at that seam rather than introduce another score model.
+The original score-page design already has the correct high-level seam: `chart_scores` owns per-user chart aggregates while `scores` owns individual best/recent rows. HPA-308 should correct ownership at that seam rather than add another score model.
 
 ## 2. Source-data constraints
 
-The current DTXManiaCX data model determines what can be represented truthfully.
+The current DTXManiaCX writers determine what can be represented truthfully.
 
-### `SongScores`
+### 2.1 Modern gameplay writer
 
-DTXManiaCX writes the following together when `BestScore` improves:
+`SongDatabaseService.SaveScoreTransactionAsync` updates these when the numeric score improves:
 
 - `BestScore`
-- `BestAchievementRate`
 - `BestPerfect`
 - `BestGreat`
 - `BestGood`
 - `BestPoor`
 - `BestMiss`
+- `TotalNotes`
 
-These fields may therefore remain on DTXWeb's best `Score` row.
+That is the best-score stat block DTXWeb can keep on the distinguished best `Score` row.
 
-The following are independent chart-wide facts and must not remain on that row:
+The same writer updates other fields independently:
 
-- `FullCombo`: whether any play has full-comboed the chart;
-- `MaxCombo`: maximum combo across all plays;
-- `PlayCount`: total plays;
-- `ClearCount`: total clears;
-- `LastPlayedAt`: timestamp of the latest play, not the best-scoring play.
+- `BestRank` is the maximum normalized playing-skill rank.
+- `MaxCombo` is `Math.Max(...)` across plays.
+- `FullCombo` is cumulative OR across qualifying plays.
+- `BestAchievementRate` changes only when `GameSkill` exceeds `HighSkill`; it is the playing-skill/achievement value associated with that best-skill record, not necessarily the `BestScore` play.
+- `PlayCount` and `ClearCount` are cumulative counters.
+- `LastPlayedAt` is overwritten on every saved play.
 
-### `PerformanceHistory`
+Therefore `BestAchievementRate`, its rank label, `FullCombo`, `MaxCombo`, `PlayCount`, `ClearCount`, and `LastPlayedAt` are chart-level facts for DTXWeb's purposes.
+
+The older overload `UpdateScoreAsync(chartId, instrument, newScore, achievementRate, fullCombo)` can update `BestScore` without writing the `BestPerfect...BestMiss` block. HPA-308 does not attempt to reconstruct historical rows written through that legacy path; the supported modern gameplay path and NX import path keep the numeric best score/stat block together.
+
+### 2.2 NX import path
+
+`NxScoreImporter` writes `BestScore`, the `BestPerfect...BestMiss` block, and `BestAchievementRate` together when importing a higher NX best score. That import-specific coupling does not override the semantics of the normal gameplay writer above, so DTXWeb must model the fields according to the broader `SongScores` contract rather than the NX path alone.
+
+### 2.3 `PerformanceHistory`
 
 Current DTXManiaCX `PerformanceHistory` stores only:
 
@@ -57,59 +67,64 @@ Current DTXManiaCX `PerformanceHistory` stores only:
 
 `HistoryLine` can provide result (`Cleared` / `Failed`), rank, and achievement rate. It does **not** preserve the numeric score or judgment breakdown for that play.
 
-Therefore HPA-308 cannot recover a complete historical play that produced `BestScore`. Attempting to match the best score to `PerformanceHistory` would invent information that is not stored.
+Therefore HPA-308 cannot recover a complete historical play that produced `BestScore`, and it cannot match `BestAchievementRate` or `LastPlayedAt` back to that play without inventing information.
 
 ## 3. Goals
 
-- Never present chart-wide or latest-play facts as properties of the best-scoring play.
-- Preserve all trustworthy information already available from DTXManiaCX.
-- Keep the existing `ChartScore` + `Score` architecture and replace semantics in place.
+- Never present chart-wide, best-skill, or latest-play facts as properties of the best-scoring play.
+- Preserve trustworthy DTXManiaCX data instead of dropping it when ownership changes.
+- Keep the existing `ChartScore` + `Score` architecture and atomic replace semantics.
 - Represent an unknown per-play result as unknown, not as `Failed`.
+- Enforce the best-row semantic invariant both in the API and in D1.
 - Keep the implementation small enough to land as one focused score-contract change.
 
 ## 4. Non-goals
 
 - Store a full unbounded play history.
 - Change DTXManiaCX to record richer history.
+- Repair historical judgment blocks written through the legacy score-service overload.
 - Add leaderboards or public score data.
-- Redesign score matching, upload batching, or the score-page layout.
-- Add a compatibility layer for old GraphQL clients or old local payload shapes.
+- Redesign score matching, upload batching, pagination, or navigation.
+- Add a compatibility layer, versioned GraphQL mutation, aliases, or dual-write path for old desktop/web clients.
 
 ## 5. Chosen model
 
-### 5.1 `ChartScore` owns chart-wide aggregates
+### 5.1 `ChartScore` owns chart-wide records
 
 Extend `chart_scores` with:
 
 ```text
-playCount   = SongScores.PlayCount
-clearCount  = SongScores.ClearCount
-fullCombo   = SongScores.FullCombo        // ever full-comboed
-maxCombo    = SongScores.MaxCombo         // all-time maximum
+playCount            = SongScores.PlayCount
+clearCount           = SongScores.ClearCount
+fullCombo            = SongScores.FullCombo
+maxCombo             = SongScores.MaxCombo
+bestAchievementRate  = SongScores.BestAchievementRate when finite/valid
+bestRankLabel        = rank derived from bestAchievementRate
+lastPlayedAt         = SongScores.LastPlayedAt
 ```
 
-`fullCombo` and `maxCombo` move here because their source values are chart-wide aggregates, just like the existing play and clear counts.
+`fullCombo`, `maxCombo`, `bestAchievementRate`, `bestRankLabel`, and `lastPlayedAt` move beside the existing counters because they are chart records, not guaranteed properties of the `BestScore` play.
 
-`maxCombo` is a non-negative integer with default `0`; there is no useful semantic distinction between `NULL` and zero in the source database.
+`maxCombo` is a non-negative integer with default `0`. `bestAchievementRate`, `bestRankLabel`, and `lastPlayedAt` are nullable because the current importer already tolerates invalid/non-finite rate data and older databases may not carry a timestamp.
 
-### 5.2 Best `Score` contains only one coherent best-score stat block
+### 5.2 Best `Score` contains only the best-score stat block
 
-The best row remains because the existing API, persistence ordering, and web presentation already model a distinguished best score cleanly.
+The distinguished best row remains because the existing persistence ordering, API shape, and presentation already model one numeric best score cleanly.
 
 It contains:
 
 ```text
 isBest           = true
 score            = SongScores.BestScore
-achievementRate  = SongScores.BestAchievementRate
-rankLabel        = derived from BestAchievementRate
 perfect/great/good/poor/miss = SongScores.Best* stat block
+achievementRate  = null
+rankLabel        = null
 cleared          = null
 performedAt      = null
 displayOrder     = null
 ```
 
-`cleared` is unknown because `ClearCount > 0` says only that *some* play cleared the chart. `performedAt` is unknown because `LastPlayedAt` is the latest play, not the time the best score was achieved.
+The chart-level best achievement/rank is still available through `ChartScore`; it is simply no longer represented as if it belonged to the best-score play.
 
 `fullCombo` and `maxCombo` are removed from `Score` entirely.
 
@@ -138,17 +153,37 @@ The migration should:
 
 1. Add `full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1))` to `chart_scores`.
 2. Add `max_combo INTEGER NOT NULL DEFAULT 0 CHECK (max_combo >= 0)` to `chart_scores`.
-3. Backfill both fields from the existing best score row. Although those values are incorrectly *located* today, the values themselves already come from DTXManiaCX's chart-wide `FullCombo` and `MaxCombo` fields and are valid aggregate data.
-4. Rebuild `scores` without the `full_combo` and `max_combo` columns.
-5. Make `scores.cleared` nullable with `CHECK (cleared IS NULL OR cleared IN (0, 1))`.
-6. While copying existing rows, set `cleared = NULL` and `performed_at = NULL` for `is_best = 1`; preserve recent-row values and the trustworthy best-score stat block.
-7. Recreate the existing score indexes and constraints.
+3. Add nullable `best_achievement_rate REAL CHECK (best_achievement_rate IS NULL OR (best_achievement_rate >= 0 AND best_achievement_rate <= 100))`.
+4. Add nullable `best_rank_label TEXT CHECK (best_rank_label IS NULL OR best_rank_label IN ('SS', 'S', 'A', 'B', 'C', 'D', 'E', 'F'))`.
+5. Add nullable `last_played_at TEXT`.
+6. Backfill those five fields from the existing best score row. Their values are already sourced from `SongScores`; only their current location is wrong.
+7. Rebuild `scores` without `full_combo` and `max_combo`.
+8. Keep `achievement_rate` and `rank_label` columns for recent rows, but set them to `NULL` on the best row during the copy.
+9. Make `scores.cleared` nullable with `CHECK (cleared IS NULL OR cleared IN (0, 1))`.
+10. Set best `cleared`, `performed_at`, and `display_order` to `NULL` during the copy.
+11. Add a table-level invariant:
+
+```sql
+CHECK (
+  is_best = 0 OR (
+    achievement_rate IS NULL AND
+    rank_label IS NULL AND
+    cleared IS NULL AND
+    performed_at IS NULL AND
+    display_order IS NULL
+  )
+)
+```
+
+12. Recreate the existing score indexes and constraints.
+
+The migration must preserve score IDs and the table's autoincrement sequence while rebuilding `scores`.
 
 This is intentionally a breaking schema cleanup. There is no compatibility table, duplicate write path, or transitional field alias.
 
 ## 7. Common DB contract
 
-Update the shared D1 types and query layer to match the new ownership:
+Update shared D1 types and the query layer to match the ownership:
 
 ```ts
 interface ChartScoreRow {
@@ -157,23 +192,24 @@ interface ChartScoreRow {
   clear_count: number;
   full_combo: 0 | 1;
   max_combo: number;
+  best_achievement_rate: number | null;
+  best_rank_label: string | null;
+  last_played_at: string | null;
 }
 
 interface ScoreRow {
-  // existing per-play fields
+  // score + judgment/recent fields remain
+  achievement_rate: number | null;
+  rank_label: string | null;
   cleared: 0 | 1 | null;
-  // no full_combo
-  // no max_combo
-}
-
-interface ScoreInsert {
-  cleared?: boolean | null;
   // no full_combo
   // no max_combo
 }
 ```
 
-`upsertChartScoreAndReplaceScores` gains `fullCombo` and `maxCombo` parameters, persists them in the existing atomic chart-score upsert, and removes those values from score inserts.
+`upsertChartScoreAndReplaceScores` gains chart-level `fullCombo`, `maxCombo`, `bestAchievementRate`, `bestRankLabel`, and `lastPlayedAt` parameters. It persists them in the existing chart-score upsert and preserves nullable `ScoreInsert.cleared` without converting `null` to `0`.
+
+The replace-all D1 batch and visibility gate stay unchanged.
 
 ## 8. GraphQL contract
 
@@ -184,11 +220,14 @@ Add:
 ```graphql
 fullCombo: Boolean!
 maxCombo: Int!
+bestAchievementRate: Float
+bestRankLabel: String
+lastPlayedAt: String
 ```
 
 ### `Score`
 
-Change:
+Keep recent-capable fields but change:
 
 ```graphql
 cleared: Boolean
@@ -201,11 +240,23 @@ fullCombo
 maxCombo
 ```
 
+A best `Score` resolves `achievementRate`, `rankLabel`, `cleared`, `performedAt`, and `displayOrder` as `null` because the server canonicalizes those fields before persistence.
+
 ### Upload input
 
-`ChartScoresInput` gains required `fullCombo` and `maxCombo` fields. `ScoreInput.cleared` becomes nullable, and `ScoreInput` no longer accepts `fullCombo` or `maxCombo`.
+`ChartScoresInput` gains required `fullCombo` and `maxCombo`, plus nullable `bestAchievementRate`, `bestRankLabel`, and `lastPlayedAt`. `ScoreInput.cleared` becomes nullable, and `ScoreInput` no longer accepts `fullCombo` or `maxCombo`.
 
-The API keeps requiring exactly one best row for a non-empty chart upload. Before persistence it canonicalizes the best row so `cleared`, `performedAt`, and `displayOrder` are `null`. This makes the server contract enforce the semantic rule even if a future desktop client accidentally sends stale per-play values.
+The API validates chart-level rate/rank/max-combo values, keeps exactly-one-best and recent-row rules, and canonicalizes every best row to:
+
+```text
+achievementRate = null
+rankLabel       = null
+cleared         = null
+performedAt     = null
+displayOrder    = null
+```
+
+This extends the existing best-`displayOrder` cleanup seam rather than adding another normalization pipeline.
 
 No versioned GraphQL input is introduced.
 
@@ -213,94 +264,114 @@ No versioned GraphQL input is introduced.
 
 ### Rust parser
 
-Change the parsed shape to:
+Keep one `ScorePayload` for best/recent rows, but make the best row sparse and move chart records into `ChartAggregate`:
 
 ```rust
-pub struct ScorePayload {
-    pub is_best: bool,
-    pub score: Option<i64>,
-    pub achievement_rate: Option<f64>,
-    pub rank_label: Option<String>,
-    pub cleared: Option<bool>,
-    pub perfect: Option<i64>,
-    pub great: Option<i64>,
-    pub good: Option<i64>,
-    pub poor: Option<i64>,
-    pub miss: Option<i64>,
-    pub performed_at: Option<String>,
-    pub display_order: Option<i64>,
-}
-
 pub struct ChartAggregate {
     pub play_count: i64,
     pub clear_count: i64,
     pub full_combo: bool,
     pub max_combo: i64,
+    pub best_achievement_rate: Option<f64>,
+    pub best_rank_label: Option<String>,
+    pub last_played_at: Option<String>,
 }
 ```
 
-`build_best` uses only the coherent best-score fields and sets `cleared` / `performed_at` to `None`.
+`build_best` emits only `BestScore` plus the `BestPerfect...BestMiss` stat block and sets rate/rank/result/timestamp/order to `None`.
 
-`group_joined_rows` maps `SongScores.FullCombo` and `SongScores.MaxCombo` into `ChartAggregate`, and recent rows forward `parse_history_line(...).cleared` directly instead of `unwrap_or(false)`.
+`group_joined_rows` moves `SongScores.FullCombo`, `MaxCombo`, `BestAchievementRate`, derived rank, and `LastPlayedAt` into `ChartAggregate`. Recent rows forward `parse_history_line(...).cleared` directly instead of `unwrap_or(false)`.
 
 ### Renderer
 
-Update the renderer types to the same shape. `buildUpload` sends `fullCombo` and `maxCombo` beside `playCount` and `clearCount` at chart level.
+Update renderer types to the same shape. `buildUpload` sends all chart records beside `playCount` / `clearCount`.
 
-The desktop score preview shows chart-wide full-combo/max-combo next to the existing play/clear aggregate summary. The best line shows only score/rank/achievement. Recent plays render:
+The local score preview must not recombine the independent records into one fake performance:
 
-- green `Cleared` for `true`;
-- red `Failed` for `false`;
-- a neutral dash for `null`.
+- best-score line: numeric best score + judgment block only;
+- chart-record summary: best achievement/rank, max combo, full-combo state, play/clear counters;
+- recent rows: history-derived rate/rank/result/time.
 
-No new interaction or navigation is added.
+`lastPlayedAt` is retained in the local aggregate and upload contract even if the existing compact preview does not add new copy for it in this ticket.
 
 ## 10. Web presentation
 
-The scored-simfiles query requests `fullCombo` and `maxCombo` from `myChartScore` rather than each `Score`.
+The scored-simfiles query requests the new chart records from `myChartScore`.
 
-The web adapter mirrors the GraphQL ownership:
+The web adapter mirrors GraphQL ownership:
 
-- `ChartScoreView` gains `fullCombo` and `maxCombo`;
+- `ChartScoreView` gains `fullCombo`, `maxCombo`, `bestAchievementRate`, `bestRankLabel`, and `lastPlayedAt`;
 - `ScoreView.cleared` becomes `boolean | null`;
-- `ScoreView` drops `fullCombo` / `maxCombo`.
+- `ScoreView` no longer owns `fullCombo` / `maxCombo`;
+- best `ScoreView.achievementRate` / `rankLabel` remain nullable and are `null` for the best row.
 
-`ScoreCard` renders the full-combo badge and max-combo value at chart-summary level. The best block remains score/rank/achievement/judgments. Recent result text uses the same true / false / unknown tri-state as desktop.
+`ScoreCard` keeps best score/judgments separate from the chart-record summary. Best achievement/rank, full combo, and max combo are rendered from `ChartScore`; recent result text uses the same true / false / unknown tri-state as desktop.
 
-## 11. Invariants
+`lastPlayedAt` remains available to the web view model/API without requiring a new presentation element in this focused semantics fix.
+
+## 11. Database and API invariants
 
 After HPA-308:
 
-1. A field on an individual `Score` row must be attributable to that represented play/stat block.
-2. Chart-wide cumulative values live only on `ChartScore`.
-3. The best row never claims a clear result or performed timestamp that DTXManiaCX cannot source.
-4. An unparseable recent outcome remains unknown instead of becoming a failure.
-5. Upload remains replace-all and atomic per `(user, chart)` exactly as today.
-6. Best + recent ordering and the five-recent-row cap do not change.
+1. A field on an individual best `Score` row must belong to the supported best-score stat block.
+2. Chart-wide/best-skill/latest-play records live on `ChartScore`.
+3. A persisted best row has `achievement_rate`, `rank_label`, `cleared`, `performed_at`, and `display_order` all `NULL`.
+4. The API canonicalizer and D1 CHECK enforce the same best-row rule.
+5. An unparseable recent outcome remains unknown instead of becoming a failure.
+6. Upload remains replace-all and atomic per `(user, chart)` exactly as today.
+7. Best + recent ordering and the five-recent-row cap do not change.
 
-## 12. Alternatives considered
+## 12. Deployment contract
 
-### Move all best data onto `ChartScore`
+This is deliberately breaking, so there is no zero-downtime compatibility phase.
 
-This is semantically clean but causes unnecessary churn: `is_best`, best-first ordering, score rendering, and existing API helpers would all need restructuring even though the score/stat block is internally coherent. It solves more than HPA-308 requires.
+The existing API deploy script already applies D1 migrations before deploying the Worker. Deployment order is therefore:
+
+1. Preproduction API (migration + Worker).
+2. Preproduction web immediately after the API.
+3. Smoke the existing score upload/query/page flow.
+4. Production API (migration + Worker).
+5. Production web immediately after the API.
+6. Desktop release last so new clients send the required chart-level fields.
+
+There is an unavoidable short API→web validation window because the old web query selects fields removed from `Score`; reversing the order would make the new web query invalid against the old API.
+
+Existing installed desktop builds will fail `uploadScores` at GraphQL validation after the API cutover because they do not send the newly required chart-level inputs. That loud failure is accepted instead of adding a compatibility mutation. The desktop updater release should follow the web deployment immediately.
+
+## 13. Alternatives considered
+
+### Put the entire best block on `ChartScore`
+
+This causes unnecessary churn to `is_best`, score ordering, recent-row storage, and existing helpers. Keep the numeric best-score/stat-block row and move only the independent records.
+
+### Keep `BestAchievementRate` on the best row because NX import writes it with `BestScore`
+
+Rejected. The normal gameplay writer updates `BestAchievementRate` under the independent best-skill condition. The broader `SongScores` semantics govern DTXWeb, not one import path.
+
+### Drop `LastPlayedAt`
+
+Rejected. It is trustworthy latest-play data and is currently imported; moving it to `ChartScore` costs one column now and avoids silently losing the value when the best row is canonicalized.
 
 ### Keep the current schema and only hide misleading fields in the UI
 
-This is the smallest visual diff but leaves the persisted/API model lying about ownership. Other consumers could still interpret the synthetic row as a real play, so it does not fix the bug at its source.
+Rejected because persistence/API consumers would still see the synthetic row.
 
 ### Recover the exact best play from `PerformanceHistory`
 
-Not possible with the current DTXManiaCX schema. History does not store the numeric score or judgment block needed to identify/reconstruct the best-scoring play.
+Not possible with the current history schema because it lacks score/judgment data.
 
-## 13. Verification strategy
+## 14. Verification strategy
 
-The implementation should pin the semantics at each boundary:
+The implementation must pin semantics at each existing boundary:
 
-- migration/schema parity and D1 replacement tests;
-- GraphQL validation/query tests for chart aggregates and nullable result;
-- Rust parser tests proving best fields are not mixed and malformed history yields unknown;
-- desktop renderer tests for chart-level aggregate display and tri-state history result;
-- web adapter/component tests for the same contract;
-- existing score upload, score-page, and D1 integration suites remain green.
+- migration/schema parity across `0002 + 0007`;
+- a real migration regression that applies `0001`–`0006`, seeds old-shape data, then applies `0007` and checks all five chart-record backfills plus best-row nulling;
+- D1 CHECK coverage for the best-row invariant;
+- GraphQL validation/query tests for chart records and canonicalized best metadata;
+- Rust parser tests proving `BestAchievementRate`/rank and `LastPlayedAt` move to `ChartAggregate`, while malformed recent history remains unknown;
+- desktop renderer/upload tests for separated chart records and best-score data;
+- web adapter/component/page fixtures for the same ownership;
+- the existing Playwright score upload/query/page scenario updated to the breaking contract;
+- deployment commands ordered API → web → desktop, first in preproduction and then production.
 
-No new E2E scenario is required unless an existing score E2E fixture fails to express the new contract; the behavior is fully covered by the existing score flow plus focused boundary tests.
+No new table, history model, evaluator, registry, versioned input, or E2E scenario is required.

@@ -36,7 +36,17 @@ const song: ScoredSimfile = {
 			id: 10,
 			label: 'BASIC',
 			level: 5,
-			chartScore: { playCount: 3, clearCount: 1, best: null, recent: [] }
+			chartScore: {
+				playCount: 3,
+				clearCount: 1,
+				fullCombo: false,
+				maxCombo: 0,
+				bestAchievementRate: null,
+				bestRankLabel: null,
+				lastPlayedAt: null,
+				best: null,
+				recent: []
+			}
 		}
 	]
 };

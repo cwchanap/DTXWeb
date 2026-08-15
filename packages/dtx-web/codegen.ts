@@ -5,7 +5,11 @@ const config: CodegenConfig = {
 	documents: ['src/lib/api/operations/**/*.graphql'],
 	generates: {
 		'src/lib/api/generated/graphql.ts': {
-			plugins: ['typescript-operations', 'typed-document-node'],
+			plugins: [
+				{ typescript: { typesPrefix: 'Schema' } },
+				'typescript-operations',
+				'typed-document-node'
+			],
 			config: {
 				avoidOptionals: {
 					inputValue: false,

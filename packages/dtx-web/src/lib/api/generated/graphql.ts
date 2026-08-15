@@ -1,68 +1,409 @@
+/** Internal type. DO NOT USE DIRECTLY. */
+type Exact<T extends { [key: string]: unknown }> = { [K in keyof T]: T[K] };
+/** Internal type. DO NOT USE DIRECTLY. */
+export type Incremental<T> = T | { [P in keyof T]?: P extends ' $fragmentName' | '__typename' ? T[P] : never };
 import type { TypedDocumentNode as DocumentNode } from '@graphql-typed-document-node/core';
+export type Maybe<T> = T | null;
+export type InputMaybe<T> = Maybe<T>;
+/** All built-in and custom scalars, mapped to their actual values */
+export type Scalars = {
+  ID: { input: string; output: string; }
+  String: { input: string; output: string; }
+  Boolean: { input: boolean; output: boolean; }
+  Int: { input: number; output: number; }
+  Float: { input: number; output: number; }
+};
+
+export type SchemaChartScore = {
+  bestAchievementRate?: Maybe<Scalars['Float']['output']>;
+  bestRankLabel?: Maybe<Scalars['String']['output']>;
+  clearCount: Scalars['Int']['output'];
+  fullCombo: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  lastPlayedAt?: Maybe<Scalars['String']['output']>;
+  maxCombo: Scalars['Int']['output'];
+  playCount: Scalars['Int']['output'];
+  scores: Array<SchemaScore>;
+};
+
+export type SchemaChartScoresInput = {
+  bestAchievementRate?: InputMaybe<Scalars['Float']['input']>;
+  bestRankLabel?: InputMaybe<Scalars['String']['input']>;
+  chartId: Scalars['ID']['input'];
+  clearCount: Scalars['Int']['input'];
+  fullCombo: Scalars['Boolean']['input'];
+  lastPlayedAt?: InputMaybe<Scalars['String']['input']>;
+  maxCombo: Scalars['Int']['input'];
+  playCount: Scalars['Int']['input'];
+  scores: Array<SchemaScoreInput>;
+};
+
+export type SchemaCreateSimfileInput = {
+  artist?: InputMaybe<Scalars['String']['input']>;
+  bpm: Scalars['Float']['input'];
+  displayId?: InputMaybe<Scalars['Int']['input']>;
+  downloadUrl?: InputMaybe<Scalars['String']['input']>;
+  dtxFiles?: InputMaybe<Array<SchemaDtxFileInput>>;
+  isPublished?: InputMaybe<Scalars['Boolean']['input']>;
+  previewUrl?: InputMaybe<Scalars['String']['input']>;
+  publishDate?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  videoPreviewUrl?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaDeleteResult = {
+  deleted: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  message?: Maybe<Scalars['String']['output']>;
+  partialDeletion?: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type SchemaDtxFile = {
+  fileEncoding: SchemaFileEncoding;
+  fileSizeBytes: Scalars['Int']['output'];
+  fileUrl?: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  label: Scalars['String']['output'];
+  level: Scalars['Float']['output'];
+  myChartScore?: Maybe<SchemaChartScore>;
+};
+
+export type SchemaDtxFileInput = {
+  label: Scalars['String']['input'];
+  level: Scalars['Float']['input'];
+};
+
+export enum SchemaFileEncoding {
+  ShiftJis = 'SHIFT_JIS',
+  Utf_8 = 'UTF_8'
+}
+
+export type SchemaMagicLinkResult = {
+  magicLinkUrl: Scalars['String']['output'];
+  success: Scalars['Boolean']['output'];
+};
+
+export type SchemaMutation = {
+  createSimfile: SchemaSimfile;
+  deleteSimfile: SchemaDeleteResult;
+  generateMagicLink: SchemaMagicLinkResult;
+  updateSimfile: SchemaSimfile;
+  updateSimfileDriveFile: SchemaSimfile;
+  updateSimfileDriveFileGuarded: SchemaSimfile;
+  uploadScores: SchemaUploadScoresResult;
+  upsertUserProfile: SchemaUserProfile;
+};
+
+
+export type SchemaMutationCreateSimfileArgs = {
+  input: SchemaCreateSimfileInput;
+};
+
+
+export type SchemaMutationDeleteSimfileArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaMutationUpdateSimfileArgs = {
+  id: Scalars['ID']['input'];
+  input: SchemaUpdateSimfileInput;
+};
+
+
+export type SchemaMutationUpdateSimfileDriveFileArgs = {
+  downloadUrl: Scalars['String']['input'];
+  googleDriveFileId: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaMutationUpdateSimfileDriveFileGuardedArgs = {
+  downloadUrl: Scalars['String']['input'];
+  expectNoExistingDriveFile?: InputMaybe<Scalars['Boolean']['input']>;
+  expectedPreviousDriveFileId?: InputMaybe<Scalars['String']['input']>;
+  googleDriveFileId: Scalars['String']['input'];
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaMutationUploadScoresArgs = {
+  input: SchemaUploadScoresInput;
+};
+
+
+export type SchemaMutationUpsertUserProfileArgs = {
+  input: SchemaUpsertUserProfileInput;
+};
+
+export type SchemaQuery = {
+  healthz: Scalars['String']['output'];
+  me: SchemaUserProfile;
+  myScoredSimfiles: SchemaSimfileConnection;
+  nextDisplayId: Scalars['Int']['output'];
+  simfile?: Maybe<SchemaSimfile>;
+  simfileSearch: Array<SchemaSimfileSearchResult>;
+  simfiles: SchemaSimfileConnection;
+};
+
+
+export type SchemaQueryMyScoredSimfilesArgs = {
+  page?: InputMaybe<Scalars['Int']['input']>;
+  pageSize?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQuerySimfileArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQuerySimfileSearchArgs = {
+  excludeIds?: InputMaybe<Array<Scalars['ID']['input']>>;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  query: Scalars['String']['input'];
+};
+
+
+export type SchemaQuerySimfilesArgs = {
+  page?: InputMaybe<Scalars['Int']['input']>;
+  pageSize?: InputMaybe<Scalars['Int']['input']>;
+  scope: SchemaSimfileScope;
+  search?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaR2File = {
+  key: Scalars['String']['output'];
+  size: Scalars['Int']['output'];
+  uploaded: Scalars['String']['output'];
+};
+
+export type SchemaScore = {
+  achievementRate?: Maybe<Scalars['Float']['output']>;
+  cleared?: Maybe<Scalars['Boolean']['output']>;
+  displayOrder?: Maybe<Scalars['Int']['output']>;
+  good?: Maybe<Scalars['Int']['output']>;
+  great?: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  isBest: Scalars['Boolean']['output'];
+  miss?: Maybe<Scalars['Int']['output']>;
+  perfect?: Maybe<Scalars['Int']['output']>;
+  performedAt?: Maybe<Scalars['String']['output']>;
+  poor?: Maybe<Scalars['Int']['output']>;
+  rankLabel?: Maybe<Scalars['String']['output']>;
+  score?: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaScoreInput = {
+  achievementRate?: InputMaybe<Scalars['Float']['input']>;
+  cleared?: InputMaybe<Scalars['Boolean']['input']>;
+  displayOrder?: InputMaybe<Scalars['Int']['input']>;
+  good?: InputMaybe<Scalars['Int']['input']>;
+  great?: InputMaybe<Scalars['Int']['input']>;
+  isBest: Scalars['Boolean']['input'];
+  miss?: InputMaybe<Scalars['Int']['input']>;
+  perfect?: InputMaybe<Scalars['Int']['input']>;
+  performedAt?: InputMaybe<Scalars['String']['input']>;
+  poor?: InputMaybe<Scalars['Int']['input']>;
+  rankLabel?: InputMaybe<Scalars['String']['input']>;
+  score?: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaSimfile = {
+  artist: Scalars['String']['output'];
+  bpm: Scalars['Float']['output'];
+  createdAt: Scalars['String']['output'];
+  displayId?: Maybe<Scalars['Int']['output']>;
+  downloadUrl?: Maybe<Scalars['String']['output']>;
+  dtxFiles: Array<SchemaDtxFile>;
+  durationSeconds?: Maybe<Scalars['Int']['output']>;
+  files: Array<SchemaR2File>;
+  genre?: Maybe<Scalars['String']['output']>;
+  googleDriveFileId?: Maybe<Scalars['String']['output']>;
+  hasUploadedFiles: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  isPublished: Scalars['Boolean']['output'];
+  previewUrl?: Maybe<Scalars['String']['output']>;
+  publishDate: Scalars['String']['output'];
+  tags: Array<Scalars['String']['output']>;
+  title: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+  userId?: Maybe<Scalars['ID']['output']>;
+  videoPreviewUrl?: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaSimfileConnection = {
+  count: Scalars['Int']['output'];
+  data: Array<SchemaSimfile>;
+};
+
+export enum SchemaSimfileScope {
+  Mine = 'MINE',
+  Published = 'PUBLISHED'
+}
+
+export type SchemaSimfileSearchResult = {
+  artist: Scalars['String']['output'];
+  bpm: Scalars['Float']['output'];
+  id: Scalars['ID']['output'];
+  isPublished: Scalars['Boolean']['output'];
+  title: Scalars['String']['output'];
+};
+
+/** A chart that was excluded from the upload. chartId is the requested chart ID, or the sentinel "*" when the entire payload was rejected (e.g. too many charts) rather than a single chart. */
+export type SchemaSkippedChart = {
+  /** The skipped chart ID, or "*" (sentinel) when the skip applies to the whole upload batch rather than a specific chart. */
+  chartId: Scalars['ID']['output'];
+  reason: Scalars['String']['output'];
+};
+
+export type SchemaUpdateSimfileInput = {
+  artist?: InputMaybe<Scalars['String']['input']>;
+  bpm?: InputMaybe<Scalars['Float']['input']>;
+  displayId?: InputMaybe<Scalars['Int']['input']>;
+  downloadUrl?: InputMaybe<Scalars['String']['input']>;
+  isPublished?: InputMaybe<Scalars['Boolean']['input']>;
+  previewUrl?: InputMaybe<Scalars['String']['input']>;
+  publishDate?: InputMaybe<Scalars['String']['input']>;
+  title?: InputMaybe<Scalars['String']['input']>;
+  videoPreviewUrl?: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaUploadScoresInput = {
+  charts: Array<SchemaChartScoresInput>;
+};
+
+export type SchemaUploadScoresResult = {
+  insertedScores: Scalars['Int']['output'];
+  skipped: Array<SchemaSkippedChart>;
+  updatedCharts: Scalars['Int']['output'];
+};
+
+export type SchemaUpsertUserProfileInput = {
+  username: Scalars['String']['input'];
+};
+
+export type SchemaUserProfile = {
+  userId: Scalars['ID']['output'];
+  username: Scalars['String']['output'];
+};
+
+export type ChartScoresInput = {
+  bestAchievementRate?: number | null | undefined;
+  bestRankLabel?: string | null | undefined;
+  chartId: string;
+  clearCount: number;
+  fullCombo: boolean;
+  lastPlayedAt?: string | null | undefined;
+  maxCombo: number;
+  playCount: number;
+  scores: Array<ScoreInput>;
+};
+
+export type ScoreInput = {
+  achievementRate?: number | null | undefined;
+  cleared?: boolean | null | undefined;
+  displayOrder?: number | null | undefined;
+  good?: number | null | undefined;
+  great?: number | null | undefined;
+  isBest: boolean;
+  miss?: number | null | undefined;
+  perfect?: number | null | undefined;
+  performedAt?: string | null | undefined;
+  poor?: number | null | undefined;
+  rankLabel?: string | null | undefined;
+  score?: number | null | undefined;
+};
+
+export enum SimfileScope {
+  Mine = 'MINE',
+  Published = 'PUBLISHED'
+}
+
+export type UpdateSimfileInput = {
+  artist?: string | null | undefined;
+  bpm?: number | null | undefined;
+  displayId?: number | null | undefined;
+  downloadUrl?: string | null | undefined;
+  isPublished?: boolean | null | undefined;
+  previewUrl?: string | null | undefined;
+  publishDate?: string | null | undefined;
+  title?: string | null | undefined;
+  videoPreviewUrl?: string | null | undefined;
+};
+
+export type UploadScoresInput = {
+  charts: Array<ChartScoresInput>;
+};
+
+export type UpsertUserProfileInput = {
+  username: string;
+};
+
 export type GenerateMagicLinkMutationVariables = Exact<{ [key: string]: never; }>;
 
 
 export type GenerateMagicLinkMutation = { generateMagicLink: { magicLinkUrl: string, success: boolean } };
 
-export type SimfileFullFragment = { id: string, displayId?: number | null, title: string, artist: string, bpm: number, userId?: string | null, isPublished: boolean, googleDriveFileId?: string | null, downloadUrl?: string | null, previewUrl?: string | null, videoPreviewUrl?: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> };
+export type SimfileFullFragment = { id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> };
 
 export type GetPreviewSimfileQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
-export type GetPreviewSimfileQuery = { simfile?: { id: string, title: string, artist: string, dtxFiles: Array<{ level: number, label: string, fileUrl?: string | null }> } | null };
+export type GetPreviewSimfileQuery = { simfile: { id: string, title: string, artist: string, dtxFiles: Array<{ level: number, label: string, fileUrl: string | null }> } | null };
 
-export type SimfileWithFilesFragment = { hasUploadedFiles: boolean, id: string, displayId?: number | null, title: string, artist: string, bpm: number, userId?: string | null, isPublished: boolean, googleDriveFileId?: string | null, downloadUrl?: string | null, previewUrl?: string | null, videoPreviewUrl?: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> };
+export type SimfileWithFilesFragment = { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> };
 
 export type ListSimfilesQueryVariables = Exact<{
   scope: SimfileScope;
-  search?: InputMaybe<Scalars['String']['input']>;
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
+  search?: string | null | undefined;
+  page?: number | null | undefined;
+  pageSize?: number | null | undefined;
 }>;
 
 
-export type ListSimfilesQuery = { simfiles: { count: number, data: Array<{ hasUploadedFiles: boolean, id: string, displayId?: number | null, title: string, artist: string, bpm: number, userId?: string | null, isPublished: boolean, googleDriveFileId?: string | null, downloadUrl?: string | null, previewUrl?: string | null, videoPreviewUrl?: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> }> } };
+export type ListSimfilesQuery = { simfiles: { count: number, data: Array<{ hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, dtxFiles: Array<{ level: number, label: string }> }> } };
 
 export type GetSimfileQueryVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
-export type GetSimfileQuery = { simfile?: { hasUploadedFiles: boolean, id: string, displayId?: number | null, title: string, artist: string, bpm: number, userId?: string | null, isPublished: boolean, googleDriveFileId?: string | null, downloadUrl?: string | null, previewUrl?: string | null, videoPreviewUrl?: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } | null };
+export type GetSimfileQuery = { simfile: { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } | null };
 
 export type UpdateSimfileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
   input: UpdateSimfileInput;
 }>;
 
 
-export type UpdateSimfileMutation = { updateSimfile: { hasUploadedFiles: boolean, id: string, displayId?: number | null, title: string, artist: string, bpm: number, userId?: string | null, isPublished: boolean, googleDriveFileId?: string | null, downloadUrl?: string | null, previewUrl?: string | null, videoPreviewUrl?: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } };
+export type UpdateSimfileMutation = { updateSimfile: { hasUploadedFiles: boolean, id: string, displayId: number | null, title: string, artist: string, bpm: number, userId: string | null, isPublished: boolean, googleDriveFileId: string | null, downloadUrl: string | null, previewUrl: string | null, videoPreviewUrl: string | null, publishDate: string, createdAt: string, updatedAt: string, files: Array<{ key: string, size: number, uploaded: string }>, dtxFiles: Array<{ level: number, label: string }> } };
 
 export type UpdateSimfileDriveFileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
-  googleDriveFileId: Scalars['String']['input'];
-  downloadUrl: Scalars['String']['input'];
+  id: string;
+  googleDriveFileId: string;
+  downloadUrl: string;
 }>;
 
 
-export type UpdateSimfileDriveFileMutation = { updateSimfileDriveFile: { id: string, googleDriveFileId?: string | null, downloadUrl?: string | null } };
+export type UpdateSimfileDriveFileMutation = { updateSimfileDriveFile: { id: string, googleDriveFileId: string | null, downloadUrl: string | null } };
 
 export type DeleteSimfileMutationVariables = Exact<{
-  id: Scalars['ID']['input'];
+  id: string;
 }>;
 
 
-export type DeleteSimfileMutation = { deleteSimfile: { id: string, deleted: boolean, partialDeletion?: boolean | null, message?: string | null } };
+export type DeleteSimfileMutation = { deleteSimfile: { id: string, deleted: boolean, partialDeletion: boolean | null, message: string | null } };
 
 export type MyScoredSimfilesQueryVariables = Exact<{
-  page?: InputMaybe<Scalars['Int']['input']>;
-  pageSize?: InputMaybe<Scalars['Int']['input']>;
+  page?: number | null | undefined;
+  pageSize?: number | null | undefined;
 }>;
 
 
-export type MyScoredSimfilesQuery = { myScoredSimfiles: { count: number, data: Array<{ id: string, title: string, artist: string, dtxFiles: Array<{ id: string, label: string, level: number, myChartScore?: { playCount: number, clearCount: number, fullCombo: boolean, maxCombo: number, bestAchievementRate?: number | null, bestRankLabel?: string | null, lastPlayedAt?: string | null, scores: Array<{ id: string, isBest: boolean, score?: number | null, achievementRate?: number | null, rankLabel?: string | null, cleared?: boolean | null, perfect?: number | null, great?: number | null, good?: number | null, poor?: number | null, miss?: number | null, performedAt?: string | null, displayOrder?: number | null }> } | null }> }> } };
+export type MyScoredSimfilesQuery = { myScoredSimfiles: { count: number, data: Array<{ id: string, title: string, artist: string, dtxFiles: Array<{ id: string, label: string, level: number, myChartScore: { playCount: number, clearCount: number, fullCombo: boolean, maxCombo: number, bestAchievementRate: number | null, bestRankLabel: string | null, lastPlayedAt: string | null, scores: Array<{ id: string, isBest: boolean, score: number | null, achievementRate: number | null, rankLabel: string | null, cleared: boolean | null, perfect: number | null, great: number | null, good: number | null, poor: number | null, miss: number | null, performedAt: string | null, displayOrder: number | null }> } | null }> }> } };
 
 export type UploadScoresMutationVariables = Exact<{
   input: UploadScoresInput;

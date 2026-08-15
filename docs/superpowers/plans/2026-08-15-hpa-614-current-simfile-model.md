@@ -18,7 +18,7 @@
 - Do not extract `api.rs` or `SongDetails.svelte`; that is HPA-616.
 - Keep `Database` in `packages/common/src/lib/types/supabase.types.ts`, its existing export, and root `gen-types`: current web auth still consumes `SupabaseClient<Database>` / `createServerClient<Database>`.
 - Invalidate renderer caches by switching to `simfiles_cache_v2`, `simfiles_cache_timestamp_v2`, and `dtx_linkage_cache_v2`. Never read or adapt the old keys.
-- Desktop E2E linkage seeds must use `dtx_linkage_cache_v2` and camelCase current-model data.
+- Desktop E2E linkage seeds must use `dtx_linkage_cache_v2` and camelCase current-model data, without adding an `@dtx/common` dependency to the E2E package.
 - This is a breaking internal migration. Do not retain `LegacySimfile`, `SimfileWithDtx`, snake_case renderer properties, or deprecated aliases after final cleanup.
 - Do not remove old `@dtx/common` application-barrel D1/compatibility exports until all web/desktop consumers have migrated; never redirect renderer code to `@dtx/common/server` as an intermediate fix.
 - Preserve `ChartDetail`'s current `dayjs().format('YYYY-MM-DD')` publish-date fallback while renaming fields.
@@ -411,7 +411,7 @@ Change the update-command request fixture to already use camelCase input names:
 }
 ```
 
-Keep `update_input_excludes_drive_file_id_from_general_simfile_updates` conceptually: after the mapper is removed, rewrite it against the new narrow omission helper/path so it still proves `googleDriveFileId` cannot reach `UpdateSimfileInput`.
+Keep the Drive-id ownership test: after the general mapper is removed, rewrite it against `update_simfile_record_impl`'s one-field omission so it still proves `googleDriveFileId` cannot reach `UpdateSimfileInput`.
 
 - [ ] **Step 2: Confirm the old native contract fails**
 
@@ -431,39 +431,36 @@ Nested `dtxFiles` contain a real `id` when supplied plus `label` / `level`. Dele
 
 Use the mapper in `fetch_user_simfiles_impl`, `fetch_cloud_song_impl`, `update_simfile_record_impl`, and `create_simfile_record_impl`.
 
-- [ ] **Step 4: Remove the general update mapper but preserve Drive ownership**
+- [ ] **Step 4: Remove the general update mapper but preserve Drive ownership inline**
 
 Delete `update_input_from_renderer`; the renderer no longer sends snake_case.
 
-Before sending `update_data` to GraphQL, remove only `googleDriveFileId` from a JSON object. Keep non-object behavior explicit:
+Inside `update_simfile_record_impl`, remove only `googleDriveFileId` before constructing the GraphQL variables:
 
 ```rust
-fn general_simfile_update_input(update_data: Value) -> Value {
-    let Value::Object(mut object) = update_data else {
-        return update_data;
-    };
-    object.remove("googleDriveFileId");
-    Value::Object(object)
-}
+let input = match update_data {
+    Value::Object(mut object) => {
+        object.remove("googleDriveFileId");
+        Value::Object(object)
+    }
+    other => other,
+};
+
+let result = graphql_result_with_url(
+    base_url,
+    token,
+    &graphql_document(UPDATE_SIMFILE_MUTATION),
+    json!({
+        "id": simfile_id.to_string().trim_matches('"'),
+        "input": input,
+    }),
+)
+.await?;
 ```
 
-Then use:
+Do not create a replacement mapper/helper. The renderer constructs explicit update payloads in Task 4; this inline omission exists only to preserve Drive-id ownership at the native boundary.
 
-```rust
-"input": general_simfile_update_input(update_data),
-```
-
-Do not reintroduce a generic field mapper/allowlist here. The renderer will construct explicit update payloads in Task 4, so this helper exists only to preserve the Drive-id ownership invariant at the native boundary.
-
-Rewrite the existing Drive-id test to assert:
-
-```rust
-let mapped = general_simfile_update_input(json!({
-    "title": "Song",
-    "googleDriveFileId": "drive-file-42"
-}));
-assert_eq!(mapped, json!({ "title": "Song" }));
-```
+Update the existing native test to capture/assert the outgoing GraphQL request (or an extracted local input value already inside the test seam) and prove `googleDriveFileId` is absent while normal fields such as `title` remain.
 
 - [ ] **Step 5: Make cloud search use current projection names and numeric ids**
 
@@ -639,13 +636,7 @@ String(existing.id) === cloudId
 savedLinks = { ...savedLinks, [songKey(songRow)]: String(song.id) };
 ```
 
-Also:
-
-```ts
-const persistedId = String(song.id);
-```
-
-Use `persistedId` only for score-link storage/native calls that still take string ids. Use numeric `song.id` inside current-model application state.
+Use string ids only for score-link persistence/native calls that still take the persisted string id. Use numeric `song.id` inside current-model application state.
 
 Update `excludeIdsFor()` to push `String(existing.id)`. In `CloudSongAutocomplete.svelte`, compare exclusions with `String(song.id)`. Rename `is_published` → `isPublished` in score fixtures/results.
 
@@ -705,10 +696,20 @@ Preserve stale-selection, concurrency, linking, save, and Drive-upload tests.
 
 - [ ] **Step 7: Update desktop E2E linkage-cache seeds to the current key/shape**
 
-In `packages/e2e-desktop/specs/google-drive-upload.e2e.ts`, change the helper shape and seed key:
+Do not add `@dtx/common` as an E2E dependency just to type a fixture. Keep the helper structural/inferred, but make its data match `SimfileModel` exactly.
+
+In `packages/e2e-desktop/specs/google-drive-upload.e2e.ts`, change the helper data to:
 
 ```ts
-const linkedSimfile = (...): SimfileModel => ({
+const linkedSimfile = ({
+	downloadUrl,
+	googleDriveFileId,
+	rendererTitle
+}: {
+	downloadUrl: string | null;
+	googleDriveFileId: string | null;
+	rendererTitle: string;
+}) => ({
 	id: Number(simfileId),
 	title: rendererTitle,
 	artist: 'Integration Test',
@@ -771,16 +772,22 @@ Expected: PASS.
 
 - [ ] **Step 9: Validate the affected Drive E2E setup path**
 
-Run the existing desktop E2E command(s) that own these two helpers in the repository's normal E2E environment. At minimum, the Drive upload flow must reach linked Song Details using the new cache seed; the crash-recovery script must restore the same linked song after reload.
-
-Use the existing package scripts rather than introducing a new runner:
+Run the existing desktop E2E command that owns both helpers:
 
 ```bash
 cd packages/e2e-desktop
 bun run e2e
 ```
 
-If the full desktop E2E environment is unavailable locally, run the repository's existing typecheck/build validation for `packages/e2e-desktop` and record the environment limitation in the implementation PR; do not add compatibility code to make the old seed work.
+This runs the normal WDIO flow plus relaunch and Drive crash-recovery scripts. The Drive upload flow must reach linked Song Details using `dtx_linkage_cache_v2`, and crash recovery must restore the same linked song after reload.
+
+If the full native E2E environment is unavailable locally, still run the package's existing TypeScript check:
+
+```bash
+bun run check
+```
+
+Record the environment limitation in the implementation PR; do not add compatibility code to make an old seed work.
 
 - [ ] **Step 10: Commit**
 
@@ -911,11 +918,12 @@ Expected live consumers in `packages/dtx-web/src/app.d.ts` and `packages/dtx-web
 cd packages/common && bun run test && bun run check
 cd ../dtx-web && bun run test && bun run check
 cd ../dtx-desktop && bun run test && bun run typecheck
+cd ../e2e-desktop && bun run check
 cd ../..
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml api_tests
 ```
 
-Then validate `packages/e2e-desktop` with its existing test/typecheck/E2E path available in the implementation environment.
+Run `bun run e2e` from `packages/e2e-desktop` when the native E2E environment is available.
 
 Expected: all HPA-614-focused tests changed above pass. Record unrelated pre-existing failures separately rather than weakening the migration.
 
@@ -936,7 +944,7 @@ Verify:
 - no unrelated UI refactor;
 - no deletion of the live Supabase auth `Database` type;
 - `ChartDetail` still uses the existing `dayjs` date fallback;
-- general simfile update payloads are explicit picks and native strips `googleDriveFileId`;
+- general simfile update payloads are explicit picks and native strips `googleDriveFileId` inline;
 - cache changes are only the three explicit v2 keys plus matching E2E seed updates.
 
 - [ ] **Step 10: Commit only if cleanup produced changes**
@@ -955,9 +963,9 @@ Do not create an empty commit.
 - `@dtx/common` exposes `SimfileModel`, `SimfileDtxFile`, and `SimfileAssetFile` for application use; D1 row/aggregate types are server-only.
 - `ChartDetail` accepts `Partial<SimfileModel>`, has no D1 import, and retains its current `dayjs` publish-date fallback.
 - Web GraphQL code adapts generated results directly into camelCase `SimfileModel`; `LegacySimfile` and the chart-page cast are gone.
-- Desktop Rust emits camelCase current-model JSON. The general update mapper is gone, but a narrow native omission still prevents `googleDriveFileId` from entering `UpdateSimfileInput`.
+- Desktop Rust emits camelCase current-model JSON. The general update mapper is gone, while `update_simfile_record_impl` still removes `googleDriveFileId` inline before `UpdateSimfileInput`.
 - Desktop stores/services/components — including auto-linking, `App.svelte`, `CommandPalette`, and workspace fixtures — use `SimfileModel`.
-- Desktop simfile/linkage caches use only the three v2 keys; both desktop-E2E linkage seeds use `dtx_linkage_cache_v2` with camelCase current-model data.
+- Desktop simfile/linkage caches use only the three v2 keys; both desktop-E2E linkage seeds use `dtx_linkage_cache_v2` with camelCase current-model data and no new common-package dependency.
 - `SimfileWithDtx` is deleted only after consumers migrate; no renderer imports persistence types from `@dtx/common/server`.
 - Score-link persistence remains a small string-id map with explicit conversion at that boundary.
 - `PreviewSimfile` remains a purpose-specific web projection.

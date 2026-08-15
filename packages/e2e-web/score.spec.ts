@@ -103,15 +103,18 @@ const ROUND_TRIP_PAYLOAD = {
 			chartId: '', // filled at runtime from the dtx_files query
 			playCount: 12,
 			clearCount: 8,
+			fullCombo: true,
+			maxCombo: 432,
+			bestAchievementRate: 98.34,
+			bestRankLabel: 'SS',
+			lastPlayedAt: '2025-06-01T10:00:00Z',
 			scores: [
 				{
 					isBest: true,
 					score: 983400,
-					achievementRate: 98.34,
-					rankLabel: 'SS',
-					fullCombo: false,
-					cleared: true,
-					maxCombo: 432,
+					achievementRate: null,
+					rankLabel: null,
+					cleared: null,
 					perfect: 210,
 					great: 180,
 					good: 30,
@@ -125,9 +128,7 @@ const ROUND_TRIP_PAYLOAD = {
 					score: 921000,
 					achievementRate: 92.1,
 					rankLabel: 'S',
-					fullCombo: false,
 					cleared: true,
-					maxCombo: 401,
 					perfect: 190,
 					great: 160,
 					good: 35,
@@ -141,9 +142,7 @@ const ROUND_TRIP_PAYLOAD = {
 					score: 855000,
 					achievementRate: 85.5,
 					rankLabel: 'S',
-					fullCombo: false,
 					cleared: false,
-					maxCombo: 350,
 					perfect: 160,
 					great: 140,
 					good: 40,
@@ -164,15 +163,18 @@ const scorePagePayload = (chartId: string): UploadScoresInput => ({
 			chartId,
 			playCount: 5,
 			clearCount: 3,
+			fullCombo: true,
+			maxCombo: 500,
+			bestAchievementRate: 98.77,
+			bestRankLabel: 'SS',
+			lastPlayedAt: '2025-06-01T10:00:00Z',
 			scores: [
 				{
 					isBest: true,
 					score: 987650,
-					achievementRate: 98.77,
-					rankLabel: 'SS',
-					fullCombo: true,
-					cleared: true,
-					maxCombo: 500,
+					achievementRate: null,
+					rankLabel: null,
+					cleared: null,
 					perfect: 250,
 					great: 200,
 					good: 30,
@@ -186,9 +188,7 @@ const scorePagePayload = (chartId: string): UploadScoresInput => ({
 					score: 920000,
 					achievementRate: 92.0,
 					rankLabel: 'S',
-					fullCombo: false,
 					cleared: true,
-					maxCombo: 400,
 					perfect: 190,
 					great: 160,
 					good: 35,
@@ -280,18 +280,20 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 							label
 							level
 							myChartScore {
-								id
 								playCount
 								clearCount
+								fullCombo
+								maxCombo
+								bestAchievementRate
+								bestRankLabel
+								lastPlayedAt
 								scores {
 									id
 									isBest
 									score
 									achievementRate
 									rankLabel
-									fullCombo
 									cleared
-									maxCombo
 									perfect
 									great
 									good
@@ -316,18 +318,20 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 						label: string;
 						level: number;
 						myChartScore: {
-							id: string;
 							playCount: number;
 							clearCount: number;
+							fullCombo: boolean;
+							maxCombo: number;
+							bestAchievementRate: number | null;
+							bestRankLabel: string | null;
+							lastPlayedAt: string | null;
 							scores: {
 								id: string;
 								isBest: boolean;
 								score: number | null;
 								achievementRate: number | null;
 								rankLabel: string | null;
-								fullCombo: boolean;
-								cleared: boolean;
-								maxCombo: number | null;
+								cleared: boolean | null;
 								perfect: number | null;
 								great: number | null;
 								good: number | null;
@@ -353,16 +357,20 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 		const chartScore = dtxFile!.myChartScore!;
 		expect(chartScore.playCount).toBe(12);
 		expect(chartScore.clearCount).toBe(8);
+		expect(chartScore.fullCombo).toBe(true);
+		expect(chartScore.maxCombo).toBe(432);
+		expect(chartScore.bestAchievementRate).toBeCloseTo(98.34, 2);
+		expect(chartScore.bestRankLabel).toBe('SS');
+		expect(chartScore.lastPlayedAt).toBe('2025-06-01T10:00:00Z');
 		expect(chartScore.scores).toHaveLength(3);
 
 		// Verify the best score.
 		const bestScore = chartScore.scores.find((s) => s.isBest);
 		expect(bestScore).toBeDefined();
 		expect(bestScore!.score).toBe(983400);
-		expect(bestScore!.achievementRate).toBeCloseTo(98.34, 2);
-		expect(bestScore!.rankLabel).toBe('SS');
-		expect(bestScore!.fullCombo).toBe(false);
-		expect(bestScore!.cleared).toBe(true);
+		expect(bestScore!.achievementRate).toBeNull();
+		expect(bestScore!.rankLabel).toBeNull();
+		expect(bestScore!.cleared).toBeNull();
 		expect(bestScore!.displayOrder).toBeNull();
 
 		// Verify the recent scores are ordered by displayOrder.

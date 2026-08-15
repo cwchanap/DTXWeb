@@ -46,11 +46,31 @@
 						{formatLevel(chart.level)}
 					</span>
 					{#if chart.chartScore}
-						<span class="text-xs text-slate-400">
-							{$_('score.plays')}
-							{chart.chartScore.playCount} · {$_('score.clears')}
-							{chart.chartScore.clearCount}
-						</span>
+						<div class="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+							<span>
+								{$_('score.plays')}
+								{chart.chartScore.playCount} · {$_('score.clears')}
+								{chart.chartScore.clearCount}
+							</span>
+							<span class="text-cyan-300">
+								{formatRate(chart.chartScore.bestAchievementRate)}
+							</span>
+							{#if chart.chartScore.bestRankLabel}
+								<span
+									class="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-300"
+								>
+									{chart.chartScore.bestRankLabel}
+								</span>
+							{/if}
+							<span>{$_('score.max_combo')} {chart.chartScore.maxCombo}</span>
+							{#if chart.chartScore.fullCombo}
+								<span
+									class="rounded bg-green-500/20 px-2 py-0.5 text-xs font-bold text-green-300"
+								>
+									{$_('score.full_combo')}
+								</span>
+							{/if}
+						</div>
 					{/if}
 				</div>
 
@@ -59,26 +79,6 @@
 					<p class="mb-1 text-xs font-medium text-slate-400">{$_('score.chart_bests')}</p>
 					<div class="flex flex-wrap items-center gap-3 text-sm">
 						<span class="font-semibold text-slate-100">{formatScore(best.score)}</span>
-						<span class="text-cyan-300">{formatRate(best.achievementRate)}</span>
-						{#if best.rankLabel}
-							<span
-								class="rounded bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-300"
-							>
-								{best.rankLabel}
-							</span>
-						{/if}
-						{#if best.fullCombo}
-							<span
-								class="rounded bg-green-500/20 px-2 py-0.5 text-xs font-bold text-green-300"
-							>
-								{$_('score.full_combo')}
-							</span>
-						{/if}
-						{#if best.maxCombo != null}
-							<span class="text-slate-400"
-								>{$_('score.max_combo')} {best.maxCombo}</span
-							>
-						{/if}
 					</div>
 					{#if best.perfect != null || best.great != null || best.good != null || best.poor != null || best.miss != null}
 						<div class="mt-1 flex flex-wrap gap-2 text-xs text-slate-400">
@@ -110,10 +110,16 @@
 										>{formatDate(recent.performedAt)}</span
 									>
 									<span
-										class:text-green-300={recent.cleared}
-										class:text-red-300={!recent.cleared}
+										class:text-green-300={recent.cleared === true}
+										class:text-red-300={recent.cleared === false}
 									>
-										{recent.cleared ? $_('score.cleared') : $_('score.failed')}
+										{#if recent.cleared === true}
+											{$_('score.cleared')}
+										{:else if recent.cleared === false}
+											{$_('score.failed')}
+										{:else}
+											—
+										{/if}
 									</span>
 									{#if recent.rankLabel}
 										<span class="text-amber-300">{recent.rankLabel}</span>

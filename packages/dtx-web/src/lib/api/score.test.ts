@@ -41,22 +41,25 @@ describe('myScoredSimfiles', () => {
 								myChartScore: {
 									playCount: 10,
 									clearCount: 4,
+									fullCombo: true,
+									maxCombo: 903,
+									bestAchievementRate: 96.25,
+									bestRankLabel: 'SS',
+									lastPlayedAt: '2026-08-14T13:00:00Z',
 									scores: [
 										{
 											id: '1',
 											isBest: true,
 											score: 912380,
-											achievementRate: 91.3,
-											rankLabel: 'S',
-											fullCombo: false,
-											cleared: true,
-											maxCombo: 903,
+											achievementRate: null,
+											rankLabel: null,
+											cleared: null,
 											perfect: 1300,
 											great: 120,
 											good: 20,
 											poor: 5,
 											miss: 5,
-											performedAt: 't',
+											performedAt: null,
 											displayOrder: null
 										},
 										{
@@ -65,9 +68,7 @@ describe('myScoredSimfiles', () => {
 											score: null,
 											achievementRate: 82.4,
 											rankLabel: 'A',
-											fullCombo: false,
 											cleared: true,
-											maxCombo: null,
 											perfect: null,
 											great: null,
 											good: null,
@@ -101,6 +102,15 @@ describe('myScoredSimfiles', () => {
 		expect(withScores.chartScore?.best?.id).toBe(1);
 		expect(withScores.chartScore?.best?.score).toBe(912380);
 		expect(withScores.chartScore?.best?.isBest).toBe(true);
+		expect(withScores.chartScore?.best?.achievementRate).toBeNull();
+		expect(withScores.chartScore?.best?.rankLabel).toBeNull();
+		expect(withScores.chartScore?.best?.cleared).toBeNull();
+		expect(withScores.chartScore?.best?.performedAt).toBeNull();
+		expect(withScores.chartScore?.fullCombo).toBe(true);
+		expect(withScores.chartScore?.maxCombo).toBe(903);
+		expect(withScores.chartScore?.bestAchievementRate).toBe(96.25);
+		expect(withScores.chartScore?.bestRankLabel).toBe('SS');
+		expect(withScores.chartScore?.lastPlayedAt).toBe('2026-08-14T13:00:00Z');
 		expect(withScores.chartScore?.recent).toHaveLength(1);
 		expect(withScores.chartScore?.recent[0].displayOrder).toBe(1);
 
@@ -170,6 +180,11 @@ describe('myScoredSimfiles', () => {
 								myChartScore: {
 									playCount: 1,
 									clearCount: 1,
+									fullCombo: false,
+									maxCombo: 0,
+									bestAchievementRate: null,
+									bestRankLabel: null,
+									lastPlayedAt: null,
 									scores: [
 										{
 											id: 'bad',
@@ -177,9 +192,7 @@ describe('myScoredSimfiles', () => {
 											score: 900,
 											achievementRate: 90,
 											rankLabel: 'A',
-											fullCombo: false,
-											cleared: true,
-											maxCombo: null,
+											cleared: null,
 											perfect: null,
 											great: null,
 											good: null,

@@ -2,22 +2,22 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the Supabase/REST-era simfile compatibility shapes with one camelCase `SimfileModel` across shared UI, web, and the desktop renderer while keeping D1 snake_case types server-only.
+**Goal:** Replace Supabase/REST-era simfile compatibility shapes with one camelCase `SimfileModel` across shared UI, web, and the desktop renderer while keeping D1 snake_case types server-only.
 
-**Architecture:** `@dtx/common` owns the neutral application model. Web generated GraphQL responses and desktop Rust GraphQL responses each normalize once at their transport boundary. Shared/web/desktop application code consumes the neutral model directly. Old localStorage simfile shapes are invalidated by versioned cache keys rather than migrated.
+**Architecture:** `@dtx/common` owns the neutral application model. Web generated GraphQL results and desktop Rust GraphQL results each normalize once at their real transport boundary. Shared/web/desktop application code consumes that model directly. Existing renderer caches are invalidated by versioned keys instead of migrated.
 
-**Tech Stack:** TypeScript, Svelte 5, Vitest, GraphQL Codegen types, Rust/Tauri, serde_json, Bun workspaces.
+**Tech Stack:** TypeScript, Svelte 5, Vitest, generated GraphQL types, Rust/Tauri, `serde_json`, Bun workspaces.
 
 ## Global Constraints
 
 - Keep D1/Drizzle row types and snake_case fields in server persistence code; do not move them into the application model.
-- Use exactly one shared application model: `SimfileModel` plus its nested `SimfileDtxFile` / `SimfileAssetFile` value types.
-- Do not add a DTO/mapper framework, runtime schema library, repository layer, cache migration framework, or compatibility aliases.
+- Use one shared application model: `SimfileModel` plus `SimfileDtxFile` / `SimfileAssetFile` nested value types.
+- Do not add a generic DTO/mapper layer, runtime schema library, repository abstraction, cache migration framework, or compatibility aliases.
 - Do not change the D1 schema or GraphQL schema.
-- Do not add production `ts-rs` or generated Tauri contracts; that is HPA-615.
-- Do not extract `api.rs` / `SongDetails`; that is HPA-616.
-- Keep `Database` in `packages/common/src/lib/types/supabase.types.ts`, its main-barrel export, and root `gen-types`: current web auth code still consumes `SupabaseClient<Database>`.
-- Version caches by switching to `simfiles_cache_v2`, `simfiles_cache_timestamp_v2`, and `dtx_linkage_cache_v2`. Never read or adapt the old keys.
+- Do not add production Rust→TypeScript generation; that is HPA-615.
+- Do not extract `api.rs` or `SongDetails.svelte`; that is HPA-616.
+- Keep `Database` in `packages/common/src/lib/types/supabase.types.ts`, its existing export, and root `gen-types`: current web auth still consumes `SupabaseClient<Database>` / `createServerClient<Database>`.
+- Invalidate renderer caches by switching to `simfiles_cache_v2`, `simfiles_cache_timestamp_v2`, and `dtx_linkage_cache_v2`. Never read or adapt the old keys.
 - This is a breaking internal migration. Do not retain `LegacySimfile`, `SimfileWithDtx`, snake_case renderer properties, or deprecated aliases.
 
 ---
@@ -27,14 +27,15 @@
 **Files:**
 - Create: `packages/common/src/lib/types/simfile.ts`
 - Modify: `packages/common/src/lib/index.ts`
+- Modify: `packages/common/src/lib/server.ts`
 - Modify: `packages/common/src/lib/types/d1.types.ts`
 - Modify: `packages/common/src/lib/types/d1.types.test.ts`
 - Modify: `packages/common/src/lib/components/ChartDetail.svelte`
 - Modify: `packages/common/src/lib/components/ChartDetail.test.ts`
 
-- [ ] **Step 1: Make the `ChartDetail` test describe the new contract first**
+- [ ] **Step 1: Make `ChartDetail` tests describe the new contract first**
 
-Change `mockSimfile` in `ChartDetail.test.ts` to camelCase and remove the D1-only `simfile_id` field:
+Change `mockSimfile` in `ChartDetail.test.ts` to camelCase and remove D1-only `simfile_id`:
 
 ```ts
 const mockSimfile = {
@@ -54,22 +55,20 @@ const mockSimfile = {
 };
 ```
 
-Rename the DTX-list assertions from `dtx_files` to `dtxFiles`.
+Rename the DTX-list fixtures/assertions from `dtx_files` to `dtxFiles`.
 
 - [ ] **Step 2: Run the focused test and confirm the old component contract fails**
-
-Run:
 
 ```bash
 cd packages/common
 bun vitest run src/lib/components/ChartDetail.test.ts
 ```
 
-Expected: FAIL because `ChartDetail` still reads `display_id`, `is_published`, `download_url`, `publish_date`, `video_preview_url`, and `dtx_files`.
+Expected: FAIL because `ChartDetail` still reads snake_case simfile fields.
 
-- [ ] **Step 3: Add the shared current model**
+- [ ] **Step 3: Add the current shared model**
 
-Create `packages/common/src/lib/types/simfile.ts` with:
+Create `packages/common/src/lib/types/simfile.ts`:
 
 ```ts
 export interface SimfileDtxFile {
@@ -105,31 +104,29 @@ export interface SimfileModel {
 }
 ```
 
-`id` on nested DTX files is optional because list projections do not require it. Do not add `simfileId`/`simfile_id` to this UI model.
+Keep `SimfileDtxFile.id` optional because not every GraphQL list projection requests a chart id. Do not add `simfileId` / `simfile_id` to this application model.
 
-- [ ] **Step 4: Make the browser-facing common barrel expose the application model, not D1 rows**
+- [ ] **Step 4: Make the browser-facing common barrel expose the application model instead of D1 rows**
 
-In `packages/common/src/lib/index.ts`:
+Add:
 
 ```ts
 export type { SimfileModel, SimfileDtxFile, SimfileAssetFile } from './types/simfile';
 ```
 
-Remove the main-barrel exports of `SimfileRow`, `SimfileInsert`, `SimfileUpdate`, `DtxFileRow`, `DtxFileInsert`, `UserProfileRow`, `UserProfileInsert`, `UserProfileUpdate`, `SimfileWithDtxFiles`, `SimfileWithDtx`, and `toSimfileWithDtx`.
+Remove the main-barrel exports of D1 simfile/profile row types and the two D1 simfile aggregates. Those remain available from `@dtx/common/server` while the API still owns them.
 
-Leave `Database` exported because web auth still uses it. Leave all persistence exports in `packages/common/src/lib/server.ts` unchanged except for removal of `SimfileWithDtx` after Step 5.
+Leave `Database` exported because web auth still uses it.
 
-- [ ] **Step 5: Delete the desktop-compatible D1 shape**
+- [ ] **Step 5: Delete only the obsolete desktop-compatible D1 shape**
 
-Delete `SimfileWithDtx` from `packages/common/src/lib/types/d1.types.ts` and remove only tests/imports that exist solely to validate that compatibility shape.
+Delete `SimfileWithDtx` from `d1.types.ts` and remove tests that exist only for that shape.
 
-Keep `SimfileWithDtxFiles` and `toSimfileWithDtx` server-side because `dtx-api`/D1 still use them. Do not rename or relocate those server types in HPA-614.
-
-Update `packages/common/src/lib/server.ts` so it no longer exports the deleted `SimfileWithDtx` symbol but still exports current D1/server types.
+Keep `SimfileWithDtxFiles` and `toSimfileWithDtx` server-side because `dtx-api` still consumes them. Update `packages/common/src/lib/server.ts` only to stop exporting the deleted `SimfileWithDtx` symbol.
 
 - [ ] **Step 6: Migrate `ChartDetail` mechanically to camelCase**
 
-Change the prop type to:
+Use:
 
 ```ts
 import type { SimfileModel } from '../types/simfile';
@@ -140,7 +137,7 @@ interface Props {
 }
 ```
 
-Update only the field reads/bind defaults:
+Then replace only the compatibility field reads:
 
 ```ts
 displayId = $bindable(simfile?.displayId ?? 0);
@@ -151,11 +148,9 @@ videoPreviewUrl = $bindable(simfile?.videoPreviewUrl ?? '');
 let dtxFiles = $derived(simfile?.dtxFiles ?? []);
 ```
 
-Do not change the component layout or its existing camelCase save event payload.
+Do not redesign the component or change its existing camelCase save-event contract.
 
-- [ ] **Step 7: Run common verification**
-
-Run:
+- [ ] **Step 7: Verify common**
 
 ```bash
 cd packages/common
@@ -165,7 +160,7 @@ bun run check
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the shared-model slice**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add packages/common/src/lib/types/simfile.ts \
@@ -186,8 +181,8 @@ git commit -m "refactor(common): define current simfile model"
 - Modify: `packages/dtx-web/src/lib/api/chart.ts`
 - Modify: `packages/dtx-web/src/lib/api/chart.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartList.helpers.ts`
-- Modify: `packages/dtx-web/src/lib/components/ChartList.helpers.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartList.svelte`
+- Modify: `packages/dtx-web/src/lib/components/ChartList.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartListItem.svelte`
 - Modify: `packages/dtx-web/src/lib/components/ChartListItem.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartListTableItem.svelte`
@@ -196,9 +191,9 @@ git commit -m "refactor(common): define current simfile model"
 - Modify: `packages/dtx-web/src/routes/(app)/app/chart/[id]/+page.svelte`
 - Modify: `packages/dtx-web/src/routes/(app)/app/chart/[id]/chart-detail-page.test.ts`
 
-- [ ] **Step 1: Change the API adapter tests to the new public shape**
+- [ ] **Step 1: Change API adapter tests to the new public shape**
 
-In `chart.test.ts`, replace snake_case output assertions with camelCase assertions. Cover one complete adapter result, including nullable fields and nested DTX files:
+In `chart.test.ts`, replace snake_case result assertions with camelCase assertions. Cover nullable metadata and nested levels, for example:
 
 ```ts
 expect(result).toMatchObject({
@@ -211,7 +206,7 @@ expect(result).toMatchObject({
 });
 ```
 
-Update list tests to assert `hasUploadedFiles`, and Drive-binding tests to expect:
+Update list tests to assert `hasUploadedFiles` and Drive-binding tests to expect:
 
 ```ts
 {
@@ -221,28 +216,35 @@ Update list tests to assert `hasUploadedFiles`, and Drive-binding tests to expec
 }
 ```
 
-Keep the existing invalid numeric-id test.
+Keep the existing invalid numeric-id coverage.
 
-- [ ] **Step 2: Change chart-list helper tests to camelCase before implementation**
+- [ ] **Step 2: Change chart-list fixtures/helper expectations before implementation**
 
-Update helper fixtures and expectations so navigation/selectability uses:
+`ChartList.test.ts` already owns both component and `ChartList.helpers` coverage. Migrate `mockListedChart` and helper assertions to:
 
 ```ts
-{ id: 1, isPublished: true, hasUploadedFiles: true }
+{
+	id: 1,
+	isPublished: true,
+	hasUploadedFiles: true,
+	downloadUrl: 'https://example.com/download1',
+	displayId: 1,
+	dtxFiles: [{ level: 3, label: 'BSC' }]
+}
 ```
 
 Run:
 
 ```bash
 cd packages/dtx-web
-bun vitest run src/lib/api/chart.test.ts src/lib/components/ChartList.helpers.test.ts
+bun vitest run src/lib/api/chart.test.ts src/lib/components/ChartList.test.ts
 ```
 
-Expected: FAIL while the web adapter/helpers still emit/read snake_case.
+Expected: FAIL while the adapter/list code still emits or reads snake_case.
 
-- [ ] **Step 3: Replace `LegacySimfile` with a typed `SimfileModel` adapter**
+- [ ] **Step 3: Replace `LegacySimfile` with one typed GraphQL→model adapter**
 
-In `chart.ts`:
+In `chart.ts` import:
 
 ```ts
 import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
@@ -250,7 +252,7 @@ import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
 
 Delete `LegacySimfile`. Rename/refocus `adaptSimfile` to `toSimfileModel` and return `SimfileModel`.
 
-The adapter must use the current field names and stable null defaults:
+Keep the existing numeric-id parsing behavior and map current GraphQL names directly:
 
 ```ts
 const toSimfileModel = (simfile: AdaptSimfileInput): SimfileModel => ({
@@ -274,19 +276,17 @@ const toSimfileModel = (simfile: AdaptSimfileInput): SimfileModel => ({
 		level: Number(file.level)
 	})),
 	...(simfile.files == null ? {} : { files: simfile.files }),
-	...(simfile.hasUploadedFiles == null
-		? {}
-		: { hasUploadedFiles: simfile.hasUploadedFiles })
+	...(simfile.hasUploadedFiles == null ? {} : { hasUploadedFiles: simfile.hasUploadedFiles })
 });
 ```
 
-Use the existing numeric-id helper/error behavior rather than adding validation machinery.
+Do not add a validation framework; this is the same explicit adapter the file already has, minus the legacy renaming.
 
-Make `listSimfiles`, `getSimfile`, and `updateSimfile` return this model. Make `updateSimfileDriveFile` return camelCase `{ id, googleDriveFileId, downloadUrl }`.
+Make `listSimfiles`, `getSimfile`, and `updateSimfile` return `SimfileModel`. Make `updateSimfileDriveFile` return camelCase `{ id, googleDriveFileId, downloadUrl }`.
 
-- [ ] **Step 4: Migrate chart-list helpers and components**
+- [ ] **Step 4: Migrate chart-list helpers/components**
 
-In `ChartList.helpers.ts` rename the narrow navigation fields:
+Change the helper projection to:
 
 ```ts
 export type ChartNavigationItem = {
@@ -296,57 +296,48 @@ export type ChartNavigationItem = {
 };
 ```
 
-Update `canBulkSelect`, `isPreviewable`, and `chartTitleHref` to use `hasUploadedFiles` / `isPublished`.
+Update `canBulkSelect`, `isPreviewable`, and `chartTitleHref` accordingly.
 
-In `ChartList.svelte`, use `SimfileModel[]` directly and change all list state/filter/toggle reads to `isPublished`, `hasUploadedFiles`, `displayId`, and `dtxFiles`.
+In `ChartList.svelte`, `ChartListItem.svelte`, and `ChartListTableItem.svelte`, use `SimfileModel` and replace only current-model properties such as:
 
-In `ChartListItem.svelte` and `ChartListTableItem.svelte`, replace `SimfileWithDtx` with `SimfileModel` and migrate their field reads. In particular:
+- `is_published` → `isPublished`
+- `has_uploaded_files` → `hasUploadedFiles`
+- `display_id` → `displayId`
+- `download_url` → `downloadUrl`
+- `dtx_files` → `dtxFiles`
 
-```svelte
-<DownloadDropdown
-	simfileId={item.id}
-	externalUrl={item.downloadUrl ?? null}
-	hasUploadedFiles={item.hasUploadedFiles}
-/>
-```
+Do not alter layout or behavior.
 
-Do not change UI behavior or styling.
+- [ ] **Step 5: Remove the last web test dependency on D1 row types**
 
-- [ ] **Step 5: Remove the last web D1 test dependency**
+In `packages/dtx-web/src/lib/utils.test.ts`, replace `DtxFileRow[]` fixtures with `SimfileDtxFile[]` (or the function's existing structural `{ level }[]` type) and remove `simfile_id` from fixtures.
 
-In `packages/dtx-web/src/lib/utils.test.ts`, replace `DtxFileRow[]` fixtures with `SimfileDtxFile[]` (or the function's existing minimal `{ level }[]` structural type) and delete `simfile_id` from those fixtures.
+- [ ] **Step 6: Migrate the chart-detail page and delete its cast**
 
-This is necessary so the main `@dtx/common` barrel can stop exposing D1 row types.
-
-- [ ] **Step 6: Migrate the web chart-detail page without a cast**
-
-In `+page.svelte`:
+Use:
 
 ```ts
 import type { SimfileModel } from '@dtx/common';
-
 let simfile: SimfileModel | null = $state(null);
 ```
 
-Delete the `LegacySimfile` import and the cast:
+Delete the `LegacySimfile` import and render:
 
 ```svelte
 <ChartDetail simfile={simfile} ... />
 ```
 
-Change page-level reads from `is_published` and other snake_case names to the current camelCase fields. Keep `files` handling unchanged apart from the new model type.
+without `as import('@dtx/common').SimfileWithDtxFiles`.
 
-Update `chart-detail-page.test.ts` fixtures to camelCase and preserve the current load/save/error behavior assertions.
+Update page-level field reads and `chart-detail-page.test.ts` fixtures to camelCase while preserving existing load/save/error behavior.
 
-- [ ] **Step 7: Run web tests and type check**
-
-Run:
+- [ ] **Step 7: Verify web**
 
 ```bash
 cd packages/dtx-web
 bun vitest run \
   src/lib/api/chart.test.ts \
-  src/lib/components/ChartList.helpers.test.ts \
+  src/lib/components/ChartList.test.ts \
   src/lib/components/ChartListItem.test.ts \
   src/lib/components/ChartListTableItem.test.ts \
   src/lib/utils.test.ts \
@@ -356,14 +347,14 @@ bun run check
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the web migration**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add packages/dtx-web/src/lib/api/chart.ts \
   packages/dtx-web/src/lib/api/chart.test.ts \
   packages/dtx-web/src/lib/components/ChartList.helpers.ts \
-  packages/dtx-web/src/lib/components/ChartList.helpers.test.ts \
   packages/dtx-web/src/lib/components/ChartList.svelte \
+  packages/dtx-web/src/lib/components/ChartList.test.ts \
   packages/dtx-web/src/lib/components/ChartListItem.svelte \
   packages/dtx-web/src/lib/components/ChartListItem.test.ts \
   packages/dtx-web/src/lib/components/ChartListTableItem.svelte \
@@ -382,9 +373,9 @@ git commit -m "refactor(web): consume current simfile model"
 - Modify: `packages/dtx-desktop/src-tauri/src/api.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/tests/api_tests.rs`
 
-- [ ] **Step 1: Rewrite native API assertions to require camelCase renderer output**
+- [ ] **Step 1: Rewrite native API assertions to require camelCase output**
 
-Update the existing `renderer_simfile_from_graphql`/fetch/create/update/search tests in `api_tests.rs` so expected JSON uses:
+Update existing fetch/create/update/search API tests so the renderer-facing JSON is the same current model shape, for example:
 
 ```json
 {
@@ -403,9 +394,9 @@ Update the existing `renderer_simfile_from_graphql`/fetch/create/update/search t
 }
 ```
 
-Update cloud-search expectations from `is_published` to `isPublished`, and make search ids numeric so the renderer does not retain another incompatible id representation.
+Update cloud-search expectations from `is_published` to `isPublished` and make search ids numeric.
 
-Add/update the update-command test so the renderer input is camelCase:
+Add/update the update-command test so renderer input is already current/GraphQL-shaped:
 
 ```json
 {
@@ -417,63 +408,29 @@ Add/update the update-command test so the renderer input is camelCase:
 }
 ```
 
-and the GraphQL mock receives those names unchanged.
+and assert the GraphQL request receives those names unchanged.
 
-- [ ] **Step 2: Run the native API test module and confirm failure**
-
-Run:
+- [ ] **Step 2: Confirm the old native contract fails**
 
 ```bash
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml api_tests
 ```
 
-Expected: FAIL because native mapping still emits snake_case and update input still passes through `update_input_from_renderer`.
+Expected: FAIL because native mapping still emits snake_case and update input still uses `update_input_from_renderer`.
 
 - [ ] **Step 3: Replace the renderer compatibility mapper**
 
-Rename:
+Rename `renderer_simfile_from_graphql` to `simfile_model_from_graphql`.
 
-```rust
-renderer_simfile_from_graphql
-```
+Keep `number_id` validation, but emit current JSON keys (`displayId`, `userId`, `googleDriveFileId`, `isPublished`, `downloadUrl`, `previewUrl`, `videoPreviewUrl`, `publishDate`, `createdAt`, `updatedAt`, `dtxFiles`).
 
-to:
+Nested `dtxFiles` contain `id` when supplied plus `label` / `level`. Delete the positional id fallback that existed only for old cached renderer records.
 
-```rust
-simfile_model_from_graphql
-```
+Use this mapper in `fetch_user_simfiles_impl`, `fetch_cloud_song_impl`, `update_simfile_record_impl`, and `create_simfile_record_impl`.
 
-Keep `number_id` validation, but emit current JSON keys:
+- [ ] **Step 4: Delete the renderer→GraphQL snake_case round trip**
 
-```rust
-mapped.insert("id".to_string(), json!(number_id(&simfile["id"])?));
-mapped.insert("displayId".to_string(), simfile["displayId"].clone());
-mapped.insert("userId".to_string(), simfile["userId"].clone());
-mapped.insert(
-    "googleDriveFileId".to_string(),
-    simfile["googleDriveFileId"].clone(),
-);
-mapped.insert("isPublished".to_string(), simfile["isPublished"].clone());
-mapped.insert("downloadUrl".to_string(), simfile["downloadUrl"].clone());
-mapped.insert("previewUrl".to_string(), simfile["previewUrl"].clone());
-mapped.insert(
-    "videoPreviewUrl".to_string(),
-    simfile["videoPreviewUrl"].clone(),
-);
-mapped.insert("publishDate".to_string(), simfile["publishDate"].clone());
-mapped.insert("createdAt".to_string(), simfile["createdAt"].clone());
-mapped.insert("updatedAt".to_string(), simfile["updatedAt"].clone());
-```
-
-Keep `title`, `artist`, and `bpm` unchanged. Emit the nested collection as `dtxFiles` with only `id` when present plus `label`/`level`. Delete the positional id fallback that existed only for old cached renderer records.
-
-Use `simfile_model_from_graphql` in `fetch_user_simfiles_impl`, `fetch_cloud_song_impl`, `update_simfile_record_impl`, and `create_simfile_record_impl`.
-
-- [ ] **Step 4: Delete the renderer-to-GraphQL snake_case round trip**
-
-Delete `update_input_from_renderer`.
-
-Change `update_simfile_record_impl` from:
+Delete `update_input_from_renderer` and change:
 
 ```rust
 "input": update_input_from_renderer(update_data),
@@ -485,38 +442,41 @@ to:
 "input": update_data,
 ```
 
-The renderer will send only current GraphQL input names. Do not introduce an allowlist/mapper here; the GraphQL input remains the validation boundary.
+The renderer now sends current GraphQL input names. Do not replace the deleted function with a new allowlist/mapper in this ticket.
 
-- [ ] **Step 5: Make cloud search use the current projection names**
+- [ ] **Step 5: Make cloud search use the current projection names and numeric ids**
 
-In `search_cloud_songs_impl`, return numeric `id` and camelCase `isPublished`:
+Because `number_id` is fallible, keep the collection fallible rather than hiding an invalid id:
 
 ```rust
-json!({
-    "id": number_id(&song["id"]),
-    "title": song["title"],
-    "artist": song["artist"],
-    "bpm": song["bpm"],
-    "isPublished": song["isPublished"],
-})
+let rows = songs
+    .iter()
+    .map(|song| -> Result<Value> {
+        Ok(json!({
+            "id": number_id(&song["id"] )?,
+            "title": song["title"],
+            "artist": song["artist"],
+            "bpm": song["bpm"],
+            "isPublished": song["isPublished"],
+        }))
+    })
+    .collect::<Result<Vec<_>>>()?;
 ```
 
-If the closure needs fallible id parsing, collect a `Result<Vec<Value>>` rather than falling back to a string or `0`.
+Keep the implementation idiomatic if the exact surrounding iterator shape differs; the invariant is numeric validated ids and camelCase output, not this exact formatting.
 
-- [ ] **Step 6: Run Rust formatting and tests**
-
-Run:
+- [ ] **Step 6: Verify Rust formatting and API tests**
 
 ```bash
 cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml -- --check
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml api_tests
 ```
 
-If `cargo fmt --check` reports formatting changes, run `cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml`, then rerun both commands.
+If formatting fails, run `cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml` and rerun both commands.
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit the native boundary change**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add packages/dtx-desktop/src-tauri/src/api.rs \
@@ -546,20 +506,20 @@ git commit -m "refactor(desktop): emit current simfile model from native API"
 - Modify: `packages/dtx-desktop/src/renderer/src/components/SimFileList.test.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/CloudSongAutocomplete.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/CloudSongAutocomplete.test.ts`
-- Modify as required by the same `CloudSong` type rename: `packages/dtx-desktop/src/renderer/src/components/ScoreSongCard.svelte`, `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`, and their existing tests.
+- Modify as required by the shared `CloudSong` id/name change: `packages/dtx-desktop/src/renderer/src/components/ScoreSongCard.svelte`, `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`, `packages/dtx-desktop/src/renderer/src/components/Scores.test.ts`
 
-- [ ] **Step 1: Make cache tests prove old shapes are not read**
+- [ ] **Step 1: Make cache tests prove stale shapes are ignored**
 
-In `simFileService.test.ts`, update fixtures to camelCase and assert the service only accesses:
+In `simFileService.test.ts`, migrate fixtures to camelCase and assert only these keys are read/written:
 
 ```ts
 'simfiles_cache_v2'
 'simfiles_cache_timestamp_v2'
 ```
 
-Add a test where the mock returns old data only for `simfiles_cache` and confirm `fetchUserSimfiles` is still called. This proves the old cache is ignored, not adapted.
+Add a test where old data exists only under `simfiles_cache`; verify the service still calls `desktopHost.fetchUserSimfiles()`.
 
-In `linkageCacheService.test.ts`, update `sampleSimfile` to `SimfileModel`, expect writes/removals against `dtx_linkage_cache_v2`, and add the equivalent old-key-ignore test.
+In `linkageCacheService.test.ts`, migrate `sampleSimfile` to `SimfileModel`, expect `dtx_linkage_cache_v2`, and add the equivalent old-key-ignore assertion.
 
 Run:
 
@@ -572,7 +532,7 @@ bun vitest run \
 
 Expected: FAIL because the implementation still uses v1 keys and `SimfileWithDtx`.
 
-- [ ] **Step 2: Version the caches without migration code**
+- [ ] **Step 2: Version caches without migration machinery**
 
 In `simFileService.ts`:
 
@@ -583,55 +543,40 @@ const CACHE_KEY = 'simfiles_cache_v2';
 const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp_v2';
 ```
 
-Change `MainProcessSimFileResult`, `SimFileServiceResult`, `getCachedData`, and `setCachedData` from `SimfileWithDtx` to `SimfileModel`.
+Change service/cache result types from `SimfileWithDtx` to `SimfileModel`.
 
 In `linkageCacheService.ts`:
 
 ```ts
 import type { SimfileModel } from '@dtx/common';
-
 const LINKAGE_CACHE_KEY = 'dtx_linkage_cache_v2';
 ```
 
-Change `cloudSongData` and `saveLinkage` to `SimfileModel`. Do not read, delete, or transform `dtx_linkage_cache`; leaving an unreachable old localStorage entry is cheaper and safer than migration logic.
+Change `cloudSongData` / `saveLinkage` to `SimfileModel`. Do not read, delete, or transform `dtx_linkage_cache`; leaving an unreachable old entry is cheaper than adding migration behavior.
 
-- [ ] **Step 3: Migrate desktop stores to `SimfileModel`**
+- [ ] **Step 3: Migrate renderer stores to `SimfileModel`**
 
-In `simFileStore.ts`, replace every `SimfileWithDtx` annotation with `SimfileModel`.
+Replace `SimfileWithDtx` annotations in `simFileStore.ts` with `SimfileModel`.
 
-In `workspaceStore.ts`:
-
-```ts
-import type { SimfileModel } from '@dtx/common';
-```
-
-Use it for `TreeNode.linkedSimFile`, `selectedCloudSimFile`, `selectCloudSimFile`, and `linkSimFileToFolder`.
-
-Keep `GoogleDriveFields` camelCase and stop translating them back to snake_case:
+In `workspaceStore.ts`, use `SimfileModel` for linked/selected cloud simfiles and update Drive metadata directly in camelCase:
 
 ```ts
 const driveUpdates: Partial<SimfileModel> = {};
-if (fields.googleDriveFileId) {
-	driveUpdates.googleDriveFileId = fields.googleDriveFileId;
-}
-if (fields.downloadUrl) {
-	driveUpdates.downloadUrl = fields.downloadUrl;
-}
+if (fields.googleDriveFileId) driveUpdates.googleDriveFileId = fields.googleDriveFileId;
+if (fields.downloadUrl) driveUpdates.downloadUrl = fields.downloadUrl;
 ```
 
-Update both store test fixture families to camelCase.
+Update the existing store fixtures/tests mechanically.
 
-- [ ] **Step 4: Migrate the desktop score/link projections to the current naming**
+- [ ] **Step 4: Migrate score-page cloud projections without changing persisted link format**
 
-In `scoreTypes.ts`, import `SimfileModel` and make the cloud-search projection reuse the current model keys:
+In `scoreTypes.ts` reuse the current model names:
 
 ```ts
+import type { SimfileModel } from '@dtx/common';
+
 export type CloudSong = Pick<SimfileModel, 'id' | 'title' | 'artist' | 'isPublished'>;
-```
 
-Delete the old `CloudSongData` snake_case interface. Make the fetch envelope default to the full current model:
-
-```ts
 export interface FetchCloudSongResult<T = SimfileModel> {
 	success: boolean;
 	cloudSongData?: T;
@@ -639,40 +584,51 @@ export interface FetchCloudSongResult<T = SimfileModel> {
 }
 ```
 
-Update `CloudSongAutocomplete.svelte` to use the shared `CloudSong` type instead of redeclaring a second interface. Its exclusion check must compare `String(song.id)` with the existing string id list.
+Delete the old snake_case `CloudSongData` interface.
 
-Update `ScoreSongCard.svelte`, `Scores.svelte`, and their tests only where the `CloudSong.id` number / `isPublished` rename requires it. Do not refactor score matching in this ticket.
+`CloudSong.id` is now numeric, but `savedLinks` intentionally remains `Record<string, string>` because it is a small persisted score-link map, not a simfile DTO. Keep that boundary explicit in `Scores.svelte`:
 
-- [ ] **Step 5: Migrate read-only cloud components**
+```ts
+// Comparing a restored numeric model id to persisted string ids
+String(existing.id) === cloudId
 
-In `CloudSongDetail.svelte`:
+// Persisting a selected/restored current-model id
+savedLinks = { ...savedLinks, [songKey(songRow)]: String(song.id) };
+```
 
-- `SimfileWithDtx` -> `SimfileModel`
-- `dtx_files` -> `dtxFiles`
-- `publish_date` -> `publishDate`
-- `is_published` -> `isPublished`
+Also:
 
-In `SimFileList.svelte`:
+- construct placeholder/restored `CloudSong` ids with `Number(cloudId)` after the saved id has already been validated by a successful cloud fetch, or reuse the numeric `cloudSongData.id` when available;
+- pass `String(song.id)` to native calls only where that command still takes the persisted string id;
+- make `excludeIdsFor()` push `String(existing.id)`;
+- in `CloudSongAutocomplete.svelte`, compare exclusions with `String(song.id)`;
+- rename `is_published` → `isPublished` in score-page fixtures/results.
 
-- `publish_date` -> `publishDate`
-- `dtx_files` -> `dtxFiles`
-- `is_published` -> `isPublished`
+Do not introduce a second legacy `CloudSong` contract just to keep ids as strings.
 
-Update their tests mechanically. No markup/layout redesign.
+- [ ] **Step 5: Migrate read-only desktop cloud components**
+
+In `CloudSongDetail.svelte` and `SimFileList.svelte` use `SimfileModel` and mechanically rename:
+
+- `dtx_files` → `dtxFiles`
+- `publish_date` → `publishDate`
+- `is_published` → `isPublished`
+
+Update existing tests. No markup redesign.
 
 - [ ] **Step 6: Migrate `SongDetails` and delete renderer compatibility normalization**
 
-Replace the imports with:
+Use:
 
 ```ts
 import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
 ```
 
-Change create/update/fetch result types from `SimfileWithDtx` to `SimfileModel` / `Partial<SimfileModel>`.
+Change create/update/fetch result types to `SimfileModel` / `Partial<SimfileModel>`.
 
-Rename the small IPC guard to `isSimfileModel` and keep it minimal until HPA-615, e.g. validate only the object/id/title shape needed to reject obviously malformed IPC data. Do not add Zod or a schema abstraction.
+Delete `normalizeSimfile`; native now returns the current model. Keep only a minimal IPC object/id guard until HPA-615 generates contracts—do not add Zod or a schema layer.
 
-Delete `normalizeSimfile`. Native now returns the current model, so linking becomes:
+Link current native data directly:
 
 ```ts
 if (result.success && result.cloudSongData && isSimfileModel(result.cloudSongData)) {
@@ -683,18 +639,11 @@ if (result.success && result.cloudSongData && isSimfileModel(result.cloudSongDat
 }
 ```
 
-Build local fallback levels as `SimfileDtxFile[]`:
+Build local fallback DTX files as `SimfileDtxFile[]` without `simfile_id`.
 
-```ts
-const fallbackDtxFiles: SimfileDtxFile[] = parsedLocalData.levels?.map((level) => ({
-	label: level.label || 'Unknown',
-	level: Number(level.level || 0)
-})) ?? [];
-```
+Build the `ChartDetail` fallback as `Partial<SimfileModel>` using `publishDate`, `displayId`, `isPublished`, `downloadUrl`, `videoPreviewUrl`, and `dtxFiles`.
 
-Build `simfileData` as `Partial<SimfileModel>` with `publishDate`, `displayId`, `isPublished`, `downloadUrl`, `videoPreviewUrl`, and `dtxFiles`.
-
-Change the update payload sent to `desktopHost.updateSimfileRecord` to GraphQL/current names:
+Send update payloads to Rust with current GraphQL names:
 
 ```ts
 const updateData: Record<string, unknown> = {
@@ -703,18 +652,14 @@ const updateData: Record<string, unknown> = {
 	isPublished: Boolean(event.detail.isPublished),
 	videoPreviewUrl: String(event.detail.videoPreviewUrl)
 };
-if (!isDriveBound) {
-	updateData.downloadUrl = String(event.detail.downloadUrl);
-}
+if (!isDriveBound) updateData.downloadUrl = String(event.detail.downloadUrl);
 ```
 
-Change all linked-record reads such as `google_drive_file_id` / `download_url` to `googleDriveFileId` / `downloadUrl`.
+Change linked-record reads such as `google_drive_file_id` / `download_url` to `googleDriveFileId` / `downloadUrl`.
 
-Update `SongDetails.test.ts` fixtures/IPC assertions accordingly. Preserve all existing stale-selection, concurrent action, linking, save, and Drive upload behavior tests.
+Preserve existing stale-selection, concurrency, linking, save, and Drive-upload behavior tests.
 
-- [ ] **Step 7: Run desktop renderer tests and type check**
-
-Run:
+- [ ] **Step 7: Verify desktop renderer**
 
 ```bash
 cd packages/dtx-desktop
@@ -727,14 +672,13 @@ bun vitest run \
   src/renderer/src/components/CloudSongDetail.test.ts \
   src/renderer/src/components/SimFileList.test.ts \
   src/renderer/src/components/CloudSongAutocomplete.test.ts \
-  src/renderer/src/components/ScoreSongCard.test.ts \
   src/renderer/src/components/Scores.test.ts
 bun run typecheck
 ```
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit the renderer/cache migration**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add packages/dtx-desktop/src/renderer/src
@@ -745,23 +689,15 @@ git commit -m "refactor(desktop): consume current simfile model"
 
 ## Task 5: Remove compatibility residue and verify the full seam
 
-**Files:**
-- Modify only files surfaced by the explicit searches below if they are active application consumers of the removed compatibility contract.
-- Do **not** edit `packages/common/src/lib/types/supabase.types.ts` or D1/server snake_case code merely because the searches find them.
-
-- [ ] **Step 1: Prove the obsolete named types are gone**
-
-Run from the repo root:
+- [ ] **Step 1: Prove obsolete named types are gone from active source**
 
 ```bash
 rg -n "LegacySimfile|SimfileWithDtx\b" packages/common packages/dtx-web packages/dtx-desktop
 ```
 
-Expected: no matches in source/test code. Historical docs may still mention them and do not need rewriting.
+Expected: no active source/test matches. Historical docs do not need rewriting.
 
-- [ ] **Step 2: Prove snake_case simfile properties no longer leak into app/UI code**
-
-Run:
+- [ ] **Step 2: Prove snake_case simfile properties no longer leak into shared/web/renderer application code**
 
 ```bash
 rg -n "\b(display_id|is_published|dtx_files|google_drive_file_id|download_url|preview_url|video_preview_url|publish_date|created_at|updated_at|user_id)\b" \
@@ -770,27 +706,23 @@ rg -n "\b(display_id|is_published|dtx_files|google_drive_file_id|download_url|pr
   packages/dtx-desktop/src/renderer/src
 ```
 
-Expected application exceptions must be justified narrowly before leaving them. In particular:
+Fix active application-model matches by using `SimfileModel`; do not add aliases.
 
-- D1/server files are outside this search and remain snake_case.
-- `packages/common/src/lib/types/supabase.types.ts` is intentionally retained and is outside shared UI.
-- Native Rust identifiers may remain idiomatic snake_case internally, but JSON keys crossing to the renderer must be camelCase.
+Expected intentional boundaries:
 
-Fix active UI/renderer matches by using `SimfileModel`; do not add aliases.
+- D1/server code is outside the shared-UI search and remains snake_case.
+- `packages/common/src/lib/types/supabase.types.ts` is intentionally retained for auth typing.
+- Rust identifiers may be idiomatic snake_case internally, but JSON crossing to the renderer is camelCase.
 
-- [ ] **Step 3: Confirm the retained Supabase auth type is still genuinely used**
-
-Run:
+- [ ] **Step 3: Reconfirm the retained Supabase auth type is live**
 
 ```bash
 rg -n "SupabaseClient<Database>|createServerClient<Database>|type \{ Database \}" packages/dtx-web packages/common
 ```
 
-Expected: current uses in `packages/dtx-web/src/app.d.ts` and `packages/dtx-web/src/hooks.server.ts`. Leave `Database` and `gen-types` in place.
+Expected live consumers in `packages/dtx-web/src/app.d.ts` and `packages/dtx-web/src/hooks.server.ts`. Leave `Database` and `gen-types` in place.
 
-- [ ] **Step 4: Run all affected checks**
-
-Run:
+- [ ] **Step 4: Run affected package checks**
 
 ```bash
 cd packages/common && bun run test && bun run check
@@ -800,51 +732,45 @@ cd ../..
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml api_tests
 ```
 
-Expected: PASS. If the repo-wide test suites expose unrelated pre-existing failures, record those separately and still require every HPA-614-focused test changed above to pass.
+Expected: PASS. If a repo-wide suite exposes an unrelated pre-existing failure, record it separately; every HPA-614-focused test changed above must still pass.
 
-- [ ] **Step 5: Review the diff for scope discipline**
-
-Run:
+- [ ] **Step 5: Review scope and diff hygiene**
 
 ```bash
 git diff --check
 git status --short
 git diff --stat main...HEAD
-git diff main...HEAD -- \
-  packages/common \
-  packages/dtx-web \
-  packages/dtx-desktop
+git diff main...HEAD -- packages/common packages/dtx-web packages/dtx-desktop
 ```
 
 Verify:
 
-- no GraphQL schema/D1 schema changes;
+- no D1 or GraphQL schema change;
 - no runtime schema/codegen framework;
 - no compatibility alias for snake_case fields;
 - no unrelated UI refactor;
 - no deletion of the live Supabase auth `Database` type;
 - cache changes are only the three explicit v2 keys.
 
-- [ ] **Step 6: Commit any final mechanical cleanup**
-
-If Step 1/2 surfaced active compatibility residue and it was fixed:
+- [ ] **Step 6: Commit only if cleanup produced changes**
 
 ```bash
 git add packages/common packages/dtx-web packages/dtx-desktop
 git commit -m "refactor: remove legacy simfile compatibility residue"
 ```
 
-If there were no cleanup edits, do not create an empty commit.
+Do not create an empty commit.
 
 ---
 
 ## Expected End State
 
-- `@dtx/common` main exports `SimfileModel`, `SimfileDtxFile`, and `SimfileAssetFile` for application use; D1 row/aggregate types remain server-only.
+- `@dtx/common` exposes `SimfileModel`, `SimfileDtxFile`, and `SimfileAssetFile` for application use; D1 row/aggregate types remain server-only.
 - `ChartDetail` accepts `Partial<SimfileModel>` and has no D1 import.
 - Web GraphQL code adapts generated results directly into camelCase `SimfileModel`; `LegacySimfile` and the chart-page cast are gone.
 - Desktop Rust emits camelCase current-model JSON and accepts camelCase update input without `update_input_from_renderer`.
 - Desktop stores/services/components use `SimfileModel`; `SimfileWithDtx` and `normalizeSimfile` are gone.
-- Desktop cache keys are `simfiles_cache_v2`, `simfiles_cache_timestamp_v2`, and `dtx_linkage_cache_v2`; old cached shapes are ignored.
-- `Database`/`gen-types` remain because auth still uses them.
-- HPA-615 can now generate Tauri TypeScript bindings against one stable renderer-facing model instead of encoding a legacy compatibility contract.
+- Desktop simfile/linkage caches use only the three v2 keys; old shapes are ignored.
+- Score-link persistence remains a small string-id map with explicit conversion at that persistence boundary; it does not force the current simfile model back to string ids.
+- `Database` / `gen-types` remain because auth still uses them.
+- HPA-615 can generate Tauri TypeScript bindings against one stable renderer-facing model instead of encoding a legacy compatibility contract.

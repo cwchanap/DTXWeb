@@ -630,11 +630,27 @@ export const upsertChartScoreAndReplaceScores = async (
 		userId: string;
 		playCount: number;
 		clearCount: number;
+		fullCombo: boolean;
+		maxCombo: number;
+		bestAchievementRate: number | null;
+		bestRankLabel: string | null;
+		lastPlayedAt: string | null;
 		scores: ScoreInsert[];
 	}
 ): Promise<ChartScoreRow> => {
 	const now = new Date().toISOString();
-	const { chartId, userId, playCount, clearCount, scores } = params;
+	const {
+		chartId,
+		userId,
+		playCount,
+		clearCount,
+		fullCombo,
+		maxCombo,
+		bestAchievementRate,
+		bestRankLabel,
+		lastPlayedAt,
+		scores
+	} = params;
 
 	// The subquery resolves the chart_score_id at execution time within the
 	// transaction, so the delete/inserts always target the upserted row. The
@@ -652,15 +668,21 @@ export const upsertChartScoreAndReplaceScores = async (
 		db
 			.prepare(
 				`INSERT INTO chart_scores
-					(chart_id, user_id, play_count, clear_count, created_at, updated_at)
-				 SELECT ?, ?, ?, ?, ?, ?
-				 FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
-				 WHERE d.id = ? AND (s.is_published = 1 OR s.user_id = ?)
-				 ON CONFLICT(user_id, chart_id) DO UPDATE SET
+					(chart_id, user_id, play_count, clear_count, full_combo, max_combo,
+					 best_achievement_rate, best_rank_label, last_played_at, created_at, updated_at)
+					SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+					FROM dtx_files d JOIN simfiles s ON s.id = d.simfile_id
+					WHERE d.id = ? AND (s.is_published = 1 OR s.user_id = ?)
+					ON CONFLICT(user_id, chart_id) DO UPDATE SET
 					play_count = excluded.play_count,
 					clear_count = excluded.clear_count,
+					full_combo = excluded.full_combo,
+					max_combo = excluded.max_combo,
+					best_achievement_rate = excluded.best_achievement_rate,
+					best_rank_label = excluded.best_rank_label,
+					last_played_at = excluded.last_played_at,
 					updated_at = excluded.updated_at
-				 RETURNING *`
+					RETURNING *`
 			)
 			// The trailing chartId + userId gate the upsert on the chart still
 			// being VISIBLE to the caller at write time (TOCTOU: a chart
@@ -674,7 +696,21 @@ export const upsertChartScoreAndReplaceScores = async (
 			// skip. The resolveChartScoreId subquery carries the same
 			// visibility gate, so the DELETE and INSERT-score statements are
 			// also no-ops — no partial write commits.
-			.bind(chartId, userId, playCount, clearCount, now, now, chartId, userId),
+			.bind(
+				chartId,
+				userId,
+				playCount,
+				clearCount,
+				fullCombo ? 1 : 0,
+				maxCombo,
+				bestAchievementRate,
+				bestRankLabel,
+				lastPlayedAt,
+				now,
+				now,
+				chartId,
+				userId
+			),
 		db
 			.prepare(`DELETE FROM scores WHERE chart_score_id = ${resolveChartScoreId}`)
 			.bind(userId, chartId, userId),
@@ -682,10 +718,10 @@ export const upsertChartScoreAndReplaceScores = async (
 			db
 				.prepare(
 					`INSERT INTO scores
-						(chart_score_id, is_best, score, achievement_rate, rank_label,
-						 full_combo, cleared, max_combo, perfect, great, good, poor, miss,
-						 performed_at, display_order)
-					 SELECT ${resolveChartScoreId}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`
+					(chart_score_id, is_best, score, achievement_rate, rank_label,
+					 cleared, perfect, great, good, poor, miss,
+					 performed_at, display_order)
+				 SELECT ${resolveChartScoreId}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?`
 				)
 				.bind(
 					userId,
@@ -695,9 +731,7 @@ export const upsertChartScoreAndReplaceScores = async (
 					s.score ?? null,
 					s.achievement_rate ?? null,
 					s.rank_label ?? null,
-					s.full_combo ? 1 : 0,
-					s.cleared ? 1 : 0,
-					s.max_combo ?? null,
+					s.cleared == null ? null : s.cleared ? 1 : 0,
 					s.perfect ?? null,
 					s.great ?? null,
 					s.good ?? null,

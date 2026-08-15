@@ -99,6 +99,14 @@ const baseSimfileRow = {
 	updated_at: '2024-01-01T00:00:00.000Z'
 };
 
+const defaultChartScoreFields = {
+	fullCombo: false,
+	maxCombo: 0,
+	bestAchievementRate: null,
+	bestRankLabel: null,
+	lastPlayedAt: null
+};
+
 // ---------------------------------------------------------------------------
 // escapeLikePattern
 // ---------------------------------------------------------------------------
@@ -241,7 +249,7 @@ describe('score schema', () => {
 // other. This test parses both sources, normalizes the SQL expressions, and
 // asserts they define the same set of constraints.
 // ---------------------------------------------------------------------------
-describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
+describe('CHECK constraint parity (0002_scores.sql + 0007_score_semantics.sql vs schema.ts)', () => {
 	const MIGRATIONS_DIR = join(
 		__dirname,
 		'..',
@@ -262,49 +270,48 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 			.toLowerCase()
 			.replace(/\s+/g, ' ')
 			.replace(/\s*([()])\s*/g, '$1')
-			.replace(/\s*(>=|<=|!=|<>|=|<|>|AND|OR|IN|IS NULL|IS NOT NULL)\s*/gi, (_, op) => {
-				const upper = op.toUpperCase();
-				if (
-					upper === 'AND' ||
-					upper === 'OR' ||
-					upper === 'IN' ||
-					upper === 'IS NULL' ||
-					upper === 'IS NOT NULL'
-				) {
-					return ` ${upper} `;
+			.replace(
+				/\s*(>=|<=|!=|<>|=|<|>|\bAND\b|\bOR\b|\bIN\b|IS NULL|IS NOT NULL)\s*/gi,
+				(_, op) => {
+					const upper = op.toUpperCase();
+					if (
+						upper === 'AND' ||
+						upper === 'OR' ||
+						upper === 'IN' ||
+						upper === 'IS NULL' ||
+						upper === 'IS NOT NULL'
+					) {
+						return ` ${upper} `;
+					}
+					return op;
 				}
-				return op;
-			})
+			)
 			.trim();
 
-	// Parse inline CHECK constraints from CREATE TABLE statements in the
-	// migration SQL. Returns a map of column-name → normalized expression.
-	const parseMigrationChecks = (sql: string): Map<string, string> => {
-		const checks = new Map<string, string>();
-		// Match: column_name TYPE ... CHECK (expression)
-		// The expression may contain nested parens (e.g. IN (...)).
-		const lines = sql.split('\n');
-		for (const line of lines) {
-			const trimmed = line.trim();
-			// Skip comment-only lines
-			if (trimmed.startsWith('--')) continue;
-			// Find CHECK (...) — handle nested parens by counting depth.
-			const checkIdx = trimmed.indexOf('CHECK');
-			if (checkIdx === -1) continue;
-			// Extract the column name: the first token on the line (before any
-			// TYPE keyword). For inline constraints the column name precedes
-			// the type definition.
-			const beforeCheck = trimmed.slice(0, checkIdx).trim();
-			const colName = beforeCheck.split(/\s+/)[0];
-			// Extract the parenthesized expression after CHECK, handling nesting.
+	// Parse every CHECK occurrence in the supplied SQL, including table-level
+	// checks and multiple ALTER TABLE additions. Returns normalized expressions
+	// because migration column names are the only common representation.
+	const parseMigrationChecks = (sql: string): Set<string> => {
+		const checks = new Set<string>();
+		const checkRegex = /\bCHECK\s*\(/gi;
+		let match;
+		while ((match = checkRegex.exec(sql)) !== null) {
+			const start = match.index + match[0].length - 1;
 			let depth = 0;
-			let start = -1;
 			let end = -1;
-			for (let i = checkIdx + 5; i < trimmed.length; i++) {
-				if (trimmed[i] === '(') {
-					if (depth === 0) start = i;
-					depth++;
-				} else if (trimmed[i] === ')') {
+			let quote: string | null = null;
+			for (let i = start; i < sql.length; i++) {
+				const char = sql[i];
+				if (quote) {
+					if (char === quote && sql[i - 1] !== '\\') quote = null;
+					continue;
+				}
+				if (char === "'" || char === '"') {
+					quote = char;
+					continue;
+				}
+				if (char === '(') depth++;
+				if (char === ')') {
 					depth--;
 					if (depth === 0) {
 						end = i;
@@ -312,10 +319,7 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 					}
 				}
 			}
-			if (start !== -1 && end !== -1 && colName) {
-				const expr = trimmed.slice(start + 1, end);
-				checks.set(colName, normalize(expr));
-			}
+			if (end !== -1) checks.add(normalize(sql.slice(start + 1, end)));
 		}
 		return checks;
 	};
@@ -338,11 +342,15 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 			fullCombo: 'full_combo',
 			cleared: 'cleared',
 			maxCombo: 'max_combo',
+			bestAchievementRate: 'best_achievement_rate',
+			bestRankLabel: 'best_rank_label',
+			lastPlayedAt: 'last_played_at',
 			perfect: 'perfect',
 			great: 'great',
 			good: 'good',
 			poor: 'poor',
 			miss: 'miss',
+			performedAt: 'performed_at',
 			displayOrder: 'display_order'
 		};
 		// Match: check('name', sql`expression`)
@@ -366,12 +374,16 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 
 	it('chart_scores CHECK constraints match between migration and Drizzle schema', () => {
 		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const migration7 = readFileSync(join(MIGRATIONS_DIR, '0007_score_semantics.sql'), 'utf8');
 		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
 
-		// Extract the chart_scores CREATE TABLE block from the migration.
-		const chartScoresBlock =
+		const chartScoresCreate =
 			migrationSql.match(/CREATE TABLE IF NOT EXISTS chart_scores \([\s\S]*?\);/)?.[0] ?? '';
-		const migrationChecks = parseMigrationChecks(chartScoresBlock);
+		const chartScoreAdds = migration7
+			.split('\n')
+			.filter((line) => line.includes('ALTER TABLE chart_scores ADD COLUMN'))
+			.join('\n');
+		const migrationChecks = parseMigrationChecks(`${chartScoresCreate}\n${chartScoreAdds}`);
 
 		// Extract chart_scores check() calls from the Drizzle schema.
 		// The chartScores table definition is between 'export const chartScores'
@@ -380,27 +392,14 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 			schemaSource.match(/export const chartScores = sqliteTable\([\s\S]*?\);\s*/)?.[0] ?? '';
 		const schemaChecks = parseSchemaChecks(chartScoresSchema);
 
-		// Both should define the same set of normalized expressions.
-		const migrationExprs = [...migrationChecks.values()].sort();
-		const schemaExprs = [...schemaChecks.keys()].sort();
-
-		expect(migrationExprs).toHaveLength(schemaExprs.length);
-		for (const expr of schemaExprs) {
-			expect(migrationExprs).toContain(expr);
-		}
+		expect([...migrationChecks].sort()).toEqual([...schemaChecks.keys()].sort());
 	});
 
 	it('scores CHECK constraints match between migration and Drizzle schema', () => {
-		const migrationSql = readFileSync(join(MIGRATIONS_DIR, '0002_scores.sql'), 'utf8');
+		const migration7 = readFileSync(join(MIGRATIONS_DIR, '0007_score_semantics.sql'), 'utf8');
 		const schemaSource = readFileSync(SCHEMA_PATH, 'utf8');
 
-		// Extract the scores CREATE TABLE block from the migration.
-		const scoresBlock =
-			migrationSql.match(
-				/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);\s*\nCREATE INDEX/
-			)?.[0] ??
-			migrationSql.match(/CREATE TABLE IF NOT EXISTS scores \([\s\S]*?\);/)?.[0] ??
-			'';
+		const scoresBlock = migration7.match(/CREATE TABLE scores_v2 \([\s\S]*?\);/)?.[0] ?? '';
 		const migrationChecks = parseMigrationChecks(scoresBlock);
 
 		// Extract scores check() calls from the Drizzle schema.
@@ -408,13 +407,7 @@ describe('CHECK constraint parity (0002_scores.sql vs schema.ts)', () => {
 			schemaSource.match(/export const scores = sqliteTable\([\s\S]*?\);\s*$/m)?.[0] ?? '';
 		const schemaChecks = parseSchemaChecks(scoresSchema);
 
-		const migrationExprs = [...migrationChecks.values()].sort();
-		const schemaExprs = [...schemaChecks.keys()].sort();
-
-		expect(migrationExprs).toHaveLength(schemaExprs.length);
-		for (const expr of schemaExprs) {
-			expect(migrationExprs).toContain(expr);
-		}
+		expect([...migrationChecks].sort()).toEqual([...schemaChecks.keys()].sort());
 	});
 });
 
@@ -1603,8 +1596,9 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			userId: 'u1',
 			playCount: 10,
 			clearCount: 4,
+			...defaultChartScoreFields,
 			scores: [
-				{ is_best: true, score: 900000, achievement_rate: 91.3 },
+				{ is_best: true, score: 900000 },
 				{ is_best: false, achievement_rate: 82.4, display_order: 1 }
 			]
 		});
@@ -1632,6 +1626,7 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			userId: 'u1',
 			playCount: 0,
 			clearCount: 0,
+			...defaultChartScoreFields,
 			scores: []
 		});
 		expect(db.prepare).toHaveBeenCalledTimes(2);
@@ -1648,6 +1643,7 @@ describe('upsertChartScoreAndReplaceScores', () => {
 				userId: 'u1',
 				playCount: 0,
 				clearCount: 0,
+				...defaultChartScoreFields,
 				scores: []
 			})
 		).rejects.toThrow('Failed to upsert chart_score');
@@ -1677,7 +1673,8 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			userId: 'user-1',
 			playCount: 1,
 			clearCount: 1,
-			scores: [{ is_best: true, score: 900, full_combo: false, cleared: true }]
+			...defaultChartScoreFields,
+			scores: [{ is_best: true, score: 900, cleared: null }]
 		});
 
 		// 1 upsert + 1 delete + 1 insert = 3 statements in the batch.
@@ -1694,14 +1691,14 @@ describe('upsertChartScoreAndReplaceScores', () => {
 		}
 
 		// The upsert binds (chartId, userId, ..., chartId, userId) — userId is
-		// the 2nd arg, the 7th arg is the chartId for the `WHERE d.id = ?`
-		// existence gate, and the trailing 8th arg is the userId for the
+		// the 2nd arg, the 12th arg is the chartId for the `WHERE d.id = ?`
+		// existence gate, and the trailing 13th arg is the userId for the
 		// `(s.is_published = 1 OR s.user_id = ?)` visibility gate (TOCTOU fix).
 		const upsertBinds = statements[0].bind.mock.calls[0];
 		expect(upsertBinds[0]).toBe(10);
 		expect(upsertBinds[1]).toBe('user-1');
-		expect(upsertBinds[6]).toBe(10);
-		expect(upsertBinds[7]).toBe('user-1');
+		expect(upsertBinds[11]).toBe(10);
+		expect(upsertBinds[12]).toBe('user-1');
 
 		// The delete binds (userId, chartId, userId) — the subquery scoping,
 		// with the trailing userId for the visibility gate in resolveChartScoreId.
@@ -1739,6 +1736,7 @@ describe('upsertChartScoreAndReplaceScores', () => {
 			userId: 'u1',
 			playCount: 1,
 			clearCount: 1,
+			...defaultChartScoreFields,
 			scores: []
 		});
 
@@ -1799,6 +1797,7 @@ describe('upsertChartScoreAndReplaceScores', () => {
 				userId: 'u1',
 				playCount: 5,
 				clearCount: 2,
+				...defaultChartScoreFields,
 				scores: []
 			}),
 			upsertChartScoreAndReplaceScores(dbB as unknown as D1Database, {
@@ -1806,6 +1805,7 @@ describe('upsertChartScoreAndReplaceScores', () => {
 				userId: 'u1',
 				playCount: 9,
 				clearCount: 7,
+				...defaultChartScoreFields,
 				scores: []
 			})
 		]);

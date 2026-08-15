@@ -98,6 +98,20 @@ const runMigrations = async () => {
 	}
 };
 
+const migrationNamed = (fileName: string) => {
+	const migration = MIGRATIONS.find((candidate) => candidate.fileName === fileName);
+	if (!migration) throw new Error(`Missing migration: ${fileName}`);
+	return migration;
+};
+
+const runMigrationsThrough = async (lastFileName: string) => {
+	for (const migration of MIGRATIONS) {
+		await runMigration(migration.statements);
+		if (migration.fileName === lastFileName) return;
+	}
+	throw new Error(`Migration not reached: ${lastFileName}`);
+};
+
 beforeEach(async () => {
 	// Drop tables so each test starts clean.
 	await db.prepare('DROP TABLE IF EXISTS scores').run();
@@ -124,9 +138,7 @@ const scoreInput = (
 		score: number | null;
 		achievement_rate: number | null;
 		rank_label: string | null;
-		full_combo: boolean;
-		cleared: boolean;
-		max_combo: number | null;
+		cleared: boolean | null;
 		perfect: number | null;
 		great: number | null;
 		good: number | null;
@@ -140,9 +152,7 @@ const scoreInput = (
 	score: null,
 	achievement_rate: null,
 	rank_label: null,
-	full_combo: false,
-	cleared: false,
-	max_combo: null,
+	cleared: null,
 	perfect: null,
 	great: null,
 	good: null,
@@ -153,15 +163,24 @@ const scoreInput = (
 	...overrides
 });
 
+const defaultChartScoreFields = {
+	fullCombo: false,
+	maxCombo: 0,
+	bestAchievementRate: null,
+	bestRankLabel: null,
+	lastPlayedAt: null
+};
+
 describe('Google Drive file migration and owner-constrained update (real D1)', () => {
-	it('applies every numbered migration through 0006 once and starts the Drive ID as NULL', async () => {
+	it('applies every numbered migration through 0007 once and starts the Drive ID as NULL', async () => {
 		expect(MIGRATIONS.map((migration) => migration.fileName)).toEqual([
 			'0001_initial_schema.sql',
 			'0002_scores.sql',
 			'0003_chart_scores_user_updated_index.sql',
 			'0004_normalize_legacy_dtx_file_levels.sql',
 			'0005_fix_level_decoding_formula.sql',
-			'0006_google_drive_file_id.sql'
+			'0006_google_drive_file_id.sql',
+			'0007_score_semantics.sql'
 		]);
 
 		const row = await db
@@ -297,6 +316,120 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 	});
 });
 
+describe('0007 score semantics migration (real D1)', () => {
+	it('0007 relocates chart records and canonicalizes the best row', async () => {
+		await db.prepare('DROP TABLE IF EXISTS scores').run();
+		await db.prepare('DROP TABLE IF EXISTS chart_scores').run();
+		await db.prepare('DROP TABLE IF EXISTS dtx_files').run();
+		await db.prepare('DROP TABLE IF EXISTS user_profiles').run();
+		await db.prepare('DROP TABLE IF EXISTS simfiles').run();
+
+		await runMigrationsThrough('0006_google_drive_file_id.sql');
+
+		await db
+			.prepare('INSERT INTO simfiles (title, artist, bpm, user_id) VALUES (?, ?, ?, ?)')
+			.bind('Migration Song', 'Artist', 120, 'user-1')
+			.run();
+		await db
+			.prepare('INSERT INTO dtx_files (label, level, simfile_id) VALUES (?, ?, ?)')
+			.bind('BASIC', 50, 1)
+			.run();
+		await db
+			.prepare(
+				'INSERT INTO chart_scores (chart_id, user_id, play_count, clear_count) VALUES (?, ?, ?, ?)'
+			)
+			.bind(1, 'user-1', 7, 4)
+			.run();
+
+		const chartScore = await db
+			.prepare('SELECT id FROM chart_scores WHERE chart_id = ? AND user_id = ?')
+			.bind(1, 'user-1')
+			.first<{ id: number }>();
+
+		await db
+			.prepare(
+				`INSERT INTO scores
+				 (chart_score_id, is_best, score, achievement_rate, rank_label,
+				  full_combo, cleared, max_combo, perfect, great, good, poor, miss,
+				  performed_at, display_order)
+				 VALUES (?, 1, ?, ?, ?, 1, 1, ?, ?, ?, ?, ?, ?, ?, NULL)`
+			)
+			.bind(
+				chartScore!.id,
+				987654,
+				96.25,
+				'SS',
+				812,
+				700,
+				80,
+				20,
+				8,
+				4,
+				'2026-08-14T13:00:00Z'
+			)
+			.run();
+
+		const before = await db
+			.prepare('SELECT id FROM scores WHERE chart_score_id = ? AND is_best = 1')
+			.bind(chartScore!.id)
+			.first<{ id: number }>();
+
+		await runMigration(migrationNamed('0007_score_semantics.sql').statements);
+
+		const migratedChart = await db
+			.prepare(
+				`SELECT full_combo, max_combo, best_achievement_rate,
+				        best_rank_label, last_played_at
+				 FROM chart_scores WHERE id = ?`
+			)
+			.bind(chartScore!.id)
+			.first<{
+				full_combo: number;
+				max_combo: number;
+				best_achievement_rate: number | null;
+				best_rank_label: string | null;
+				last_played_at: string | null;
+			}>();
+
+		expect(migratedChart).toEqual({
+			full_combo: 1,
+			max_combo: 812,
+			best_achievement_rate: 96.25,
+			best_rank_label: 'SS',
+			last_played_at: '2026-08-14T13:00:00Z'
+		});
+
+		const migratedBest = await db
+			.prepare(
+				`SELECT id, score, achievement_rate, rank_label, cleared,
+				        perfect, great, good, poor, miss, performed_at, display_order
+				 FROM scores WHERE chart_score_id = ? AND is_best = 1`
+			)
+			.bind(chartScore!.id)
+			.first<Record<string, unknown>>();
+
+		expect(migratedBest).toMatchObject({
+			id: before!.id,
+			score: 987654,
+			achievement_rate: null,
+			rank_label: null,
+			cleared: null,
+			perfect: 700,
+			great: 80,
+			good: 20,
+			poor: 8,
+			miss: 4,
+			performed_at: null,
+			display_order: null
+		});
+
+		const sequence = await db
+			.prepare(`SELECT seq FROM sqlite_sequence WHERE name = 'scores'`)
+			.first<{ seq: number }>();
+		expect(sequence!.seq).toBeGreaterThanOrEqual(before!.id);
+	});
+});
+
 // Regression test for the cross-device race where Device A reads a row with
 // no Drive binding, Device B atomically binds file Y / URL-Y, and Device A
 // then runs a generic updateSimfile containing a stale URL-X. The SQL
@@ -384,8 +517,13 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 10,
 			clearCount: 4,
+			fullCombo: true,
+			maxCombo: 812,
+			bestAchievementRate: 96.25,
+			bestRankLabel: 'SS',
+			lastPlayedAt: '2026-08-14T13:00:00Z',
 			scores: [
-				scoreInput({ is_best: true, score: 950000, achievement_rate: 91.3, cleared: true }),
+				scoreInput({ is_best: true, score: 950000 }),
 				scoreInput({ is_best: false, achievement_rate: 82.4, display_order: 1 })
 			]
 		});
@@ -394,6 +532,11 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(result.user_id).toBe('user-1');
 		expect(result.play_count).toBe(10);
 		expect(result.clear_count).toBe(4);
+		expect(result.full_combo).toBe(1);
+		expect(result.max_combo).toBe(812);
+		expect(result.best_achievement_rate).toBe(96.25);
+		expect(result.best_rank_label).toBe('SS');
+		expect(result.last_played_at).toBe('2026-08-14T13:00:00Z');
 
 		// Verify the scores were inserted via the subquery resolution.
 		const fetched = await getUserChartScore(db, 'user-1', 1);
@@ -413,8 +556,9 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 10,
 			clearCount: 4,
+			...defaultChartScoreFields,
 			scores: [
-				scoreInput({ is_best: true, score: 950000, achievement_rate: 91.3 }),
+				scoreInput({ is_best: true, score: 950000 }),
 				scoreInput({ is_best: false, display_order: 1, achievement_rate: 80.0 }),
 				scoreInput({ is_best: false, display_order: 2, achievement_rate: 70.0 })
 			]
@@ -429,7 +573,8 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 15,
 			clearCount: 8,
-			scores: [scoreInput({ is_best: true, score: 990000, achievement_rate: 98.5 })]
+			...defaultChartScoreFields,
+			scores: [scoreInput({ is_best: true, score: 990000 })]
 		});
 
 		expect(result.play_count).toBe(15);
@@ -438,7 +583,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		fetched = await getUserChartScore(db, 'user-1', 1);
 		expect(fetched!.scores).toHaveLength(1);
 		expect(fetched!.scores[0].score).toBe(990000);
-		expect(fetched!.scores[0].achievement_rate).toBe(98.5);
+		expect(fetched!.scores[0].achievement_rate).toBeNull();
 	});
 
 	it('upserts the chart_scores aggregate on conflict (same user + chart)', async () => {
@@ -448,6 +593,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 5,
 			clearCount: 2,
+			...defaultChartScoreFields,
 			scores: []
 		});
 		expect(first.play_count).toBe(5);
@@ -458,6 +604,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 20,
 			clearCount: 10,
+			...defaultChartScoreFields,
 			scores: []
 		});
 		expect(second.id).toBe(first.id); // same row, updated
@@ -487,6 +634,11 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 				'chart_id INTEGER NOT NULL, user_id TEXT NOT NULL, ' +
 				'play_count INTEGER NOT NULL DEFAULT 0 CHECK (play_count >= 0), ' +
 				'clear_count INTEGER NOT NULL DEFAULT 0 CHECK (clear_count >= 0 AND clear_count <= play_count), ' +
+				'full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1)), ' +
+				'max_combo INTEGER NOT NULL DEFAULT 0 CHECK (max_combo >= 0), ' +
+				'best_achievement_rate REAL CHECK (best_achievement_rate IS NULL OR (best_achievement_rate >= 0 AND best_achievement_rate <= 100)), ' +
+				"best_rank_label TEXT CHECK (best_rank_label IS NULL OR best_rank_label IN ('SS','S','A','B','C','D','E','F')), " +
+				'last_played_at TEXT, ' +
 				"created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), " +
 				"updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
 		);
@@ -502,9 +654,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 				'score INTEGER CHECK (score IS NULL OR score >= 0), ' +
 				'achievement_rate REAL CHECK (achievement_rate IS NULL OR (achievement_rate >= 0 AND achievement_rate <= 100)), ' +
 				"rank_label TEXT CHECK (rank_label IS NULL OR rank_label IN ('SS','S','A','B','C','D','E','F')), " +
-				'full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1)), ' +
-				'cleared INTEGER NOT NULL DEFAULT 0 CHECK (cleared IN (0, 1)), ' +
-				'max_combo INTEGER CHECK (max_combo IS NULL OR max_combo >= 0), ' +
+				'cleared INTEGER CHECK (cleared IS NULL OR cleared IN (0, 1)), ' +
 				'perfect INTEGER CHECK (perfect IS NULL OR perfect >= 0), ' +
 				'great INTEGER CHECK (great IS NULL OR great >= 0), ' +
 				'good INTEGER CHECK (good IS NULL OR good >= 0), ' +
@@ -512,7 +662,8 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 				'miss INTEGER CHECK (miss IS NULL OR miss >= 0), ' +
 				'performed_at TEXT, ' +
 				'display_order INTEGER CHECK (display_order IS NULL OR (display_order >= 1 AND display_order <= 5)), ' +
-				"created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')))"
+				"created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), " +
+				'CHECK (is_best = 0 OR (achievement_rate IS NULL AND rank_label IS NULL AND cleared IS NULL AND performed_at IS NULL AND display_order IS NULL)))'
 		);
 		await db.exec('CREATE INDEX idx_scores_chart_score ON scores(chart_score_id)');
 		await db.exec(
@@ -526,9 +677,21 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		// dtx_files (no cascade since chart_scores has no FK).
 		await db
 			.prepare(
-				'INSERT INTO chart_scores (chart_id, user_id, play_count, clear_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+				'INSERT INTO chart_scores (chart_id, user_id, play_count, clear_count, full_combo, max_combo, best_achievement_rate, best_rank_label, last_played_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
 			)
-			.bind(1, 'user-1', 5, 2, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')
+			.bind(
+				1,
+				'user-1',
+				5,
+				2,
+				0,
+				0,
+				null,
+				null,
+				null,
+				'2026-01-01T00:00:00Z',
+				'2026-01-01T00:00:00Z'
+			)
 			.run();
 		const chartScoreRow = await db
 			.prepare('SELECT id FROM chart_scores WHERE user_id = ? AND chart_id = ?')
@@ -539,7 +702,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			.prepare(
 				'INSERT INTO scores (chart_score_id, is_best, score, achievement_rate, display_order) VALUES (?, 1, ?, ?, NULL)'
 			)
-			.bind(csId, 900000, 90.0)
+			.bind(csId, 900000, null)
 			.run();
 		await db
 			.prepare(
@@ -564,7 +727,8 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 				userId: 'user-1',
 				playCount: 99,
 				clearCount: 99,
-				scores: [scoreInput({ is_best: true, score: 999999, achievement_rate: 99.9 })]
+				...defaultChartScoreFields,
+				scores: [scoreInput({ is_best: true, score: 999999 })]
 			})
 		).rejects.toThrow();
 
@@ -609,7 +773,8 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 				userId: 'user-1',
 				playCount: 1,
 				clearCount: 1,
-				scores: [scoreInput({ is_best: true, score: 900000, achievement_rate: 90.0 })]
+				...defaultChartScoreFields,
+				scores: [scoreInput({ is_best: true, score: 900000 })]
 			})
 		).rejects.toThrow();
 
@@ -629,7 +794,8 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 3,
 			clearCount: 1,
-			scores: [scoreInput({ is_best: true, score: 700000, achievement_rate: 70.0 })]
+			...defaultChartScoreFields,
+			scores: [scoreInput({ is_best: true, score: 700000 })]
 		});
 		expect(result.user_id).toBe('user-1');
 		const fetched = await getUserChartScore(db, 'user-1', 1);
@@ -645,6 +811,7 @@ describe('D1 CHECK constraints (real D1)', () => {
 				userId: 'user-1',
 				playCount: -1,
 				clearCount: 0,
+				...defaultChartScoreFields,
 				scores: []
 			})
 		).rejects.toThrow();
@@ -657,6 +824,7 @@ describe('D1 CHECK constraints (real D1)', () => {
 				userId: 'user-1',
 				playCount: 3,
 				clearCount: 5,
+				...defaultChartScoreFields,
 				scores: []
 			})
 		).rejects.toThrow();
@@ -669,7 +837,8 @@ describe('D1 CHECK constraints (real D1)', () => {
 				userId: 'user-1',
 				playCount: 1,
 				clearCount: 0,
-				scores: [scoreInput({ is_best: true, score: -100, achievement_rate: 50.0 })]
+				...defaultChartScoreFields,
+				scores: [scoreInput({ is_best: true, score: -100 })]
 			})
 		).rejects.toThrow();
 	});
@@ -681,7 +850,8 @@ describe('D1 CHECK constraints (real D1)', () => {
 				userId: 'user-1',
 				playCount: 1,
 				clearCount: 0,
-				scores: [scoreInput({ is_best: true, score: 100, achievement_rate: 150.0 })]
+				...defaultChartScoreFields,
+				scores: [scoreInput({ is_best: false, score: 100, achievement_rate: 150.0 })]
 			})
 		).rejects.toThrow();
 	});
@@ -693,9 +863,40 @@ describe('D1 CHECK constraints (real D1)', () => {
 				userId: 'user-1',
 				playCount: 1,
 				clearCount: 0,
+				...defaultChartScoreFields,
 				scores: [scoreInput({ is_best: false, display_order: 6 })]
 			})
 		).rejects.toThrow();
+	});
+
+	it('rejects best rows with recent-score metadata', async () => {
+		await upsertChartScoreAndReplaceScores(db, {
+			chartId: 1,
+			userId: 'user-1',
+			playCount: 1,
+			clearCount: 0,
+			...defaultChartScoreFields,
+			scores: []
+		});
+		const chartScore = await getUserChartScore(db, 'user-1', 1);
+		const chartScoreId = chartScore!.chartScore.id;
+
+		for (const [column, value] of [
+			['achievement_rate', 99.9],
+			['rank_label', 'SS'],
+			['cleared', 1],
+			['performed_at', '2026-08-14T13:00:00Z'],
+			['display_order', 1]
+		] as const) {
+			await expect(
+				db
+					.prepare(
+						`INSERT INTO scores (chart_score_id, is_best, ${column}) VALUES (?, 1, ?)`
+					)
+					.bind(chartScoreId, value)
+					.run()
+			).rejects.toThrow();
+		}
 	});
 });
 
@@ -710,7 +911,8 @@ describe('D1 partial unique indexes (real D1)', () => {
 			userId: 'user-1',
 			playCount: 1,
 			clearCount: 1,
-			scores: [scoreInput({ is_best: true, score: 900000, achievement_rate: 90.0 })]
+			...defaultChartScoreFields,
+			scores: [scoreInput({ is_best: true, score: 900000 })]
 		});
 
 		const chartScore = await getUserChartScore(db, 'user-1', 1);
@@ -730,8 +932,9 @@ describe('D1 partial unique indexes (real D1)', () => {
 			userId: 'user-1',
 			playCount: 5,
 			clearCount: 2,
+			...defaultChartScoreFields,
 			scores: [
-				scoreInput({ is_best: true, score: 900000, achievement_rate: 90.0 }),
+				scoreInput({ is_best: true, score: 900000 }),
 				scoreInput({ is_best: false, display_order: 1, achievement_rate: 80.0 })
 			]
 		});
@@ -761,8 +964,9 @@ describe('D1 partial unique indexes (real D1)', () => {
 			userId: 'user-1',
 			playCount: 5,
 			clearCount: 2,
+			...defaultChartScoreFields,
 			scores: [
-				scoreInput({ is_best: true, score: 900000, achievement_rate: 90.0 }),
+				scoreInput({ is_best: true, score: 900000 }),
 				scoreInput({ is_best: false, display_order: null }),
 				scoreInput({ is_best: false, display_order: null })
 			]
@@ -835,11 +1039,11 @@ const seedReadPathFixture = async (db: D1Database) => {
 
 	await db
 		.prepare(
-			`INSERT INTO scores (id, chart_score_id, is_best, score, achievement_rate, rank_label, full_combo, cleared, max_combo, perfect, great, good, poor, miss, performed_at, display_order)
+			`INSERT INTO scores (id, chart_score_id, is_best, score, achievement_rate, rank_label, cleared, perfect, great, good, poor, miss, performed_at, display_order)
 			 VALUES
-			   (200, 100, 1, 950000, 91.3, 'S', 1, 1, 800, 500, 30, 10, 5, 2, '2026-06-02T00:00:00Z', NULL),
-			   (201, 100, 0, NULL,   82.4, 'A', 0, 1, NULL, NULL, NULL, NULL, NULL, NULL, '2026-06-01T00:00:00Z', 1),
-			   (202, 101, 1, 880000, 88.0, 'S', 0, 1, 700, 400, 50, 20, 10, 5, '2026-06-01T00:00:00Z', NULL)`
+			   (200, 100, 1, 950000, NULL, NULL, NULL, 500, 30, 10, 5, 2, NULL, NULL),
+			   (201, 100, 0, NULL,   82.4, 'A', 1, NULL, NULL, NULL, NULL, NULL, '2026-06-01T00:00:00Z', 1),
+			   (202, 101, 1, 880000, NULL, NULL, NULL, 400, 50, 20, 10, 5, NULL, NULL)`
 		)
 		.run();
 };

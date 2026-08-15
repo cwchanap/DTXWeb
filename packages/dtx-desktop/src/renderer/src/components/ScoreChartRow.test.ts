@@ -130,14 +130,31 @@ describe('ScoreChartRow score ownership', () => {
 		expect(screen.getByText('—')).toBeInTheDocument();
 	});
 
-	it('renders the placeholder when best is null', () => {
+	it('renders the placeholder and hides aggregate records when a chart has never been played', () => {
 		render(ScoreChartRow, {
 			props: {
 				...baseProps,
-				chart: makeChart({ best: null })
+				chart: makeChart({
+					best: null,
+					aggregate: {
+						playCount: 0,
+						clearCount: 0,
+						fullCombo: false,
+						maxCombo: 0,
+						bestAchievementRate: null,
+						bestRankLabel: null,
+						lastPlayedAt: null
+					}
+				})
 			}
 		});
 		// The svelte-i18n mock resolves score.no_best_score from en.json.
 		expect(screen.getByText('No best score recorded.')).toBeInTheDocument();
+		// A never-played chart has no rank/rate/combo/FC to show — the zero
+		// defaults are not evidence of a real achievement.
+		expect(screen.queryByText('A')).not.toBeInTheDocument();
+		expect(screen.queryByText(/%/)).not.toBeInTheDocument();
+		expect(screen.queryByText(/combo/i)).not.toBeInTheDocument();
+		expect(screen.queryByText('FC')).not.toBeInTheDocument();
 	});
 });

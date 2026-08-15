@@ -547,7 +547,14 @@ fn group_joined_rows(rows: Vec<JoinedRow>) -> Vec<DtxmaniaSong> {
             cur_chart_id = Some(row.chart_id);
             recent_count = 0;
             let best = build_best(&row.score);
-            let best_achievement_rate = Some(row.score.best_achievement_rate)
+            // A never-played chart (play_count == 0) has no achievement to
+            // report: its zero defaults are not evidence of a real score, so
+            // both rate and rank must be None — matching build_best's
+            // play_count == 0 short-circuit. A PLAYED chart with a zero rate
+            // (e.g. NULL BestAchievementRate tolerated to 0.0) still reports
+            // Some(0.0)/"E", since that is a real (if poor) result.
+            let best_achievement_rate = (row.score.play_count > 0)
+                .then_some(row.score.best_achievement_rate)
                 .filter(|value| value.is_finite() && *value >= 0.0 && *value <= 100.0);
             let best_rank_label =
                 best_achievement_rate.map(|rate| derive_rank_label(rate).to_string());

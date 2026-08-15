@@ -81,18 +81,20 @@
 		<div class="text-faint text-xs">{$_('score.no_best_score')}</div>
 	{/if}
 
-	<div class="text-dim flex items-center gap-2 text-xs">
-		{#if chart.aggregate.bestRankLabel}
-			<span class="text-amber-300">{chart.aggregate.bestRankLabel}</span>
-		{/if}
-		{#if chart.aggregate.bestAchievementRate != null}
-			<span class="text-cyan">{chart.aggregate.bestAchievementRate}%</span>
-		{/if}
-		<span class="text-dim">{$_('score.combo')} {chart.aggregate.maxCombo}</span>
-		{#if chart.aggregate.fullCombo}
-			<span class="text-green">{$_('score.full_combo')}</span>
-		{/if}
-	</div>
+	{#if chart.aggregate.playCount > 0}
+		<div class="text-dim flex items-center gap-2 text-xs">
+			{#if chart.aggregate.bestRankLabel}
+				<span class="text-amber-300">{chart.aggregate.bestRankLabel}</span>
+			{/if}
+			{#if chart.aggregate.bestAchievementRate != null}
+				<span class="text-cyan">{chart.aggregate.bestAchievementRate}%</span>
+			{/if}
+			<span class="text-dim">{$_('score.combo')} {chart.aggregate.maxCombo}</span>
+			{#if chart.aggregate.fullCombo}
+				<span class="text-green">{$_('score.full_combo')}</span>
+			{/if}
+		</div>
+	{/if}
 
 	{#if chart.recent.length > 0}
 		<ul class="text-faint mt-1 text-xs">

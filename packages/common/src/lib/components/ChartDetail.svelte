@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Switch } from '@skeletonlabs/skeleton-svelte';
-	import type { SimfileWithDtx } from '../types/d1.types';
+	import type { SimfileModel } from '../types/simfile';
 	import { formatLevel } from '../utils/level';
 	import { createEventDispatcher } from 'svelte';
 	import dayjs from 'dayjs';
@@ -8,7 +8,7 @@
 	import IconCheck from '@lucide/svelte/icons/check';
 
 	interface Props {
-		simfile?: Partial<SimfileWithDtx> | null;
+		simfile?: Partial<SimfileModel> | null;
 		preview?: import('svelte').Snippet;
 		folder_upload?: import('svelte').Snippet;
 		asset_files?: import('svelte').Snippet;
@@ -43,22 +43,22 @@
 		showPublishingControls = true,
 		showPublishedToggle = true,
 		saveButtonText = 'Update',
-		displayId = $bindable(simfile?.display_id ?? 0),
-		publishDate = $bindable(simfile?.publish_date ?? dayjs().format('YYYY-MM-DD')),
-		isPublished = $bindable(simfile?.is_published ?? true),
-		downloadUrl = $bindable(simfile?.download_url ?? ''),
-		videoPreviewUrl = $bindable(simfile?.video_preview_url ?? '')
+		displayId = $bindable(simfile?.displayId ?? 0),
+		publishDate = $bindable(simfile?.publishDate ?? dayjs().format('YYYY-MM-DD')),
+		isPublished = $bindable(simfile?.isPublished ?? true),
+		downloadUrl = $bindable(simfile?.downloadUrl ?? ''),
+		videoPreviewUrl = $bindable(simfile?.videoPreviewUrl ?? '')
 	}: Props = $props();
 
-	let dtxFiles = $derived(simfile?.dtx_files || []);
+	let dtxFiles = $derived(simfile?.dtxFiles ?? []);
 
 	$effect(() => {
 		if (!simfile) return;
-		displayId = simfile.display_id ?? 0;
-		publishDate = simfile.publish_date ?? dayjs().format('YYYY-MM-DD');
-		isPublished = simfile.is_published ?? true;
-		downloadUrl = simfile.download_url ?? '';
-		videoPreviewUrl = simfile.video_preview_url ?? '';
+		displayId = simfile.displayId ?? 0;
+		publishDate = simfile.publishDate ?? dayjs().format('YYYY-MM-DD');
+		isPublished = simfile.isPublished ?? true;
+		downloadUrl = simfile.downloadUrl ?? '';
+		videoPreviewUrl = simfile.videoPreviewUrl ?? '';
 	});
 
 	// Derived values for display

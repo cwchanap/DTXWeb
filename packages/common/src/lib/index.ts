@@ -32,6 +32,9 @@ export type {
 } from './types/d1.types';
 export { toSimfileWithDtx } from './types/d1.types';
 
+// Export current simfile model (replaces compatibility shapes in Task 5)
+export type { SimfileModel, SimfileDtxFile, SimfileAssetFile } from './types/simfile';
+
 // Game classes are exported in './game' to avoid SSR issues with Phaser
 // Import from '@dtx/common/game' instead of '@dtx/common' for game classes
 

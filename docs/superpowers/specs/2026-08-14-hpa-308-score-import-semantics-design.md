@@ -187,23 +187,23 @@ Update shared D1 types and the query layer to match the ownership:
 
 ```ts
 interface ChartScoreRow {
-  // existing fields
-  play_count: number;
-  clear_count: number;
-  full_combo: 0 | 1;
-  max_combo: number;
-  best_achievement_rate: number | null;
-  best_rank_label: string | null;
-  last_played_at: string | null;
+	// existing fields
+	play_count: number;
+	clear_count: number;
+	full_combo: 0 | 1;
+	max_combo: number;
+	best_achievement_rate: number | null;
+	best_rank_label: string | null;
+	last_played_at: string | null;
 }
 
 interface ScoreRow {
-  // score + judgment/recent fields remain
-  achievement_rate: number | null;
-  rank_label: string | null;
-  cleared: 0 | 1 | null;
-  // no full_combo
-  // no max_combo
+	// score + judgment/recent fields remain
+	achievement_rate: number | null;
+	rank_label: string | null;
+	cleared: 0 | 1 | null;
+	// no full_combo
+	// no max_combo
 }
 ```
 

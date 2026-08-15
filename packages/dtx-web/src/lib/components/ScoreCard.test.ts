@@ -26,7 +26,7 @@ const song: ScoredSimfile = {
 					id: 1,
 					isBest: true,
 					score: 912380,
-					achievementRate: null,
+					achievementRate: 91.3,
 					rankLabel: null,
 					cleared: null,
 					perfect: 1300,
@@ -78,8 +78,9 @@ describe('ScoreCard', () => {
 		expect(screen.getByText('score.good 20')).toBeInTheDocument();
 		expect(screen.getByText('score.poor 5')).toBeInTheDocument();
 		expect(screen.getByText('score.miss 5')).toBeInTheDocument();
-		// The best row has null rate/rank/result/time and therefore does not
-		// render those values as if they belonged to the best score.
+		// The best row carries a legacy achievementRate (91.3) that must NOT
+		// be rendered as if it belonged to the best score — the chart-level
+		// bestAchievementRate (96.25%) is the one shown above.
 		expect(screen.queryByText('91.30%')).not.toBeInTheDocument();
 		expect(screen.getByText('score.failed')).toBeInTheDocument();
 	});

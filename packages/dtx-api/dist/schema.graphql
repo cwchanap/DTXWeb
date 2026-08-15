@@ -1,13 +1,23 @@
 type ChartScore {
+  bestAchievementRate: Float
+  bestRankLabel: String
   clearCount: Int!
+  fullCombo: Boolean!
   id: ID!
+  lastPlayedAt: String
+  maxCombo: Int!
   playCount: Int!
   scores: [Score!]!
 }
 
 input ChartScoresInput {
+  bestAchievementRate: Float
+  bestRankLabel: String
   chartId: ID!
   clearCount: Int!
+  fullCombo: Boolean!
+  lastPlayedAt: String
+  maxCombo: Int!
   playCount: Int!
   scores: [ScoreInput!]!
 }
@@ -86,14 +96,12 @@ type R2File {
 
 type Score {
   achievementRate: Float
-  cleared: Boolean!
+  cleared: Boolean
   displayOrder: Int
-  fullCombo: Boolean!
   good: Int
   great: Int
   id: ID!
   isBest: Boolean!
-  maxCombo: Int
   miss: Int
   perfect: Int
   performedAt: String
@@ -104,13 +112,11 @@ type Score {
 
 input ScoreInput {
   achievementRate: Float
-  cleared: Boolean!
+  cleared: Boolean
   displayOrder: Int
-  fullCombo: Boolean!
   good: Int
   great: Int
   isBest: Boolean!
-  maxCombo: Int
   miss: Int
   perfect: Int
   performedAt: String

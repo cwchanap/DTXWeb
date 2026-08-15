@@ -309,13 +309,17 @@ fn parse_maps_best_recent_and_ignores_non_drums() {
     assert_eq!(r2.cleared, None); // unparseable -> unknown, not a known failure
     assert_eq!(r2.performed_at.as_deref(), Some("2026-05-28T00:00:00"));
 
-    // Never-played chart: present, best null, recent empty.
+    // Never-played chart: present, best null, recent empty. The zero defaults
+    // in its score row are NOT evidence of a real achievement, so the
+    // aggregate rate/rank must also be None — not Some(0.0)/Some("E").
     let never = &songs[1];
     assert_eq!(never.song_id, 2); // distinct from song 1 — songKey can't collide
     assert_eq!(never.charts.len(), 1);
     assert!(never.charts[0].best.is_none());
     assert!(never.charts[0].recent.is_empty());
     assert_eq!(never.charts[0].aggregate.play_count, 0);
+    assert_eq!(never.charts[0].aggregate.best_achievement_rate, None);
+    assert_eq!(never.charts[0].aggregate.best_rank_label, None);
 }
 
 #[test]

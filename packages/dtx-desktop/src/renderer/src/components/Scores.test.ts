@@ -21,19 +21,15 @@ import Scores from './Scores.svelte';
 const bestRow = {
 	isBest: true,
 	score: 950000,
-	// 75.0 falls in the A band (73 ≤ rate < 80) per derive_rank_label in
-	// scores.rs, so rankLabel:'A' is internally consistent. (91.3 would be S.)
-	achievementRate: 75.0,
-	rankLabel: 'A',
-	fullCombo: true,
-	cleared: true,
-	maxCombo: 800,
+	achievementRate: null,
+	rankLabel: null,
+	cleared: null,
 	perfect: 500,
 	great: 30,
 	good: 10,
 	poor: 5,
 	miss: 2,
-	performedAt: '2026-06-02',
+	performedAt: null,
 	displayOrder: null
 };
 const recentRow = {
@@ -41,9 +37,7 @@ const recentRow = {
 	score: null,
 	achievementRate: 91.3,
 	rankLabel: 'S',
-	fullCombo: false,
 	cleared: true,
-	maxCombo: null,
 	perfect: null,
 	great: null,
 	good: null,
@@ -52,6 +46,15 @@ const recentRow = {
 	performedAt: '2026-06-02T00:00:00',
 	displayOrder: 1
 };
+const chartAggregate = (playCount: number, clearCount: number) => ({
+	playCount,
+	clearCount,
+	fullCombo: playCount > 0,
+	maxCombo: playCount > 0 ? 800 : 0,
+	bestAchievementRate: playCount > 0 ? 75 : null,
+	bestRankLabel: playCount > 0 ? 'A' : null,
+	lastPlayedAt: playCount > 0 ? '2026-06-02T00:00:00Z' : null
+});
 const parsedSongs = [
 	{
 		songId: 1,
@@ -65,7 +68,15 @@ const parsedSongs = [
 				drumLevel: 55,
 				drumLevelDec: 0,
 				fileHash: 'hash-basic',
-				aggregate: { playCount: 7, clearCount: 5 },
+				aggregate: {
+					playCount: 7,
+					clearCount: 5,
+					fullCombo: true,
+					maxCombo: 800,
+					bestAchievementRate: 75,
+					bestRankLabel: 'A',
+					lastPlayedAt: '2026-06-02T00:00:00Z'
+				},
 				best: bestRow,
 				recent: [recentRow]
 			}
@@ -133,8 +144,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '10',
-						playCount: 7,
-						clearCount: 5,
+						...chartAggregate(7, 5),
 						scores: [bestRow, recentRow]
 					}
 				]
@@ -224,7 +234,7 @@ describe('Scores', () => {
 					difficultyLabel: 'BASIC',
 					drumLevel: 55,
 					fileHash: `hash-${i}`,
-					aggregate: { playCount: 1, clearCount: 1 },
+					aggregate: chartAggregate(1, 1),
 					best: bestRow,
 					recent: []
 				}
@@ -266,7 +276,7 @@ describe('Scores', () => {
 					difficultyLabel: 'BASIC',
 					drumLevel: 55,
 					fileHash: `hash-${i}`,
-					aggregate: { playCount: 1, clearCount: 1 },
+					aggregate: chartAggregate(1, 1),
 					best: bestRow,
 					recent: []
 				}
@@ -497,7 +507,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-nb',
-						aggregate: { playCount: 0, clearCount: 0 },
+						aggregate: chartAggregate(0, 0),
 						best: null,
 						recent: []
 					}
@@ -539,8 +549,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '11',
-						playCount: 7,
-						clearCount: 5,
+						...chartAggregate(7, 5),
 						scores: [bestRow, recentRow]
 					}
 				]
@@ -565,7 +574,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-a',
-						aggregate: { playCount: 7, clearCount: 5 },
+						aggregate: chartAggregate(7, 5),
 						best: bestRow,
 						recent: [recentRow]
 					}
@@ -582,7 +591,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-b',
-						aggregate: { playCount: 3, clearCount: 1 },
+						aggregate: chartAggregate(3, 1),
 						best: bestRow,
 						recent: []
 					}
@@ -615,8 +624,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '10',
-						playCount: 7,
-						clearCount: 5,
+						...chartAggregate(7, 5),
 						scores: [bestRow, recentRow]
 					}
 				]
@@ -645,7 +653,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-empty',
-						aggregate: { playCount: 0, clearCount: 0 },
+						aggregate: chartAggregate(0, 0),
 						best: null,
 						recent: []
 					}
@@ -662,7 +670,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-played',
-						aggregate: { playCount: 3, clearCount: 1 },
+						aggregate: chartAggregate(3, 1),
 						best: bestRow,
 						recent: []
 					}
@@ -693,8 +701,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '10',
-						playCount: 3,
-						clearCount: 1,
+						...chartAggregate(3, 1),
 						scores: [bestRow]
 					}
 				]
@@ -713,7 +720,7 @@ describe('Scores', () => {
 			drumLevel: i < 99 ? i + 1 : 99,
 			drumLevelDec: i < 99 ? 0 : i - 98,
 			fileHash: `hash-${i}`,
-			aggregate: { playCount: 1, clearCount: 1 },
+			aggregate: chartAggregate(1, 1),
 			best: bestRow,
 			recent: []
 		}));
@@ -774,7 +781,7 @@ describe('Scores', () => {
 			drumLevel: i < 99 ? i + 1 : 99,
 			drumLevelDec: i < 99 ? 0 : i - 98,
 			fileHash: `hash-${i}`,
-			aggregate: { playCount: 1, clearCount: 1 },
+			aggregate: chartAggregate(1, 1),
 			best: bestRow,
 			recent: []
 		}));
@@ -849,7 +856,7 @@ describe('Scores', () => {
 			drumLevel: i < 99 ? i + 1 : 99,
 			drumLevelDec: i < 99 ? 0 : i - 98,
 			fileHash: `hash-${i}`,
-			aggregate: { playCount: 1, clearCount: 1 },
+			aggregate: chartAggregate(1, 1),
 			best: bestRow,
 			recent: []
 		}));
@@ -915,7 +922,7 @@ describe('Scores', () => {
 			drumLevel: i < 99 ? i + 1 : 99,
 			drumLevelDec: i < 99 ? 0 : i - 98,
 			fileHash: `hash-${i}`,
-			aggregate: { playCount: 1, clearCount: 1 },
+			aggregate: chartAggregate(1, 1),
 			best: bestRow,
 			recent: []
 		}));
@@ -1115,8 +1122,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '99-chart',
-						playCount: 7,
-						clearCount: 5,
+						...chartAggregate(7, 5),
 						scores: [bestRow, recentRow]
 					}
 				]
@@ -1163,8 +1169,7 @@ describe('Scores', () => {
 				charts: [
 					{
 						chartId: '10',
-						playCount: 7,
-						clearCount: 5,
+						...chartAggregate(7, 5),
 						scores: [bestRow, recentRow]
 					}
 				]
@@ -1182,7 +1187,7 @@ describe('Scores', () => {
 			drumLevel: i < 99 ? i + 1 : 99,
 			drumLevelDec: i < 99 ? 0 : i - 98,
 			fileHash: `hash-${i}`,
-			aggregate: { playCount: 1, clearCount: 1 },
+			aggregate: chartAggregate(1, 1),
 			best: bestRow,
 			recent: [] as (typeof recentRow)[]
 		}));
@@ -1380,7 +1385,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-a',
-						aggregate: { playCount: 7, clearCount: 5 },
+						aggregate: chartAggregate(7, 5),
 						best: bestRow,
 						recent: [recentRow]
 					}
@@ -1397,7 +1402,7 @@ describe('Scores', () => {
 						difficultyLabel: 'BASIC',
 						drumLevel: 55,
 						fileHash: 'hash-b',
-						aggregate: { playCount: 3, clearCount: 1 },
+						aggregate: chartAggregate(3, 1),
 						best: bestRow,
 						recent: []
 					}
@@ -1452,7 +1457,7 @@ describe('Scores', () => {
 					difficultyLabel: 'BASIC',
 					drumLevel: 55,
 					fileHash: `hash-${i}`,
-					aggregate: { playCount: 1, clearCount: 1 },
+					aggregate: chartAggregate(1, 1),
 					best: bestRow,
 					recent: []
 				}

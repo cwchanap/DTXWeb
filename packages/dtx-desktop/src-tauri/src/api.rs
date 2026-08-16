@@ -16,71 +16,16 @@ use tokio::fs;
 
 const API_REQUEST_TIMEOUT_MS: u64 = 30_000;
 
-const SIMFILE_FULL_FRAGMENT: &str = r#"
-fragment SimfileFull on Simfile {
-  id
-  displayId
-  title
-  artist
-  bpm
-  userId
-  googleDriveFileId
-  isPublished
-  downloadUrl
-  previewUrl
-  videoPreviewUrl
-  publishDate
-  createdAt
-  updatedAt
-  dtxFiles {
-    id
-    level
-    label
-  }
-}
-"#;
+const SIMFILE_FULL_FRAGMENT: &str = include_str!("../graphql/simfiles/simfile-full.graphql");
 
-const LIST_SIMFILES_QUERY: &str = r#"
-query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize: Int) {
-  simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
-    count
-    data {
-      id
-      displayId
-      title
-      artist
-      bpm
-      userId
-      googleDriveFileId
-      isPublished
-      downloadUrl
-      previewUrl
-      videoPreviewUrl
-      publishDate
-      createdAt
-      updatedAt
-      dtxFiles {
-        id
-        level
-        label
-      }
-    }
-  }
-}
-"#;
+const LIST_SIMFILES_QUERY: &str = include_str!("../graphql/simfiles/list-simfiles.graphql");
 
-const GET_SIMFILE_QUERY: &str = r#"
-query GetSimfile($id: ID!) {
-  simfile(id: $id) {
-    ...SimfileFull
-  }
-}
-"#;
+const GET_SIMFILE_QUERY: &str = include_str!("../graphql/simfiles/get-simfile.graphql");
 
 const GET_SIMFILE_WITH_FILES_QUERY: &str = r#"
 query GetSimfileWithFiles($id: ID!) {
   simfile(id: $id) {
-    ...SimfileFull
+    ...DesktopSimfileFull
     files {
       key
       size
@@ -90,11 +35,7 @@ query GetSimfileWithFiles($id: ID!) {
 }
 "#;
 
-const NEXT_DISPLAY_ID_QUERY: &str = r#"
-query NextDisplayId {
-  nextDisplayId
-}
-"#;
+const NEXT_DISPLAY_ID_QUERY: &str = include_str!("../graphql/simfiles/next-display-id.graphql");
 
 const SIMFILE_SEARCH_QUERY: &str = r#"
 query SimfileSearch($query: String!, $excludeIds: [ID!], $limit: Int) {
@@ -108,21 +49,9 @@ query SimfileSearch($query: String!, $excludeIds: [ID!], $limit: Int) {
 }
 "#;
 
-const CREATE_SIMFILE_MUTATION: &str = r#"
-mutation CreateSimfile($input: CreateSimfileInput!) {
-  createSimfile(input: $input) {
-    ...SimfileFull
-  }
-}
-"#;
+const CREATE_SIMFILE_MUTATION: &str = include_str!("../graphql/simfiles/create-simfile.graphql");
 
-const UPDATE_SIMFILE_MUTATION: &str = r#"
-mutation UpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
-  updateSimfile(id: $id, input: $input) {
-    ...SimfileFull
-  }
-}
-"#;
+const UPDATE_SIMFILE_MUTATION: &str = include_str!("../graphql/simfiles/update-simfile.graphql");
 
 const OWNER_DRIVE_SIMFILE_QUERY: &str = r#"
 query OwnerDriveSimfile($id: ID!) {
@@ -956,7 +885,7 @@ pub(crate) async fn fetch_user_simfiles_impl(
         let result = graphql_result_with_url(
             base_url,
             token,
-            LIST_SIMFILES_QUERY,
+            &graphql_document(LIST_SIMFILES_QUERY),
             json!({ "scope": "MINE", "page": page, "pageSize": page_size }),
         )
         .await;

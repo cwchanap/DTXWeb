@@ -1,0 +1,3 @@
+mutation DesktopCreateSimfile($input: CreateSimfileInput!) {
+  createSimfile(input: $input) { ...DesktopSimfileFull }
+}

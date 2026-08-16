@@ -146,26 +146,48 @@ fn native_simfile_from_graphql_matches_renderer_fixture() {
 }
 
 #[test]
-fn native_simfile_from_graphql_rejects_missing_dtx_id() {
-    let graphql_value = json!({
-        "id": "42",
-        "displayId": null,
-        "title": "Fixture Song",
-        "artist": "Fixture Artist",
-        "bpm": 123.5,
-        "userId": null,
-        "googleDriveFileId": null,
-        "isPublished": false,
-        "downloadUrl": null,
-        "previewUrl": null,
-        "videoPreviewUrl": null,
-        "publishDate": "2026-08-15",
-        "createdAt": "2026-08-15T00:00:00Z",
-        "updatedAt": "2026-08-15T00:00:01Z",
-        "dtxFiles": [{ "id": null, "label": "EXT", "level": 85.0 }]
-    });
+fn native_simfile_from_graphql_rejects_missing_null_and_non_array_dtx_files() {
+    for (case, dtx_files) in [
+        ("missing", None),
+        ("null", Some(Value::Null)),
+        ("non-array", Some(json!({}))),
+    ] {
+        let mut graphql_value = gql_simfile();
+        match dtx_files {
+            Some(dtx_files) => graphql_value["dtxFiles"] = dtx_files,
+            None => {
+                graphql_value
+                    .as_object_mut()
+                    .expect("simfile object")
+                    .remove("dtxFiles");
+            }
+        };
 
-    assert!(native_simfile_from_graphql(&graphql_value).is_err());
+        assert!(
+            native_simfile_from_graphql(&graphql_value).is_err(),
+            "{case} dtxFiles should fail conversion"
+        );
+    }
+}
+
+#[test]
+fn native_simfile_from_graphql_rejects_missing_null_and_invalid_dtx_ids() {
+    for (case, dtx_file) in [
+        ("absent", json!({ "label": "EXT", "level": 9.2 })),
+        ("null", json!({ "id": null, "label": "EXT", "level": 9.2 })),
+        (
+            "invalid",
+            json!({ "id": "abc", "label": "EXT", "level": 9.2 }),
+        ),
+    ] {
+        let mut graphql_value = gql_simfile();
+        graphql_value["dtxFiles"] = json!([dtx_file]);
+
+        assert!(
+            native_simfile_from_graphql(&graphql_value).is_err(),
+            "{case} dtx id should fail conversion"
+        );
+    }
 }
 
 #[test]
@@ -1607,8 +1629,24 @@ async fn load_asset_files_impl_returns_empty_when_no_files_array() {
 async fn create_simfile_record_impl_creates_without_previews_when_no_song_path() {
     let server = MockServer::start().await;
     let workspace = tempfile::tempdir().expect("workspace");
+    let expected_variables = json!({
+        "input": {
+            "title": "Song",
+            "artist": "Artist",
+            "bpm": 180.0,
+            "displayId": null,
+            "isPublished": true,
+            "publishDate": "2024-01-01",
+            "downloadUrl": "https://files/song.zip",
+            "videoPreviewUrl": "https://video",
+            "dtxFiles": [{ "label": "EXT", "level": 9.2 }]
+        }
+    });
     Mock::given(method("POST"))
         .and(path("/graphql"))
+        .and(body_partial_json(json!({
+            "variables": expected_variables.clone()
+        })))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "data": { "createSimfile": gql_simfile() }
         })))
@@ -1625,6 +1663,12 @@ async fn create_simfile_record_impl_creates_without_previews_when_no_song_path()
     .await
     .expect("result");
     let result = serde_json::to_value(result).expect("serializes");
+    let requests = server.received_requests().await.expect("received requests");
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    assert_eq!(body["variables"], expected_variables);
+    assert!(body["variables"]["input"].get("levels").is_none());
+    assert!(body["variables"]["input"].get("songPath").is_none());
 
     assert_eq!(result["success"], true);
     assert_eq!(result["simfileId"], "42");

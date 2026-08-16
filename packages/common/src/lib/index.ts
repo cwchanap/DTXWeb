@@ -17,22 +17,7 @@ export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } fr
 // Export Supabase types (for backward compatibility with auth)
 export type { Database } from './types/supabase.types';
 
-// Export D1 types
-export type {
-	SimfileRow,
-	SimfileInsert,
-	SimfileUpdate,
-	DtxFileRow,
-	DtxFileInsert,
-	UserProfileRow,
-	UserProfileInsert,
-	UserProfileUpdate,
-	SimfileWithDtxFiles,
-	SimfileWithDtx
-} from './types/d1.types';
-export { toSimfileWithDtx } from './types/d1.types';
-
-// Export current simfile model (replaces compatibility shapes in Task 5)
+// Export current simfile model (D1 row types stay server-only under '@dtx/common/server')
 export type { SimfileModel, SimfileDtxFile, SimfileAssetFile } from './types/simfile';
 
 // Game classes are exported in './game' to avoid SSR issues with Phaser

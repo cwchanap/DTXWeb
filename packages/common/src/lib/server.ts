@@ -24,7 +24,6 @@ export type {
 	UserProfileInsert,
 	UserProfileUpdate,
 	SimfileWithDtxFiles,
-	SimfileWithDtx,
 	ChartScoreRow,
 	ScoreRow,
 	ScoreInsert

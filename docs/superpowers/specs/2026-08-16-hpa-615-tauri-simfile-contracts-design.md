@@ -24,15 +24,17 @@ Linear: HPA-615
 
 ## Review disposition
 
-The follow-up design review is accepted with one wording correction: the implementation PR must **leave draft state / be marked ready** for the repository's draft-skipping CI to run; it must not remain draft.
+The follow-up review is accepted with one wording correction: the implementation PR must **leave draft state / be marked ready** for the repository's draft-skipping CI to run; it must not remain draft.
 
-The review's substantive wire findings are incorporated:
+The substantive findings are incorporated:
 
-- full-model GraphQL nulls remain present `T | null` keys, while omission semantics are limited to partial update fields and genuine envelope omissions;
-- GraphQL simfiles are converted through the existing `number_id`/mapper seam rather than deserialized directly into `NativeSimfile`;
+- full-model GraphQL nulls remain present `T | null` keys; omission semantics are limited to partial update fields and genuine envelope omissions;
+- GraphQL simfiles continue through the existing `number_id`/mapper normalization seam rather than being deserialized directly into `NativeSimfile`;
 - the existing HPA-614 `simfile_model.json` fixture remains the runtime wire oracle;
 - list/get/create/update share one desktop full-simfile fragment;
 - fixture equality and generated-file drift are load-bearing contract gates, with renderer typecheck supplementary because desktop typechecking is non-strict and excludes test files.
+
+One additional downstream edge is included: the still-embedded `GET_SIMFILE_WITH_FILES_QUERY` spreads the same full fragment, so only its spread name changes when the fragment moves; asset loading itself remains out of scope.
 
 ## Why this is the next slice
 
@@ -564,4 +566,4 @@ HPA-615 is complete when:
 
 ## Planning verification
 
-This design document itself changes no production code. Its review gate is satisfied when the implementation plan mirrors the null/omission, mapper/fixture, shared-fragment, generated-drift, and ready-for-review CI rules above; product checks are intentionally deferred to the implementation plan's execution steps.
+This design is planning-only. Product checks are intentionally deferred to the implementation plan's red/green and final verification steps; the planning PR itself is verified by review consistency and a branch diff showing only the design and implementation-plan documents.

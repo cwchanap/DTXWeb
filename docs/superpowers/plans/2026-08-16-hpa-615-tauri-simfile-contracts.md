@@ -61,7 +61,6 @@
 - `packages/dtx-desktop/src/renderer/src/services/desktopHost.test.ts` — concrete command payload expectations.
 - `packages/dtx-desktop/src/renderer/src/services/simFileService.test.ts` — generated fetch envelope behavior.
 - `packages/dtx-desktop/src/renderer/src/components/SongDetails.test.ts` — typed create/update/fetch behavior.
-- Directly affected score tests only when the existing test imports move with `FetchCloudSongResult`.
 
 ### Reused unchanged
 
@@ -1034,13 +1033,15 @@ Use successful `result.data` directly as the full current model; no duplicate ru
 const result = await desktopHost.fetchCloudSong(selectedSong.id);
 ```
 
-`Scores.svelte`: remove generic call syntax. Its `PromiseSettledResult` accumulator may import the generated result type:
+`Scores.svelte`: remove generic call syntax. Its `PromiseSettledResult` accumulator imports the generated result type:
 
 ```ts
 import type { FetchCloudSongResult } from '../lib/generated/native-api-contracts';
 ```
 
 Delete handwritten `FetchCloudSongResult` from `scoreTypes.ts`.
+
+Update any directly affected score tests only for this import/typing move; do not add new score behavior coverage for HPA-615.
 
 - [ ] **Step 7: Run renderer tests and typecheck**
 

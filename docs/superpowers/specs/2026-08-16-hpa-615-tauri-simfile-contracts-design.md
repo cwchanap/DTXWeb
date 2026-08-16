@@ -2,11 +2,11 @@
 
 ## Summary
 
-Make Rust the source of truth for the first production Tauri IPC contract slice: the simfile commands used by desktop chart/song-details flows.
+Make Rust the source of truth for the first production Tauri IPC contract slice used by desktop chart/song-details flows.
 
-Keep `@dtx/common`'s `SimfileModel` as the shared application model established by HPA-614. Reuse the repository's existing `ts-rs`, GraphQL Codegen, `simfile_model_from_graphql` normalization seam, and `simfile_model.json` cross-language fixture instead of introducing a second wire model or generator.
+Keep `@dtx/common`'s `SimfileModel` as the application model established by HPA-614. Reuse the existing `ts-rs` generator, GraphQL Codegen config, `number_id` normalization, `simfile_model_from_graphql` mapper, and `simfile_model.json` fixture rather than adding another contract system.
 
-Only five commands are in scope:
+Scope is exactly five commands:
 
 - `fetch_user_simfiles`
 - `fetch_cloud_song`
@@ -14,141 +14,98 @@ Only five commands are in scope:
 - `update_simfile_record`
 - `get_next_display_id`
 
-The first four gain named Rust result types and concrete request types where they accept structured input. `get_next_display_id` remains a primitive `i64 -> number` contract.
-
-The selected desktop GraphQL operations move from Rust string constants to checked-in `.graphql` files loaded with `include_str!`. List/get/create/update share one desktop full-simfile fragment. The existing GraphQL Codegen toolchain validates those documents against `packages/dtx-api/dist/schema.graphql`.
-
-This is deliberately a narrow vertical slice. It does not introduce a new RPC framework, generic DTO layer, runtime schema validation, Rust GraphQL client generator, or an `api.rs`/`SongDetails` refactor.
+The first four gain concrete Rust request/result types where useful. `get_next_display_id` remains `i64 -> number`. List/get/create/update share one desktop full-simfile GraphQL fragment loaded with `include_str!` and validated by the existing web GraphQL Codegen invocation.
 
 Linear: HPA-615
 
-## Review disposition
-
-The follow-up review is accepted with one wording correction: the implementation PR must **leave draft state / be marked ready** for the repository's draft-skipping CI to run; it must not remain draft.
-
-The substantive findings are incorporated:
-
-- full-model GraphQL nulls remain present `T | null` keys; omission semantics are limited to partial update fields and genuine envelope omissions;
-- GraphQL simfiles continue through the existing `number_id`/mapper normalization seam rather than being deserialized directly into `NativeSimfile`;
-- the existing HPA-614 `simfile_model.json` fixture remains the runtime wire oracle;
-- list/get/create/update share one desktop full-simfile fragment;
-- fixture equality and generated-file drift are load-bearing contract gates, with renderer typecheck supplementary because desktop typechecking is non-strict and excludes test files.
-
-One additional downstream edge is included: the still-embedded `GET_SIMFILE_WITH_FILES_QUERY` spreads the same full fragment, so only its spread name changes when the fragment moves; asset loading itself remains out of scope.
-
-## Why this is the next slice
-
-HPA-614 is complete and merged into `main`. That removes HPA-615's only blocker and leaves a stable renderer model (`SimfileModel`) plus an existing Rust normalization seam and fixture for this ticket to type across the Tauri boundary.
-
-HPA-615 blocks HPA-616 and HPA-617. Completing the production contract seam first prevents those later tickets from extracting or documenting handwritten IPC shapes that are about to disappear.
-
-HPA-613 is also medium priority, but it is independent CI optimization work. HPA-615 has stronger sequencing value because completing it unlocks two follow-up architecture tasks.
-
 ## Current problem
 
-### Renderer boundary
+### Rust and renderer both describe the same wire shape
 
-`packages/dtx-desktop/src/renderer/src/services/desktopHost.ts` still exposes generic methods for the selected structured commands:
+`api.rs` currently normalizes GraphQL simfiles into camelCase `serde_json::Value`, while renderer callers supply their own generic result types:
 
-- `fetchUserSimfiles<T>()`
-- `fetchCloudSong<T>()`
-- `createSimfileRecord<T>()`
-- `updateSimfileRecord<T>()`
+- `simFileService.ts`: `MainProcessSimFileResult`
+- `SongDetails.svelte`: `CreateSimfileResult`, `UpdateSimfileResult`
+- `scoreTypes.ts`: `FetchCloudSongResult`
 
-Callers supply their own result shape. That produces duplicate contracts in:
+`desktopHost.ts` therefore knows command names but not the selected commands' actual payload contracts.
 
-- `simFileService.ts` (`MainProcessSimFileResult`)
-- `SongDetails.svelte` (`CreateSimfileResult`, `UpdateSimfileResult`)
-- `scoreTypes.ts` (`FetchCloudSongResult`)
+### The HPA-614 mapper is already the correct normalization seam
 
-`getNextDisplayId()` is already concrete as `Promise<number>` and should stay that way.
-
-### Rust boundary
-
-`packages/dtx-desktop/src-tauri/src/api.rs` still uses `serde_json::Value` at the selected structured command boundaries and assembles response envelopes with `json!()`.
-
-HPA-614 already added the correct normalization seam:
+GraphQL `ID!` values arrive as strings, while the renderer/application model uses numbers. HPA-614 already handles that through:
 
 ```rust
 fn number_id(value: &Value) -> Result<i64>
 pub fn simfile_model_from_graphql(simfile: &Value) -> Result<Value>
 ```
 
-That mapper is load-bearing because GraphQL `ID!` values arrive as strings while the renderer/application contract uses numbers.
+It also added `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json`, with a Rust test that feeds string GraphQL ids through the mapper and asserts the numeric/camelCase output exactly.
 
-HPA-614 also added:
+HPA-615 should type that mapper, not deserialize GraphQL JSON directly into the new Rust wire type.
 
-`packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json`
+### GraphQL list fields are duplicated
 
-The existing fixture test feeds string GraphQL ids through the mapper and asserts the numeric/camelCase output exactly. HPA-615 should type that existing output instead of adding a second conversion or expected blob.
+After HPA-614, `LIST_SIMFILES_QUERY` repeats the same full simfile fields as `SIMFILE_FULL_FRAGMENT`. That creates one-edit-per-field drift.
 
-### Existing generation
+`GET_SIMFILE_WITH_FILES_QUERY` stays embedded because asset loading is out of scope, but it also spreads the same full fragment and must keep using the fragment after it moves to a file.
 
-`ts-rs` is already a direct Rust dependency. Existing structs in `src-tauri/src/models.rs` derive `TS` and export to:
+### Generated contracts need two repository seams
 
-`packages/e2e-desktop/support/generated/native-types.ts`
+The production `ts-rs` output needs:
 
-The root `gen:native-types` command already drives `ts-rs` export tests, and Tauri CI verifies generated output. HPA-615 extends those seams rather than adding another generator.
+1. a Prettier exclusion so formatting tools do not rewrite generated output and break the generation drift gate; and
+2. a typechecked bridge proving generated `NativeSimfile` remains assignable to `@dtx/common` `SimfileModel`.
 
-### GraphQL documents
-
-The selected GraphQL operations are embedded as Rust string constants in `api.rs`.
-
-After HPA-614, `LIST_SIMFILES_QUERY` duplicates the same full simfile fields as `SIMFILE_FULL_FRAGMENT`. Keeping both field lists would make every future current-model field change require two edits.
-
-`GET_SIMFILE_WITH_FILES_QUERY` remains outside the five-command migration because it belongs to asset loading, but it also spreads the shared full fragment. If the fragment is renamed while moving it to a file, this embedded query's spread name must change too.
-
-The API schema is already generated and checked in at `packages/dtx-api/dist/schema.graphql`. The web package already owns GraphQL Codegen and generated-client drift checks, so desktop operation validation can reuse that toolchain.
+The existing JSON fixture remains necessary because desktop TypeScript is non-strict and the fixture test is excluded from production typechecking.
 
 ## Reuse decisions
 
-| Proposed work | Existing seam to extend |
+| Proposed work | Existing seam |
 | --- | --- |
-| `NativeSimfile` / `NativeSimfileDtxFile` | `@dtx/common` `SimfileModel`, `api.rs` mapper, `tests/fixtures/simfile_model.json` |
-| Typed GraphQL conversion | `number_id` + existing mapper; no full-object deserializer |
-| Production `ts-rs` output | Existing `#[derive(TS)]` / `export_to` pattern and root `gen:native-types` |
-| Named command envelopes/inputs | Existing renderer handwritten contracts |
-| `.graphql` + `include_str!` | Existing `graphql_document(fragment + operation)` pattern and web `.graphql` convention |
-| Desktop GraphQL validation | Existing `packages/dtx-web/codegen.ts` and `lint:codegen` workflow |
-| Generated drift CI | Existing Tauri Rust CI generated-TypeScript verification |
+| `NativeSimfile` / `NativeSimfileDtxFile` | `SimfileModel`, `simfile_model_from_graphql`, `simfile_model.json` |
+| Typed GraphQL conversion | `number_id` + existing mapper |
+| Production TypeScript generation | existing `#[derive(TS)]`, `export_to`, root `gen:native-types` |
+| Four result envelopes | current renderer handwritten envelopes |
+| `.graphql` + `include_str!` | existing `graphql_document(fragment + operation)` |
+| Desktop GraphQL validation | existing `packages/dtx-web/codegen.ts` + `lint:codegen` |
+| Generated drift | existing Tauri Rust CI generated-type verification |
+| Application/wire compile-time link | new small non-test renderer assertion file |
+
+`api_contracts.rs` is the only new Rust ownership seam. `models.rs` is currently centered on filesystem/E2E native types, so keeping production simfile API contracts separate is clearer than extending that file.
 
 ## Goals
 
 - Make Rust authoritative for the selected production IPC wire shapes.
-- Preserve the exact HPA-614 `SimfileModel` JSON shape, including present nullable keys.
-- Reuse `number_id`, the existing GraphQL mapper, and `simfile_model.json` as the normalization/contract seam.
-- Generate production TypeScript contracts from Rust with existing `ts-rs`.
-- Remove caller-supplied generic result types and duplicate renderer interfaces for the selected commands.
-- Keep `SimfileModel` as the shared application model rather than creating another domain model.
-- Make selected desktop GraphQL documents schema-validated and share one full-simfile fragment.
-- Establish a repeatable pattern without forcing untouched commands to migrate.
+- Preserve the exact HPA-614 full-simfile JSON contract, including present nullable keys.
+- Keep GraphQL string-id normalization in `number_id`.
+- Generate production TypeScript contracts through existing `ts-rs` machinery.
+- Add a compile-time link from generated `NativeSimfile` to `SimfileModel`.
+- Remove selected generic `desktopHost<T>()` usage and duplicate renderer result interfaces.
+- Share one full-simfile GraphQL fragment across list/get/create/update.
+- Validate desktop GraphQL documents through the existing Codegen config.
 
 ## Non-goals
 
 - No migration of every Tauri command.
-- No new RPC/binding framework.
-- No Specta, protobuf, JSON Schema, Zod, or runtime validation layer.
+- No Specta, protobuf, JSON Schema, Zod, runtime validation, or new RPC framework.
 - No generic request/response registry.
-- No full Rust GraphQL client/codegen stack.
+- No Rust GraphQL client/codegen stack.
 - No GraphQL or D1 schema redesign.
-- No Tauri command renaming.
-- No `api.rs` extraction; HPA-616 owns that.
-- No `SongDetails` extraction; HPA-616 owns that.
+- No command renaming.
+- No `api.rs` or `SongDetails` extraction; HPA-616 owns those refactors.
 - No broad E2E generated-contract cleanup.
-- No compatibility aliases for deleted handwritten renderer types.
-- No direct deserialization of GraphQL simfile JSON into `NativeSimfile`.
+- No compatibility aliases for deleted handwritten renderer contracts.
+- No direct full-object GraphQL deserialization into `NativeSimfile`.
 
 ## Chosen architecture
 
-### 1. Add a narrow native contract module
+### 1. Add a narrow Rust contract module
 
 Create:
 
 `packages/dtx-desktop/src-tauri/src/api_contracts.rs`
 
-It owns only the wire types needed by the migrated simfile commands.
-
-`NativeSimfile` is outbound native/application wire data, so derive `Serialize + TS` rather than `Deserialize`. Tauri result values need serialization; GraphQL input is normalized manually through the existing mapper.
+`NativeSimfile` is outbound wire data, so derive `Serialize + TS`, not `Deserialize`:
 
 ```rust
 #[derive(Debug, Clone, Serialize, TS)]
@@ -183,15 +140,13 @@ pub struct NativeSimfile {
 }
 ```
 
-The desktop full fragment requests each nested DTX id, so the native wire makes it required. Missing/null/invalid nested ids fail conversion; there is no positional fallback.
+The desktop full GraphQL fragment selects every nested DTX id. Those ids are required on the native wire; missing/null/invalid ids fail conversion rather than being silently dropped.
 
-`DtxFile.level` and simfile `bpm` are GraphQL floats, so their Rust wire types are `f64`.
+GraphQL `bpm` and DTX `level` are floats, so use `f64`. Explicit `ts-rs` overrides keep 64-bit ids/display ids as TypeScript `number` rather than `bigint`.
 
-64-bit ids/display ids explicitly generate TypeScript `number`/`number | null`, not `bigint`, matching the established renderer contract and existing native-generation conventions.
+### 2. Preserve nulls on the full model; omit only partial inputs/envelope extras
 
-### 2. Keep full-model nulls present; use omission only where omission is semantic
-
-HPA-614's `SimfileModel` requires keys such as:
+`SimfileModel` requires nullable fields as present keys:
 
 ```ts
 displayId: number | null;
@@ -202,21 +157,16 @@ previewUrl: string | null;
 videoPreviewUrl: string | null;
 ```
 
-For corresponding `NativeSimfile` `Option<T>` fields:
+Therefore `NativeSimfile` `Option<T>` fields do **not** use `skip_serializing_if` or `#[ts(optional)]`. `None` serializes to explicit JSON `null` and generates required `T | null` properties.
 
-- do **not** use `serde(skip_serializing_if = "Option::is_none")`;
-- do **not** use `#[ts(optional)]`.
+Omission annotations are limited to places where absence is semantic:
 
-`None` serializes as an explicit JSON `null`, and TypeScript receives a required `T | null` property.
+- partial `UpdateSimfileRecordInput` fields;
+- result-envelope fields omitted on the opposite success/failure branch.
 
-Omission annotations belong only at boundaries whose existing contract genuinely distinguishes absent from null:
+Create `displayId: None` is a real null value and stays present.
 
-- `UpdateSimfileRecordInput` partial fields;
-- result-envelope fields that are not present in one success/failure branch.
-
-Create input is concrete. `displayId` may be null for current auto-allocation behavior, but the key is present.
-
-### 3. Type the existing mapper; never deserialize the full GraphQL object into `NativeSimfile`
+### 3. Type the existing mapper instead of deserializing GraphQL JSON
 
 Rename/refocus the current mapper to:
 
@@ -224,20 +174,11 @@ Rename/refocus the current mapper to:
 fn native_simfile_from_graphql(simfile: &Value) -> Result<NativeSimfile>
 ```
 
-It explicitly constructs `NativeSimfile` and preserves `number_id` for:
+It explicitly constructs `NativeSimfile` and calls `number_id` for both `Simfile.id` and every `DtxFile.id`.
 
-- `Simfile.id`
-- every `DtxFile.id`
+Do not use `serde_json::from_value::<NativeSimfile>(...)`. `NativeSimfile` intentionally lacks `Deserialize`, making that bypass unavailable.
 
-Do not use:
-
-```rust
-serde_json::from_value::<NativeSimfile>(...)
-```
-
-GraphQL ids are JSON strings while the native/application wire uses numeric ids. Direct full-object deserialization would either fail on valid GraphQL responses or establish another shape.
-
-The conversion test reuses the existing HPA-614 fixture:
+The existing fixture remains the wire oracle:
 
 ```rust
 let native = native_simfile_from_graphql(&graphql_value).expect("mapped");
@@ -248,20 +189,20 @@ let expected: Value = serde_json::from_str(include_str!(
 assert_eq!(actual, expected);
 ```
 
-Do not add another expected full-simfile blob.
+The typed mapper intentionally tightens malformed-response behavior. Fields that the GraphQL schema marks non-null (`title`, `artist`, `bpm`, `publishDate`, `createdAt`, `updatedAt`, and required nested ids) now cause a conversion error if missing or invalid instead of being propagated as `Value::Null`. Valid schema-conforming responses keep their current behavior.
 
-### 4. Type only the four structured command envelopes/inputs
+### 4. Type only the four structured command contracts
 
 #### `fetch_user_simfiles`
 
-Return a named result preserving:
+Return a named result with:
 
 - `success`
 - `data: Vec<NativeSimfile>`
 - `fromCache`
 - failure `error`
 
-Keep `fromCache: false`; removing it is unrelated behavior churn.
+Keep `fromCache: false` from native responses; renderer cache hits still set it to true locally.
 
 #### `fetch_cloud_song`
 
@@ -271,122 +212,125 @@ Make the Rust command id a `String` and simplify renderer API to:
 fetchCloudSong(cloudSongId: string): Promise<FetchCloudSongResult>
 ```
 
-Delete the object/number convenience overload. Keep response field `cloudSongData`.
+Delete the object/number convenience overload. Keep `cloudSongData` as the response field.
 
 #### `create_simfile_record`
 
-Add a concrete request for current renderer-owned fields:
+Use a concrete input for current renderer-owned fields: title, artist, bpm, displayId, isPublished, publishDate, downloadUrl, videoPreviewUrl, levels, and songPath.
 
-- title
-- artist
-- bpm
-- displayId
-- isPublished
-- publishDate
-- downloadUrl
-- videoPreviewUrl
-- levels
-- songPath
-
-`levels[].level` is `f64`. `displayId` is `Option<i64>` without omission annotations because null is a real create value. `songPath` stays command-local and is not sent to GraphQL.
-
-Result keeps current success data/simfile id and optional preview warnings/failure error.
+`songPath` remains command-local for preview uploads. `displayId` may be null but is not omitted.
 
 #### `update_simfile_record`
 
-Add a partial `UpdateSimfileRecordInput`. Every `Option<T>` means **not supplied**, so use:
+Use a partial `UpdateSimfileRecordInput`. Optional fields use:
 
 ```rust
 #[serde(skip_serializing_if = "Option::is_none")]
 #[ts(optional)]
 ```
 
-`googleDriveFileId` is absent from the type, making the general update path unable to mutate Drive-owned state. The HPA-614 defensive map removal can disappear.
+`googleDriveFileId` does not exist on this type, making general updates unable to mutate Drive-owned state.
 
-Success returns a full `NativeSimfile`, not `Partial<SimfileModel>`.
+Keep the existing renderer params-object convention:
+
+```ts
+updateSimfileRecord(params: {
+  simfileId: string;
+  updateData: UpdateSimfileRecordInput;
+}): Promise<UpdateSimfileRecordResult>
+```
+
+The success envelope carries a full `NativeSimfile`, not `Partial<SimfileModel>`.
 
 #### `get_next_display_id`
 
 Keep Rust `i64` and renderer `Promise<number>` with no wrapper type.
 
-### 5. Generate one production TypeScript file with the existing generator
+### 5. Generate one production TypeScript file and protect it from formatting
 
-Generate migrated production types into:
+Generate:
 
 `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 
-Use normal `#[ts(export, export_to = ...)]` declarations so existing `bun run gen:native-types` / autogenerated export tests produce the file.
-
-Do not generate into `@dtx/common`.
-
-Do not generate `NativeSimfile` into the E2E native file. E2E-only controls/snapshots stay there; if E2E ever needs a production simfile type, it imports/re-exports the production generated type instead of defining another Rust mirror.
-
-### 6. Move selected GraphQL operations to files and share one fragment
-
-Create:
-
-`packages/dtx-desktop/src-tauri/graphql/simfiles/`
-
-with:
-
-- `simfile-full.graphql`
-- `list-simfiles.graphql`
-- `get-simfile.graphql`
-- `create-simfile.graphql`
-- `update-simfile.graphql`
-- `next-display-id.graphql`
-
-Use one fragment, for example `DesktopSimfileFull`, containing the full current model fields.
-
-List/get/create/update all spread it. In particular, list becomes:
-
-```graphql
-data {
-  ...DesktopSimfileFull
-}
-```
-
-Rust loads fragment and operation strings with `include_str!` and reuses the current `graphql_document(fragment + operation)` composition. No document-loader abstraction is needed.
-
-Delete the stale list test asserting the list must not use a fragment.
-
-`GET_SIMFILE_WITH_FILES_QUERY` stays embedded because asset loading is outside HPA-615, but update its spread from `...SimfileFull` to `...DesktopSimfileFull` so it still composes with the moved shared fragment. No other asset-loading behavior changes.
-
-Leave search, score upload, Drive metadata, chart-only projections, and asset-file projection bodies embedded otherwise.
-
-### 7. Validate desktop GraphQL with existing web Codegen tooling
+through existing `#[ts(export, export_to = ...)]` + `bun run gen:native-types` machinery.
 
 Add:
 
-`packages/dtx-web/codegen.desktop.ts`
+`packages/dtx-desktop/src/renderer/src/lib/generated/`
 
-It reads:
+to `.prettierignore`. Generated output must be compared byte-for-byte after regeneration; formatting tools must not rewrite it.
 
-- `../dtx-api/dist/schema.graphql`
-- `../dtx-desktop/src-tauri/graphql/**/*.graphql`
+Do not generate these production simfile contracts into `@dtx/common` or `packages/e2e-desktop/support/generated/native-types.ts`.
 
-and generates disposable validation output under `packages/dtx-web/.svelte-kit/`.
+### 6. Add a typechecked bridge to `SimfileModel`
 
-Extend existing `lint:codegen` so it runs both web generated-client drift and desktop document validation.
+Create:
 
-Do not add another GraphQL validator dependency or shared scripts package for this one command.
+`packages/dtx-desktop/src/renderer/src/lib/nativeContract.ts`
 
-### 8. Make selected `desktopHost` methods concrete and delete duplicate renderer contracts
+```ts
+import type { SimfileModel } from '@dtx/common';
+import type { NativeSimfile } from './generated/native-api-contracts';
 
-Target API:
+type NativeSimfileMatchesModel = NativeSimfile extends SimfileModel ? true : never;
+export const nativeSimfileMatchesModel: NativeSimfileMatchesModel = true;
+```
+
+This lives in production renderer source, so `svelte-check` typechecks it. It catches missing/renamed required application fields that the runtime JSON fixture cannot detect because the fixture's TypeScript test reads JSON as `any`.
+
+Desktop TypeScript has `strict: false`, so this does not replace the Rust fixture/nullability tests. The two gates cover different failure modes:
+
+- fixture equality: runtime field names, values, numeric id normalization, explicit nulls;
+- type bridge: generated wire remains structurally assignable to `SimfileModel`.
+
+### 7. Move selected GraphQL documents to files and share one fragment
+
+Create `packages/dtx-desktop/src-tauri/graphql/simfiles/` containing one `DesktopSimfileFull` fragment plus list/get/create/update/next-display-id operations.
+
+List/get/create/update all spread `DesktopSimfileFull` and Rust composes fragment + operation using the existing `graphql_document` helper.
+
+`GET_SIMFILE_WITH_FILES_QUERY` stays embedded because asset loading is outside HPA-615, but change its spread from `...SimfileFull` to `...DesktopSimfileFull` so it still composes with the moved fragment.
+
+Delete the stale test that forbids list from using the full fragment.
+
+### 8. Validate desktop GraphQL in the existing Codegen config
+
+Do not create `codegen.desktop.ts` or another npm script.
+
+Extend `packages/dtx-web/codegen.ts` with a second output:
+
+```ts
+'.svelte-kit/dtx-desktop-graphql-validation.ts': {
+  documents: ['../dtx-desktop/src-tauri/graphql/**/*.graphql'],
+  plugins: ['typescript', 'typescript-operations'],
+  config: {
+    skipTypename: true,
+    useTypeImports: true,
+    scalars: { ID: 'string' }
+  }
+}
+```
+
+GraphQL Code Generator supports output-specific `documents`; the existing root `documents` continues to feed the committed web client, while the second output validates only desktop documents.
+
+Existing `bun run codegen` and `lint:codegen` need no script changes. The disposable desktop output is under ignored `.svelte-kit/`, while the existing drift check still targets only `src/lib/api/generated/`.
+
+### 9. Make selected renderer methods concrete and delete duplicates
+
+Target renderer API:
 
 ```ts
 fetchUserSimfiles(): Promise<FetchUserSimfilesResult>
 fetchCloudSong(cloudSongId: string): Promise<FetchCloudSongResult>
 createSimfileRecord(input: CreateSimfileRecordInput): Promise<CreateSimfileRecordResult>
-updateSimfileRecord(
-  simfileId: string,
-  updateData: UpdateSimfileRecordInput
-): Promise<UpdateSimfileRecordResult>
+updateSimfileRecord(params: {
+  simfileId: string;
+  updateData: UpdateSimfileRecordInput;
+}): Promise<UpdateSimfileRecordResult>
 getNextDisplayId(): Promise<number>
 ```
 
-Keep low-level `DesktopHostRuntime.invoke<T>()` and `invokeHost<T>()` generic. Untouched named commands remain as-is.
+Keep low-level `DesktopHostRuntime.invoke<T>()` and `invokeHost<T>()` generic.
 
 Delete rather than alias:
 
@@ -394,84 +338,54 @@ Delete rather than alias:
 - `CreateSimfileResult`
 - `UpdateSimfileResult`
 - handwritten `FetchCloudSongResult`
+- `isSimfileModel`
 
-Remove selected generic call-site arguments and the local `isSimfileModel` guard once fetch/create results are generated from the Rust contract.
-
-## Error and compatibility behavior
-
-Keep current runtime behavior unless typing makes an invalid state impossible.
-
-- GraphQL/network failures remain failure envelopes where commands currently return them.
-- Native configuration/workspace errors continue to reject Tauri commands.
-- `fetch_user_simfiles` keeps already-fetched partial data if a later page fails.
-- Create preview upload failures remain warnings after successful record creation.
-- `fetch_cloud_song` keeps `cloudSongData` and current not-found behavior.
-- `get_next_display_id` continues to reject invalid/missing API values.
-- General update requests cannot represent `googleDriveFileId`.
-- Nullable `NativeSimfile` keys remain present with JSON `null`.
-- Partial update keys remain omitted when not supplied.
-- No old generic signatures, compatibility aliases, or TypeScript runtime schema are added.
-
-## Testing strategy
+## Testing and verification
 
 ### Load-bearing Rust wire fixture
 
-The primary runtime wire test reuses `tests/fixtures/simfile_model.json`:
+Reuse `tests/fixtures/simfile_model.json` unchanged. The typed mapper test must prove:
 
-- GraphQL fixture uses string simfile/DTX ids.
-- `native_simfile_from_graphql` parses them through `number_id`.
-- `serde_json::to_value(native)` equals the existing fixture exactly.
-- nullable model fields remain present as JSON `null`.
+- GraphQL string ids become numeric wire ids through `number_id`;
+- `serde_json::to_value(NativeSimfile)` equals the fixture exactly;
+- nullable model fields remain present as JSON null;
 - missing/null/invalid nested DTX ids fail conversion.
 
-Add a `TS::decl()` assertion proving nullable native fields generate required `T | null` properties rather than optional properties.
+Add a `TS::decl()` assertion that nullable native fields generate required `T | null`, not optional properties.
+
+### Compile-time application model bridge
+
+`bun run --filter=dtx-desktop typecheck` must typecheck `nativeContract.ts`. This is load-bearing for missing/renamed application fields; it is supplementary for nullability because desktop TypeScript is non-strict.
 
 ### Typed request/envelope tests
 
 - Update `None` fields serialize by omission.
-- Create `displayId: None` serializes as a present JSON null.
-- Existing wiremock request tests prove typed GraphQL variables preserve behavior.
-- General update type cannot carry Drive-owned state.
+- Create `displayId: None` serializes as a present null.
+- Existing wiremock tests assert exact GraphQL variables.
+- General update type cannot carry `googleDriveFileId`.
 
-### GraphQL document tests
+### GraphQL document validation
 
-- List operation uses the shared fragment.
-- Composed list document includes current full-model fields/timestamps.
-- Codegen rejects schema-invalid desktop documents.
-- Embedded `GET_SIMFILE_WITH_FILES_QUERY` continues to reference the moved fragment name.
+- List uses `DesktopSimfileFull`.
+- Composed list contains the full current model fields.
+- Embedded asset query uses the moved fragment name.
+- Existing `bun run --filter=dtx-web lint:codegen` validates desktop documents through the second output in `codegen.ts`.
 
 ### Generated binding drift
 
-Run `bun run gen:native-types` and require a clean diff for:
+Run `bun run gen:native-types`, then require a clean diff for production `native-api-contracts.ts` and existing E2E `native-types.ts`.
 
-- production `native-api-contracts.ts`
-- existing E2E `native-types.ts`
+`.prettierignore` must cover the production generated directory so lint-staged / repository formatting cannot mutate the generated file between generation and drift verification.
 
-Tauri CI uses `git ls-files --error-unmatch` so a missing committed production output cannot pass silently.
+### Renderer and grep gates
 
-### Renderer
+Run existing focused renderer tests and production typecheck. Grep must find no selected handwritten result declarations or generic selected-command calls.
 
-Run existing focused tests plus:
+### E2E and PR state
 
-`bun run --filter=dtx-desktop typecheck`
+Do not add a new E2E scenario solely for typing. Keep E2E-only generated types separate.
 
-Typecheck is supplementary, not the primary wire gate. `tsconfig.web.json` has `strict: false` and excludes `*.test.ts`/`*.spec.ts`.
-
-Use repository grep as a load-bearing completion check for deleted handwritten contract declarations and selected generic calls.
-
-### E2E
-
-Run:
-
-`bun run --filter=dtx-e2e-desktop check`
-
-Do not add a new E2E scenario solely for typing. Current E2E generated native types remain control/snapshot types and must not gain a duplicate production simfile contract.
-
-### Draft-state rule
-
-The implementation PR must **leave draft state / be marked ready for review** before final CI verification. Tauri Rust CI, lint/format, and desktop E2E all explicitly skip draft pull requests and include `ready_for_review` as a trigger.
-
-The planning PR may remain draft.
+The implementation PR must be marked ready for review before final CI verification because Tauri Rust CI, lint/format, and desktop E2E skip draft PR jobs.
 
 ## Expected file scope
 
@@ -479,11 +393,12 @@ New:
 
 - `packages/dtx-desktop/src-tauri/src/api_contracts.rs`
 - `packages/dtx-desktop/src-tauri/graphql/simfiles/*.graphql`
-- `packages/dtx-web/codegen.desktop.ts`
 - `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
+- `packages/dtx-desktop/src/renderer/src/lib/nativeContract.ts`
 
 Modify:
 
+- `.prettierignore`
 - `packages/dtx-desktop/src-tauri/src/lib.rs`
 - `packages/dtx-desktop/src-tauri/src/api.rs`
 - `packages/dtx-desktop/src-tauri/src/tests/api_tests.rs`
@@ -493,77 +408,38 @@ Modify:
 - `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`
 - `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts`
 - directly affected renderer tests
-- `packages/dtx-web/package.json`
+- `packages/dtx-web/codegen.ts`
 - `.github/workflows/tauri-rust-ci.yml`
 
 Reuse unchanged:
 
 - `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json`
-- `packages/e2e-desktop/support/generated/native-types.ts` structure/ownership; its contents continue to be generated only for existing E2E/general-native types, not the new production simfile contracts.
+- E2E generated-type ownership; do not add production simfile contracts there.
 
-## Implementation order
+## Risks
 
-1. Add `NativeSimfile`/DTX Rust wire structs and change the existing mapper to return them while preserving `number_id` and exact fixture serialization.
-2. Add missing/invalid nested-id coverage, `TS::decl()` nullability coverage, and typed create/update/envelope contracts.
-3. Convert the four structured Rust commands to named inputs/results; keep next-display-id primitive.
-4. Move selected GraphQL documents to files, share one full fragment, update the embedded asset query's spread name, and remove the stale anti-fragment test.
-5. Validate desktop GraphQL through existing `dtx-web` Codegen.
-6. Generate the production TypeScript file and extend existing CI drift verification.
-7. Make selected `desktopHost` methods concrete and delete handwritten renderer contract copies/generic call arguments.
-8. Run Rust, fixture, generation, GraphQL, renderer, grep, and E2E checks; mark the implementation PR ready so draft-skipping CI runs.
-
-## Risks and mitigations
-
-### Full-model nullability accidentally becomes omission
-
-Mitigation: no `skip_serializing_if` or `#[ts(optional)]` on `NativeSimfile`; fixture equality and `TS::decl()` assertions are load-bearing.
-
-### GraphQL string IDs accidentally bypass `number_id`
-
-Mitigation: `NativeSimfile` is outbound-only (`Serialize + TS`, no `Deserialize`), and the typed mapper explicitly constructs ids through `number_id`. Full-object `serde_json::from_value::<NativeSimfile>` is out of scope and prohibited by the spec.
-
-### Update omission accidentally becomes GraphQL null
-
-Mitigation: partial update `Option<T>` fields use `skip_serializing_if` + `#[ts(optional)]`, with exact wiremock GraphQL-variable assertions.
-
-### Full GraphQL field lists drift
-
-Mitigation: list/get/create/update share one full fragment. The still-embedded asset query only updates its spread name to remain compatible with the moved fragment.
-
-### 64-bit Rust ids become TypeScript bigint
-
-Mitigation: explicit `#[ts(type = "number")]` / `number | null` overrides and generated-file drift checks.
-
-### Renderer typecheck misses contract errors
-
-Mitigation: Rust fixture equality and generated-file drift are primary; grep covers removed types/generic calls; renderer typecheck remains extra coverage.
-
-### `api.rs` remains large
-
-Intentional. HPA-616 owns extraction after this ticket establishes concrete boundaries.
+- **Full-model nulls become omission:** prevented by Rust fixture + `TS::decl()` tests.
+- **GraphQL string IDs bypass `number_id`:** `NativeSimfile` has no `Deserialize`; typed mapper constructs ids explicitly.
+- **Wire/application model drift:** fixture covers runtime JSON; `nativeContract.ts` covers structural assignability to `SimfileModel`.
+- **Generated file gets reformatted:** production generated directory is ignored by Prettier; CI compares regenerated bytes.
+- **Update omission becomes null:** typed update serialization + wiremock variable assertions.
+- **Full GraphQL field lists drift:** one shared fragment.
+- **`api.rs` remains large:** intentional; HPA-616 owns extraction.
 
 ## Completion criteria
 
 HPA-615 is complete when:
 
-- selected structured commands use named Rust result types and concrete structured inputs instead of `serde_json::Value` at the Tauri boundary;
-- `native_simfile_from_graphql` uses `number_id` for simfile and nested DTX ids and serializes exactly to the existing HPA-614 fixture;
-- `NativeSimfile` does not derive `Deserialize`, nullable fields are required `T | null` TypeScript properties, and runtime null keys stay present;
-- nested DTX ids are required and invalid/missing ids fail conversion;
-- production TypeScript contracts are generated by the existing `ts-rs` path and committed;
-- 64-bit Rust ids remain TypeScript `number` rather than `bigint`;
-- `fetchCloudSong` accepts only a string id;
-- selected `desktopHost` methods no longer expose caller-supplied generic result types;
-- handwritten migrated renderer IPC result types are deleted rather than aliased;
-- optional update fields preserve omission semantics and cannot represent `googleDriveFileId`;
-- list/get/create/update share one desktop full-simfile fragment;
-- the embedded asset query still composes with that fragment after the rename;
-- existing GraphQL Codegen tooling rejects schema-invalid desktop documents;
+- selected structured Tauri commands use named Rust result/input types;
+- `native_simfile_from_graphql` preserves `number_id` and serializes exactly to the existing fixture;
+- schema-impossible malformed required simfile fields now fail conversion deliberately;
+- `NativeSimfile` does not derive `Deserialize`, keeps nullable properties required, and requires nested DTX ids;
+- generated `NativeSimfile` is structurally assignable to `SimfileModel` through the typechecked bridge;
+- production `ts-rs` output is committed, ignored by Prettier, and clean after regeneration;
+- selected `desktopHost` methods are concrete; `fetchCloudSong` is string-only and `updateSimfileRecord` keeps its params-object convention;
+- handwritten migrated result types and `isSimfileModel` are removed;
+- partial update fields preserve omission and cannot represent `googleDriveFileId`;
+- list/get/create/update share `DesktopSimfileFull`, and the embedded asset query still composes with it;
+- the existing `codegen.ts` / `lint:codegen` invocation rejects invalid desktop GraphQL documents without an extra config or script;
 - E2E generated types do not duplicate the production simfile contract;
-- fixture equality, Rust tests, generated-binding drift, renderer tests/typecheck, grep gates, desktop GraphQL validation, E2E typecheck, and ready-for-review CI pass;
-- command names and runtime UX remain unchanged;
-- untouched commands remain outside the migration.
-
-## Planning verification
-
-This design is planning-only. Product checks are intentionally deferred to the implementation plan's red/green and final verification steps; the planning PR itself is verified by review consistency and a branch diff showing only the design and implementation-plan documents.
+- Rust fixture/tests, generated drift, type bridge/typecheck, renderer tests, grep gates, GraphQL validation, E2E typecheck, and ready-for-review CI pass.

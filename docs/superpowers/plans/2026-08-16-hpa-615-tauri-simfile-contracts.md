@@ -1182,7 +1182,7 @@ Then push the implementation branch.
 
 - [ ] **Step 8: Mark the implementation PR ready and require draft-skipping CI before merge**
 
-After Tasks 1–7 pass locally, leave draft state / mark the implementation PR ready for review. Confirm these jobs run:
+After Tasks 1–7 pass locally, mark the implementation PR ready for review. Confirm these jobs run:
 
 - Tauri Rust CI
 - Lint and Format

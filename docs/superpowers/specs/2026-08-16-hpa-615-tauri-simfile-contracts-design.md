@@ -60,16 +60,16 @@ The existing JSON fixture remains necessary because desktop TypeScript is non-st
 
 ## Reuse decisions
 
-| Proposed work | Existing seam |
-| --- | --- |
+| Proposed work                            | Existing seam                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------ |
 | `NativeSimfile` / `NativeSimfileDtxFile` | `SimfileModel`, `simfile_model_from_graphql`, `simfile_model.json` |
-| Typed GraphQL conversion | `number_id` + existing mapper |
-| Production TypeScript generation | existing `#[derive(TS)]`, `export_to`, root `gen:native-types` |
-| Four result envelopes | current renderer handwritten envelopes |
-| `.graphql` + `include_str!` | existing `graphql_document(fragment + operation)` |
-| Desktop GraphQL validation | existing `packages/dtx-web/codegen.ts` + `lint:codegen` |
-| Generated drift | existing Tauri Rust CI generated-type verification |
-| Application/wire compile-time link | new small non-test renderer assertion file |
+| Typed GraphQL conversion                 | `number_id` + existing mapper                                      |
+| Production TypeScript generation         | existing `#[derive(TS)]`, `export_to`, root `gen:native-types`     |
+| Four result envelopes                    | current renderer handwritten envelopes                             |
+| `.graphql` + `include_str!`              | existing `graphql_document(fragment + operation)`                  |
+| Desktop GraphQL validation               | existing `packages/dtx-web/codegen.ts` + `lint:codegen`            |
+| Generated drift                          | existing Tauri Rust CI generated-type verification                 |
+| Application/wire compile-time link       | new small non-test renderer assertion file                         |
 
 `api_contracts.rs` is the only new Rust ownership seam. `models.rs` is currently centered on filesystem/E2E native types, so keeping production simfile API contracts separate is clearer than extending that file.
 

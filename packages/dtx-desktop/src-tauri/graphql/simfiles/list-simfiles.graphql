@@ -1,6 +1,8 @@
 query DesktopListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize: Int) {
-  simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
-    count
-    data { ...DesktopSimfileFull }
-  }
+	simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
+		count
+		data {
+			...DesktopSimfileFull
+		}
+	}
 }

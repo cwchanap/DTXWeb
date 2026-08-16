@@ -77,6 +77,7 @@
 ### Task 1: Type the Existing HPA-614 Simfile Mapper
 
 **Files:**
+
 - Create: `packages/dtx-desktop/src-tauri/src/api_contracts.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/lib.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/api.rs`
@@ -84,6 +85,7 @@
 - Reuse: `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json`
 
 **Interfaces:**
+
 - Consumes: `number_id(&Value) -> Result<i64>` and current `simfile_model_from_graphql` behavior.
 - Produces: `NativeSimfileDtxFile`, `NativeSimfile`, `native_simfile_from_graphql(&Value) -> Result<NativeSimfile>`.
 
@@ -253,11 +255,13 @@ git commit -m "refactor: type desktop simfile wire model"
 ### Task 2: Type the Four Structured Command Contracts
 
 **Files:**
+
 - Modify: `packages/dtx-desktop/src-tauri/src/api_contracts.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/api.rs`
 - Test: `packages/dtx-desktop/src-tauri/src/tests/api_tests.rs`
 
 **Interfaces:**
+
 - Consumes: `NativeSimfile` / typed mapper from Task 1.
 - Produces: typed create/update inputs, four result envelopes, concrete selected Rust command signatures.
 
@@ -515,12 +519,14 @@ git commit -m "refactor: type simfile tauri commands"
 ### Task 3: Move Desktop GraphQL Documents and Extend Existing Codegen
 
 **Files:**
+
 - Create: `packages/dtx-desktop/src-tauri/graphql/simfiles/*.graphql`
 - Modify: `packages/dtx-desktop/src-tauri/src/api.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/tests/api_tests.rs`
 - Modify: `packages/dtx-web/codegen.ts`
 
 **Interfaces:**
+
 - Consumes: existing `graphql_document(fragment + operation)`.
 - Produces: one `DesktopSimfileFull` fragment shared by list/get/create/update and validated by the existing `bun run codegen` invocation.
 
@@ -561,25 +567,25 @@ Expected: FAIL on current duplicated list/spread name.
 
 ```graphql
 fragment DesktopSimfileFull on Simfile {
-  id
-  displayId
-  title
-  artist
-  bpm
-  userId
-  googleDriveFileId
-  isPublished
-  downloadUrl
-  previewUrl
-  videoPreviewUrl
-  publishDate
-  createdAt
-  updatedAt
-  dtxFiles {
-    id
-    level
-    label
-  }
+	id
+	displayId
+	title
+	artist
+	bpm
+	userId
+	googleDriveFileId
+	isPublished
+	downloadUrl
+	previewUrl
+	videoPreviewUrl
+	publishDate
+	createdAt
+	updatedAt
+	dtxFiles {
+		id
+		level
+		label
+	}
 }
 ```
 
@@ -587,10 +593,12 @@ fragment DesktopSimfileFull on Simfile {
 
 ```graphql
 query DesktopListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize: Int) {
-  simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
-    count
-    data { ...DesktopSimfileFull }
-  }
+	simfiles(scope: $scope, search: $search, page: $page, pageSize: $pageSize) {
+		count
+		data {
+			...DesktopSimfileFull
+		}
+	}
 }
 ```
 
@@ -598,7 +606,9 @@ query DesktopListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $p
 
 ```graphql
 query DesktopGetSimfile($id: ID!) {
-  simfile(id: $id) { ...DesktopSimfileFull }
+	simfile(id: $id) {
+		...DesktopSimfileFull
+	}
 }
 ```
 
@@ -606,7 +616,9 @@ query DesktopGetSimfile($id: ID!) {
 
 ```graphql
 mutation DesktopCreateSimfile($input: CreateSimfileInput!) {
-  createSimfile(input: $input) { ...DesktopSimfileFull }
+	createSimfile(input: $input) {
+		...DesktopSimfileFull
+	}
 }
 ```
 
@@ -614,14 +626,18 @@ mutation DesktopCreateSimfile($input: CreateSimfileInput!) {
 
 ```graphql
 mutation DesktopUpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
-  updateSimfile(id: $id, input: $input) { ...DesktopSimfileFull }
+	updateSimfile(id: $id, input: $input) {
+		...DesktopSimfileFull
+	}
 }
 ```
 
 `next-display-id.graphql`:
 
 ```graphql
-query DesktopNextDisplayId { nextDisplayId }
+query DesktopNextDisplayId {
+	nextDisplayId
+}
 ```
 
 - [ ] **Step 4: Load documents with `include_str!` and keep the asset query embedded**
@@ -632,14 +648,14 @@ Change only this part of the embedded asset query:
 
 ```graphql
 query GetSimfileWithFiles($id: ID!) {
-  simfile(id: $id) {
-    ...DesktopSimfileFull
-    files {
-      key
-      size
-      uploaded
-    }
-  }
+	simfile(id: $id) {
+		...DesktopSimfileFull
+		files {
+			key
+			size
+			uploaded
+		}
+	}
 }
 ```
 
@@ -687,12 +703,14 @@ git commit -m "refactor: validate desktop simfile graphql"
 ### Task 4: Generate Production Contracts, Protect Drift, and Link to `SimfileModel`
 
 **Files:**
+
 - Modify: `.prettierignore`
 - Generated: `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 - Create: `packages/dtx-desktop/src/renderer/src/lib/nativeContract.ts`
 - Modify: `.github/workflows/tauri-rust-ci.yml`
 
 **Interfaces:**
+
 - Consumes: `#[derive(TS)]` contracts from Tasks 1–2.
 - Produces: committed generated production types plus a typechecked structural bridge to `SimfileModel`.
 
@@ -720,21 +738,21 @@ The generated types must be semantically equivalent to:
 
 ```ts
 export type NativeSimfile = {
-  id: number;
-  displayId: number | null;
-  title: string;
-  artist: string;
-  bpm: number;
-  userId: string | null;
-  googleDriveFileId: string | null;
-  isPublished: boolean;
-  downloadUrl: string | null;
-  previewUrl: string | null;
-  videoPreviewUrl: string | null;
-  publishDate: string;
-  createdAt: string;
-  updatedAt: string;
-  dtxFiles: Array<NativeSimfileDtxFile>;
+	id: number;
+	displayId: number | null;
+	title: string;
+	artist: string;
+	bpm: number;
+	userId: string | null;
+	googleDriveFileId: string | null;
+	isPublished: boolean;
+	downloadUrl: string | null;
+	previewUrl: string | null;
+	videoPreviewUrl: string | null;
+	publishDate: string;
+	createdAt: string;
+	updatedAt: string;
+	dtxFiles: Array<NativeSimfileDtxFile>;
 };
 ```
 
@@ -760,11 +778,11 @@ This is intentionally in production source so `tsconfig.web.json` includes it. I
 - name: Verify generated TypeScript types are in sync
   working-directory: ${{ github.workspace }}
   run: |
-    git ls-files --error-unmatch -- packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts
-    git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types.ts
-    git diff --exit-code -- \
-      packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts \
-      packages/e2e-desktop/support/generated/native-types.ts
+      git ls-files --error-unmatch -- packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts
+      git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types.ts
+      git diff --exit-code -- \
+        packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts \
+        packages/e2e-desktop/support/generated/native-types.ts
 ```
 
 - [ ] **Step 6: Verify generation is stable and the bridge typechecks**
@@ -795,6 +813,7 @@ git commit -m "ci: verify desktop native contracts"
 ### Task 5: Make `desktopHost` Concrete and Delete Renderer Contract Copies
 
 **Files:**
+
 - Modify: `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/services/simFileService.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte`
@@ -805,6 +824,7 @@ git commit -m "ci: verify desktop native contracts"
 - Test: `packages/dtx-desktop/src/renderer/src/components/SongDetails.test.ts`
 
 **Interfaces:**
+
 - Consumes: generated contracts + `nativeContract.ts` from Task 4.
 - Produces: concrete selected renderer methods and no duplicate migrated result contracts.
 
@@ -815,12 +835,12 @@ await desktopHost.fetchCloudSong('42');
 expect(runtime.invoke).toHaveBeenCalledWith('fetch_cloud_song', { cloudSongId: '42' });
 
 await desktopHost.updateSimfileRecord({
-  simfileId: '42',
-  updateData: { title: 'Updated' }
+	simfileId: '42',
+	updateData: { title: 'Updated' }
 });
 expect(runtime.invoke).toHaveBeenCalledWith('update_simfile_record', {
-  simfileId: '42',
-  updateData: { title: 'Updated' }
+	simfileId: '42',
+	updateData: { title: 'Updated' }
 });
 ```
 
@@ -879,21 +899,21 @@ Build create input with the current values:
 
 ```ts
 const simfileData: CreateSimfileRecordInput = {
-  title: String(song.songTitle || song.name || ''),
-  artist: String(parsedLocalData.artist || ''),
-  bpm: Number(parsedLocalData.bpm || 0),
-  displayId: displayIdForCreate,
-  isPublished: published,
-  publishDate: String(publishDate),
-  downloadUrl: String(downloadUrl),
-  videoPreviewUrl: String(videoPreviewUrl),
-  levels: Array.isArray(parsedLocalData.levels)
-    ? parsedLocalData.levels.map((level) => ({
-        label: String(level.label || ''),
-        level: Number(level.level || 0)
-      }))
-    : [],
-  songPath: String(song.path || '')
+	title: String(song.songTitle || song.name || ''),
+	artist: String(parsedLocalData.artist || ''),
+	bpm: Number(parsedLocalData.bpm || 0),
+	displayId: displayIdForCreate,
+	isPublished: published,
+	publishDate: String(publishDate),
+	downloadUrl: String(downloadUrl),
+	videoPreviewUrl: String(videoPreviewUrl),
+	levels: Array.isArray(parsedLocalData.levels)
+		? parsedLocalData.levels.map((level) => ({
+				label: String(level.label || ''),
+				level: Number(level.level || 0)
+			}))
+		: [],
+	songPath: String(song.path || '')
 };
 ```
 
@@ -950,10 +970,12 @@ git commit -m "refactor: use generated simfile contracts"
 ### Task 6: Verify the Full HPA-615 Contract
 
 **Files:**
+
 - Verify all files changed by Tasks 1–5.
 - Verify unchanged ownership: `packages/e2e-desktop/support/generated/native-types.ts`.
 
 **Interfaces:**
+
 - Consumes: completed native/renderer contract slice.
 - Produces: final evidence for HPA-615 acceptance.
 

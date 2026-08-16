@@ -118,7 +118,7 @@ fn simfile_model_from_graphql_matches_renderer_fixture() {
         "publishDate": "2026-08-15",
         "createdAt": "2026-08-15T00:00:00Z",
         "updatedAt": "2026-08-15T00:00:01Z",
-        "dtxFiles": [{ "id": 99, "label": "EXT", "level": 85 }]
+        "dtxFiles": [{ "id": "99", "label": "EXT", "level": 85 }]
     });
 
     let mapped = simfile_model_from_graphql(&graphql_value).expect("mapped");

@@ -242,7 +242,7 @@ describe('SimFileService', () => {
 	});
 
 	describe('getNextDisplayId', () => {
-		it('returns the next display_id from IPC', async () => {
+		it('returns the next displayId from IPC', async () => {
 			host.getNextDisplayId.mockResolvedValue(7);
 
 			const result = await simFileService.getNextDisplayId();

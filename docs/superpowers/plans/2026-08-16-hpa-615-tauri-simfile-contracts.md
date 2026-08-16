@@ -8,6 +8,15 @@
 
 **Tech Stack:** Rust 1.95, Tauri 2, serde/serde_json, ts-rs 12, TypeScript/Svelte 5, Vitest, GraphQL Code Generator, Bun 1.3.9, GitHub Actions.
 
+## Review-locked decisions
+
+- Preserve HPA-614 full-model null semantics: nullable `NativeSimfile` properties are present `T | null`, not optional.
+- Preserve HPA-614 ID normalization: `native_simfile_from_graphql` explicitly uses `number_id`; no full-object `serde_json::from_value::<NativeSimfile>`.
+- Reuse `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json` unchanged as the runtime wire oracle.
+- Reuse one `DesktopSimfileFull` fragment for list/get/create/update; update only the spread name in the still-embedded asset query.
+- Treat fixture equality, generated-file drift, and grep gates as load-bearing; renderer typecheck is supplementary.
+- The implementation PR must be marked **ready for review** before final CI verification because the relevant workflows skip draft PRs.
+
 ## Global Constraints
 
 - Scope is exactly `fetch_user_simfiles`, `fetch_cloud_song`, `create_simfile_record`, `update_simfile_record`, and `get_next_display_id`.

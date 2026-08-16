@@ -618,7 +618,7 @@
 		try {
 			const next = await simFileService.getNextDisplayId();
 			if (!Number.isSafeInteger(next)) {
-				throw new Error('Invalid next display_id response');
+				throw new Error('Invalid next displayId response');
 			}
 			// Record that we fetched for this path even if user navigated away,
 			// to prevent duplicate calls if they navigate back
@@ -631,7 +631,7 @@
 			}
 			displayIdAutoPopulateError = null;
 		} catch (error) {
-			console.warn('Failed to fetch next display_id:', error);
+			console.warn('Failed to fetch next displayId:', error);
 			// Guard against stale rejections: skip error mutation if user switched songs
 			if (song.path !== currentPath) return;
 			displayIdAutoPopulateError =
@@ -739,9 +739,9 @@
 
 		try {
 			// Build update data object
-			// Omit download_url for Drive-bound records: the Drive upload flow
+			// Omit downloadUrl for Drive-bound records: the Drive upload flow
 			// owns the URL via the guarded updateSimfileDriveFile mutation.
-			// Sending a cached download_url here would reintroduce the
+			// Sending a cached downloadUrl here would reintroduce the
 			// cross-device race where a stale URL overwrites a newer binding.
 			const isDriveBound = Boolean(targetSong.linkedSimFile?.googleDriveFileId);
 			const updateData: Record<string, unknown> = {

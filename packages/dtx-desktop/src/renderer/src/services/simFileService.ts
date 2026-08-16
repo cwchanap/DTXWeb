@@ -143,7 +143,7 @@ class SimFileService {
 	async getNextDisplayId(): Promise<number> {
 		const result = await desktopHost.getNextDisplayId();
 		if (typeof result !== 'number' || !Number.isSafeInteger(result)) {
-			throw new Error('Invalid next display_id response');
+			throw new Error('Invalid next displayId response');
 		}
 		return result;
 	}

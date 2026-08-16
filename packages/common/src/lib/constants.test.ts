@@ -19,8 +19,7 @@ import {
 	normalizePosition,
 	VALID_DTX_FILE_EXTENSIONS,
 	setFileProvider,
-	getFileProvider,
-	toSimfileWithDtx
+	getFileProvider
 } from './index';
 import {
 	DTXFile as ServerDTXFile,
@@ -158,7 +157,6 @@ describe('package barrel exports', () => {
 		expect(VALID_DTX_FILE_EXTENSIONS).toBeDefined();
 		expect(setFileProvider).toBeDefined();
 		expect(getFileProvider).toBeDefined();
-		expect(toSimfileWithDtx).toBeDefined();
 	});
 
 	it('server.ts exports all expected symbols', () => {

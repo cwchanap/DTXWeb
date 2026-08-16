@@ -259,7 +259,7 @@ describe('SimFileService', () => {
 		it('rejects invalid IPC response shapes', async () => {
 			host.getNextDisplayId.mockResolvedValue(undefined);
 			await expect(simFileService.getNextDisplayId()).rejects.toThrow(
-				'Invalid next display_id response'
+				'Invalid next displayId response'
 			);
 		});
 	});

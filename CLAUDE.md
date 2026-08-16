@@ -192,8 +192,9 @@ If needed, cache can be manually cleared via browser dev tools:
 simFileService.clearCache();
 
 // Or clear specific localStorage items
-localStorage.removeItem('simfiles_cache');
-localStorage.removeItem('simfiles_cache_timestamp');
+localStorage.removeItem('simfiles_cache_v2');
+localStorage.removeItem('simfiles_cache_timestamp_v2');
+localStorage.removeItem('dtx_linkage_cache_v2');
 localStorage.removeItem('song_templates');
 
 // DO NOT clear these (breaks auth/workspace)

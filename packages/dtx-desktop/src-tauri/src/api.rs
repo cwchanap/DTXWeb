@@ -354,20 +354,16 @@ pub fn native_simfile_from_graphql(simfile: &Value) -> Result<NativeSimfile> {
     let dtx_files = simfile
         .get("dtxFiles")
         .and_then(Value::as_array)
-        .map(|files| {
-            files
-                .iter()
-                .map(|file| {
-                    Ok(NativeSimfileDtxFile {
-                        id: number_id(&file["id"])?,
-                        label: required_string(file, "label")?,
-                        level: required_f64(file, "level")?,
-                    })
-                })
-                .collect::<Result<Vec<_>>>()
+        .ok_or_else(|| field_error(simfile, "dtxFiles"))?
+        .iter()
+        .map(|file| {
+            Ok(NativeSimfileDtxFile {
+                id: number_id(&file["id"])?,
+                label: required_string(file, "label")?,
+                level: required_f64(file, "level")?,
+            })
         })
-        .transpose()?
-        .unwrap_or_default();
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(NativeSimfile {
         id: number_id(&simfile["id"])?,

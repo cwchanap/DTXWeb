@@ -4,7 +4,7 @@
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
 	import { RefreshCw, FolderOpen, Trophy, Upload } from '@lucide/svelte';
 	import { desktopHost } from '../services/desktopHost';
-	import type { FetchCloudSongResult } from '../lib/generated/native-api-contracts';
+	import type { FetchCloudSongResult } from '$lib/lib/generated/native-api-contracts';
 	import ScoreSongCard from './ScoreSongCard.svelte';
 	import { matchCharts, type CloudChart } from '../lib/scoreMatching';
 	import { toastStore } from '../stores/toastStore';

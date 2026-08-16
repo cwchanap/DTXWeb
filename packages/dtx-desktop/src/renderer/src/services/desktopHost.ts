@@ -8,7 +8,7 @@ import type {
 	FetchUserSimfilesResult,
 	UpdateSimfileRecordInput,
 	UpdateSimfileRecordResult
-} from '../lib/generated/native-api-contracts';
+} from '$lib/lib/generated/native-api-contracts';
 
 export type DesktopHostVersions = {
 	app: string | null;

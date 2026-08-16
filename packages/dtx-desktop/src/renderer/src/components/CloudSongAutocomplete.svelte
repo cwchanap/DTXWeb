@@ -147,6 +147,12 @@
 		handleClose();
 	};
 
+	// Tailwind opacity-modified classes (e.g. `border-green/40`) can't be expressed
+	// as Svelte `class:` directives — the parser rejects `/` in directive names — so
+	// the published/draft badge classes are computed here instead.
+	const statusBadgeClass = (isPublished: boolean): string =>
+		isPublished ? 'border-green/40 bg-green/10 text-green' : 'bg-surface-2 text-dim';
+
 	const handleClickOutside = (event: MouseEvent) => {
 		const target = event.target as Element;
 		// Include the trigger (e.g. ScoreSongCard "Link to cloud song" / "change")
@@ -303,9 +309,9 @@
 											<span class="font-mono">{song.bpm} BPM</span>
 										{/if}
 										<span
-											class="ml-auto rounded px-2 py-0.5 text-xs font-medium {song.isPublished
-												? 'border-green/40 bg-green/10 text-green'
-												: 'bg-surface-2 text-dim'}"
+											class="ml-auto rounded px-2 py-0.5 text-xs font-medium {statusBadgeClass(
+												song.isPublished
+											)}"
 										>
 											{song.isPublished
 												? $_('score.link.published')

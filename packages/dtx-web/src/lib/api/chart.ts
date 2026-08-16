@@ -32,7 +32,7 @@ type AdaptSimfileInput = Omit<SimfileWithFilesFragment, 'files' | 'hasUploadedFi
 
 const parseSimfileId = (id: string): number => {
 	const numId = Number(id);
-	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${id}`);
+	if (!Number.isSafeInteger(numId)) throw new Error(`Invalid simfile id: ${id}`);
 	return numId;
 };
 

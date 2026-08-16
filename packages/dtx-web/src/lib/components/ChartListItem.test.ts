@@ -167,22 +167,6 @@ describe('ChartListItem Component Logic', () => {
 		}
 	});
 
-	// Test the download URL display in blog mode
-	it('handles download URL in blog mode correctly', () => {
-		// In blog mode, the download URL should be shown if available
-		const isBlog = true;
-
-		// Test with an item that has a download URL
-		if (isBlog && mockItem.downloadUrl) {
-			expect(mockItem.downloadUrl).toBe('https://example.com/download1');
-		}
-
-		// Test with an item that doesn't have a download URL
-		if (isBlog && !mockItemNoPreview.downloadUrl) {
-			expect(mockItemNoPreview.downloadUrl).toBeNull();
-		}
-	});
-
 	describe('Blog Mode Download Logic', () => {
 		const baseProps = {
 			isBlog: true,

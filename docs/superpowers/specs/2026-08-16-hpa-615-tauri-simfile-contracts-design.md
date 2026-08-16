@@ -549,3 +549,7 @@ HPA-615 is complete when:
 - fixture equality, Rust tests, generated-binding drift, renderer tests/typecheck, grep gates, desktop GraphQL validation, E2E typecheck, and ready-for-review CI pass;
 - command names and runtime UX remain unchanged;
 - untouched commands remain outside the migration.
+
+## Planning verification
+
+This design document itself changes no production code. Its review gate is satisfied when the implementation plan mirrors the null/omission, mapper/fixture, shared-fragment, generated-drift, and ready-for-review CI rules above; product checks are intentionally deferred to the implementation plan's execution steps.

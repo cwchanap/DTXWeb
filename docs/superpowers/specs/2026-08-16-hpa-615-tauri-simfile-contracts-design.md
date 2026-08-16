@@ -134,21 +134,24 @@ Create:
 
 It owns only the wire types needed by the migrated simfile commands. It is not a generic DTO module for the rest of the application.
 
-The core full-simfile contract should be approximately:
+The core full-simfile contract should follow this shape:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeSimfileDtxFile {
+    #[ts(type = "number")]
     pub id: i64,
     pub label: String,
-    pub level: i64,
+    pub level: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeSimfile {
+    #[ts(type = "number")]
     pub id: i64,
+    #[ts(type = "number | null")]
     pub display_id: Option<i64>,
     pub title: String,
     pub artist: String,
@@ -166,9 +169,9 @@ pub struct NativeSimfile {
 }
 ```
 
-The desktop full GraphQL fragment already requests each nested DTX id, so the native wire contract should make it required. This still satisfies shared `SimfileDtxFile`, where `id` is optional only because web projections may omit it.
+The desktop full GraphQL fragment requests each nested DTX id, so the native wire contract makes it required. `DtxFile.level` and simfile `bpm` are GraphQL floats, so their Rust wire types are `f64`.
 
-Exact Rust numeric types should follow the current GraphQL/runtime values exercised by existing tests. Do not change values just to prefer a particular Rust integer width.
+The explicit TypeScript overrides on 64-bit ids are required because the renderer's established application contract is `number`, not `bigint`. This follows the existing native-generation pattern that already overrides large Rust integers to `number` where the TypeScript runtime contract is numeric.
 
 `NativeSimfile` is the desktop wire representation of the existing application model. It does not replace `@dtx/common`'s `SimfileModel` and must not escape the desktop package.
 
@@ -185,7 +188,7 @@ Return a named `FetchUserSimfilesResult` preserving the current fields:
 
 The current native implementation always reports `fromCache: false`; retain it because `simFileService` already exposes that field and removing it is unrelated behavior churn.
 
-Optional response fields should use `serde(skip_serializing_if = "Option::is_none")` plus the corresponding `ts-rs` optional annotation so generated TypeScript matches the runtime omission semantics rather than requiring a property Rust omits.
+Optional response fields use `serde(skip_serializing_if = "Option::is_none")` and `#[ts(optional)]` so generated TypeScript matches runtime omission instead of requiring a property Rust does not serialize.
 
 #### `fetch_cloud_song`
 
@@ -216,7 +219,11 @@ Add a generated `CreateSimfileRecordInput` covering only the current renderer-ow
 - levels
 - songPath
 
-Keep `songPath` as command-local input used for preview uploads; it is not part of the GraphQL `CreateSimfileInput` or `NativeSimfile` domain shape.
+`levels[].level` is `f64` because it becomes GraphQL `DtxFileInput.level: Float!`.
+
+Keep `songPath` as command-local input used for preview uploads; it is not part of GraphQL `CreateSimfileInput` or `NativeSimfile`.
+
+`displayId` may be `null` on create to preserve the existing auto-allocation behavior. Its generated TypeScript representation must remain `number | null`, not `bigint | null`.
 
 The result retains current semantics:
 
@@ -230,13 +237,15 @@ Preview upload failures remain warnings when record creation succeeds.
 
 #### `update_simfile_record`
 
-Add a generated `UpdateSimfileRecordInput` for the mutable simfile fields and make `desktopHost` accept:
+Add a generated `UpdateSimfileRecordInput` for the current mutable simfile fields and make `desktopHost` accept:
 
 ```ts
 updateSimfileRecord(simfileId: string, updateData: UpdateSimfileRecordInput)
 ```
 
 Use optional fields for partial updates. Every optional Rust field that means "not supplied" must include `skip_serializing_if = "Option::is_none"`; serializing `None` as GraphQL `null` would change update semantics by clearing nullable fields instead of omitting them.
+
+For generated TypeScript, optional fields should use `#[ts(optional)]`; any 64-bit numeric optional field also needs an explicit `number`-based TypeScript representation.
 
 `googleDriveFileId` is intentionally absent from the type. HPA-614 had to strip it from a generic map; after HPA-615 it becomes unrepresentable in the general update request, so that defensive removal can disappear.
 
@@ -248,10 +257,10 @@ Keep the command primitive:
 
 ```text
 Rust: i64
-TypeScript: number
+TypeScript wrapper: number
 ```
 
-No generated wrapper type is needed.
+No generated wrapper type is needed. The renderer already validates the returned value with `Number.isSafeInteger`, so this ticket does not introduce `bigint` into the method.
 
 ### 3. Convert the existing GraphQL-to-renderer mapper to a typed mapper
 
@@ -273,7 +282,7 @@ Use one aggregate file for this slice, matching the repository's existing single
 
 Do not generate into `@dtx/common`; these are desktop transport contracts, not shared domain contracts.
 
-Application-facing services may explicitly return/assign `SimfileModel` where appropriate. TypeScript structural checking then proves the generated `NativeSimfile` still satisfies the shared model without introducing a copy-only adapter.
+Application-facing services explicitly return/assign `SimfileModel` where appropriate. TypeScript structural checking then proves the generated `NativeSimfile` still satisfies the shared model without introducing a copy-only adapter.
 
 ### 5. Keep E2E-only contracts separate
 
@@ -304,9 +313,9 @@ with documents for:
 
 Rust loads them with `include_str!`.
 
-For operations that reference the shared fragment, keep the existing simple composition idea: load the fragment and operation separately and concatenate them before the request. No GraphQL document loader abstraction is needed.
+For operations that reference the shared fragment, keep the existing simple composition idea: load the fragment and operation separately and concatenate them before the request. No GraphQL document-loader abstraction is needed.
 
-Use desktop-prefixed operation/fragment names if necessary to avoid collisions when Codegen validates all desktop documents together.
+Use desktop-prefixed operation/fragment names to avoid collisions when Codegen validates the desktop documents together.
 
 Leave unrelated operations embedded in `api.rs` for now, including search, score upload, Drive metadata, chart-only projections, and asset-file projections.
 
@@ -314,13 +323,17 @@ Leave unrelated operations embedded in `api.rs` for now, including search, score
 
 Do not add `graphql-inspector` or a custom validator.
 
-Add a small validation-only GraphQL Codegen config under `packages/dtx-web` that:
+Add:
+
+`packages/dtx-web/codegen.desktop.ts`
+
+The validation-only config:
 
 - reads `../dtx-api/dist/schema.graphql`;
 - reads `../dtx-desktop/src-tauri/graphql/**/*.graphql`;
-- generates disposable TypeScript into an ignored path under `packages/dtx-web/.svelte-kit/`.
+- generates disposable TypeScript into `packages/dtx-web/.svelte-kit/dtx-desktop-graphql-validation.ts`.
 
-The generated validation artifact is neither committed nor imported. Its only purpose is to make GraphQL Codegen parse and validate the desktop documents against the checked-in schema.
+The generated validation artifact is ignored, not committed, and not imported. Its only purpose is to make GraphQL Codegen parse and validate the desktop documents against the checked-in schema.
 
 Extend the existing `lint:codegen` script so it validates both the committed web generated-client drift and desktop operations.
 
@@ -328,7 +341,7 @@ This keeps GraphQL tooling where the dependency already exists instead of adding
 
 ### 8. Make selected `desktopHost` methods concrete
 
-`desktopHost.ts` imports the generated contracts and exposes concrete methods roughly like:
+`desktopHost.ts` imports the generated contracts and exposes concrete methods:
 
 ```ts
 fetchUserSimfiles(): Promise<FetchUserSimfilesResult>
@@ -424,7 +437,7 @@ Extend the existing Rust export tests so the same command also emits the product
 
 Do not add a custom Rust codegen binary unless the current test-driven `ts-rs` export mechanism proves technically insufficient.
 
-Tauri CI should explicitly verify both generated outputs after Rust tests/codegen:
+Tauri CI explicitly verifies both generated outputs after Rust tests/codegen:
 
 - `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 - `packages/e2e-desktop/support/generated/native-types.ts`
@@ -440,8 +453,9 @@ Extend existing API/model tests rather than building a contract-test framework.
 Cover at least:
 
 - complete GraphQL simfile -> `NativeSimfile` conversion;
-- required nested DTX ids and camelCase serialization;
-- nullable metadata serialization;
+- required nested DTX ids and Float levels;
+- explicit TypeScript `number` representation for 64-bit ids in generated output;
+- nullable metadata and camelCase serialization;
 - `fetch_user_simfiles` success and later-page-failure envelopes;
 - `fetch_cloud_song` success/not-found behavior;
 - create success plus optional preview warnings;
@@ -465,9 +479,9 @@ Run existing focused tests for:
 - `desktopHost`
 - `simFileService`
 - `SongDetails`
-- `Scores` if its `FetchCloudSongResult` annotation changes
+- `Scores` if its explicit fetch-result annotation changes
 
-No standalone "generated type" test suite is needed; renderer compilation is the useful gate.
+No standalone generated-type test suite is needed; renderer compilation is the useful gate.
 
 Run:
 
@@ -509,7 +523,7 @@ Likely production files:
 - `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte` — remove duplicate command result types
 - `packages/dtx-desktop/src/renderer/src/components/Scores.svelte` — use concrete fetch result without generic call
 - `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts` — remove handwritten full-simfile result
-- `packages/dtx-web/codegen.desktop.ts` — validation-only config (exact name may vary)
+- `packages/dtx-web/codegen.desktop.ts` — validation-only desktop document config
 - `packages/dtx-web/package.json` — add desktop operation validation to `lint:codegen`
 - `.github/workflows/tauri-rust-ci.yml` — verify production generated output
 
@@ -548,6 +562,12 @@ This is the main serialization risk when replacing `Value` with typed Rust input
 
 Mitigation: use `skip_serializing_if = "Option::is_none"` for partial update fields and test the actual GraphQL variables sent by existing wiremock tests.
 
+### 64-bit Rust ids can accidentally become TypeScript `bigint`
+
+`ts-rs` 12 treats large integer types separately from ordinary JS numbers. The application contract already uses numeric ids and existing native bindings explicitly map large Rust integers to `number` where required.
+
+Mitigation: annotate each migrated 64-bit id/display-id field with an explicit `number`/`number | null` TypeScript representation and cover generated output in the drift check.
+
 ### GraphQL Codegen lives under the web package
 
 That package currently owns the dependency even though the new documents are desktop-owned.
@@ -566,6 +586,7 @@ HPA-615 is complete when:
 
 - the selected structured simfile commands use named Rust result types and concrete structured inputs instead of `serde_json::Value` at the Tauri boundary;
 - production TypeScript contracts are generated by `ts-rs` into the renderer and committed;
+- 64-bit Rust simfile/display ids still generate the established TypeScript `number` contract rather than `bigint`;
 - `fetchUserSimfiles`, `fetchCloudSong`, `createSimfileRecord`, and `updateSimfileRecord` no longer expose caller-supplied generic result types;
 - `getNextDisplayId` remains a concrete primitive number contract;
 - `simFileService`, `SongDetails`, `Scores`, and related migrated consumers no longer maintain duplicate IPC result interfaces/generic arguments;

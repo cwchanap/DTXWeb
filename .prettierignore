@@ -6,3 +6,4 @@ dist/
 packages/dtx-web/src/lib/api/generated/
 packages/dtx-desktop/src/main/graphql/generated/
 packages/e2e-desktop/support/generated/
+packages/dtx-desktop/src/renderer/src/lib/generated/

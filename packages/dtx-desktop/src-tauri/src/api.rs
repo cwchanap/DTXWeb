@@ -1,9 +1,10 @@
+use crate::api_contracts::{NativeSimfile, NativeSimfileDtxFile};
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use crate::google_drive::{DriveMetadataError, ExpectedPreviousDriveFile, OwnerDriveSimfile};
 use crate::workspace::WorkspaceRootState;
 use reqwest::multipart::{Form, Part};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::path::Path;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -369,29 +370,54 @@ fn number_id(value: &Value) -> Result<i64> {
     )))
 }
 
-pub fn simfile_model_from_graphql(simfile: &Value) -> Result<Value> {
-    let mut mapped = Map::new();
-    mapped.insert("id".to_string(), json!(number_id(&simfile["id"])?));
-    mapped.insert("displayId".to_string(), simfile["displayId"].clone());
-    mapped.insert("title".to_string(), simfile["title"].clone());
-    mapped.insert("artist".to_string(), simfile["artist"].clone());
-    mapped.insert("bpm".to_string(), simfile["bpm"].clone());
-    mapped.insert("userId".to_string(), simfile["userId"].clone());
-    mapped.insert(
-        "googleDriveFileId".to_string(),
-        simfile["googleDriveFileId"].clone(),
-    );
-    mapped.insert("isPublished".to_string(), simfile["isPublished"].clone());
-    mapped.insert("downloadUrl".to_string(), simfile["downloadUrl"].clone());
-    mapped.insert("previewUrl".to_string(), simfile["previewUrl"].clone());
-    mapped.insert(
-        "videoPreviewUrl".to_string(),
-        simfile["videoPreviewUrl"].clone(),
-    );
-    mapped.insert("publishDate".to_string(), simfile["publishDate"].clone());
-    mapped.insert("createdAt".to_string(), simfile["createdAt"].clone());
-    mapped.insert("updatedAt".to_string(), simfile["updatedAt"].clone());
+fn field_error(value: &Value, field: &str) -> DesktopError {
+    DesktopError::Message(format!(
+        "Invalid simfile field {field}: {}",
+        value.get(field).unwrap_or(&Value::Null)
+    ))
+}
 
+fn required_string(value: &Value, field: &str) -> Result<String> {
+    value
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| field_error(value, field))
+}
+
+fn nullable_string(value: &Value, field: &str) -> Result<Option<String>> {
+    match value.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(field_error(value, field)),
+    }
+}
+
+fn nullable_i64(value: &Value, field: &str) -> Result<Option<i64>> {
+    match value.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(field_value) => field_value
+            .as_i64()
+            .map(Some)
+            .ok_or_else(|| field_error(value, field)),
+    }
+}
+
+fn required_f64(value: &Value, field: &str) -> Result<f64> {
+    value
+        .get(field)
+        .and_then(Value::as_f64)
+        .ok_or_else(|| field_error(value, field))
+}
+
+fn required_bool(value: &Value, field: &str) -> Result<bool> {
+    value
+        .get(field)
+        .and_then(Value::as_bool)
+        .ok_or_else(|| field_error(value, field))
+}
+
+pub fn native_simfile_from_graphql(simfile: &Value) -> Result<NativeSimfile> {
     let dtx_files = simfile
         .get("dtxFiles")
         .and_then(Value::as_array)
@@ -399,21 +425,34 @@ pub fn simfile_model_from_graphql(simfile: &Value) -> Result<Value> {
             files
                 .iter()
                 .map(|file| {
-                    let mut entry = Map::new();
-                    if let Some(id) = file.get("id").filter(|id| !id.is_null()) {
-                        entry.insert("id".to_string(), json!(number_id(id)?));
-                    }
-                    entry.insert("level".to_string(), file["level"].clone());
-                    entry.insert("label".to_string(), file["label"].clone());
-                    Ok(Value::Object(entry))
+                    Ok(NativeSimfileDtxFile {
+                        id: number_id(&file["id"])?,
+                        label: required_string(file, "label")?,
+                        level: required_f64(file, "level")?,
+                    })
                 })
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?
         .unwrap_or_default();
-    mapped.insert("dtxFiles".to_string(), Value::Array(dtx_files));
 
-    Ok(Value::Object(mapped))
+    Ok(NativeSimfile {
+        id: number_id(&simfile["id"])?,
+        display_id: nullable_i64(simfile, "displayId")?,
+        title: required_string(simfile, "title")?,
+        artist: required_string(simfile, "artist")?,
+        bpm: required_f64(simfile, "bpm")?,
+        user_id: nullable_string(simfile, "userId")?,
+        google_drive_file_id: nullable_string(simfile, "googleDriveFileId")?,
+        is_published: required_bool(simfile, "isPublished")?,
+        download_url: nullable_string(simfile, "downloadUrl")?,
+        preview_url: nullable_string(simfile, "previewUrl")?,
+        video_preview_url: nullable_string(simfile, "videoPreviewUrl")?,
+        publish_date: required_string(simfile, "publishDate")?,
+        created_at: required_string(simfile, "createdAt")?,
+        updated_at: required_string(simfile, "updatedAt")?,
+        dtx_files,
+    })
 }
 
 fn owner_drive_simfile_from_graphql(
@@ -931,7 +970,7 @@ async fn read_preview_within_workspace(
 }
 
 pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Result<Value> {
-    let mut all_data = Vec::new();
+    let mut all_data: Vec<NativeSimfile> = Vec::new();
     let page_size = 100;
     let mut page = 1;
 
@@ -971,7 +1010,7 @@ pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Res
             .cloned()
             .unwrap_or_default();
         for simfile in page_data {
-            all_data.push(simfile_model_from_graphql(&simfile)?);
+            all_data.push(native_simfile_from_graphql(&simfile)?);
         }
 
         let count = simfiles.get("count").and_then(Value::as_i64).unwrap_or(0);
@@ -1090,7 +1129,7 @@ pub(crate) async fn fetch_cloud_song_impl(
 
     Ok(json!({
         "success": true,
-        "cloudSongData": simfile_model_from_graphql(simfile)?,
+        "cloudSongData": native_simfile_from_graphql(simfile)?,
     }))
 }
 
@@ -1294,7 +1333,7 @@ pub(crate) async fn update_simfile_record_impl(
 
     Ok(json!({
         "success": true,
-        "data": simfile_model_from_graphql(&data["updateSimfile"])?,
+        "data": native_simfile_from_graphql(&data["updateSimfile"])?,
     }))
 }
 
@@ -1367,7 +1406,7 @@ pub(crate) async fn create_simfile_record_impl(
     let mut response = json!({
         "success": true,
         "simfileId": simfile_id,
-        "data": simfile_model_from_graphql(simfile)?,
+        "data": native_simfile_from_graphql(simfile)?,
     });
     if !warnings.is_empty() {
         response["warnings"] = json!(warnings);

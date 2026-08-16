@@ -257,7 +257,7 @@ const seedRendererState = async (
 				})
 			);
 			localStorage.setItem(
-				'dtx_linkage_cache',
+				'dtx_linkage_cache_v2',
 				JSON.stringify({
 					[songPath]: {
 						linkedSimFileId: simfileId,
@@ -267,14 +267,17 @@ const seedRendererState = async (
 							title: 'Critical Workspace Song',
 							artist: 'Integration Test',
 							bpm: 120,
-							is_published: false,
-							publish_date: '2026-07-25',
-							display_id: Number(simfileId),
-							download_url: null,
-							google_drive_file_id: null,
-							preview_url: null,
-							video_preview_url: null,
-							dtx_files: []
+							displayId: Number(simfileId),
+							userId: null,
+							googleDriveFileId: null,
+							isPublished: false,
+							downloadUrl: null,
+							previewUrl: null,
+							videoPreviewUrl: null,
+							publishDate: '2026-07-25',
+							createdAt: '2026-07-25T00:00:00.000Z',
+							updatedAt: '2026-07-25T00:00:00.000Z',
+							dtxFiles: []
 						}
 					}
 				})

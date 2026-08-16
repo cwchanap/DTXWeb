@@ -1,8 +1,8 @@
 import { writable } from 'svelte/store';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 export interface SimFileState {
-	userSimFiles: SimfileWithDtx[];
+	userSimFiles: SimfileModel[];
 	isLoading: boolean;
 	error: string | null;
 	lastUpdated: Date | null;
@@ -39,7 +39,7 @@ function createSimFileStore() {
 		},
 
 		// Set user simFiles
-		setUserSimFiles: (userSimFiles: SimfileWithDtx[], fromCache: boolean = false) => {
+		setUserSimFiles: (userSimFiles: SimfileModel[], fromCache: boolean = false) => {
 			update((state) => ({
 				...state,
 				userSimFiles,
@@ -51,7 +51,7 @@ function createSimFileStore() {
 		},
 
 		// Add a new simFile to user simFiles
-		addUserSimFile: (simFile: SimfileWithDtx) => {
+		addUserSimFile: (simFile: SimfileModel) => {
 			update((state) => ({
 				...state,
 				userSimFiles: [simFile, ...state.userSimFiles],
@@ -60,7 +60,7 @@ function createSimFileStore() {
 		},
 
 		// Update an existing simFile
-		updateUserSimFile: (updatedSimFile: SimfileWithDtx) => {
+		updateUserSimFile: (updatedSimFile: SimfileModel) => {
 			update((state) => ({
 				...state,
 				userSimFiles: state.userSimFiles.map((simFile) =>
@@ -80,8 +80,8 @@ function createSimFileStore() {
 		},
 
 		// Filter user simFiles by criteria
-		filterUserSimFiles: (filterFn: (simFile: SimfileWithDtx) => boolean) => {
-			let filteredSimFiles: SimfileWithDtx[] = [];
+		filterUserSimFiles: (filterFn: (simFile: SimfileModel) => boolean) => {
+			let filteredSimFiles: SimfileModel[] = [];
 			update((state) => {
 				filteredSimFiles = state.userSimFiles.filter(filterFn);
 				return state; // Don't modify the store, just return filtered data
@@ -90,10 +90,10 @@ function createSimFileStore() {
 		},
 
 		// Get simFile by ID
-		getSimFileById: (id: number): SimfileWithDtx | undefined => {
-			let simFile: SimfileWithDtx | undefined;
+		getSimFileById: (id: number): SimfileModel | undefined => {
+			let simFile: SimfileModel | undefined;
 			update((state) => {
-				simFile = state.userSimFiles.find((sf: SimfileWithDtx) => sf.id === id);
+				simFile = state.userSimFiles.find((sf: SimfileModel) => sf.id === id);
 				return state; // Don't modify the store
 			});
 			return simFile;

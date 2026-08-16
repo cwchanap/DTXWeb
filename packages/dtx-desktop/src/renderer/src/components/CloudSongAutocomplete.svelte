@@ -17,7 +17,7 @@
 		title: string;
 		artist: string;
 		bpm?: number;
-		is_published: boolean;
+		isPublished: boolean;
 	}
 
 	let {
@@ -303,11 +303,11 @@
 											<span class="font-mono">{song.bpm} BPM</span>
 										{/if}
 										<span
-											class="ml-auto rounded px-2 py-0.5 text-xs font-medium {song.is_published
+											class="ml-auto rounded px-2 py-0.5 text-xs font-medium {song.isPublished
 												? 'border-green/40 bg-green/10 text-green'
 												: 'bg-surface-2 text-dim'}"
 										>
-											{song.is_published
+											{song.isPublished
 												? $_('score.link.published')
 												: $_('score.link.draft')}
 										</span>

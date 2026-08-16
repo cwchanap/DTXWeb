@@ -1,10 +1,10 @@
 <script lang="ts">
 	import { Music, X, Calendar, Link, Cloud } from '@lucide/svelte';
-	import { type SimfileWithDtx, formatLevel } from '@dtx/common';
+	import { type SimfileModel, formatLevel } from '@dtx/common';
 	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
 
 	interface Props {
-		simFile: SimfileWithDtx;
+		simFile: SimfileModel;
 	}
 	let { simFile }: Props = $props();
 
@@ -26,7 +26,7 @@
 
 	const linked = $derived(isLinked(simFile.id, workspaceState.treeStructure));
 	const levels = $derived(
-		(simFile.dtx_files ?? [])
+		(simFile.dtxFiles ?? [])
 			.map((f) => f.level)
 			.filter((l): l is number => typeof l === 'number')
 			.sort((a, b) => a - b)
@@ -75,7 +75,7 @@
 			<div class="border-hairline bg-surface-1 flex items-center gap-3 rounded-lg border p-3">
 				<Calendar size={16} class="text-faint shrink-0" />
 				<span class="text-faint w-24 shrink-0">Publish date</span>
-				<span class="text-hi">{formatDate(simFile.publish_date)}</span>
+				<span class="text-hi">{formatDate(simFile.publishDate)}</span>
 			</div>
 			<div class="border-hairline bg-surface-1 flex items-center gap-3 rounded-lg border p-3">
 				<Music size={16} class="text-faint shrink-0" />
@@ -95,7 +95,7 @@
 					Linked to workspace
 				</span>
 			{/if}
-			{#if simFile.is_published}
+			{#if simFile.isPublished}
 				<span class="border-green/40 bg-green/10 text-green rounded px-2 py-1 text-xs">
 					Published
 				</span>

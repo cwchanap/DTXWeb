@@ -5,7 +5,7 @@ import { workspaceStore } from '../../stores/workspaceStore';
 import { simFileStore } from '../../stores/simFileStore';
 import { toastStore } from '../../stores/toastStore';
 import { get } from 'svelte/store';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 vi.mock('@lucide/svelte');
 vi.mock('../../services/authService', () => ({ authService: { login: vi.fn(), logout: vi.fn() } }));
@@ -23,17 +23,20 @@ vi.mock('../../services/workspaceService', () => ({
 import CommandPalette from './CommandPalette.svelte';
 import { exportSelectedSong } from '../../services/exportService';
 
-const makeCloudSimFile = (overrides: Partial<SimfileWithDtx> = {}): SimfileWithDtx =>
+const makeCloudSimFile = (overrides: Partial<SimfileModel> = {}): SimfileModel =>
 	({
 		id: 1,
 		title: 'Cloud Anthem',
 		artist: 'Cloud Artist',
 		bpm: 120,
-		is_published: false,
-		publish_date: null,
-		dtx_files: [],
+		displayId: null,
+		userId: 'test-user',
+		googleDriveFileId: null,
+		isPublished: false,
+		publishDate: null,
+		dtxFiles: [],
 		...overrides
-	}) as SimfileWithDtx;
+	}) as SimfileModel;
 
 describe('CommandPalette', () => {
 	beforeEach(() => {

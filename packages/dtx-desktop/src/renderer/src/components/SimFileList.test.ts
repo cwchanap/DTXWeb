@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import { simFileStore } from '../stores/simFileStore';
 import { workspaceStore } from '../stores/workspaceStore';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 vi.mock('@lucide/svelte');
 
@@ -17,17 +17,17 @@ vi.mock('@skeletonlabs/skeleton-svelte');
 import SimFileList from './SimFileList.svelte';
 import { simFileService } from '../services/simFileService';
 
-const makeSimFile = (overrides: Partial<SimfileWithDtx> = {}): SimfileWithDtx =>
+const makeSimFile = (overrides: Partial<SimfileModel> = {}): SimfileModel =>
 	({
 		id: 1,
 		title: 'Test Song',
 		artist: 'Test Artist',
 		bpm: 120,
-		is_published: false,
-		publish_date: null,
-		dtx_files: [],
+		isPublished: false,
+		publishDate: null,
+		dtxFiles: [],
 		...overrides
-	}) as SimfileWithDtx;
+	}) as SimfileModel;
 
 describe('SimFileList', () => {
 	beforeEach(() => {
@@ -93,13 +93,13 @@ describe('SimFileList', () => {
 		});
 
 		it('shows Published badge for published simFiles', () => {
-			simFileStore.setUserSimFiles([makeSimFile({ id: 1, is_published: true })]);
+			simFileStore.setUserSimFiles([makeSimFile({ id: 1, isPublished: true })]);
 			render(SimFileList);
 			expect(screen.getByText('Published')).toBeInTheDocument();
 		});
 
 		it('shows Draft badge for unpublished simFiles', () => {
-			simFileStore.setUserSimFiles([makeSimFile({ id: 1, is_published: false })]);
+			simFileStore.setUserSimFiles([makeSimFile({ id: 1, isPublished: false })]);
 			render(SimFileList);
 			expect(screen.getByText('Draft')).toBeInTheDocument();
 		});

@@ -1,5 +1,5 @@
 import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 export const linkingService = {
 	/**
@@ -7,10 +7,7 @@ export const linkingService = {
 	 * @param remoteSimFiles Array of remote simFiles from Supabase
 	 * @param localFolders Array of local folder TreeNodes with song titles
 	 */
-	autoLinkSimFilesToFolders: (
-		remoteSimFiles: SimfileWithDtx[],
-		localFolders: TreeNode[]
-	): void => {
+	autoLinkSimFilesToFolders: (remoteSimFiles: SimfileModel[], localFolders: TreeNode[]): void => {
 		console.log('Starting automatic linking process...');
 		console.log(
 			`Remote simFiles: ${remoteSimFiles.length}, Local folders: ${localFolders.length}`
@@ -77,7 +74,7 @@ export const linkingService = {
 	 * @param localFolders Array of local folders with song titles
 	 * @returns Matching TreeNode or null if no match found
 	 */
-	findMatchingFolder: (simFile: SimfileWithDtx, localFolders: TreeNode[]): TreeNode | null => {
+	findMatchingFolder: (simFile: SimfileModel, localFolders: TreeNode[]): TreeNode | null => {
 		if (!simFile.title) {
 			return null;
 		}
@@ -109,12 +106,12 @@ export const linkingService = {
 	 * Finds a remote simFile that matches the given local folder by song title
 	 * @param folder Local folder to match
 	 * @param remoteSimFiles Array of remote simFiles
-	 * @returns Matching SimfileWithDtx or null if no match found
+	 * @returns Matching SimfileModel or null if no match found
 	 */
 	findMatchingSimFile: (
 		folder: TreeNode,
-		remoteSimFiles: SimfileWithDtx[]
-	): SimfileWithDtx | null => {
+		remoteSimFiles: SimfileModel[]
+	): SimfileModel | null => {
 		if (!folder.songTitle) {
 			return null;
 		}
@@ -131,7 +128,7 @@ export const linkingService = {
 
 		// If no exact match, try fuzzy matching and find the best match
 		if (!match) {
-			let bestMatch: SimfileWithDtx | null = null;
+			let bestMatch: SimfileModel | null = null;
 			let bestSimilarity = 0;
 
 			remoteSimFiles.forEach((simFile) => {
@@ -243,7 +240,7 @@ export const linkingService = {
 	 * @param simFile SimFile to link
 	 * @param folderPath Path of the folder to link to
 	 */
-	linkSimFileToFolder: (simFile: SimfileWithDtx, folderPath: string): void => {
+	linkSimFileToFolder: (simFile: SimfileModel, folderPath: string): void => {
 		console.log(`Manually linking simFile "${simFile.title}" to folder "${folderPath}"`);
 		workspaceStore.linkSimFileToFolder(folderPath, simFile);
 	},
@@ -262,7 +259,7 @@ export const linkingService = {
 	 * @param remoteSimFiles Array of remote simFiles from Supabase
 	 * @param newNodes Array of newly loaded TreeNodes
 	 */
-	linkSimFilesToNewNodes: (remoteSimFiles: SimfileWithDtx[], newNodes: TreeNode[]): void => {
+	linkSimFilesToNewNodes: (remoteSimFiles: SimfileModel[], newNodes: TreeNode[]): void => {
 		console.log('Linking simFiles to newly loaded nodes...');
 		console.log(`Remote simFiles: ${remoteSimFiles.length}, New nodes: ${newNodes.length}`);
 

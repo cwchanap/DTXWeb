@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
 import { workspaceStore } from '../stores/workspaceStore';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 vi.mock('@lucide/svelte');
 
@@ -16,17 +16,17 @@ vi.mock('../services/linkageCacheService', () => ({
 
 import CloudSongDetail from './CloudSongDetail.svelte';
 
-const makeSimFile = (overrides: Partial<SimfileWithDtx> = {}): SimfileWithDtx =>
+const makeSimFile = (overrides: Partial<SimfileModel> = {}): SimfileModel =>
 	({
 		id: 1,
 		title: 'Spice & Wolf',
 		artist: 'Yoshino',
 		bpm: 145,
-		is_published: false,
-		publish_date: '2024-05-01',
-		dtx_files: [{ level: 5, label: 'BASIC' }],
+		isPublished: false,
+		publishDate: '2024-05-01',
+		dtxFiles: [{ level: 5, label: 'BASIC' }],
 		...overrides
-	}) as SimfileWithDtx;
+	}) as SimfileModel;
 
 describe('CloudSongDetail', () => {
 	beforeEach(() => {
@@ -42,19 +42,19 @@ describe('CloudSongDetail', () => {
 
 	it('renders BPM and sorted levels', () => {
 		render(CloudSongDetail, {
-			simFile: makeSimFile({ bpm: 160, dtx_files: [{ level: 90 }, { level: 30 }] })
+			simFile: makeSimFile({ bpm: 160, dtxFiles: [{ level: 90 }, { level: 30 }] })
 		});
 		expect(screen.getByText('160')).toBeInTheDocument();
 		expect(screen.getByText('3.00, 9.00')).toBeInTheDocument();
 	});
 
 	it('shows a Draft badge when unpublished', () => {
-		render(CloudSongDetail, { simFile: makeSimFile({ is_published: false }) });
+		render(CloudSongDetail, { simFile: makeSimFile({ isPublished: false }) });
 		expect(screen.getByText('Draft')).toBeInTheDocument();
 	});
 
 	it('shows a Published badge when published', () => {
-		render(CloudSongDetail, { simFile: makeSimFile({ is_published: true }) });
+		render(CloudSongDetail, { simFile: makeSimFile({ isPublished: true }) });
 		expect(screen.getByText('Published')).toBeInTheDocument();
 	});
 

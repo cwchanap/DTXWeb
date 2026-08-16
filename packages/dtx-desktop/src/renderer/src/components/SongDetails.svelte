@@ -7,7 +7,7 @@
 	import { authStore } from '$lib/stores/authStore';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
-	import type { SimfileWithDtx, DtxFileRow } from '@dtx/common';
+	import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
 	import CloudSongAutocomplete from '$lib/components/CloudSongAutocomplete.svelte';
 	import { simFileService } from '$lib/services/simFileService';
@@ -40,20 +40,20 @@
 		title: string;
 		artist: string;
 		bpm?: number;
-		is_published: boolean;
+		isPublished: boolean;
 	};
 
 	type CreateSimfileResult = {
 		success: boolean;
 		simfileId?: string;
-		data?: SimfileWithDtx;
+		data?: SimfileModel;
 		error?: string;
 		warnings?: string[];
 	};
 
 	type UpdateSimfileResult = {
 		success: boolean;
-		data?: Partial<SimfileWithDtx>;
+		data?: Partial<SimfileModel>;
 		error?: string;
 	};
 
@@ -322,9 +322,9 @@
 		return next;
 	};
 
-	const isSimfileWithDtx = (data: unknown): data is SimfileWithDtx => {
+	const isSimfileModel = (data: unknown): data is SimfileModel => {
 		if (!data || typeof data !== 'object') return false;
-		const candidate = data as Partial<SimfileWithDtx>;
+		const candidate = data as Partial<SimfileModel>;
 		return (
 			typeof candidate.id === 'number' &&
 			typeof candidate.title === 'string' &&
@@ -332,16 +332,6 @@
 			typeof candidate.bpm === 'number'
 		);
 	};
-
-	const normalizeSimfile = (data: SimfileWithDtx): SimfileWithDtx => ({
-		...data,
-		dtx_files: data.dtx_files?.map((file, index) => ({
-			...file,
-			level: file?.level !== undefined ? Number(file.level) : undefined,
-			id: (file as { id?: number })?.id ?? index + 1,
-			simfile_id: (file as { simfile_id?: number })?.simfile_id
-		}))
-	});
 
 	const mergeSuccessfulDriveFields = (
 		targetSong: TreeNode,
@@ -360,8 +350,8 @@
 		if (targetSong.linkedSimFile && targetSong.linkedSimFileId === simfileId) {
 			targetSong.linkedSimFile = {
 				...targetSong.linkedSimFile,
-				...(outcome.fileId === undefined ? {} : { google_drive_file_id: outcome.fileId }),
-				...(outcome.downloadUrl === undefined ? {} : { download_url: outcome.downloadUrl })
+				...(outcome.fileId === undefined ? {} : { googleDriveFileId: outcome.fileId }),
+				...(outcome.downloadUrl === undefined ? {} : { downloadUrl: outcome.downloadUrl })
 			};
 		}
 		workspaceStore.mergeGoogleDriveFields(targetPath, simfileId, fields);
@@ -523,14 +513,14 @@
 				save: async () => {
 					const result =
 						await desktopHost.createSimfileRecord<CreateSimfileResult>(simfileData);
-					if (!result.success || !result.data || !isSimfileWithDtx(result.data)) {
+					if (!result.success || !result.data || !isSimfileModel(result.data)) {
 						return {
 							success: false,
 							error: result.error || 'Failed to create simfile record'
 						};
 					}
 
-					const linkedSimfile = normalizeSimfile(result.data);
+					const linkedSimfile = result.data;
 					const savedSimfileId = result.simfileId || String(result.data.id);
 					targetSong.linkedSimFileId = savedSimfileId;
 					targetSong.linkedSimFile = linkedSimfile;
@@ -684,20 +674,20 @@
 			linkingSuccess = false;
 
 			try {
-				const result = await desktopHost.fetchCloudSong<
-					FetchCloudSongResult<SimfileWithDtx>
-				>({
-					cloudSongId: selectedSong.id
-				});
+				const result = await desktopHost.fetchCloudSong<FetchCloudSongResult<SimfileModel>>(
+					{
+						cloudSongId: selectedSong.id
+					}
+				);
 
 				if (
 					result.success &&
 					result.cloudSongData &&
-					isSimfileWithDtx(result.cloudSongData)
+					isSimfileModel(result.cloudSongData)
 				) {
-					const linkedSimfile = normalizeSimfile(result.cloudSongData);
+					const linkedSimfile = result.cloudSongData;
 					linkingSuccess = true;
-					song.linkedSimFileId = String(selectedSong.id);
+					song.linkedSimFileId = String(linkedSimfile.id);
 					song.linkedSimFile = linkedSimfile;
 
 					// Update the workspace store (this will automatically cache to localStorage)
@@ -753,15 +743,15 @@
 			// owns the URL via the guarded updateSimfileDriveFile mutation.
 			// Sending a cached download_url here would reintroduce the
 			// cross-device race where a stale URL overwrites a newer binding.
-			const isDriveBound = Boolean(targetSong.linkedSimFile?.google_drive_file_id);
+			const isDriveBound = Boolean(targetSong.linkedSimFile?.googleDriveFileId);
 			const updateData: Record<string, unknown> = {
-				display_id: Number(event.detail.displayId),
-				publish_date: String(event.detail.publishDate),
-				is_published: Boolean(event.detail.isPublished),
-				video_preview_url: String(event.detail.videoPreviewUrl)
+				displayId: Number(event.detail.displayId),
+				publishDate: String(event.detail.publishDate),
+				isPublished: Boolean(event.detail.isPublished),
+				videoPreviewUrl: String(event.detail.videoPreviewUrl)
 			};
 			if (!isDriveBound) {
-				updateData.download_url = String(event.detail.downloadUrl);
+				updateData.downloadUrl = String(event.detail.downloadUrl);
 			}
 
 			// Add parsed local data if available (BPM, artist, title)
@@ -788,10 +778,10 @@
 						};
 					}
 
-					const updatedSimfile = normalizeSimfile({
+					const updatedSimfile: SimfileModel = {
 						...targetSong.linkedSimFile,
 						...(result.data || {})
-					} as SimfileWithDtx);
+					};
 					targetSong.linkedSimFile = updatedSimfile;
 					workspaceStore.linkSimFileToFolder(targetPath, updatedSimfile);
 					if (selectionGeneration === selectionToken && song.path === targetPath) {
@@ -993,37 +983,35 @@
 	// Convert song data to simfile format for ChartDetail component
 	// Use parsed local data as fallback when linked simfile data is missing
 	const simfileData = $derived(() => {
-		const linkedSimfile = song.linkedSimFile ? normalizeSimfile(song.linkedSimFile) : null;
-		const fallbackDtxFiles: Partial<DtxFileRow>[] = parsedLocalData.levels
+		const linkedSimfile = song.linkedSimFile;
+		const fallbackDtxFiles: SimfileDtxFile[] = parsedLocalData.levels
 			? parsedLocalData.levels.map((l, index) => ({
 					id: index + 1,
 					label: l.label || 'Unknown',
 					// Store the raw #DLEVEL value directly — formatLevel decodes it
 					// via the DTXManiaCX formula (≥100 → /100, <100 → /10).
 					// Mirrors the upload site and DTXFile.level in @dtx/common.
-					level: Number(l.level || 0),
-					simfile_id: 0
+					level: Number(l.level || 0)
 				}))
 			: [];
-		const dtxFiles: Partial<DtxFileRow>[] =
-			linkedSimfile?.dtx_files?.map((file, index) => ({
+		const dtxFiles: SimfileDtxFile[] =
+			linkedSimfile?.dtxFiles?.map((file, index) => ({
 				...file,
 				level: file?.level !== undefined ? Number(file.level) : undefined,
-				id: (file as { id?: number })?.id ?? index + 1,
-				simfile_id: (file as { simfile_id?: number })?.simfile_id
+				id: (file as { id?: number })?.id ?? index + 1
 			})) || fallbackDtxFiles;
 
 		return {
 			title: linkedSimfile?.title || song.songTitle || song.name,
 			artist: linkedSimfile?.artist || parsedLocalData.artist,
 			bpm: linkedSimfile?.bpm ?? parsedLocalData.bpm,
-			publish_date: linkedSimfile?.publish_date || publishDate,
-			display_id: linkedSimfile?.display_id ?? displayId,
-			is_published: linkedSimfile?.is_published ?? false,
-			download_url: linkedSimfile?.download_url || downloadUrl,
-			video_preview_url: linkedSimfile?.video_preview_url || videoPreviewUrl,
-			dtx_files: dtxFiles
-		} satisfies Partial<SimfileWithDtx>;
+			publishDate: linkedSimfile?.publishDate || publishDate,
+			displayId: linkedSimfile?.displayId ?? displayId,
+			isPublished: linkedSimfile?.isPublished ?? false,
+			downloadUrl: linkedSimfile?.downloadUrl || downloadUrl,
+			videoPreviewUrl: linkedSimfile?.videoPreviewUrl || videoPreviewUrl,
+			dtxFiles
+		} satisfies Partial<SimfileModel>;
 	});
 
 	// Reset auto-populate state when switching songs to prevent stale IDs
@@ -1041,11 +1029,11 @@
 	$effect(() => {
 		const data = simfileData();
 		// Always update form values to reflect current data
-		displayId = data.display_id || 0;
-		publishDate = data.publish_date || new Date().toISOString().split('T')[0];
-		downloadUrl = data.download_url || '';
-		videoPreviewUrl = data.video_preview_url || '';
-		isPublished = data.is_published || false;
+		displayId = data.displayId || 0;
+		publishDate = data.publishDate || new Date().toISOString().split('T')[0];
+		downloadUrl = data.downloadUrl || '';
+		videoPreviewUrl = data.videoPreviewUrl || '';
+		isPublished = data.isPublished || false;
 	});
 
 	$effect(() => {
@@ -1141,14 +1129,14 @@
 						currentDriveOperation !== undefined ||
 						!$googleDriveStore.connection?.connected}
 					aria-label={$_(
-						song.linkedSimFile.google_drive_file_id
+						song.linkedSimFile.googleDriveFileId
 							? 'googleDrive.songDetails.reupload'
 							: 'googleDrive.songDetails.upload'
 					)}
 				>
 					<Upload size={16} />
 					{$_(
-						song.linkedSimFile.google_drive_file_id
+						song.linkedSimFile.googleDriveFileId
 							? 'googleDrive.songDetails.reupload'
 							: 'googleDrive.songDetails.upload'
 					)}
@@ -1164,7 +1152,7 @@
 			</div>
 		</div>
 
-		{#if song.linkedSimFile.google_drive_file_id}
+		{#if song.linkedSimFile.googleDriveFileId}
 			<p class="border-amber/40 bg-amber/10 text-amber m-4 rounded-lg border p-3 text-sm">
 				{$_('googleDrive.songDetails.linkedWarning')}
 			</p>

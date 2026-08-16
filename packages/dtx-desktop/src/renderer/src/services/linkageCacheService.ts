@@ -1,16 +1,19 @@
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 interface LinkageData {
 	linkedSimFileId: string;
 	linkedAt: string;
-	cloudSongData: SimfileWithDtx;
+	cloudSongData: SimfileModel;
 }
 
 interface LinkageCache {
 	[songPath: string]: LinkageData;
 }
 
-const LINKAGE_CACHE_KEY = 'dtx_linkage_cache';
+// v2: stores the current SimfileModel-shaped cloudSongData. The v1 key
+// ('dtx_linkage_cache') held the legacy snake_case shape and is deliberately
+// left untouched — no read, migration, or deletion.
+const LINKAGE_CACHE_KEY = 'dtx_linkage_cache_v2';
 
 export const linkageCacheService = {
 	/**
@@ -19,7 +22,7 @@ export const linkageCacheService = {
 	saveLinkage: (
 		songPath: string,
 		cloudSongId: string | number,
-		cloudSongData: SimfileWithDtx
+		cloudSongData: SimfileModel
 	): void => {
 		try {
 			const cache = linkageCacheService.getCache();

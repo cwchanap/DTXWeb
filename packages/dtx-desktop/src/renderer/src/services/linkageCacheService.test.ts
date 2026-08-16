@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { linkageCacheService } from './linkageCacheService';
-import type { SimfileWithDtx } from '@dtx/common';
 
 // Mock localStorage
 const localStorageMock = {
@@ -10,21 +9,24 @@ const localStorageMock = {
 	clear: vi.fn()
 };
 
-const sampleSimfile: SimfileWithDtx = {
+// Current-model (camelCase) simfile shape, mirroring what the native boundary
+// emits (src-tauri/tests/fixtures/simfile_model.json).
+const sampleSimfile = {
 	id: 1,
 	title: 'Test Song',
 	artist: 'Artist',
 	bpm: 120,
-	preview_url: null,
-	download_url: null,
-	is_published: false,
-	display_id: null,
-	publish_date: '2024-01-01',
-	video_preview_url: null,
-	created_at: '2024-01-01T00:00:00Z',
-	updated_at: '2024-01-01T00:00:00Z',
-	user_id: 'test-user-id',
-	dtx_files: []
+	displayId: null,
+	userId: 'test-user-id',
+	googleDriveFileId: null,
+	isPublished: false,
+	downloadUrl: null,
+	previewUrl: null,
+	videoPreviewUrl: null,
+	publishDate: '2024-01-01',
+	createdAt: '2024-01-01T00:00:00Z',
+	updatedAt: '2024-01-01T00:00:00Z',
+	dtxFiles: []
 };
 
 // Replace global localStorage with mock
@@ -49,7 +51,7 @@ describe('linkageCacheService', () => {
 			linkageCacheService.saveLinkage(songPath, cloudSongId, cloudSongData);
 
 			expect(localStorageMock.setItem).toHaveBeenCalledWith(
-				'dtx_linkage_cache',
+				'dtx_linkage_cache_v2',
 				expect.stringContaining(songPath)
 			);
 
@@ -113,6 +115,38 @@ describe('linkageCacheService', () => {
 			const result = linkageCacheService.getLinkage('/path');
 			expect(result).toBeNull();
 		});
+
+		it('ignores a legacy cache seeded under the v1 key', () => {
+			// A previous app version wrote linkage entries (old snake_case
+			// shape) under 'dtx_linkage_cache'. The v2 service must not read,
+			// migrate, or delete it — every read misses.
+			localStorageMock.getItem.mockImplementation((key: string) => {
+				if (key !== 'dtx_linkage_cache') return null;
+				return JSON.stringify({
+					'/path/to/song': {
+						linkedSimFileId: 'song123',
+						linkedAt: '2025-06-28T12:00:00.000Z',
+						cloudSongData: { id: 1, title: 'Old Shape', is_published: false }
+					}
+				});
+			});
+
+			expect(linkageCacheService.getLinkage('/path/to/song')).toBeNull();
+			expect(linkageCacheService.hasLinkage('/path/to/song')).toBe(false);
+			expect(linkageCacheService.getLinkedSongPaths()).toEqual([]);
+
+			// saveLinkage must start from an empty v2 cache, not inherit v1 entries
+			linkageCacheService.saveLinkage('/new/path', 'song123', sampleSimfile);
+			const savedData = JSON.parse(localStorageMock.setItem.mock.calls[0][1]);
+			expect(savedData).toEqual({
+				'/new/path': {
+					linkedSimFileId: 'song123',
+					linkedAt: expect.any(String),
+					cloudSongData: sampleSimfile
+				}
+			});
+			expect(localStorageMock.removeItem).not.toHaveBeenCalledWith('dtx_linkage_cache');
+		});
 	});
 
 	describe('removeLinkage', () => {
@@ -168,7 +202,7 @@ describe('linkageCacheService', () => {
 		it('should remove the entire cache from localStorage', () => {
 			linkageCacheService.clearCache();
 
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('dtx_linkage_cache');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('dtx_linkage_cache_v2');
 		});
 	});
 

@@ -9,12 +9,12 @@
 	import { buildCommands, type Command } from '../../commands/commands';
 	import { searchItems } from '../../lib/fuzzy';
 	import { toastStore } from '../../stores/toastStore';
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileModel } from '@dtx/common';
 
 	type FlatResult =
 		| { kind: 'command'; c: Command }
 		| { kind: 'song'; s: TreeNode }
-		| { kind: 'cloud'; s: SimfileWithDtx };
+		| { kind: 'cloud'; s: SimfileModel };
 
 	interface Props {
 		open: boolean;

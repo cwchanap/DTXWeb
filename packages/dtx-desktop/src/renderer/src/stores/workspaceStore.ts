@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 import { linkageCacheService } from '../services/linkageCacheService';
 
 export type ShellSection = 'library' | 'cloud' | 'templates' | 'settings' | 'scores';
@@ -14,7 +14,7 @@ export interface TreeNode {
 	containsDtxFiles?: boolean; // New property to identify folders with .dtx files
 	songTitle?: string | null; // Song title from SET.def file
 	linkedSimFileId?: string | null; // ID of linked remote simFile
-	linkedSimFile?: SimfileWithDtx | null; // Full linked remote simFile data
+	linkedSimFile?: SimfileModel | null; // Full linked remote simFile data
 }
 
 export interface WorkspaceState {
@@ -29,7 +29,7 @@ export interface WorkspaceState {
 	isLoading: boolean;
 	error: string | null;
 	selectedSong: TreeNode | null;
-	selectedCloudSimFile: SimfileWithDtx | null;
+	selectedCloudSimFile: SimfileModel | null;
 	showCloudSongDetails: boolean;
 	showNewSong: boolean;
 	activeSection: ShellSection;
@@ -166,7 +166,7 @@ function createWorkspaceStore() {
 				showCloudSongDetails: false
 			}));
 		},
-		selectCloudSimFile: (simFile: SimfileWithDtx) => {
+		selectCloudSimFile: (simFile: SimfileModel) => {
 			update((state) => ({
 				...state,
 				selectedCloudSimFile: simFile,
@@ -209,7 +209,7 @@ function createWorkspaceStore() {
 				showNewSong: false
 			}));
 		},
-		linkSimFileToFolder: (folderPath: string, simFile: SimfileWithDtx) => {
+		linkSimFileToFolder: (folderPath: string, simFile: SimfileModel) => {
 			// Save to localStorage cache
 			linkageCacheService.saveLinkage(folderPath, simFile.id, simFile);
 
@@ -226,17 +226,17 @@ function createWorkspaceStore() {
 			simfileId: string,
 			fields: GoogleDriveFields
 		) => {
-			const driveUpdates: Partial<SimfileWithDtx> = {};
+			const driveUpdates: Partial<SimfileModel> = {};
 			if (fields.googleDriveFileId) {
-				driveUpdates.google_drive_file_id = fields.googleDriveFileId;
+				driveUpdates.googleDriveFileId = fields.googleDriveFileId;
 			}
 			if (fields.downloadUrl) {
-				driveUpdates.download_url = fields.downloadUrl;
+				driveUpdates.downloadUrl = fields.downloadUrl;
 			}
 			if (Object.keys(driveUpdates).length === 0) return;
 
 			update((state) => {
-				let mergedSimfile: SimfileWithDtx | null = null;
+				let mergedSimfile: SimfileModel | null = null;
 				const mergeNode = (node: TreeNode): TreeNode => {
 					let mergedNode = node;
 					if (

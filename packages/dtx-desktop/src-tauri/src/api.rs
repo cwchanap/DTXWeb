@@ -1,4 +1,8 @@
-use crate::api_contracts::{NativeSimfile, NativeSimfileDtxFile};
+use crate::api_contracts::{
+    CreateSimfileRecordInput, CreateSimfileRecordResult, FetchCloudSongResult,
+    FetchUserSimfilesResult, NativeSimfile, NativeSimfileDtxFile, UpdateSimfileRecordInput,
+    UpdateSimfileRecordResult,
+};
 use crate::auth::AuthState;
 use crate::error::{DesktopError, Result};
 use crate::google_drive::{DriveMetadataError, ExpectedPreviousDriveFile, OwnerDriveSimfile};
@@ -689,35 +693,6 @@ async fn drive_metadata_graphql_data(
         .ok_or(DriveMetadataError::InvalidResponse)
 }
 
-fn create_input_from_renderer(simfile_data: &Value) -> Value {
-    let levels = simfile_data
-        .get("levels")
-        .and_then(Value::as_array)
-        .map(|levels| {
-            levels
-                .iter()
-                .map(|level| {
-                    json!({
-                        "label": level.get("label").cloned().unwrap_or(Value::String(String::new())),
-                        "level": level.get("level").cloned().unwrap_or(json!(0)),
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-
-    json!({
-        "title": simfile_data.get("title").cloned().unwrap_or(Value::String(String::new())),
-        "artist": simfile_data.get("artist").cloned().unwrap_or(Value::String(String::new())),
-        "bpm": simfile_data.get("bpm").cloned().unwrap_or(json!(0)),
-        "displayId": simfile_data.get("displayId").cloned().unwrap_or(Value::Null),
-        "isPublished": simfile_data.get("isPublished").cloned().unwrap_or(Value::Null),
-        "publishDate": simfile_data.get("publishDate").cloned().unwrap_or(Value::Null),
-        "downloadUrl": simfile_data.get("downloadUrl").cloned().unwrap_or(Value::Null),
-        "videoPreviewUrl": simfile_data.get("videoPreviewUrl").cloned().unwrap_or(Value::Null),
-        "dtxFiles": levels.map(Value::Array).unwrap_or(Value::Null),
-    })
-}
-
 pub(crate) async fn graphql_data_with_url(
     base_url: &str,
     token: &str,
@@ -969,7 +944,10 @@ async fn read_preview_within_workspace(
     }
 }
 
-pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Result<Value> {
+pub(crate) async fn fetch_user_simfiles_impl(
+    base_url: &str,
+    token: &str,
+) -> Result<FetchUserSimfilesResult> {
     let mut all_data: Vec<NativeSimfile> = Vec::new();
     let page_size = 100;
     let mut page = 1;
@@ -986,20 +964,20 @@ pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Res
         let data = match result {
             Ok(ApiResultValue::Success { data }) => data,
             Ok(ApiResultValue::Failure { error, .. }) => {
-                return Ok(json!({
-                    "success": false,
-                    "error": error,
-                    "data": all_data,
-                    "fromCache": false,
-                }));
+                return Ok(FetchUserSimfilesResult {
+                    success: false,
+                    data: all_data,
+                    from_cache: false,
+                    error: Some(error),
+                });
             }
             Err(error) => {
-                return Ok(json!({
-                    "success": false,
-                    "error": error.to_string(),
-                    "data": all_data,
-                    "fromCache": false,
-                }));
+                return Ok(FetchUserSimfilesResult {
+                    success: false,
+                    data: all_data,
+                    from_cache: false,
+                    error: Some(error.to_string()),
+                });
             }
         };
 
@@ -1021,11 +999,16 @@ pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Res
         page += 1;
     }
 
-    Ok(json!({ "success": true, "data": all_data, "fromCache": false }))
+    Ok(FetchUserSimfilesResult {
+        success: true,
+        data: all_data,
+        from_cache: false,
+        error: None,
+    })
 }
 
 #[tauri::command]
-pub async fn fetch_user_simfiles(app: AppHandle) -> Result<Value> {
+pub async fn fetch_user_simfiles(app: AppHandle) -> Result<FetchUserSimfilesResult> {
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_user_simfiles_impl(&base_url, &token).await
@@ -1110,31 +1093,45 @@ pub async fn search_cloud_songs(
 pub(crate) async fn fetch_cloud_song_impl(
     base_url: &str,
     token: &str,
-    cloud_song_id: Value,
-) -> Result<Value> {
+    cloud_song_id: String,
+) -> Result<FetchCloudSongResult> {
     let result = graphql_result_with_url(
         base_url,
         token,
         &graphql_document(GET_SIMFILE_QUERY),
-        json!({ "id": cloud_song_id.to_string().trim_matches('"') }),
+        json!({ "id": cloud_song_id }),
     )
     .await?;
     let data = match result.success_data() {
         Ok(data) => data,
-        Err((error, _)) => return Ok(api_failure(error)),
+        Err((error, _)) => {
+            return Ok(FetchCloudSongResult {
+                success: false,
+                cloud_song_data: None,
+                error: Some(error),
+            });
+        }
     };
     let Some(simfile) = data.get("simfile").filter(|simfile| !simfile.is_null()) else {
-        return Ok(api_failure("Simfile not found"));
+        return Ok(FetchCloudSongResult {
+            success: false,
+            cloud_song_data: None,
+            error: Some("Simfile not found".to_string()),
+        });
     };
 
-    Ok(json!({
-        "success": true,
-        "cloudSongData": native_simfile_from_graphql(simfile)?,
-    }))
+    Ok(FetchCloudSongResult {
+        success: true,
+        cloud_song_data: Some(native_simfile_from_graphql(simfile)?),
+        error: None,
+    })
 }
 
 #[tauri::command]
-pub async fn fetch_cloud_song(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
+pub async fn fetch_cloud_song(
+    app: AppHandle,
+    cloud_song_id: String,
+) -> Result<FetchCloudSongResult> {
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
@@ -1304,45 +1301,44 @@ pub async fn upload_scores(app: AppHandle, payload: Value) -> Result<Value> {
 pub(crate) async fn update_simfile_record_impl(
     base_url: &str,
     token: &str,
-    simfile_id: Value,
-    update_data: Value,
-) -> Result<Value> {
-    let input = match update_data {
-        Value::Object(mut object) => {
-            // A Drive binding is owner-only state with its own mutation;
-            // `UpdateSimfileInput` deliberately does not own this field.
-            object.remove("googleDriveFileId");
-            Value::Object(object)
-        }
-        other => other,
-    };
+    simfile_id: String,
+    update_data: UpdateSimfileRecordInput,
+) -> Result<UpdateSimfileRecordResult> {
+    let input = serde_json::to_value(&update_data)?;
     let result = graphql_result_with_url(
         base_url,
         token,
         &graphql_document(UPDATE_SIMFILE_MUTATION),
         json!({
-            "id": simfile_id.to_string().trim_matches('"'),
+            "id": simfile_id,
             "input": input,
         }),
     )
     .await?;
     let data = match result.success_data() {
         Ok(data) => data,
-        Err((error, _)) => return Ok(api_failure(error)),
+        Err((error, _)) => {
+            return Ok(UpdateSimfileRecordResult {
+                success: false,
+                data: None,
+                error: Some(error),
+            });
+        }
     };
 
-    Ok(json!({
-        "success": true,
-        "data": native_simfile_from_graphql(&data["updateSimfile"])?,
-    }))
+    Ok(UpdateSimfileRecordResult {
+        success: true,
+        data: Some(native_simfile_from_graphql(&data["updateSimfile"])?),
+        error: None,
+    })
 }
 
 #[tauri::command]
 pub async fn update_simfile_record(
     app: AppHandle,
-    simfile_id: Value,
-    update_data: Value,
-) -> Result<Value> {
+    simfile_id: String,
+    update_data: UpdateSimfileRecordInput,
+) -> Result<UpdateSimfileRecordResult> {
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
     update_simfile_record_impl(&base_url, &token, simfile_id, update_data).await
@@ -1351,10 +1347,16 @@ pub async fn update_simfile_record(
 pub(crate) async fn create_simfile_record_impl(
     base_url: &str,
     token: &str,
-    simfile_data: Value,
+    simfile_data: CreateSimfileRecordInput,
     workspace_root: &Path,
-) -> Result<Value> {
-    let input = create_input_from_renderer(&simfile_data);
+) -> Result<CreateSimfileRecordResult> {
+    let mut input = serde_json::to_value(&simfile_data)?;
+    if let Value::Object(input) = &mut input {
+        input.remove("songPath");
+        if let Some(levels) = input.remove("levels") {
+            input.insert("dtxFiles".to_string(), levels);
+        }
+    }
     let result = run_graphql_value(
         base_url,
         token,
@@ -1364,7 +1366,15 @@ pub(crate) async fn create_simfile_record_impl(
     .await;
     let data = match result.success_data() {
         Ok(data) => data,
-        Err((error, _)) => return Ok(api_failure(error)),
+        Err((error, _)) => {
+            return Ok(CreateSimfileRecordResult {
+                success: false,
+                simfile_id: None,
+                data: None,
+                error: Some(error),
+                warnings: None,
+            });
+        }
     };
 
     let simfile = &data["createSimfile"];
@@ -1372,54 +1382,50 @@ pub(crate) async fn create_simfile_record_impl(
     let mut warnings = Vec::new();
 
     let workspace_root = workspace_root.to_string_lossy();
-    if let Some(song_path) = simfile_data.get("songPath").and_then(Value::as_str) {
-        if !song_path.is_empty() {
-            if let Some(error) = upload_preview_if_present(
-                base_url,
-                token,
-                song_path,
-                &workspace_root,
-                &simfile_id,
-                "preview.jpg",
-                "image/jpeg",
-            )
-            .await
-            {
-                warnings.push(format!("Preview image: {error}"));
-            }
-            if let Some(error) = upload_preview_if_present(
-                base_url,
-                token,
-                song_path,
-                &workspace_root,
-                &simfile_id,
-                "preview.mp3",
-                "audio/mpeg",
-            )
-            .await
-            {
-                warnings.push(format!("Sound preview: {error}"));
-            }
+    if !simfile_data.song_path.is_empty() {
+        if let Some(error) = upload_preview_if_present(
+            base_url,
+            token,
+            &simfile_data.song_path,
+            &workspace_root,
+            &simfile_id,
+            "preview.jpg",
+            "image/jpeg",
+        )
+        .await
+        {
+            warnings.push(format!("Preview image: {error}"));
+        }
+        if let Some(error) = upload_preview_if_present(
+            base_url,
+            token,
+            &simfile_data.song_path,
+            &workspace_root,
+            &simfile_id,
+            "preview.mp3",
+            "audio/mpeg",
+        )
+        .await
+        {
+            warnings.push(format!("Sound preview: {error}"));
         }
     }
 
-    let mut response = json!({
-        "success": true,
-        "simfileId": simfile_id,
-        "data": native_simfile_from_graphql(simfile)?,
-    });
-    if !warnings.is_empty() {
-        response["warnings"] = json!(warnings);
-    }
-    Ok(response)
+    Ok(CreateSimfileRecordResult {
+        success: true,
+        simfile_id: Some(simfile_id),
+        data: Some(native_simfile_from_graphql(simfile)?),
+        error: None,
+        warnings: (!warnings.is_empty()).then_some(warnings),
+    })
 }
 
 #[tauri::command]
 pub async fn create_simfile_record(
     app: AppHandle,
-    simfile_data: Value,
+    simfile_data: CreateSimfileRecordInput,
     state: State<'_, WorkspaceRootState>,
-) -> Result<Value> {
+) -> Result<CreateSimfileRecordResult> {
     let workspace_root = state.current()?;
     let base_url = api_base_url_from_env()?;
     let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
@@ -1430,9 +1436,9 @@ pub async fn create_simfile_record(
 pub(crate) async fn create_simfile_record_with_workspace_state(
     base_url: &str,
     token: &str,
-    simfile_data: Value,
+    simfile_data: CreateSimfileRecordInput,
     state: &WorkspaceRootState,
-) -> Result<Value> {
+) -> Result<CreateSimfileRecordResult> {
     let workspace_root = state.current()?;
     create_simfile_record_impl(base_url, token, simfile_data, &workspace_root).await
 }

@@ -346,7 +346,7 @@
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-slate-400">{$_('blog.level')}:</span>
 				<div class="flex flex-wrap gap-1">
-					{#each formatLevelDisplay(item.dtxFiles).split(', ') as level}
+					{#each formatLevelDisplay(item.dtxFiles ?? []).split(', ') as level}
 						<span
 							class="rounded-full border border-amber-500/30 bg-gradient-to-r from-amber-600/30 to-orange-600/30 px-2 py-0.5 text-xs text-amber-200"
 						>

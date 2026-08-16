@@ -5,7 +5,7 @@
 	import { _ } from 'svelte-i18n';
 	import type { SimFile, DTXFile, SimfileModel } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
-	import toastStore from '@/lib/toaster';
+	import toastStore from '$lib/toaster';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { getSimfile, updateSimfile } from '$lib/api';
 

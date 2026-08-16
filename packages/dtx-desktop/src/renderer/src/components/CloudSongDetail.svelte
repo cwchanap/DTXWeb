@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Music, X, Calendar, Link, Cloud } from '@lucide/svelte';
 	import { type SimfileModel, formatLevel } from '@dtx/common';
-	import { workspaceStore, type TreeNode } from '../stores/workspaceStore';
+	import { workspaceStore, type TreeNode } from '$lib/stores/workspaceStore';
 
 	interface Props {
 		simFile: SimfileModel;

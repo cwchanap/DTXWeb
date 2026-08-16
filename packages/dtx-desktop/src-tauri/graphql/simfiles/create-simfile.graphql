@@ -1,3 +1,5 @@
 mutation DesktopCreateSimfile($input: CreateSimfileInput!) {
-  createSimfile(input: $input) { ...DesktopSimfileFull }
+	createSimfile(input: $input) {
+		...DesktopSimfileFull
+	}
 }

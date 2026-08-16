@@ -1,3 +1,5 @@
 mutation DesktopUpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
-  updateSimfile(id: $id, input: $input) { ...DesktopSimfileFull }
+	updateSimfile(id: $id, input: $input) {
+		...DesktopSimfileFull
+	}
 }

@@ -346,7 +346,7 @@ describe('SongDetails', () => {
 		});
 	});
 
-	describe('isSimfileModel type guard', () => {
+	describe('linked simfile data', () => {
 		it('renders with song that has dtxFiles in linked simfile', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
@@ -2332,9 +2332,7 @@ describe('SongDetails', () => {
 			});
 
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', {
-					cloudSongId: '77'
-				});
+				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', '77');
 			});
 		});
 
@@ -2370,9 +2368,7 @@ describe('SongDetails', () => {
 			props?.onselect?.({ id: '77', title: 'Song', artist: 'Artist', isPublished: false });
 
 			await waitFor(() => {
-				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', {
-					cloudSongId: '77'
-				});
+				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', '77');
 			});
 		});
 	});

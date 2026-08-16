@@ -1,6 +1,14 @@
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { listen as tauriListen } from '@tauri-apps/api/event';
 import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
+import type {
+	CreateSimfileRecordInput,
+	CreateSimfileRecordResult,
+	FetchCloudSongResult,
+	FetchUserSimfilesResult,
+	UpdateSimfileRecordInput,
+	UpdateSimfileRecordResult
+} from '../lib/generated/native-api-contracts';
 
 export type DesktopHostVersions = {
 	app: string | null;
@@ -345,8 +353,8 @@ export const desktopHost = {
 	drainPendingAuthEvents: async (): Promise<number> =>
 		await invokeHost<number>('drain_pending_auth_events'),
 
-	fetchUserSimfiles: async <T = unknown>(): Promise<T> =>
-		await invokeHost<T>('fetch_user_simfiles'),
+	fetchUserSimfiles: async (): Promise<FetchUserSimfilesResult> =>
+		await invokeHost<FetchUserSimfilesResult>('fetch_user_simfiles'),
 
 	getPreviewUrl: async (simfileId: number): Promise<string> =>
 		await invokeHost<string>('get_preview_url', { simfileId }),
@@ -360,8 +368,10 @@ export const desktopHost = {
 	createSong: async <T = unknown>(options: unknown): Promise<T> =>
 		await invokeHost<T>('create_song', { options }),
 
-	createSimfileRecord: async <T = unknown>(simfileData: unknown): Promise<T> =>
-		await invokeHost<T>('create_simfile_record', { simfileData }),
+	createSimfileRecord: async (
+		simfileData: CreateSimfileRecordInput
+	): Promise<CreateSimfileRecordResult> =>
+		await invokeHost<CreateSimfileRecordResult>('create_simfile_record', { simfileData }),
 
 	getNextDisplayId: async (): Promise<number> => await invokeHost<number>('get_next_display_id'),
 
@@ -392,17 +402,14 @@ export const desktopHost = {
 	writeScoreSongLinks: async (links: Record<string, string>): Promise<void> =>
 		await sendHost('write_score_song_links', { links }),
 
-	fetchCloudSong: async <T = unknown>(
-		params: { cloudSongId: string | number } | string | number
-	): Promise<T> => {
-		const payload = typeof params === 'object' ? params : { cloudSongId: params };
-		return await invokeHost<T>('fetch_cloud_song', payload);
-	},
+	fetchCloudSong: async (cloudSongId: string): Promise<FetchCloudSongResult> =>
+		await invokeHost<FetchCloudSongResult>('fetch_cloud_song', { cloudSongId }),
 
-	updateSimfileRecord: async <T = unknown>(params: {
-		simfileId: string | number;
-		updateData: Record<string, unknown>;
-	}): Promise<T> => await invokeHost<T>('update_simfile_record', params),
+	updateSimfileRecord: async (params: {
+		simfileId: string;
+		updateData: UpdateSimfileRecordInput;
+	}): Promise<UpdateSimfileRecordResult> =>
+		await invokeHost<UpdateSimfileRecordResult>('update_simfile_record', params),
 
 	exportSongToZip: async <T = unknown>(params: {
 		songPath: string;

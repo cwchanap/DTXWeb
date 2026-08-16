@@ -12,7 +12,10 @@
 	import CloudSongAutocomplete from '$lib/components/CloudSongAutocomplete.svelte';
 	import { simFileService } from '$lib/services/simFileService';
 	import { desktopHost } from '$lib/services/desktopHost';
-	import type { FetchCloudSongResult } from '$lib/lib/scoreTypes';
+	import type {
+		CreateSimfileRecordInput,
+		UpdateSimfileRecordInput
+	} from '$lib/lib/generated/native-api-contracts';
 	import { googleDriveService, type SongSaveOutcome } from '$lib/services/googleDriveService';
 	import {
 		getActiveGoogleDriveOperationForSimfile,
@@ -41,20 +44,6 @@
 		artist: string;
 		bpm?: number;
 		isPublished: boolean;
-	};
-
-	type CreateSimfileResult = {
-		success: boolean;
-		simfileId?: string;
-		data?: SimfileModel;
-		error?: string;
-		warnings?: string[];
-	};
-
-	type UpdateSimfileResult = {
-		success: boolean;
-		data?: Partial<SimfileModel>;
-		error?: string;
 	};
 
 	type ExportSongResult = {
@@ -322,17 +311,6 @@
 		return next;
 	};
 
-	const isSimfileModel = (data: unknown): data is SimfileModel => {
-		if (!data || typeof data !== 'object') return false;
-		const candidate = data as Partial<SimfileModel>;
-		return (
-			typeof candidate.id === 'number' &&
-			typeof candidate.title === 'string' &&
-			typeof candidate.artist === 'string' &&
-			typeof candidate.bpm === 'number'
-		);
-	};
-
 	const mergeSuccessfulDriveFields = (
 		targetSong: TreeNode,
 		targetPath: string,
@@ -482,38 +460,28 @@
 					autoPopulatedDisplayId.value === submittedDisplayId)
 					? null
 					: submittedDisplayId;
-			// Create plain object without any Svelte reactivity
-			const simfileData = JSON.parse(
-				JSON.stringify({
-					title: String(song.songTitle || song.name || ''),
-					artist: String(parsedLocalData.artist || ''),
-					bpm: Number(parsedLocalData.bpm || 0),
-					displayId: displayIdForCreate,
-					isPublished: published,
-					publishDate: String(publishDate),
-					downloadUrl: String(downloadUrl),
-					videoPreviewUrl: String(videoPreviewUrl),
-					levels: Array.isArray(parsedLocalData.levels)
-						? parsedLocalData.levels.map((l) => ({
-								label: String(l.label || ''),
-								// Store the raw #DLEVEL value directly — it is already
-								// in DTXManiaCX's canonical encoding (≥100 = hundredths,
-								// <100 = tenths + DrumLevelDec), and normalizeLevel /
-								// formatLevel decode it correctly. Mirrors DTXFile.level
-								// in @dtx/common which also stores the raw #DLEVEL value.
-								level: Number(l.level || 0)
-							}))
-						: [],
-					// Pass the song path so the Rust backend can find and read preview files
-					songPath: String(song.path || '')
-				})
-			);
+			const simfileData: CreateSimfileRecordInput = {
+				title: String(song.songTitle || song.name || ''),
+				artist: String(parsedLocalData.artist || ''),
+				bpm: Number(parsedLocalData.bpm || 0),
+				displayId: displayIdForCreate,
+				isPublished: published,
+				publishDate: String(publishDate),
+				downloadUrl: String(downloadUrl),
+				videoPreviewUrl: String(videoPreviewUrl),
+				levels: Array.isArray(parsedLocalData.levels)
+					? parsedLocalData.levels.map((level) => ({
+							label: String(level.label || ''),
+							level: Number(level.level || 0)
+						}))
+					: [],
+				songPath: String(song.path || '')
+			};
 
 			const outcome = await googleDriveService.saveAndUpload({
 				save: async () => {
-					const result =
-						await desktopHost.createSimfileRecord<CreateSimfileResult>(simfileData);
-					if (!result.success || !result.data || !isSimfileModel(result.data)) {
+					const result = await desktopHost.createSimfileRecord(simfileData);
+					if (!result.success || !result.data) {
 						return {
 							success: false,
 							error: result.error || 'Failed to create simfile record'
@@ -674,17 +642,9 @@
 			linkingSuccess = false;
 
 			try {
-				const result = await desktopHost.fetchCloudSong<FetchCloudSongResult<SimfileModel>>(
-					{
-						cloudSongId: selectedSong.id
-					}
-				);
+				const result = await desktopHost.fetchCloudSong(selectedSong.id);
 
-				if (
-					result.success &&
-					result.cloudSongData &&
-					isSimfileModel(result.cloudSongData)
-				) {
+				if (result.success && result.cloudSongData) {
 					const linkedSimfile = result.cloudSongData;
 					linkingSuccess = true;
 					song.linkedSimFileId = String(linkedSimfile.id);
@@ -744,7 +704,7 @@
 			// Sending a cached downloadUrl here would reintroduce the
 			// cross-device race where a stale URL overwrites a newer binding.
 			const isDriveBound = Boolean(targetSong.linkedSimFile?.googleDriveFileId);
-			const updateData: Record<string, unknown> = {
+			const updateData: UpdateSimfileRecordInput = {
 				displayId: Number(event.detail.displayId),
 				publishDate: String(event.detail.publishDate),
 				isPublished: Boolean(event.detail.isPublished),
@@ -767,7 +727,7 @@
 
 			const outcome = await googleDriveService.saveAndUpload({
 				save: async () => {
-					const result = await desktopHost.updateSimfileRecord<UpdateSimfileResult>({
+					const result = await desktopHost.updateSimfileRecord({
 						simfileId,
 						updateData
 					});

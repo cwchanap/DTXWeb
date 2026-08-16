@@ -52,6 +52,8 @@ query ListSimfiles($scope: SimfileScope!, $search: String, $page: Int, $pageSize
       previewUrl
       videoPreviewUrl
       publishDate
+      createdAt
+      updatedAt
       dtxFiles {
         id
         level
@@ -367,28 +369,28 @@ fn number_id(value: &Value) -> Result<i64> {
     )))
 }
 
-pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
+pub fn simfile_model_from_graphql(simfile: &Value) -> Result<Value> {
     let mut mapped = Map::new();
     mapped.insert("id".to_string(), json!(number_id(&simfile["id"])?));
+    mapped.insert("displayId".to_string(), simfile["displayId"].clone());
     mapped.insert("title".to_string(), simfile["title"].clone());
     mapped.insert("artist".to_string(), simfile["artist"].clone());
     mapped.insert("bpm".to_string(), simfile["bpm"].clone());
-    mapped.insert("user_id".to_string(), simfile["userId"].clone());
+    mapped.insert("userId".to_string(), simfile["userId"].clone());
     mapped.insert(
-        "google_drive_file_id".to_string(),
+        "googleDriveFileId".to_string(),
         simfile["googleDriveFileId"].clone(),
     );
-    mapped.insert("is_published".to_string(), simfile["isPublished"].clone());
-    mapped.insert("display_id".to_string(), simfile["displayId"].clone());
-    mapped.insert("download_url".to_string(), simfile["downloadUrl"].clone());
-    mapped.insert("preview_url".to_string(), simfile["previewUrl"].clone());
+    mapped.insert("isPublished".to_string(), simfile["isPublished"].clone());
+    mapped.insert("downloadUrl".to_string(), simfile["downloadUrl"].clone());
+    mapped.insert("previewUrl".to_string(), simfile["previewUrl"].clone());
     mapped.insert(
-        "video_preview_url".to_string(),
+        "videoPreviewUrl".to_string(),
         simfile["videoPreviewUrl"].clone(),
     );
-    mapped.insert("publish_date".to_string(), simfile["publishDate"].clone());
-    mapped.insert("created_at".to_string(), simfile["createdAt"].clone());
-    mapped.insert("updated_at".to_string(), simfile["updatedAt"].clone());
+    mapped.insert("publishDate".to_string(), simfile["publishDate"].clone());
+    mapped.insert("createdAt".to_string(), simfile["createdAt"].clone());
+    mapped.insert("updatedAt".to_string(), simfile["updatedAt"].clone());
 
     let dtx_files = simfile
         .get("dtxFiles")
@@ -396,23 +398,9 @@ pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
         .map(|files| {
             files
                 .iter()
-                .enumerate()
-                .map(|(index, file)| {
-                    // Pass through the real GraphQL `dtxFiles.id` (the D1
-                    // dtx_files primary key, also the chart id used by
-                    // `uploadScores`). Fall back to a positional id only when
-                    // the field is absent — older cached records from before
-                    // the fragment requested `id` may lack it, and the
-                    // renderer's `normalizeSimfile` has its own `?? index + 1`
-                    // fallback for the same reason. The positional fallback is
-                    // display-only and must never flow into an upload payload.
-                    let id = file
-                        .get("id")
-                        .filter(|v| !v.is_null())
-                        .cloned()
-                        .unwrap_or_else(|| json!(index + 1));
+                .map(|file| {
                     json!({
-                        "id": id,
+                        "id": file["id"],
                         "level": file["level"],
                         "label": file["label"],
                     })
@@ -420,31 +408,9 @@ pub fn renderer_simfile_from_graphql(simfile: &Value) -> Result<Value> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    mapped.insert("dtx_files".to_string(), Value::Array(dtx_files));
+    mapped.insert("dtxFiles".to_string(), Value::Array(dtx_files));
 
     Ok(Value::Object(mapped))
-}
-
-pub fn update_input_from_renderer(update_data: Value) -> Value {
-    let Some(object) = update_data.as_object() else {
-        return update_data;
-    };
-
-    let mut mapped = Map::new();
-    for (key, value) in object {
-        let mapped_key = match key.as_str() {
-            "display_id" => "displayId",
-            "publish_date" => "publishDate",
-            "is_published" => "isPublished",
-            "download_url" => "downloadUrl",
-            "video_preview_url" => "videoPreviewUrl",
-            "preview_url" => "previewUrl",
-            "google_drive_file_id" | "googleDriveFileId" => continue,
-            _ => key,
-        };
-        mapped.insert(mapped_key.to_string(), value.clone());
-    }
-    Value::Object(mapped)
 }
 
 fn owner_drive_simfile_from_graphql(
@@ -1002,7 +968,7 @@ pub(crate) async fn fetch_user_simfiles_impl(base_url: &str, token: &str) -> Res
             .cloned()
             .unwrap_or_default();
         for simfile in page_data {
-            all_data.push(renderer_simfile_from_graphql(&simfile)?);
+            all_data.push(simfile_model_from_graphql(&simfile)?);
         }
 
         let count = simfiles.get("count").and_then(Value::as_i64).unwrap_or(0);
@@ -1077,7 +1043,7 @@ pub(crate) async fn search_cloud_songs_impl(
                         "title": song["title"],
                         "artist": song["artist"],
                         "bpm": song["bpm"],
-                        "is_published": song["isPublished"],
+                        "isPublished": song["isPublished"],
                     })
                 })
                 .collect::<Vec<_>>()
@@ -1121,7 +1087,7 @@ pub(crate) async fn fetch_cloud_song_impl(
 
     Ok(json!({
         "success": true,
-        "cloudSongData": renderer_simfile_from_graphql(simfile)?,
+        "cloudSongData": simfile_model_from_graphql(simfile)?,
     }))
 }
 
@@ -1299,13 +1265,22 @@ pub(crate) async fn update_simfile_record_impl(
     simfile_id: Value,
     update_data: Value,
 ) -> Result<Value> {
+    let input = match update_data {
+        Value::Object(mut object) => {
+            // A Drive binding is owner-only state with its own mutation;
+            // `UpdateSimfileInput` deliberately does not own this field.
+            object.remove("googleDriveFileId");
+            Value::Object(object)
+        }
+        other => other,
+    };
     let result = graphql_result_with_url(
         base_url,
         token,
         &graphql_document(UPDATE_SIMFILE_MUTATION),
         json!({
             "id": simfile_id.to_string().trim_matches('"'),
-            "input": update_input_from_renderer(update_data),
+            "input": input,
         }),
     )
     .await?;
@@ -1316,7 +1291,7 @@ pub(crate) async fn update_simfile_record_impl(
 
     Ok(json!({
         "success": true,
-        "data": renderer_simfile_from_graphql(&data["updateSimfile"])?,
+        "data": simfile_model_from_graphql(&data["updateSimfile"])?,
     }))
 }
 
@@ -1389,7 +1364,7 @@ pub(crate) async fn create_simfile_record_impl(
     let mut response = json!({
         "success": true,
         "simfileId": simfile_id,
-        "data": renderer_simfile_from_graphql(simfile)?,
+        "data": simfile_model_from_graphql(simfile)?,
     });
     if !warnings.is_empty() {
         response["warnings"] = json!(warnings);

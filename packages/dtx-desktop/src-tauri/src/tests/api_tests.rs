@@ -99,91 +99,90 @@ fn api_base_url_rejects_empty_value() {
 }
 
 #[test]
-fn renderer_simfile_maps_graphql_camel_case_to_snake_case() {
-    let mapped = renderer_simfile_from_graphql(&gql_simfile()).expect("mapped");
+fn simfile_model_from_graphql_matches_renderer_fixture() {
+    let expected: Value =
+        serde_json::from_str(include_str!("../../tests/fixtures/simfile_model.json"))
+            .expect("fixture parses");
+    let graphql_value = json!({
+        "id": "42",
+        "displayId": 7,
+        "title": "Fixture Song",
+        "artist": "Fixture Artist",
+        "bpm": 123.5,
+        "userId": "user-1",
+        "googleDriveFileId": null,
+        "isPublished": true,
+        "downloadUrl": "https://example.test/chart.zip",
+        "previewUrl": null,
+        "videoPreviewUrl": null,
+        "publishDate": "2026-08-15",
+        "createdAt": "2026-08-15T00:00:00Z",
+        "updatedAt": "2026-08-15T00:00:01Z",
+        "dtxFiles": [{ "id": 99, "label": "EXT", "level": 85 }]
+    });
 
-    assert_eq!(mapped["id"], 42);
-    assert_eq!(mapped["display_id"], 7);
-    assert_eq!(mapped["user_id"], "user-1");
-    assert_eq!(mapped["google_drive_file_id"], "drive-file-42");
-    assert_eq!(mapped["is_published"], true);
-    assert_eq!(mapped["download_url"], "https://files/song.zip");
-    assert_eq!(mapped["preview_url"], "https://files/preview.jpg");
-    assert_eq!(mapped["video_preview_url"], Value::Null);
-    assert_eq!(mapped["publish_date"], "2024-01-01");
-    assert_eq!(mapped["created_at"], "2024-01-02");
-    assert_eq!(mapped["updated_at"], "2024-01-03");
-    assert_eq!(mapped["dtx_files"][0]["id"], "101");
-    assert_eq!(mapped["dtx_files"][0]["label"], "EXT");
+    let mapped = simfile_model_from_graphql(&graphql_value).expect("mapped");
+
+    assert_eq!(mapped, expected);
 }
 
 #[test]
-fn renderer_simfile_falls_back_to_positional_id_when_graphql_id_absent() {
-    // Older cached records (from before the fragment requested `id`) may lack
-    // the field. The positional fallback keeps display working, but must never
-    // flow into an upload payload — upload chart ids come from
-    // `fetch_cloud_song_charts`, which always requests `id`.
-    let mut simfile = gql_simfile();
-    simfile["dtxFiles"] = json!([{ "level": 5.5, "label": "BSC" }]);
-    let mapped = renderer_simfile_from_graphql(&simfile).expect("mapped");
-    assert_eq!(mapped["dtx_files"][0]["id"], 1);
-    assert_eq!(mapped["dtx_files"][0]["label"], "BSC");
-}
-
-#[test]
-fn list_simfiles_query_requests_persisted_catalog_urls() {
+fn list_simfiles_query_requests_persisted_catalog_urls_and_timestamps() {
     // The list feeds auto-linking, which caches linked simfiles via
-    // `renderer_simfile_from_graphql`. Those cached records later populate
+    // `simfile_model_from_graphql`. Those cached records later populate
     // the metadata editor, so the persisted URL fields must be present in
     // the list response — otherwise opening and saving an auto-linked song
-    // overwrites the real URLs with empty strings.
+    // overwrites the real URLs with empty strings. Timestamps are part of
+    // the current simfile model and must not be optional.
     assert!(LIST_SIMFILES_QUERY.contains("downloadUrl"));
     assert!(LIST_SIMFILES_QUERY.contains("previewUrl"));
     assert!(LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
+    assert!(LIST_SIMFILES_QUERY.contains("publishDate"));
+    assert!(LIST_SIMFILES_QUERY.contains("createdAt"));
+    assert!(LIST_SIMFILES_QUERY.contains("updatedAt"));
     assert!(LIST_SIMFILES_QUERY.contains("dtxFiles"));
     // Still a curated field set (not the full fragment) to keep the
     // payload lean.
     assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
 }
 
-#[test]
-fn update_input_maps_renderer_snake_case_to_graphql_camel_case() {
-    let mapped = update_input_from_renderer(json!({
-        "display_id": 3,
-        "publish_date": "2024-01-01",
-        "is_published": true,
-        "download_url": "https://files/song.zip",
-        "video_preview_url": "https://video",
-        "preview_url": "https://files/preview.jpg",
-        "title": "Song"
-    }));
-
-    assert_eq!(
-        mapped,
-        json!({
-            "displayId": 3,
-            "publishDate": "2024-01-01",
-            "isPublished": true,
-            "downloadUrl": "https://files/song.zip",
-            "videoPreviewUrl": "https://video",
-            "previewUrl": "https://files/preview.jpg",
-            "title": "Song"
-        })
-    );
-}
-
-#[test]
-fn update_input_excludes_drive_file_id_from_general_simfile_updates() {
+#[tokio::test]
+async fn update_simfile_record_impl_excludes_google_drive_file_id_from_outgoing_input() {
     // A Drive binding is owner-only state with its own mutation. If this
     // filtering is removed, a renderer form value can accidentally reintroduce
     // it to UpdateSimfileInput, which deliberately does not own that field.
-    let mapped = update_input_from_renderer(json!({
-        "title": "Song",
-        "google_drive_file_id": "drive-file-42",
-        "googleDriveFileId": "drive-file-42"
-    }));
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .and(body_partial_json(json!({
+            "variables": {
+                "id": "42",
+                "input": { "title": "Updated" }
+            }
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "updateSimfile": gql_simfile() }
+        })))
+        .mount(&server)
+        .await;
 
-    assert_eq!(mapped, json!({ "title": "Song" }));
+    let result = update_simfile_record_impl(
+        &server.uri(),
+        "token-1",
+        json!(42),
+        json!({ "title": "Updated", "googleDriveFileId": "drive-file-42" }),
+    )
+    .await
+    .expect("result");
+
+    assert_eq!(result["success"], true);
+    assert_eq!(result["data"]["title"], "Song");
+
+    let requests = server.received_requests().await.expect("received request");
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    let input = &body["variables"]["input"];
+    assert_eq!(input["title"], "Updated");
+    assert!(input.get("googleDriveFileId").is_none());
 }
 
 #[tokio::test]
@@ -854,16 +853,6 @@ fn create_input_from_renderer_defaults_missing_fields_and_nulls_levels() {
     assert_eq!(input["dtxFiles"], Value::Null);
 }
 
-#[test]
-fn update_input_from_renderer_returns_non_object_input_unchanged() {
-    assert_eq!(
-        update_input_from_renderer(json!([1, 2, 3])),
-        json!([1, 2, 3])
-    );
-    assert_eq!(update_input_from_renderer(json!("plain")), json!("plain"));
-    assert_eq!(update_input_from_renderer(json!(42)), json!(42));
-}
-
 #[tokio::test]
 async fn run_graphql_value_extracts_error_field_on_non_success_status() {
     let server = MockServer::start().await;
@@ -1366,7 +1355,7 @@ async fn search_cloud_songs_impl_returns_mapped_rows() {
     assert_eq!(result["data"].as_array().unwrap().len(), 1);
     assert_eq!(result["data"][0]["id"], 1);
     assert_eq!(result["data"][0]["title"], "Song");
-    assert_eq!(result["data"][0]["is_published"], true);
+    assert_eq!(result["data"][0]["isPublished"], true);
 }
 
 #[tokio::test]
@@ -1426,6 +1415,8 @@ async fn fetch_cloud_song_impl_returns_cloud_song_data_when_found() {
     assert_eq!(result["success"], true);
     assert_eq!(result["cloudSongData"]["id"], 42);
     assert_eq!(result["cloudSongData"]["title"], "Song");
+    assert_eq!(result["cloudSongData"]["isPublished"], true);
+    assert_eq!(result["cloudSongData"]["createdAt"], "2024-01-02");
 }
 
 #[tokio::test]
@@ -1470,6 +1461,7 @@ async fn update_simfile_record_impl_returns_updated_simfile() {
     assert_eq!(result["success"], true);
     assert_eq!(result["data"]["id"], 42);
     assert_eq!(result["data"]["title"], "Song");
+    assert_eq!(result["data"]["isPublished"], true);
 }
 
 #[tokio::test]
@@ -1601,6 +1593,7 @@ async fn create_simfile_record_impl_creates_without_previews_when_no_song_path()
     assert_eq!(result["success"], true);
     assert_eq!(result["simfileId"], "42");
     assert_eq!(result["data"]["id"], 42);
+    assert_eq!(result["data"]["isPublished"], true);
     assert!(result.get("warnings").is_none());
 }
 

@@ -1,0 +1,17 @@
+{
+	"id": 42,
+	"displayId": 7,
+	"title": "Fixture Song",
+	"artist": "Fixture Artist",
+	"bpm": 123.5,
+	"userId": "user-1",
+	"googleDriveFileId": null,
+	"isPublished": true,
+	"downloadUrl": "https://example.test/chart.zip",
+	"previewUrl": null,
+	"videoPreviewUrl": null,
+	"publishDate": "2026-08-15",
+	"createdAt": "2026-08-15T00:00:00Z",
+	"updatedAt": "2026-08-15T00:00:01Z",
+	"dtxFiles": [{ "id": 99, "label": "EXT", "level": 85 }]
+}

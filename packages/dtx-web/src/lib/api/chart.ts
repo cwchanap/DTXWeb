@@ -10,36 +10,17 @@ import {
 	type SimfileWithFilesFragment
 } from './generated/graphql';
 import { getClient, type ClientCtx } from './client';
+import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
 
 export type ScopeString = 'mine' | 'published';
 
-export type LegacySimfile = {
-	id: number;
-	display_id: number | null;
-	title: string;
-	artist: string;
-	bpm: number;
-	user_id: string | null;
-	is_published: boolean;
-	google_drive_file_id: string | null;
-	download_url: string | null;
-	preview_url: string | null;
-	video_preview_url: string | null;
-	publish_date: string;
-	created_at: string;
-	updated_at: string;
-	dtx_files: { level: number; label: string }[];
-	files?: { key: string; size: number; uploaded: string }[];
-	has_uploaded_files?: boolean;
-};
-
-export type SimfileListResult = { data: LegacySimfile[]; count: number };
+export type SimfileListResult = { data: SimfileModel[]; count: number };
 
 const scopeToEnum = (scope: ScopeString): SimfileScope =>
 	scope === 'mine' ? SimfileScope.Mine : SimfileScope.Published;
 
 /**
- * Input type for adaptSimfile, derived from the generated GraphQL fragment.
+ * Input type for toSimfileModel, derived from the generated GraphQL fragment.
  * Both `getSimfile` and `updateSimfile` return the full `SimfileWithFilesFragment`
  * (so `files` and `hasUploadedFiles` are present), while `listSimfiles` returns
  * a partial fragment without `files` (but includes `hasUploadedFiles`).
@@ -49,29 +30,34 @@ type AdaptSimfileInput = Omit<SimfileWithFilesFragment, 'files' | 'hasUploadedFi
 	hasUploadedFiles?: SimfileWithFilesFragment['hasUploadedFiles'];
 };
 
-const adaptSimfile = (s: AdaptSimfileInput): LegacySimfile => {
-	const numId = Number(s.id);
-	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${s.id}`);
-	return {
-		id: numId,
-		display_id: s.displayId ?? null,
-		title: s.title,
-		artist: s.artist,
-		bpm: s.bpm,
-		user_id: s.userId ?? null,
-		is_published: s.isPublished,
-		google_drive_file_id: s.googleDriveFileId ?? null,
-		download_url: s.downloadUrl ?? null,
-		preview_url: s.previewUrl ?? null,
-		video_preview_url: s.videoPreviewUrl ?? null,
-		publish_date: s.publishDate ?? '',
-		created_at: s.createdAt ?? '',
-		updated_at: s.updatedAt ?? '',
-		dtx_files: s.dtxFiles ?? [],
-		files: s.files,
-		has_uploaded_files: s.hasUploadedFiles
-	};
+const parseSimfileId = (id: string): number => {
+	const numId = Number(id);
+	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${id}`);
+	return numId;
 };
+
+const toSimfileModel = (simfile: AdaptSimfileInput): SimfileModel => ({
+	id: parseSimfileId(simfile.id),
+	title: simfile.title,
+	artist: simfile.artist,
+	bpm: simfile.bpm,
+	displayId: simfile.displayId ?? null,
+	userId: simfile.userId ?? null,
+	googleDriveFileId: simfile.googleDriveFileId ?? null,
+	isPublished: simfile.isPublished,
+	downloadUrl: simfile.downloadUrl ?? null,
+	previewUrl: simfile.previewUrl ?? null,
+	videoPreviewUrl: simfile.videoPreviewUrl ?? null,
+	publishDate: simfile.publishDate,
+	createdAt: simfile.createdAt,
+	updatedAt: simfile.updatedAt,
+	dtxFiles: (simfile.dtxFiles ?? []).map((file): SimfileDtxFile => ({
+		label: file.label,
+		level: file.level
+	})),
+	...(simfile.files == null ? {} : { files: simfile.files }),
+	...(simfile.hasUploadedFiles == null ? {} : { hasUploadedFiles: simfile.hasUploadedFiles })
+});
 
 export type ListParams = {
 	scope: ScopeString;
@@ -92,16 +78,16 @@ export const listSimfiles = async (
 		pageSize: params.pageSize ?? 20
 	});
 	return {
-		data: result.simfiles.data.map(adaptSimfile),
+		data: result.simfiles.data.map(toSimfileModel),
 		count: result.simfiles.count
 	};
 };
 
-export const getSimfile = async (id: string, ctx?: ClientCtx): Promise<LegacySimfile> => {
+export const getSimfile = async (id: string, ctx?: ClientCtx): Promise<SimfileModel> => {
 	const client = await getClient(ctx);
 	const result = await client.request(GetSimfileDocument, { id });
 	if (!result.simfile) throw new Error('Simfile not found');
-	return adaptSimfile(result.simfile);
+	return toSimfileModel(result.simfile);
 };
 
 export type PreviewLevel = { level: number; label: string; fileUrl: string };
@@ -125,8 +111,7 @@ export const getPreviewSimfile = async (id: string, ctx?: ClientCtx): Promise<Pr
 	const client = await getClient(ctx);
 	const result = await client.request(GetPreviewSimfileDocument, { id });
 	if (!result.simfile) throw new Error('Simfile not found');
-	const numId = Number(result.simfile.id);
-	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${result.simfile.id}`);
+	const numId = parseSimfileId(result.simfile.id);
 	return {
 		id: numId,
 		title: result.simfile.title,
@@ -147,16 +132,16 @@ export const updateSimfile = async (
 	id: string,
 	input: UpdateSimfileInput,
 	ctx?: ClientCtx
-): Promise<LegacySimfile> => {
+): Promise<SimfileModel> => {
 	const client = await getClient(ctx);
 	const result = await client.request(UpdateSimfileDocument, { id, input });
-	return adaptSimfile(result.updateSimfile);
+	return toSimfileModel(result.updateSimfile);
 };
 
 export type DriveFileBinding = {
 	id: number;
-	google_drive_file_id: string | null;
-	download_url: string | null;
+	googleDriveFileId: string | null;
+	downloadUrl: string | null;
 };
 
 export const updateSimfileDriveFile = async (
@@ -171,14 +156,10 @@ export const updateSimfileDriveFile = async (
 		googleDriveFileId,
 		downloadUrl
 	});
-	const numId = Number(result.updateSimfileDriveFile.id);
-	if (!Number.isFinite(numId)) {
-		throw new Error(`Invalid simfile id: ${result.updateSimfileDriveFile.id}`);
-	}
 	return {
-		id: numId,
-		google_drive_file_id: result.updateSimfileDriveFile.googleDriveFileId ?? null,
-		download_url: result.updateSimfileDriveFile.downloadUrl ?? null
+		id: parseSimfileId(result.updateSimfileDriveFile.id),
+		googleDriveFileId: result.updateSimfileDriveFile.googleDriveFileId ?? null,
+		downloadUrl: result.updateSimfileDriveFile.downloadUrl ?? null
 	};
 };
 
@@ -192,10 +173,8 @@ export type DeleteResult = {
 export const deleteSimfile = async (id: string, ctx?: ClientCtx): Promise<DeleteResult> => {
 	const client = await getClient(ctx);
 	const result = await client.request(DeleteSimfileDocument, { id });
-	const numId = Number(result.deleteSimfile.id);
-	if (!Number.isFinite(numId)) throw new Error(`Invalid simfile id: ${result.deleteSimfile.id}`);
 	return {
-		id: numId,
+		id: parseSimfileId(result.deleteSimfile.id),
 		deleted: result.deleteSimfile.deleted,
 		partialDeletion: result.deleteSimfile.partialDeletion ?? undefined,
 		message: result.deleteSimfile.message ?? undefined

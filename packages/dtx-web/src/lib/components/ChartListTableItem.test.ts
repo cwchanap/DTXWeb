@@ -34,9 +34,9 @@ import { goto } from '$app/navigation';
 
 const mockItem = {
 	id: 10,
-	is_published: false,
-	download_url: null as string | null,
-	has_uploaded_files: true
+	isPublished: false,
+	downloadUrl: null as string | null,
+	hasUploadedFiles: true
 };
 
 describe('ChartListTableItem', () => {
@@ -52,7 +52,7 @@ describe('ChartListTableItem', () => {
 		vi.clearAllMocks();
 	});
 
-	it('does not render a dialog in blog mode with no download_url', () => {
+	it('does not render a dialog in blog mode with no downloadUrl', () => {
 		render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
@@ -63,7 +63,7 @@ describe('ChartListTableItem', () => {
 				...defaultProps,
 				isBlog: true,
 				enableDownload: true,
-				item: { ...mockItem, download_url: 'https://dl.example.com' }
+				item: { ...mockItem, downloadUrl: 'https://dl.example.com' }
 			}
 		});
 		const r2Button = screen.getByRole('button', { name: 'chart_actions.download' });
@@ -79,8 +79,8 @@ describe('ChartListTableItem', () => {
 				isBlog: true,
 				enableDownload: true,
 				item: (() => {
-					const item = { ...mockItem, download_url: 'https://dl.example.com' };
-					delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+					const item = { ...mockItem, downloadUrl: 'https://dl.example.com' };
+					delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 					return item;
 				})()
 			}
@@ -91,25 +91,25 @@ describe('ChartListTableItem', () => {
 		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
 	});
 
-	it('shows R2 download link in blog mode when download_url is null', () => {
+	it('shows R2 download link in blog mode when downloadUrl is null', () => {
 		render(ChartListTableItem, {
 			props: {
 				...defaultProps,
 				isBlog: true,
 				enableDownload: true,
-				item: { ...mockItem, download_url: null }
+				item: { ...mockItem, downloadUrl: null }
 			}
 		});
 		expect(screen.getByRole('button', { name: 'chart_actions.download' })).toBeInTheDocument();
 	});
 
-	it('hides the R2 download link in blog mode when download_url is null and uploads are unavailable', () => {
+	it('hides the R2 download link in blog mode when downloadUrl is null and uploads are unavailable', () => {
 		render(ChartListTableItem, {
 			props: {
 				...defaultProps,
 				isBlog: true,
 				enableDownload: true,
-				item: { ...mockItem, download_url: null, has_uploaded_files: false }
+				item: { ...mockItem, downloadUrl: null, hasUploadedFiles: false }
 			}
 		});
 		expect(
@@ -126,8 +126,8 @@ describe('ChartListTableItem', () => {
 				enableDownload: true,
 				item: {
 					...mockItem,
-					has_uploaded_files: false,
-					download_url: 'https://dl.example.com'
+					hasUploadedFiles: false,
+					downloadUrl: 'https://dl.example.com'
 				}
 			}
 		});
@@ -143,7 +143,7 @@ describe('ChartListTableItem', () => {
 				...defaultProps,
 				isBlog: true,
 				enableDownload: false,
-				item: { ...mockItem, download_url: 'https://dl.example.com' }
+				item: { ...mockItem, downloadUrl: 'https://dl.example.com' }
 			}
 		});
 
@@ -167,7 +167,7 @@ describe('ChartListTableItem', () => {
 			props: {
 				...defaultProps,
 				isBlog: true,
-				item: { ...mockItem, is_published: true }
+				item: { ...mockItem, isPublished: true }
 			}
 		});
 
@@ -179,7 +179,7 @@ describe('ChartListTableItem', () => {
 
 	it('shows Preview and Edit details in owner mode for a published uploaded chart', () => {
 		render(ChartListTableItem, {
-			props: { ...defaultProps, item: { ...mockItem, is_published: true } }
+			props: { ...defaultProps, item: { ...mockItem, isPublished: true } }
 		});
 
 		// PopoverStub always renders its content.
@@ -216,18 +216,18 @@ describe('ChartListTableItem', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('"Open in Editor" is not rendered when has_uploaded_files is false', () => {
+		it('"Open in Editor" is not rendered when hasUploadedFiles is false', () => {
 			render(ChartListTableItem, {
-				props: { ...defaultProps, item: { ...mockItem, has_uploaded_files: false } }
+				props: { ...defaultProps, item: { ...mockItem, hasUploadedFiles: false } }
 			});
 			expect(
 				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();
 		});
 
-		it('"Open in Editor" is not rendered when has_uploaded_files is undefined', () => {
+		it('"Open in Editor" is not rendered when hasUploadedFiles is undefined', () => {
 			const item = { ...mockItem };
-			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+			delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 			render(ChartListTableItem, { props: { ...defaultProps, item } });
 			expect(
 				screen.queryByRole('button', { name: 'Open in Editor' })

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { _ } from 'svelte-i18n';
 	import ImageAudio from './ImageAudio.svelte';
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileModel } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { formatLevelDisplay, buildPreviewUrl } from '$lib/utils';
 	import { EllipsisVertical } from '@lucide/svelte/icons';
@@ -12,7 +12,7 @@
 	import { isPreviewable, chartTitleHref } from '$lib/components/ChartList.helpers';
 	import { createAudioPreview, audioToggleLabelKey } from '$lib/audioPreview.svelte';
 
-	type ChartListItemData = Partial<SimfileWithDtx> & { has_uploaded_files?: boolean };
+	type ChartListItemData = Partial<SimfileModel>;
 
 	let {
 		item,
@@ -33,7 +33,7 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	const hasUploadedChart = $derived(item.id !== undefined && item.has_uploaded_files === true);
+	const hasUploadedChart = $derived(item.id !== undefined && item.hasUploadedFiles === true);
 	const previewable = $derived(isPreviewable(item));
 	const titleHref = $derived(chartTitleHref(item, isBlog));
 
@@ -79,7 +79,7 @@
 						class="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-purple-400 to-cyan-400"
 					></div>
 					<span class="text-xs font-medium tracking-wider text-purple-300 uppercase"
-						>#{item.display_id}</span
+						>#{item.displayId}</span
 					>
 				</div>
 				<h2
@@ -220,10 +220,10 @@
 								</a>
 							{/if}
 
-							{#if !isBlog && item.id !== undefined && item.is_published !== undefined}
+							{#if !isBlog && item.id !== undefined && item.isPublished !== undefined}
 								<Button
 									onclick={() => {
-										togglePublishChart(item.id!, item.is_published!);
+										togglePublishChart(item.id!, item.isPublished!);
 									}}
 									variant="menuItem"
 									fullWidth
@@ -241,12 +241,12 @@
 												stroke-linecap="round"
 												stroke-linejoin="round"
 												stroke-width="2"
-												d={item.is_published
+												d={item.isPublished
 													? 'M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L12 12m-3-3l6-6'
 													: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z'}
 											></path>
 										</svg>
-										{item.is_published ? 'Unpublish' : 'Publish'}
+										{item.isPublished ? 'Unpublish' : 'Publish'}
 									{/snippet}
 								</Button>
 							{/if}
@@ -346,7 +346,7 @@
 			<div class="flex items-center gap-2">
 				<span class="text-xs font-medium text-slate-400">{$_('blog.level')}:</span>
 				<div class="flex flex-wrap gap-1">
-					{#each formatLevelDisplay(item.dtx_files).split(', ') as level}
+					{#each formatLevelDisplay(item.dtxFiles).split(', ') as level}
 						<span
 							class="rounded-full border border-amber-500/30 bg-gradient-to-r from-amber-600/30 to-orange-600/30 px-2 py-0.5 text-xs text-amber-200"
 						>
@@ -362,12 +362,12 @@
 				{#if enableDownload}
 					<DownloadDropdown
 						simfileId={item.id}
-						externalUrl={item.download_url ?? null}
-						hasUploadedFiles={item.has_uploaded_files}
+						externalUrl={item.downloadUrl ?? null}
+						hasUploadedFiles={item.hasUploadedFiles}
 					/>
-				{:else if item.download_url}
+				{:else if item.downloadUrl}
 					<a
-						href={item.download_url}
+						href={item.downloadUrl}
 						target="_blank"
 						rel="noopener noreferrer"
 						class="music-btn-primary inline-flex items-center gap-2 px-4 py-2 text-sm"

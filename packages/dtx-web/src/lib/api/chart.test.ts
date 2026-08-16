@@ -59,7 +59,7 @@ describe('listSimfiles (GraphQL path)', () => {
 		expect(requestMock).toHaveBeenCalledOnce();
 		expect(result.count).toBe(2);
 		expect(result.data).toHaveLength(2);
-		expect(result.data[0].has_uploaded_files).toBe(true);
+		expect(result.data[0].hasUploadedFiles).toBe(true);
 	});
 
 	it('maps scope string mine → MINE enum', async () => {
@@ -84,13 +84,28 @@ describe('getSimfile', () => {
 				id: '7',
 				title: 't',
 				googleDriveFileId: 'drive-file-123',
+				displayId: null,
+				isPublished: false,
+				publishDate: '2026-08-15',
+				createdAt: '2026-08-15T00:00:00Z',
+				updatedAt: '2026-08-15T00:00:01Z',
+				dtxFiles: [],
 				files: [],
 				hasUploadedFiles: false
 			}
 		});
 		const result = await getSimfile('7');
-		expect(result.id).toBe(7);
-		expect(result.google_drive_file_id).toBe('drive-file-123');
+		expect(result).toMatchObject({
+			id: 7,
+			title: 't',
+			googleDriveFileId: 'drive-file-123',
+			displayId: null,
+			isPublished: false,
+			publishDate: '2026-08-15',
+			createdAt: '2026-08-15T00:00:00Z',
+			updatedAt: '2026-08-15T00:00:01Z',
+			dtxFiles: []
+		});
 	});
 
 	it('throws "Simfile not found" when result.simfile is null', async () => {
@@ -113,7 +128,7 @@ describe('updateSimfile', () => {
 		expect(result.title).toBe('new');
 		expect(result.files).toHaveLength(1);
 		expect(result.files?.[0]?.key).toBe('charts/test.zip');
-		expect(result.has_uploaded_files).toBe(true);
+		expect(result.hasUploadedFiles).toBe(true);
 	});
 });
 
@@ -138,8 +153,8 @@ describe('updateSimfileDriveFile', () => {
 		});
 		expect(result).toEqual({
 			id: 9,
-			google_drive_file_id: 'drive-file-123',
-			download_url: downloadUrl
+			googleDriveFileId: 'drive-file-123',
+			downloadUrl
 		});
 	});
 
@@ -178,8 +193,8 @@ describe('updateSimfileDriveFile', () => {
 
 		expect(result).toEqual({
 			id: 9,
-			google_drive_file_id: null,
-			download_url: null
+			googleDriveFileId: null,
+			downloadUrl: null
 		});
 	});
 });

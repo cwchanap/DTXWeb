@@ -4,7 +4,7 @@
 
 Make Rust the source of truth for the first production Tauri IPC contract slice: the simfile commands used by desktop chart/song-details flows.
 
-The implementation keeps the current Tauri command names and behavior, keeps `@dtx/common`'s `SimfileModel` as the shared application model established by HPA-614, and uses the repository's existing `ts-rs` dependency to generate TypeScript wire contracts into the production desktop renderer.
+The implementation keeps the current Tauri command names and behavior, keeps `@dtx/common`'s `SimfileModel` as the shared application model established by HPA-614, and reuses the repository's existing `ts-rs` dependency to generate TypeScript wire contracts into the production desktop renderer.
 
 Only five commands are in scope:
 
@@ -14,25 +14,23 @@ Only five commands are in scope:
 - `update_simfile_record`
 - `get_next_display_id`
 
-The first four gain named Rust request/result structs where a structured envelope exists. `get_next_display_id` remains a primitive `i64 -> number` contract because adding an object wrapper would create ceremony without improving correctness.
+The first four gain named Rust result types and concrete request types where they accept structured input. `get_next_display_id` remains a primitive `i64 -> number` contract because wrapping it in an object would add ceremony without improving correctness.
 
-The selected desktop GraphQL operations move from Rust string constants to checked-in `.graphql` files loaded with `include_str!`, and the existing GraphQL Codegen toolchain validates those documents against `packages/dtx-api/dist/schema.graphql`.
+The selected desktop GraphQL operations move from Rust string constants to checked-in `.graphql` files loaded with `include_str!`. The existing GraphQL Codegen toolchain validates those documents against `packages/dtx-api/dist/schema.graphql`.
 
-This is a deliberately narrow vertical slice. It does not introduce a new RPC framework, a generic DTO layer, runtime schema validation, a Rust GraphQL client generator, or an `api.rs`/`SongDetails` refactor.
+This is deliberately a narrow vertical slice. It does not introduce a new RPC framework, generic DTO layer, runtime schema validation, Rust GraphQL client generator, or an `api.rs`/`SongDetails` refactor.
 
 Linear: HPA-615
 
 ## Why this is the next slice
 
-HPA-614 is complete and its implementation is merged into `main`. That removes HPA-615's only blocker and leaves a stable current renderer model (`SimfileModel`) for this ticket to type across the Tauri boundary.
+HPA-614 is complete and merged into `main`. That removes HPA-615's only blocker and leaves a stable current renderer model (`SimfileModel`) for this ticket to type across the Tauri boundary.
 
-HPA-615 also blocks HPA-616 and HPA-617. Completing the production contract seam before extracting `SongDetails`/desktop API orchestration or deleting migration infrastructure prevents those later tickets from preserving handwritten IPC shapes that are about to disappear.
+HPA-615 blocks HPA-616 and HPA-617. Completing the production contract seam first prevents those later tickets from extracting or documenting handwritten IPC shapes that are about to disappear.
 
-HPA-613 is also medium priority, but it is independent CI optimization work. HPA-615 has stronger sequencing value because it unlocks two follow-up architecture tasks.
+HPA-613 is also medium priority, but it is independent CI optimization work. HPA-615 has stronger sequencing value because completing it unlocks two follow-up architecture tasks.
 
 ## Current problem
-
-The repository already has the pieces required for generated native contracts, but they stop short of production renderer code.
 
 ### Renderer boundary
 
@@ -43,33 +41,29 @@ The repository already has the pieces required for generated native contracts, b
 - `createSimfileRecord<T>()`
 - `updateSimfileRecord<T>()`
 
-Callers supply their own result shape, so the native command name is typed but its payload is not.
+Callers supply their own result shape, so the command name is typed while its payload is not.
 
-This produces duplicated renderer declarations:
+That produces duplicated declarations:
 
 - `simFileService.ts` owns `MainProcessSimFileResult`.
 - `SongDetails.svelte` owns `CreateSimfileResult` and `UpdateSimfileResult`.
 - `scoreTypes.ts` owns `FetchCloudSongResult`.
 
-Those declarations can drift from Rust independently while renderer tests still pass.
-
 `getNextDisplayId()` is already concrete as `Promise<number>` and should stay that way.
 
 ### Rust boundary
 
-`packages/dtx-desktop/src-tauri/src/api.rs` uses `serde_json::Value` for the selected structured command inputs/results and builds response envelopes with `json!()`.
+`packages/dtx-desktop/src-tauri/src/api.rs` still uses `serde_json::Value` at the selected structured command boundaries and assembles response envelopes with `json!()`.
 
-HPA-614 already normalized full GraphQL simfiles into the current camelCase application shape through `simfile_model_from_graphql`, but that mapper still returns `Value`. The shape is therefore documented by convention rather than by a Rust type.
+HPA-614 already normalized full GraphQL simfiles into the current camelCase application shape through `simfile_model_from_graphql`, but that mapper still returns `Value`. The native wire shape is therefore enforced by convention instead of a Rust type.
 
 ### Existing generation
 
-`ts-rs` is already a direct Rust dependency. Several structs in `src-tauri/src/models.rs` derive `TS`, but their export target is currently only:
+`ts-rs` is already a direct Rust dependency. Several structs in `src-tauri/src/models.rs` derive `TS`, but generated contracts currently target only:
 
 `packages/e2e-desktop/support/generated/native-types.ts`
 
-The existing root `gen:native-types` script drives the Rust tests that emit these files, and Tauri CI already verifies generated output is committed and in sync.
-
-The missing seam is production renderer ownership, not generation technology.
+The root `gen:native-types` script already drives Rust export tests, and Tauri CI already verifies generated output is tracked and in sync. HPA-615 should extend those seams rather than add another generator.
 
 ### GraphQL documents
 
@@ -81,17 +75,17 @@ The selected GraphQL operations are embedded as Rust string constants in `api.rs
 - update simfile
 - next display id
 
-The API GraphQL schema is already generated and checked in at `packages/dtx-api/dist/schema.graphql`. The web package already owns GraphQL Codegen and verifies its generated client in CI, so HPA-615 can reuse that toolchain for validation rather than adding a second GraphQL validation dependency.
+The API schema is already generated and checked in at `packages/dtx-api/dist/schema.graphql`. The web package already owns GraphQL Codegen and verifies generated-client drift in CI, so desktop operation validation can reuse that toolchain without adding another GraphQL dependency.
 
 ## Goals
 
 - Make Rust authoritative for the selected production IPC wire shapes.
 - Generate production TypeScript contracts from those Rust types.
-- Remove generic result parameters from the selected `desktopHost` methods.
-- Remove duplicated renderer result interfaces for the migrated commands.
-- Keep `SimfileModel` as the shared application model rather than creating a second domain model.
-- Make the selected GraphQL operation documents independently schema-validated.
-- Reuse the current `ts-rs`, GraphQL Codegen, Rust test, and CI seams.
+- Remove caller-supplied generic result types from the selected `desktopHost` methods.
+- Remove duplicate renderer interfaces for the migrated commands.
+- Keep `SimfileModel` as the shared application model rather than creating another domain model.
+- Make the selected desktop GraphQL documents schema-validated.
+- Reuse current `ts-rs`, GraphQL Codegen, Rust test, and CI seams.
 - Establish a repeatable pattern without forcing untouched commands to migrate.
 
 ## Non-goals
@@ -101,13 +95,12 @@ The API GraphQL schema is already generated and checked in at `packages/dtx-api/
 - No `specta`, `tauri-specta`, protobuf, JSON Schema, Zod, or runtime validation layer.
 - No generic request/response registry.
 - No full Rust GraphQL client/codegen stack.
-- No GraphQL schema redesign.
-- No D1 or persistence changes.
+- No GraphQL or D1 schema redesign.
 - No Tauri command renaming.
-- No `api.rs` extraction; HPA-616 owns desktop API seam extraction.
-- No `SongDetails` extraction; HPA-616 owns that refactor.
-- No broad generated E2E contract cleanup beyond reusing the same generated production types where useful.
-- No compatibility layer for old handwritten renderer types.
+- No `api.rs` extraction; HPA-616 owns that.
+- No `SongDetails` extraction; HPA-616 owns that.
+- No broad E2E generated-contract cleanup.
+- No compatibility aliases for the deleted handwritten renderer types.
 
 ## Approaches considered
 
@@ -117,37 +110,37 @@ Add named Rust wire structs for the selected commands, generate their TypeScript
 
 Keep generic GraphQL transport helpers and unrelated Tauri commands untouched.
 
-**Chosen.** It removes the real duplication with the least machinery and provides the exact seam HPA-616 can later extract.
+**Chosen.** It removes the current duplication with the least machinery and creates the concrete seam HPA-616 can later extract.
 
-### B. Generate TypeScript aliases while Rust commands still return `Value`
+### B. Generate TypeScript mirrors while commands still return `Value`
 
-Create `ts-rs` mirror structs only for code generation/tests while leaving command signatures and `json!()` envelopes unchanged.
+Create `ts-rs` structs only for code generation/tests while leaving native command signatures and `json!()` envelopes unchanged.
 
-Rejected because Rust would not actually be authoritative. A command response could drift from the generated mirror and compile successfully.
+Rejected because Rust would not actually be authoritative: the runtime response could drift from the generated mirror and still compile.
 
-### C. Introduce a comprehensive Tauri binding framework
+### C. Replace the whole native API with a binding framework
 
-Adopt a framework that derives commands and frontend clients for the whole native API.
+Adopt a framework that derives commands and frontend clients across every Tauri command.
 
-Rejected as unnecessary infrastructure for a five-command slice. It expands dependency and migration scope without solving a current requirement that existing `ts-rs` cannot solve.
+Rejected as unnecessary infrastructure for a five-command slice. Existing `ts-rs` already solves the current need.
 
 ## Chosen architecture
 
-### 1. Add a small native simfile contract module
+### 1. Add a narrow native contract module
 
 Create:
 
 `packages/dtx-desktop/src-tauri/src/api_contracts.rs`
 
-This module owns only the wire types needed by the migrated simfile commands. It is not a generic DTO layer and should not become a dumping ground for unrelated desktop types.
+It owns only the wire types needed by the migrated simfile commands. It is not a generic DTO module for the rest of the application.
 
-The module should contain the minimum useful types, approximately:
+The core full-simfile contract should be approximately:
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NativeSimfileDtxFile {
-    pub id: Option<i64>,
+    pub id: i64,
     pub label: String,
     pub level: i64,
 }
@@ -173,36 +166,44 @@ pub struct NativeSimfile {
 }
 ```
 
-Exact numeric Rust types should follow the current GraphQL/runtime values already accepted by HPA-614 tests. Do not change user-visible behavior to satisfy a preferred Rust number type.
+The desktop full GraphQL fragment already requests each nested DTX id, so the native wire contract should make it required. This still satisfies shared `SimfileDtxFile`, where `id` is optional only because web projections may omit it.
 
-`NativeSimfile` is the Tauri wire representation of the already-established application model. It is not a replacement for `@dtx/common`'s `SimfileModel` and must not be imported outside the desktop package.
+Exact Rust numeric types should follow the current GraphQL/runtime values exercised by existing tests. Do not change values just to prefer a particular Rust integer width.
 
-### 2. Type only the real structured command envelopes
+`NativeSimfile` is the desktop wire representation of the existing application model. It does not replace `@dtx/common`'s `SimfileModel` and must not escape the desktop package.
 
-Use named Rust result types for the first four commands.
+### 2. Type only the structured command contracts
 
 #### `fetch_user_simfiles`
 
-Use a discriminated result shape matching current behavior:
+Return a named `FetchUserSimfilesResult` preserving the current fields:
 
-```text
-success: true  -> data + fromCache
-success: false -> error + partial/empty data + fromCache
-```
+- `success`
+- `data: Vec<NativeSimfile>`
+- `fromCache`
+- optional `error`
 
-The current native implementation always reports `fromCache: false`; keep the field because it is part of the existing renderer service contract. Removing it is unrelated behavior churn.
+The current native implementation always reports `fromCache: false`; retain it because `simFileService` already exposes that field and removing it is unrelated behavior churn.
+
+Optional response fields should use `serde(skip_serializing_if = "Option::is_none")` plus the corresponding `ts-rs` optional annotation so generated TypeScript matches the runtime omission semantics rather than requiring a property Rust omits.
 
 #### `fetch_cloud_song`
 
-Keep the existing envelope field name `cloudSongData` so HPA-615 does not combine typing with a renderer behavior rename.
+Make the native command id concrete as `String` instead of `serde_json::Value`.
 
-The input should become a concrete simfile id type accepted by current callers rather than `serde_json::Value`. The current renderer passes string/number ids through one `cloudSongId` field; normalize this at the `desktopHost` wrapper if needed so the Rust command has one concrete parameter type.
+The real renderer callers can use a string id, so simplify `desktopHost.fetchCloudSong` to one form:
 
-Prefer `String` at the Rust command boundary because GraphQL IDs are strings and the linked-song renderer path already persists ids as strings.
+```ts
+fetchCloudSong(cloudSongId: string): Promise<FetchCloudSongResult>
+```
+
+The wrapper sends `{ cloudSongId }` to Tauri. Delete the current object-or-primitive convenience overload rather than preserving an internal compatibility shape.
+
+Keep the existing response field name `cloudSongData`; renaming that field is not necessary to establish generated contracts.
 
 #### `create_simfile_record`
 
-Introduce a concrete request struct for the renderer-owned create fields:
+Add a generated `CreateSimfileRecordInput` covering only the current renderer-owned create fields:
 
 - title
 - artist
@@ -215,169 +216,157 @@ Introduce a concrete request struct for the renderer-owned create fields:
 - levels
 - songPath
 
-Keep preview upload behavior unchanged.
+Keep `songPath` as command-local input used for preview uploads; it is not part of the GraphQL `CreateSimfileInput` or `NativeSimfile` domain shape.
 
-The result retains current fields:
+The result retains current semantics:
 
 - `success`
-- `simfileId`
-- `data`
+- optional `simfileId`
+- optional `data: NativeSimfile`
 - optional `error`
 - optional `warnings`
 
-Do not make preview warnings part of the simfile domain model.
+Preview upload failures remain warnings when record creation succeeds.
 
 #### `update_simfile_record`
 
-Introduce a concrete update request type for the current editable fields instead of `Record<string, unknown>` / `Value`.
+Add a generated `UpdateSimfileRecordInput` for the mutable simfile fields and make `desktopHost` accept:
 
-The type should preserve the existing ownership rule from HPA-614: `googleDriveFileId` is not a general update field and remains owned by the guarded Drive mutation.
+```ts
+updateSimfileRecord(simfileId: string, updateData: UpdateSimfileRecordInput)
+```
 
-Use optional fields for the partial update payload rather than a generic map.
+Use optional fields for partial updates. Every optional Rust field that means "not supplied" must include `skip_serializing_if = "Option::is_none"`; serializing `None` as GraphQL `null` would change update semantics by clearing nullable fields instead of omitting them.
 
-The result contains the full current simfile on success because the Rust command already returns `simfile_model_from_graphql(updateSimfile)`. The current renderer declaration as `Partial<SimfileModel>` is weaker than reality and should be removed.
+`googleDriveFileId` is intentionally absent from the type. HPA-614 had to strip it from a generic map; after HPA-615 it becomes unrepresentable in the general update request, so that defensive removal can disappear.
+
+The success result contains a full `NativeSimfile`, matching current Rust behavior. Delete the weaker handwritten `Partial<SimfileModel>` assumption in `SongDetails`.
 
 #### `get_next_display_id`
 
-Keep:
+Keep the command primitive:
 
 ```text
 Rust: i64
 TypeScript: number
 ```
 
-Do not wrap the primitive in `{ value }` solely to generate another interface.
+No generated wrapper type is needed.
 
-### 3. Generate one production TypeScript contract file
+### 3. Convert the existing GraphQL-to-renderer mapper to a typed mapper
+
+Keep the current single normalization seam in `api.rs`, but change it from returning `Value` to returning `NativeSimfile`.
+
+Do not add a mapper framework or generic deserialization abstraction. A focused `native_simfile_from_graphql(&Value) -> Result<NativeSimfile>` function is enough.
+
+This keeps the GraphQL HTTP layer dynamic while making the Tauri boundary typed. HPA-615 does not need a generated Rust GraphQL client to achieve its goal.
+
+### 4. Generate one production TypeScript contract file
 
 Generate the migrated production types into:
 
 `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 
-The file is checked in and generated by `ts-rs`; it is never edited by hand.
+The file is checked in, generated by `ts-rs`, and never edited manually.
 
-Use a single production output file for this slice instead of one generated file per struct. The repository already uses one `native-types.ts` aggregate for E2E, and a single production aggregate keeps imports simple.
+Use one aggregate file for this slice, matching the repository's existing single-file E2E generation pattern.
 
-Do not generate into `@dtx/common`. These are desktop transport contracts, not shared domain contracts.
+Do not generate into `@dtx/common`; these are desktop transport contracts, not shared domain contracts.
 
-The production renderer may use structural assignability with `SimfileModel` rather than adding an adapter whose only purpose is copying identically named fields.
+Application-facing services may explicitly return/assign `SimfileModel` where appropriate. TypeScript structural checking then proves the generated `NativeSimfile` still satisfies the shared model without introducing a copy-only adapter.
 
-Where a public renderer service promises `SimfileModel`, annotate that promise explicitly so a later Rust field change must still satisfy the application contract.
+### 5. Keep E2E-only contracts separate
 
-### 4. Reuse generated types from E2E where they overlap
+The existing E2E generated file mixes general native and E2E-only control/snapshot types. HPA-615 does not need to reorganize all of it.
 
-The current E2E generated file contains E2E-only control/snapshot types plus several general native contracts.
+For new simfile production contracts:
 
-HPA-615 does not need to redesign that file. For the newly migrated simfile types, avoid generating a second semantically independent definition.
+- generate the authoritative definition only into the production renderer file;
+- if desktop E2E needs one of those types, import or thinly re-export it from the production generated path;
+- continue generating E2E-only controls/snapshots into `packages/e2e-desktop/support/generated/native-types.ts`.
 
-Preferred shape:
+Do not move E2E-only types into production code and do not create a second Rust mirror of `NativeSimfile` just for tests.
 
-- production simfile contract types export to the production generated file;
-- E2E code that needs those production simfile types imports them from the production generated path;
-- E2E-only types continue generating to `packages/e2e-desktop/support/generated/native-types.ts`.
+### 6. Move only selected GraphQL documents to files
 
-If `ts-rs` export constraints make one struct awkward to target from both test contexts, use a thin TypeScript re-export from E2E rather than duplicating a second Rust mirror.
-
-Do not move E2E-only control types into production code.
-
-### 5. Move only selected GraphQL documents to files
-
-Create a focused directory such as:
+Create:
 
 `packages/dtx-desktop/src-tauri/graphql/simfiles/`
 
-with files for:
+with documents for:
 
-- shared full simfile fragment
+- the desktop full simfile fragment
 - list simfiles
 - get simfile
 - create simfile
 - update simfile
 - next display id
 
-Use operation/fragment names prefixed for desktop ownership when necessary to avoid accidental name collisions during validation.
-
 Rust loads them with `include_str!`.
 
-Leave these existing operations embedded in `api.rs` for now:
+For operations that reference the shared fragment, keep the existing simple composition idea: load the fragment and operation separately and concatenate them before the request. No GraphQL document loader abstraction is needed.
 
-- search cloud songs
-- simfile chart projection
-- score upload
-- Drive metadata/guarded Drive updates
-- asset-file projection
+Use desktop-prefixed operation/fragment names if necessary to avoid collisions when Codegen validates all desktop documents together.
 
-They are not required to type the selected command vertical slice.
+Leave unrelated operations embedded in `api.rs` for now, including search, score upload, Drive metadata, chart-only projections, and asset-file projections.
 
-### 6. Validate desktop GraphQL documents with existing Codegen tooling
+### 7. Validate desktop GraphQL with existing Codegen tooling
 
-Do not add `graphql-inspector` or a custom parser.
+Do not add `graphql-inspector` or a custom validator.
 
-Add a small GraphQL Codegen config under `packages/dtx-web` (or an equivalent minimal extension of the existing config) that:
+Add a small validation-only GraphQL Codegen config under `packages/dtx-web` that:
 
 - reads `../dtx-api/dist/schema.graphql`;
 - reads `../dtx-desktop/src-tauri/graphql/**/*.graphql`;
-- generates validation-only TypeScript into an ignored path under `packages/dtx-web/.svelte-kit/`.
+- generates disposable TypeScript into an ignored path under `packages/dtx-web/.svelte-kit/`.
 
-The generated validation artifact is not committed or imported. Its purpose is to make GraphQL Codegen parse and validate the desktop operations against the checked-in schema.
+The generated validation artifact is neither committed nor imported. Its only purpose is to make GraphQL Codegen parse and validate the desktop documents against the checked-in schema.
 
-Wire this command into the existing `lint:codegen` workflow so CI validates both web generated-client drift and desktop operation validity after the API schema is regenerated.
+Extend the existing `lint:codegen` script so it validates both the committed web generated-client drift and desktop operations.
 
-This keeps GraphQL tooling ownership in the package that already depends on `@graphql-codegen/*` rather than adding those dependencies to the Rust package or repository root.
+This keeps GraphQL tooling where the dependency already exists instead of adding Codegen packages to the Rust crate or repository root.
 
-### 7. Make `desktopHost` concrete for the selected commands
+### 8. Make selected `desktopHost` methods concrete
 
-`desktopHost.ts` imports the generated native contracts and exposes concrete methods.
-
-Examples of the desired direction:
+`desktopHost.ts` imports the generated contracts and exposes concrete methods roughly like:
 
 ```ts
 fetchUserSimfiles(): Promise<FetchUserSimfilesResult>
-fetchCloudSong(params: FetchCloudSongInput): Promise<FetchCloudSongResult>
+fetchCloudSong(cloudSongId: string): Promise<FetchCloudSongResult>
 createSimfileRecord(input: CreateSimfileRecordInput): Promise<CreateSimfileRecordResult>
-updateSimfileRecord(input: UpdateSimfileRecordInput): Promise<UpdateSimfileRecordResult>
+updateSimfileRecord(
+  simfileId: string,
+  updateData: UpdateSimfileRecordInput
+): Promise<UpdateSimfileRecordResult>
 getNextDisplayId(): Promise<number>
 ```
 
-The low-level `DesktopHostRuntime.invoke<T>()` and private `invokeHost<T>()` remain generic. HPA-615 is typing named application-facing commands, not replacing Tauri's generic invocation primitive.
+Keep low-level `DesktopHostRuntime.invoke<T>()` and private `invokeHost<T>()` generic. HPA-615 types named application-facing commands, not Tauri's generic invocation primitive.
 
-Untouched command methods may remain generic until migrated deliberately.
+Untouched command methods remain generic until deliberately migrated.
 
-### 8. Delete renderer duplicates instead of aliasing them
+### 9. Delete renderer duplicates instead of aliasing them
 
-Once the generated types are in use:
+After generated types are in use:
 
 - delete `MainProcessSimFileResult` from `simFileService.ts`;
 - delete `CreateSimfileResult` and `UpdateSimfileResult` from `SongDetails.svelte`;
-- delete the full-simfile `FetchCloudSongResult` declaration from `scoreTypes.ts` if no remaining score-specific consumer needs it;
-- remove generic type arguments at migrated `desktopHost` call sites.
+- delete handwritten `FetchCloudSongResult` from `scoreTypes.ts` and import the generated result only where an explicit annotation is still useful;
+- remove generic type arguments from migrated `desktopHost` call sites;
+- remove the local `isSimfileModel` runtime guard once `fetchCloudSong`/create results carry `NativeSimfile` through generated typing.
 
-Do not leave deprecated aliases or compatibility interfaces. There are no production consumers requiring them.
-
-The `SongDetails` `isSimfileModel` guard may be removed once the command returns a named Rust `NativeSimfile`/generated result. Keeping a hand-written runtime shape check after making Rust authoritative would reintroduce a second contract definition.
-
-### 9. Keep domain and transport ownership separate
-
-`SimfileModel` remains the model consumed by shared UI and application stores.
-
-Generated `NativeSimfile` is allowed to be structurally identical, but its ownership is different:
-
-- `@dtx/common`: application/domain-facing model used by shared/web/desktop code.
-- `dtx-desktop/src-tauri`: authoritative native IPC serialization.
-- generated renderer file: compile-time mirror of that IPC serialization.
-
-Do not make common import generated desktop types, and do not move general application behavior into the native contract module.
+Do not leave deprecated aliases. There are no compatibility requirements for these internal contracts.
 
 ## Data flow after HPA-615
 
 ### Fetch user simfiles
 
 ```text
-GraphQL .graphql document
-  -> Rust GraphQL JSON response
-  -> typed Rust NativeSimfile conversion
+Desktop .graphql document
+  -> GraphQL JSON
+  -> native_simfile_from_graphql()
   -> FetchUserSimfilesResult
-  -> Tauri serialization
+  -> Tauri JSON serialization
   -> generated TypeScript contract
   -> desktopHost.fetchUserSimfiles()
   -> simFileService
@@ -387,43 +376,43 @@ GraphQL .graphql document
 ### Fetch one cloud simfile
 
 ```text
-renderer cloudSongId
-  -> typed Tauri input
-  -> GraphQL get simfile document
+renderer string cloudSongId
+  -> typed Tauri argument
+  -> desktop get-simfile .graphql document
   -> NativeSimfile
   -> FetchCloudSongResult
   -> desktopHost.fetchCloudSong()
-  -> SongDetails/workspace SimfileModel
+  -> SongDetails/Scores
 ```
 
 ### Create/update simfile
 
 ```text
-SongDetails form values
+SongDetails values
   -> generated typed request
   -> Tauri command
-  -> GraphQL mutation input
-  -> GraphQL simfile result
+  -> GraphQL variables
+  -> GraphQL simfile response
   -> NativeSimfile
-  -> generated typed response
+  -> generated typed result
   -> SongDetails/workspace SimfileModel
 ```
 
-No additional mapping layer is inserted between the generated TypeScript wire type and `SimfileModel` when their field shapes match.
+No extra renderer mapper is added when the generated wire type is structurally compatible with `SimfileModel`.
 
-## Error behavior
+## Error and compatibility behavior
 
-Keep current command behavior unless typing makes an invalid state impossible.
+Keep current runtime behavior unless typing makes an invalid state impossible.
 
-- GraphQL/network failures remain command result failures where the command currently returns `{ success: false, error }`.
+- GraphQL/network failures remain `{ success: false, error }` results where those commands currently return envelopes.
 - Native configuration/workspace errors that currently reject the Tauri command continue to reject it.
-- `fetch_user_simfiles` keeps any already-fetched partial data on a later-page failure.
-- Create preview upload failures remain warnings when the simfile record itself succeeded.
-- `fetch_cloud_song` keeps the existing `cloudSongData` field and current not-found failure behavior.
+- `fetch_user_simfiles` keeps already-fetched partial data if a later page fails.
+- Create preview upload failures remain warnings after a successful create.
+- `fetch_cloud_song` keeps `cloudSongData` and current not-found failure behavior.
 - `get_next_display_id` continues to reject invalid/missing API values.
-- General update input cannot carry `googleDriveFileId`.
-
-Do not add runtime TypeScript validation. The native side is trusted application code, and compile-time generation is the scope of this ticket.
+- General update requests cannot represent `googleDriveFileId`.
+- No backward-compatibility interfaces, aliases, or old generic signatures are retained.
+- No TypeScript runtime validation is added; the native backend is trusted application code and compile-time generation is the ticket's boundary.
 
 ## Generation workflow
 
@@ -431,56 +420,58 @@ Keep the existing root command:
 
 `bun run gen:native-types`
 
-Extend the Rust export tests invoked by that command so they also emit the production file.
+Extend the existing Rust export tests so the same command also emits the production generated file.
 
-The generation flow remains test-driven because that is already how this repository triggers `ts-rs` output.
+Do not add a custom Rust codegen binary unless the current test-driven `ts-rs` export mechanism proves technically insufficient.
 
-Do not add a second custom Rust binary just for codegen unless the existing test export path proves technically unable to generate the production file.
-
-Tauri CI should verify both generated paths are clean after Rust tests/codegen:
+Tauri CI should explicitly verify both generated outputs after Rust tests/codegen:
 
 - `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 - `packages/e2e-desktop/support/generated/native-types.ts`
 
-The production file must be explicitly tracked so a missing generated file fails CI rather than silently passing an empty diff check.
+Use `git ls-files --error-unmatch` for the production output before the diff check so a missing generated file cannot pass silently.
 
 ## Testing strategy
 
-### Rust contract tests
+### Rust
 
-Add focused tests for each migrated structured command contract.
+Extend existing API/model tests rather than building a contract-test framework.
 
-At minimum:
+Cover at least:
 
-- `simfile_model_from_graphql` (or its typed replacement) produces the expected `NativeSimfile` from a complete GraphQL payload.
-- nullable metadata serializes to the expected camelCase JSON fields.
-- `fetch_user_simfiles` success and later-page failure envelopes serialize correctly.
-- `fetch_cloud_song` success serializes `cloudSongData` with the current model shape.
-- create success includes `simfileId`, `data`, and optional warnings without changing preview behavior.
-- update success returns a full simfile and rejects/excludes Drive-owned mutation state as today.
-- request structs serialize to the GraphQL variable shapes expected by existing wiremock tests.
-
-Prefer extending the current `api_tests.rs`/model contract tests rather than creating an abstract contract-test framework.
+- complete GraphQL simfile -> `NativeSimfile` conversion;
+- required nested DTX ids and camelCase serialization;
+- nullable metadata serialization;
+- `fetch_user_simfiles` success and later-page-failure envelopes;
+- `fetch_cloud_song` success/not-found behavior;
+- create success plus optional preview warnings;
+- update success returning a full simfile;
+- update omission semantics for optional fields;
+- inability of the typed update request to carry Drive-owned state;
+- existing GraphQL/wiremock request expectations still matching after typed input conversion.
 
 ### Generated binding drift
 
-Run `bun run gen:native-types` and prove there is no git diff.
+Run:
 
-Tauri CI continues to be the load-bearing drift check.
+`bun run gen:native-types`
 
-### Renderer unit tests
+and require a clean diff for both generated files.
 
-Update existing service/component tests so mocks use the generated result/input types naturally through `desktopHost`.
+### Renderer
 
-No new standalone test suite is needed solely to prove TypeScript types compile; production renderer `svelte-check` is the relevant compile-time gate.
+Run existing focused tests for:
 
-### Renderer typecheck
+- `desktopHost`
+- `simFileService`
+- `SongDetails`
+- `Scores` if its `FetchCloudSongResult` annotation changes
+
+No standalone "generated type" test suite is needed; renderer compilation is the useful gate.
 
 Run:
 
 `bun run --filter=dtx-desktop typecheck`
-
-This should catch remaining generic call patterns and incompatible use of generated response shapes in production renderer code.
 
 ### E2E typecheck
 
@@ -488,21 +479,21 @@ Run:
 
 `bun run --filter=dtx-e2e-desktop check`
 
-This catches invalid imports/re-exports after E2E starts consuming any shared production generated contracts.
+This catches broken production-type imports/re-exports from E2E support.
 
 ### GraphQL validation
 
-Run the existing web codegen/lint command after adding the desktop validation step:
+Run:
 
 `bun run --filter=dtx-web lint:codegen`
 
-A selected desktop operation with a nonexistent field or invalid variable type must fail this command.
+A desktop document containing an invalid field or variable type must fail this command.
 
 ### Desktop E2E
 
-Run focused desktop E2E relevant to chart/song-details flows when locally available, and rely on the existing non-draft desktop E2E CI before merging the later implementation PR.
+Use existing chart/song-detail flows rather than adding a new scenario solely for typing. Update E2E fixtures/imports only where generated contract ownership changes.
 
-HPA-615 does not need new E2E scenarios if existing create/link/update flows already exercise the migrated commands. Update fixtures/types only as required by the generated contract changes.
+The later implementation PR must be marked ready for review so the repository's draft-skipping desktop E2E workflow actually runs before merge.
 
 ## Expected file scope
 
@@ -510,78 +501,78 @@ Likely production files:
 
 - `packages/dtx-desktop/src-tauri/src/api_contracts.rs` — new narrow contract module
 - `packages/dtx-desktop/src-tauri/src/lib.rs` — register module
-- `packages/dtx-desktop/src-tauri/src/api.rs` — typed selected commands and `include_str!` documents
-- `packages/dtx-desktop/src-tauri/graphql/simfiles/*.graphql` — selected operation documents
+- `packages/dtx-desktop/src-tauri/src/api.rs` — typed selected commands and document includes
+- `packages/dtx-desktop/src-tauri/graphql/simfiles/*.graphql` — selected documents
 - `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts` — generated
-- `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts` — concrete selected methods
-- `packages/dtx-desktop/src/renderer/src/services/simFileService.ts` — remove duplicate fetch result
-- `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte` — remove duplicate create/update/fetch result typing
-- `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts` — remove migrated full-simfile envelope if unused
-- `packages/dtx-web/codegen.desktop.ts` (name may vary) — validation-only desktop operation config
-- `packages/dtx-web/package.json` — include desktop GraphQL validation in `lint:codegen`
-- `.github/workflows/tauri-rust-ci.yml` — verify production generated binding drift
+- `packages/dtx-desktop/src/renderer/src/services/desktopHost.ts` — concrete methods
+- `packages/dtx-desktop/src/renderer/src/services/simFileService.ts` — remove fetch result duplicate
+- `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte` — remove duplicate command result types
+- `packages/dtx-desktop/src/renderer/src/components/Scores.svelte` — use concrete fetch result without generic call
+- `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts` — remove handwritten full-simfile result
+- `packages/dtx-web/codegen.desktop.ts` — validation-only config (exact name may vary)
+- `packages/dtx-web/package.json` — add desktop operation validation to `lint:codegen`
+- `.github/workflows/tauri-rust-ci.yml` — verify production generated output
 
 Likely test files:
 
-- current Rust API/model test modules
+- existing Rust API/model tests
 - `desktopHost.test.ts`
 - `simFileService.test.ts`
-- directly affected `SongDetails` tests
-- E2E support imports only where the new generated production types overlap
+- `SongDetails.test.ts`
+- directly affected score/E2E support tests if imports change
 
-Do not treat this list as permission to touch every named file if repository search shows a smaller valid patch.
+This is a scope inventory, not a requirement to touch every file if repository search proves a smaller implementation is sufficient.
 
 ## Implementation order
 
-1. Introduce Rust wire structs and focused serialization tests while preserving current JSON behavior.
-2. Generate the production TypeScript file and extend drift verification.
-3. Move/validate only the selected GraphQL documents.
-4. Convert the selected Rust command signatures/results to named types.
+1. Introduce Rust wire structs and focused serialization/conversion tests while preserving current JSON behavior.
+2. Generate the production TypeScript contract file and extend drift verification.
+3. Move and schema-validate only the selected GraphQL documents.
+4. Convert the selected Rust command boundaries to named types.
 5. Make the selected `desktopHost` methods concrete.
 6. Delete handwritten renderer result interfaces and generic call-site arguments.
 7. Reuse/re-export generated production types from E2E only where needed.
-8. Run Rust, generation, GraphQL, renderer, and E2E type checks.
-
-Keeping the native type definitions before renderer migration makes each seam reviewable and prevents the renderer from inventing transitional interfaces.
+8. Run Rust, generation, GraphQL, renderer, and E2E checks.
 
 ## Risks and constraints
 
-### `SimfileModel` and generated `NativeSimfile` can drift structurally
+### Shared model and native wire type can drift
 
-This ticket intentionally does not make `@dtx/common` consume desktop-generated code because that would reverse package ownership.
+Do not make `@dtx/common` import desktop-generated code; that would reverse package ownership.
 
-Mitigation: renderer services that expose application data explicitly assign/return `SimfileModel`, so TypeScript structural checking catches incompatible production changes at the usage seam.
+Mitigation: application-facing renderer services explicitly return/assign `SimfileModel`, so TypeScript structural checking catches incompatible changes at the desktop usage seam.
 
-### `ts-rs` numeric mapping
+### Optional update fields can accidentally become `null`
 
-Rust integer/floating types map to TypeScript `number`, but choosing the wrong Rust type could change deserialization behavior.
+This is the main serialization risk when replacing `Value` with typed Rust input.
 
-Mitigation: preserve the numeric semantics already exercised by current HPA-614 fixtures/API tests; do not convert values just for prettier Rust types.
+Mitigation: use `skip_serializing_if = "Option::is_none"` for partial update fields and test the actual GraphQL variables sent by existing wiremock tests.
 
-### GraphQL Codegen location looks web-owned
+### GraphQL Codegen lives under the web package
 
-The web package currently owns GraphQL Codegen dependencies even though the new documents belong to desktop Rust.
+That package currently owns the dependency even though the new documents are desktop-owned.
 
-This is acceptable for HPA-615 because the validation config is tooling-only and keeps dependency count down. HPA-617 can later reconsider repository tooling ownership if there is enough evidence for a shared scripts package; this ticket should not preempt that work.
+Accept this small tooling asymmetry rather than creating a shared scripts package for one validation command. HPA-617 can revisit tooling ownership later if repository-wide evidence justifies it.
 
-### `api.rs` remains large
+### `api.rs` stays large
 
-Typed contracts add imports and conversion code to an already large file.
+Typed contracts add imports/conversion code to an existing orchestration hotspot.
 
-That is intentional. HPA-616 exists specifically to extract natural seams from the desktop API after HPA-615 makes the boundary concrete. Extracting now would mix two tickets and make review harder.
+That is intentional. HPA-616 owns extracting natural seams after this ticket makes the boundary concrete; combining the refactor here would make review and rollback harder.
 
 ## Completion criteria
 
 HPA-615 is complete when:
 
-- the selected structured simfile commands use named Rust request/result types instead of `serde_json::Value` at their Tauri command boundary;
-- production TypeScript contracts for those types are generated by `ts-rs` into the renderer and committed;
+- the selected structured simfile commands use named Rust result types and concrete structured inputs instead of `serde_json::Value` at the Tauri boundary;
+- production TypeScript contracts are generated by `ts-rs` into the renderer and committed;
 - `fetchUserSimfiles`, `fetchCloudSong`, `createSimfileRecord`, and `updateSimfileRecord` no longer expose caller-supplied generic result types;
 - `getNextDisplayId` remains a concrete primitive number contract;
-- `simFileService`, `SongDetails`, and related migrated consumers no longer declare duplicate IPC result interfaces;
+- `simFileService`, `SongDetails`, `Scores`, and related migrated consumers no longer maintain duplicate IPC result interfaces/generic arguments;
+- optional update fields preserve omission semantics rather than serializing absent values as GraphQL `null`;
 - selected desktop GraphQL operations live in `.graphql` files loaded by Rust;
-- the existing GraphQL Codegen workflow rejects schema-invalid desktop operation documents;
-- E2E does not maintain a second independent definition for any production simfile contract it consumes;
-- Rust tests, generated-binding drift checks, desktop renderer tests/typecheck, web GraphQL codegen validation, and E2E typecheck pass;
+- existing GraphQL Codegen tooling rejects schema-invalid desktop documents;
+- E2E does not maintain a second independent simfile contract where it consumes production simfile types;
+- Rust tests, generated-binding drift checks, desktop renderer tests/typecheck, desktop GraphQL validation, and E2E typecheck pass;
 - existing Tauri command names and runtime UX remain unchanged;
-- untouched commands remain untouched rather than being swept into a broad contract migration.
+- untouched commands remain outside the migration.

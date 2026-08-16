@@ -1,4 +1,5 @@
 use super::*;
+use crate::api_contracts::CreateSimfileLevelInput;
 use crate::google_drive::{ApiDriveMetadataClient, DriveMetadataClient};
 use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
@@ -83,6 +84,24 @@ fn owner_drive_simfile() -> Value {
         "googleDriveFileId": "drive-file-42",
         "downloadUrl": "https://drive.google.com/uc?id=drive-file-42"
     })
+}
+
+fn create_input_fixture_with_display_id(display_id: Option<i64>) -> CreateSimfileRecordInput {
+    CreateSimfileRecordInput {
+        title: "Song".to_string(),
+        artist: "Artist".to_string(),
+        bpm: 180.0,
+        display_id,
+        is_published: true,
+        publish_date: "2024-01-01".to_string(),
+        download_url: "https://files/song.zip".to_string(),
+        video_preview_url: "https://video".to_string(),
+        levels: vec![CreateSimfileLevelInput {
+            label: "EXT".to_string(),
+            level: 9.2,
+        }],
+        song_path: String::new(),
+    }
 }
 
 #[test]
@@ -179,10 +198,7 @@ fn list_simfiles_query_requests_persisted_catalog_urls_and_timestamps() {
 }
 
 #[tokio::test]
-async fn update_simfile_record_impl_excludes_google_drive_file_id_from_outgoing_input() {
-    // A Drive binding is owner-only state with its own mutation. If this
-    // filtering is removed, a renderer form value can accidentally reintroduce
-    // it to UpdateSimfileInput, which deliberately does not own that field.
+async fn update_simfile_record_impl_sends_typed_input() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/graphql"))
@@ -198,23 +214,38 @@ async fn update_simfile_record_impl_excludes_google_drive_file_id_from_outgoing_
         .mount(&server)
         .await;
 
-    let result = update_simfile_record_impl(
-        &server.uri(),
-        "token-1",
-        json!(42),
-        json!({ "title": "Updated", "googleDriveFileId": "drive-file-42" }),
-    )
-    .await
-    .expect("result");
+    let input = UpdateSimfileRecordInput {
+        title: Some("Updated".to_string()),
+        ..Default::default()
+    };
+
+    let result = update_simfile_record_impl(&server.uri(), "token-1", "42".to_string(), input)
+        .await
+        .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["data"]["title"], "Song");
+}
 
-    let requests = server.received_requests().await.expect("received request");
-    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
-    let input = &body["variables"]["input"];
-    assert_eq!(input["title"], "Updated");
-    assert!(input.get("googleDriveFileId").is_none());
+#[test]
+fn update_simfile_input_omits_absent_fields() {
+    let input = UpdateSimfileRecordInput {
+        title: Some("Updated".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(
+        serde_json::to_value(input).expect("serializes"),
+        json!({ "title": "Updated" })
+    );
+}
+
+#[test]
+fn create_simfile_input_preserves_null_display_id() {
+    let input = create_input_fixture_with_display_id(None);
+    let value = serde_json::to_value(input).expect("serializes");
+    assert!(value.get("displayId").is_some());
+    assert!(value["displayId"].is_null());
 }
 
 #[tokio::test]
@@ -846,45 +877,6 @@ fn upload_name_from_file_name_strips_only_the_leading_segment() {
     assert_eq!(upload_name_from_file_name("/foo.wav"), "foo.wav");
 }
 
-#[test]
-fn create_input_from_renderer_maps_renderer_fields_to_graphql_input() {
-    let renderer = json!({
-        "title": "Song",
-        "artist": "Artist",
-        "bpm": 180,
-        "displayId": 7,
-        "isPublished": true,
-        "publishDate": "2024-01-01",
-        "downloadUrl": "https://files/song.zip",
-        "videoPreviewUrl": "https://video",
-        "levels": [{ "label": "EXT", "level": 9.2 }]
-    });
-
-    let input = create_input_from_renderer(&renderer);
-
-    assert_eq!(input["title"], "Song");
-    assert_eq!(input["artist"], "Artist");
-    assert_eq!(input["bpm"], 180);
-    assert_eq!(input["displayId"], 7);
-    assert_eq!(input["isPublished"], true);
-    assert_eq!(input["publishDate"], "2024-01-01");
-    assert_eq!(input["downloadUrl"], "https://files/song.zip");
-    assert_eq!(input["videoPreviewUrl"], "https://video");
-    assert_eq!(input["dtxFiles"][0]["label"], "EXT");
-    assert_eq!(input["dtxFiles"][0]["level"], 9.2);
-}
-
-#[test]
-fn create_input_from_renderer_defaults_missing_fields_and_nulls_levels() {
-    let input = create_input_from_renderer(&json!({ "title": "Song" }));
-
-    assert_eq!(input["title"], "Song");
-    assert_eq!(input["artist"], "");
-    assert_eq!(input["bpm"], 0);
-    assert_eq!(input["displayId"], Value::Null);
-    assert_eq!(input["dtxFiles"], Value::Null);
-}
-
 #[tokio::test]
 async fn run_graphql_value_extracts_error_field_on_non_success_status() {
     let server = MockServer::start().await;
@@ -1247,6 +1239,7 @@ async fn fetch_user_simfiles_impl_returns_single_page() {
     let result = fetch_user_simfiles_impl(&server.uri(), "token-1")
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["data"].as_array().unwrap().len(), 1);
@@ -1289,6 +1282,7 @@ async fn fetch_user_simfiles_impl_paginates_across_multiple_pages() {
     let result = fetch_user_simfiles_impl(&server.uri(), "token-1")
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["data"].as_array().unwrap().len(), 250);
@@ -1320,6 +1314,7 @@ async fn fetch_user_simfiles_impl_returns_partial_data_on_mid_pagination_failure
     let result = fetch_user_simfiles_impl(&server.uri(), "token-1")
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], false);
     assert_eq!(result["data"].as_array().unwrap().len(), 100);
@@ -1440,9 +1435,10 @@ async fn fetch_cloud_song_impl_returns_cloud_song_data_when_found() {
         .mount(&server)
         .await;
 
-    let result = fetch_cloud_song_impl(&server.uri(), "token-1", json!(42))
+    let result = fetch_cloud_song_impl(&server.uri(), "token-1", "42".to_string())
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["cloudSongData"]["id"], 42);
@@ -1462,9 +1458,10 @@ async fn fetch_cloud_song_impl_returns_failure_when_simfile_null() {
         .mount(&server)
         .await;
 
-    let result = fetch_cloud_song_impl(&server.uri(), "token-1", json!(42))
+    let result = fetch_cloud_song_impl(&server.uri(), "token-1", "42".to_string())
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], false);
     assert_eq!(result["error"], "Simfile not found");
@@ -1484,11 +1481,15 @@ async fn update_simfile_record_impl_returns_updated_simfile() {
     let result = update_simfile_record_impl(
         &server.uri(),
         "token-1",
-        json!(42),
-        json!({ "title": "Updated" }),
+        "42".to_string(),
+        UpdateSimfileRecordInput {
+            title: Some("Updated".to_string()),
+            ..Default::default()
+        },
     )
     .await
     .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["data"]["id"], 42);
@@ -1507,9 +1508,15 @@ async fn update_simfile_record_impl_returns_failure_on_graphql_error() {
         .mount(&server)
         .await;
 
-    let result = update_simfile_record_impl(&server.uri(), "token-1", json!(42), json!({}))
-        .await
-        .expect("result");
+    let result = update_simfile_record_impl(
+        &server.uri(),
+        "token-1",
+        "42".to_string(),
+        UpdateSimfileRecordInput::default(),
+    )
+    .await
+    .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], false);
 }
@@ -1616,11 +1623,12 @@ async fn create_simfile_record_impl_creates_without_previews_when_no_song_path()
     let result = create_simfile_record_with_workspace_state(
         &server.uri(),
         "token-1",
-        json!({ "title": "Song", "artist": "Artist" }),
+        create_input_fixture_with_display_id(None),
         &state,
     )
     .await
     .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert_eq!(result["simfileId"], "42");
@@ -1644,18 +1652,13 @@ async fn create_simfile_record_impl_skips_previews_when_files_absent() {
     let song = workspace.path().join("song");
     fs::create_dir(&song).expect("song dir");
 
-    let result = create_simfile_record_impl(
-        &server.uri(),
-        "token-1",
-        json!({
-            "title": "Song",
-            "songPath": song.to_str().unwrap(),
-            "workspaceRoot": "/legacy-root-that-must-be-ignored"
-        }),
-        workspace.path(),
-    )
-    .await
-    .expect("result");
+    let mut simfile_data = create_input_fixture_with_display_id(None);
+    simfile_data.song_path = song.to_str().unwrap().to_string();
+    let result =
+        create_simfile_record_impl(&server.uri(), "token-1", simfile_data, workspace.path())
+            .await
+            .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     assert!(result.get("warnings").is_none());
@@ -2146,15 +2149,13 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
     fs::write(song.join("preview.jpg"), b"image").unwrap();
     fs::write(song.join("preview.mp3"), b"audio").unwrap();
 
-    let simfile_data = json!({
-        "title": "Song",
-        "songPath": song.to_str().unwrap(),
-        "workspaceRoot": "/legacy-root-that-must-be-ignored",
-    });
+    let mut simfile_data = create_input_fixture_with_display_id(None);
+    simfile_data.song_path = song.to_str().unwrap().to_string();
 
     let result = create_simfile_record_impl(&server.uri(), "tok", simfile_data, workspace.path())
         .await
         .unwrap();
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], true);
     let warnings = result["warnings"].as_array().expect("warnings array");
@@ -2174,13 +2175,11 @@ async fn create_simfile_record_rejects_when_managed_workspace_is_unset_before_re
     let server = MockServer::start().await;
     let state = WorkspaceRootState::default();
 
-    let result = create_simfile_record_with_workspace_state(
-        &server.uri(),
-        "token-1",
-        json!({ "title": "Song", "songPath": "/untrusted/song" }),
-        &state,
-    )
-    .await;
+    let mut simfile_data = create_input_fixture_with_display_id(None);
+    simfile_data.song_path = "/untrusted/song".to_string();
+    let result =
+        create_simfile_record_with_workspace_state(&server.uri(), "token-1", simfile_data, &state)
+            .await;
 
     assert!(result.is_err());
     assert!(result
@@ -2678,9 +2677,10 @@ async fn fetch_cloud_song_impl_returns_failure_on_graphql_error() {
         .mount(&server)
         .await;
 
-    let result = fetch_cloud_song_impl(&server.uri(), "token-1", serde_json::json!(42))
+    let result = fetch_cloud_song_impl(&server.uri(), "token-1", "42".to_string())
         .await
         .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], serde_json::json!(false));
     assert!(result["error"].as_str().unwrap().contains("forbidden"));
@@ -2950,11 +2950,12 @@ async fn create_simfile_record_impl_returns_failure_on_graphql_error() {
     let result = create_simfile_record_impl(
         &server.uri(),
         "token-1",
-        serde_json::json!({ "title": "Song" }),
+        create_input_fixture_with_display_id(None),
         workspace.path(),
     )
     .await
     .expect("result");
+    let result = serde_json::to_value(result).expect("serializes");
 
     assert_eq!(result["success"], serde_json::json!(false));
     assert!(result["error"].as_str().unwrap().contains("forbidden"));

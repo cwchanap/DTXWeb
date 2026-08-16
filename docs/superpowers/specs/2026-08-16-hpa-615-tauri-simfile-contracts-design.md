@@ -22,6 +22,18 @@ This is deliberately a narrow vertical slice. It does not introduce a new RPC fr
 
 Linear: HPA-615
 
+## Review disposition
+
+The follow-up design review is accepted with one wording correction: the implementation PR must **leave draft state / be marked ready** for the repository's draft-skipping CI to run; it must not remain draft.
+
+The review's substantive wire findings are incorporated:
+
+- full-model GraphQL nulls remain present `T | null` keys, while omission semantics are limited to partial update fields and genuine envelope omissions;
+- GraphQL simfiles are converted through the existing `number_id`/mapper seam rather than deserialized directly into `NativeSimfile`;
+- the existing HPA-614 `simfile_model.json` fixture remains the runtime wire oracle;
+- list/get/create/update share one desktop full-simfile fragment;
+- fixture equality and generated-file drift are load-bearing contract gates, with renderer typecheck supplementary because desktop typechecking is non-strict and excludes test files.
+
 ## Why this is the next slice
 
 HPA-614 is complete and merged into `main`. That removes HPA-615's only blocker and leaves a stable renderer model (`SimfileModel`) plus an existing Rust normalization seam and fixture for this ticket to type across the Tauri boundary.

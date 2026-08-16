@@ -6,6 +6,7 @@ use std::fs;
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::Duration as StdDuration;
 use tauri::Listener;
+use ts_rs::TS;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -99,7 +100,7 @@ fn api_base_url_rejects_empty_value() {
 }
 
 #[test]
-fn simfile_model_from_graphql_matches_renderer_fixture() {
+fn native_simfile_from_graphql_matches_renderer_fixture() {
     let expected: Value =
         serde_json::from_str(include_str!("../../tests/fixtures/simfile_model.json"))
             .expect("fixture parses");
@@ -118,18 +119,49 @@ fn simfile_model_from_graphql_matches_renderer_fixture() {
         "publishDate": "2026-08-15",
         "createdAt": "2026-08-15T00:00:00Z",
         "updatedAt": "2026-08-15T00:00:01Z",
-        "dtxFiles": [{ "id": "99", "label": "EXT", "level": 85 }]
+        "dtxFiles": [{ "id": "99", "label": "EXT", "level": 85.0 }]
     });
 
-    let mapped = simfile_model_from_graphql(&graphql_value).expect("mapped");
+    let native = native_simfile_from_graphql(&graphql_value).expect("mapped");
+    assert_eq!(serde_json::to_value(native).expect("serializes"), expected);
+}
 
-    assert_eq!(mapped, expected);
+#[test]
+fn native_simfile_from_graphql_rejects_missing_dtx_id() {
+    let graphql_value = json!({
+        "id": "42",
+        "displayId": null,
+        "title": "Fixture Song",
+        "artist": "Fixture Artist",
+        "bpm": 123.5,
+        "userId": null,
+        "googleDriveFileId": null,
+        "isPublished": false,
+        "downloadUrl": null,
+        "previewUrl": null,
+        "videoPreviewUrl": null,
+        "publishDate": "2026-08-15",
+        "createdAt": "2026-08-15T00:00:00Z",
+        "updatedAt": "2026-08-15T00:00:01Z",
+        "dtxFiles": [{ "id": null, "label": "EXT", "level": 85.0 }]
+    });
+
+    assert!(native_simfile_from_graphql(&graphql_value).is_err());
+}
+
+#[test]
+fn native_simfile_typescript_keeps_nullable_fields_required() {
+    let decl = NativeSimfile::decl(&Default::default());
+    assert!(decl.contains("displayId: number | null"));
+    assert!(decl.contains("googleDriveFileId: string | null"));
+    assert!(!decl.contains("displayId?:"));
+    assert!(!decl.contains("googleDriveFileId?:"));
 }
 
 #[test]
 fn list_simfiles_query_requests_persisted_catalog_urls_and_timestamps() {
     // The list feeds auto-linking, which caches linked simfiles via
-    // `simfile_model_from_graphql`. Those cached records later populate
+    // `native_simfile_from_graphql`. Those cached records later populate
     // the metadata editor, so the persisted URL fields must be present in
     // the list response — otherwise opening and saving an auto-linked song
     // overwrites the real URLs with empty strings. Timestamps are part of
@@ -2082,17 +2114,18 @@ async fn create_simfile_record_impl_surfaces_preview_upload_warnings() {
                 "createSimfile": {
                     "id": 42,
                     "title": "Song",
-                    "artist": null,
-                    "bpm": null,
+                    "artist": "Artist",
+                    "bpm": 120.0,
                     "userId": "u1",
                     "isPublished": false,
                     "displayId": null,
                     "downloadUrl": null,
                     "previewUrl": null,
                     "videoPreviewUrl": null,
-                    "publishDate": null,
-                    "createdAt": null,
-                    "updatedAt": null,
+                    "publishDate": "2026-08-15",
+                    "createdAt": "2026-08-15T00:00:00Z",
+                    "updatedAt": "2026-08-15T00:00:01Z",
+                    "dtxFiles": [],
                 }
             }
         })))

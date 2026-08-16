@@ -1,3 +1,4 @@
+import type { SimfileModel } from '@dtx/common';
 import type { CloudChart } from './scoreMatching';
 
 export interface ScorePayload {
@@ -48,7 +49,7 @@ export interface CloudSong {
 	id: string;
 	title: string;
 	artist: string;
-	is_published: boolean;
+	isPublished: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,21 +85,14 @@ export interface UploadScoresData {
 	skipped: SkippedChart[];
 }
 
-/** Raw `cloudSongData` shape returned by the `fetch_cloud_song` IPC command. */
-export interface CloudSongData {
-	id: number;
-	title: string;
-	artist: string;
-	is_published: boolean;
-}
-
 /**
  * `fetch_cloud_song` envelope. Uses `cloudSongData` (not `data`) to match the
  * Rust side (api.rs:817-820). Generic over the payload shape so call sites
  * that need richer simfile fields (e.g. SongDetails.svelte) can substitute
- * their own type while sharing the envelope structure.
+ * their own type while sharing the envelope structure. Defaults to the
+ * current full `SimfileModel` shape the native boundary emits.
  */
-export interface FetchCloudSongResult<T = CloudSongData> {
+export interface FetchCloudSongResult<T = SimfileModel> {
 	success: boolean;
 	cloudSongData?: T;
 	error?: string;

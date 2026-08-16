@@ -160,13 +160,17 @@ const makeLinkedSimFile = () => ({
 	title: 'Test Song',
 	artist: 'Test Artist',
 	bpm: 120,
-	is_published: false,
-	publish_date: '2024-01-01',
-	display_id: 1,
-	download_url: '',
-	preview_url: '',
-	video_preview_url: '',
-	dtx_files: []
+	displayId: 1,
+	userId: 'test-user',
+	googleDriveFileId: null,
+	isPublished: false,
+	downloadUrl: '',
+	previewUrl: '',
+	videoPreviewUrl: '',
+	publishDate: '2024-01-01',
+	createdAt: '2024-01-01T00:00:00Z',
+	updatedAt: '2024-01-01T00:00:00Z',
+	dtxFiles: []
 });
 
 const getLastProps = <T>(mockFn: ReturnType<typeof vi.fn>): T | undefined => {
@@ -177,8 +181,8 @@ const getLastProps = <T>(mockFn: ReturnType<typeof vi.fn>): T | undefined => {
 
 type ChartDetailTestProps = {
 	simfile?: {
-		display_id?: number | null;
-		dtx_files?: Array<{ id: number; label: string; level: number; simfile_id: number }>;
+		displayId?: number | null;
+		dtxFiles?: Array<{ id: number; label: string; level: number }>;
 	};
 	desktop_info?: (anchor: Node) => void;
 	save?: (anchor: Node) => void;
@@ -342,12 +346,12 @@ describe('SongDetails', () => {
 		});
 	});
 
-	describe('isSimfileWithDtx type guard', () => {
-		it('renders with song that has dtx_files in linked simfile', () => {
+	describe('isSimfileModel type guard', () => {
+		it('renders with song that has dtxFiles in linked simfile', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
-					dtx_files: [{ id: 1, label: 'BASIC', level: 30, simfile_id: 1 }]
+					dtxFiles: [{ id: 1, label: 'BASIC', level: 30 }]
 				},
 				linkedSimFileId: '1'
 			});
@@ -453,9 +457,9 @@ describe('SongDetails', () => {
 
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.dtx_files).toEqual([
-					{ id: 1, label: 'BASIC', level: 5, simfile_id: 0 },
-					{ id: 2, label: 'EXT', level: 9, simfile_id: 0 }
+				expect(props?.simfile?.dtxFiles).toEqual([
+					{ id: 1, label: 'BASIC', level: 5 },
+					{ id: 2, label: 'EXT', level: 9 }
 				]);
 			});
 		});
@@ -584,7 +588,7 @@ describe('SongDetails', () => {
 		});
 	});
 
-	describe('auto-populate display_id', () => {
+	describe('auto-populate displayId', () => {
 		it('invokes get-next-display-id for unlinked songs when authenticated', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			const invokeMock = mockHostInvoke;
@@ -614,10 +618,10 @@ describe('SongDetails', () => {
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
-		it('preserves a linked non-zero display_id instead of auto-populating over it', async () => {
+		it('preserves a linked non-zero displayId instead of auto-populating over it', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			const song = makeNode('TestSong', '/test/TestSong', {
-				linkedSimFile: { ...makeLinkedSimFile(), display_id: 7 },
+				linkedSimFile: { ...makeLinkedSimFile(), displayId: 7 },
 				linkedSimFileId: '1'
 			});
 			render(SongDetails, { props: { song } });
@@ -625,7 +629,7 @@ describe('SongDetails', () => {
 				expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
 			});
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-			expect(props?.simfile?.display_id).toBe(7);
+			expect(props?.simfile?.displayId).toBe(7);
 			expect(mockHostInvoke).not.toHaveBeenCalledWith('get-next-display-id');
 		});
 
@@ -686,7 +690,7 @@ describe('SongDetails', () => {
 			});
 		});
 
-		it('sends null displayId when saving an auto-populated display_id', async () => {
+		it('sends null displayId when saving an auto-populated displayId', async () => {
 			authState = { ...authState, isAuthenticated: true };
 			const invokeMock = mockHostInvoke;
 			if (vi.isMockFunction(invokeMock)) {
@@ -704,13 +708,13 @@ describe('SongDetails', () => {
 								title: 'TestSong',
 								artist: 'Artist',
 								bpm: 120,
-								display_id: 42,
-								is_published: false,
-								publish_date: '2024-01-01',
-								download_url: '',
-								preview_url: '',
-								video_preview_url: '',
-								dtx_files: []
+								displayId: 42,
+								isPublished: false,
+								publishDate: '2024-01-01',
+								downloadUrl: '',
+								previewUrl: '',
+								videoPreviewUrl: '',
+								dtxFiles: []
 							}
 						};
 					}
@@ -724,7 +728,7 @@ describe('SongDetails', () => {
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -797,7 +801,7 @@ describe('SongDetails', () => {
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 			const callsAfterSongA = getNextDisplayIdCallCount();
 
@@ -812,7 +816,7 @@ describe('SongDetails', () => {
 			await rerender({ props: { song: songA } });
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 			expect(getNextDisplayIdCallCount()).toBe(callsAfterSongB);
 		});
@@ -830,10 +834,10 @@ describe('SongDetails', () => {
 			const songA = makeNode('SongA', '/test/SongA');
 			const { rerender } = render(SongDetails, { props: { song: songA } });
 
-			// Wait for SongA to get display_id = 42
+			// Wait for SongA to get displayId = 42
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			// Switch to SongB — displayId should reset and fetch a new value
@@ -842,8 +846,8 @@ describe('SongDetails', () => {
 
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				// SongB should get display_id = 43, not the stale 42 from SongA
-				expect(props?.simfile?.display_id).toBe(43);
+				// SongB should get displayId = 43, not the stale 42 from SongA
+				expect(props?.simfile?.displayId).toBe(43);
 			});
 		});
 
@@ -896,7 +900,7 @@ describe('SongDetails', () => {
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
 				// SongB should get 50, not the stale 99 from SongA
-				expect(props?.simfile?.display_id).toBe(50);
+				expect(props?.simfile?.displayId).toBe(50);
 			});
 		});
 
@@ -946,7 +950,7 @@ describe('SongDetails', () => {
 
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(50);
+				expect(props?.simfile?.displayId).toBe(50);
 			});
 
 			// No error banner should be visible for SongB
@@ -995,7 +999,7 @@ describe('SongDetails', () => {
 			await waitFor(() => {
 				expect(mockHostInvoke).toHaveBeenCalledWith('update-simfile-record', {
 					simfileId: '42',
-					updateData: expect.objectContaining({ display_id: 5 })
+					updateData: expect.objectContaining({ displayId: 5 })
 				});
 			});
 		});
@@ -1069,7 +1073,7 @@ describe('SongDetails', () => {
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
 				expect(
-					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.displayId
 				).toBe(42);
 			});
 
@@ -1102,8 +1106,8 @@ describe('SongDetails', () => {
 							...makeLinkedSimFile(),
 							id: 73,
 							title: 'Saved server title',
-							download_url: 'https://example.com/old.zip',
-							google_drive_file_id: 'drive-old'
+							downloadUrl: 'https://example.com/old.zip',
+							googleDriveFileId: 'drive-old'
 						}
 					};
 				}
@@ -1120,7 +1124,7 @@ describe('SongDetails', () => {
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
 				expect(
-					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.displayId
 				).toBe(42);
 			});
 
@@ -1142,8 +1146,8 @@ describe('SongDetails', () => {
 			});
 			expect(song.linkedSimFile).toMatchObject({
 				title: 'Saved server title',
-				google_drive_file_id: 'drive-new',
-				download_url: 'https://drive.google.com/uc?id=drive-new'
+				googleDriveFileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
 			});
 			expect(workspaceStore.mergeGoogleDriveFields).toHaveBeenCalledWith(
 				'/test/TestSong',
@@ -1170,8 +1174,8 @@ describe('SongDetails', () => {
 			const song = makeNode('Unsaved Renderer Title', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
-					google_drive_file_id: 'drive-old',
-					download_url: 'https://example.com/old.zip'
+					googleDriveFileId: 'drive-old',
+					downloadUrl: 'https://example.com/old.zip'
 				},
 				linkedSimFileId: '42',
 				containsDtxFiles: true
@@ -1215,8 +1219,8 @@ describe('SongDetails', () => {
 			});
 			expect(song.linkedSimFile).toMatchObject({
 				title: 'Fresh server title',
-				google_drive_file_id: 'drive-old',
-				download_url: 'https://example.com/old.zip'
+				googleDriveFileId: 'drive-old',
+				downloadUrl: 'https://example.com/old.zip'
 			});
 			expect(workspaceStore.mergeGoogleDriveFields).not.toHaveBeenCalled();
 		});
@@ -1363,7 +1367,7 @@ describe('SongDetails', () => {
 			const view = render(SongDetails, { props: { song } });
 			await waitFor(() => {
 				expect(
-					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.displayId
 				).toBe(42);
 			});
 
@@ -1445,7 +1449,7 @@ describe('SongDetails', () => {
 			const view = render(SongDetails, { props: { song: songA } });
 			await waitFor(() =>
 				expect(
-					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.display_id
+					getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail))?.simfile?.displayId
 				).toBe(42)
 			);
 
@@ -1768,8 +1772,8 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
-					google_drive_file_id: 'drive-old',
-					download_url: 'https://example.com/manual.zip'
+					googleDriveFileId: 'drive-old',
+					downloadUrl: 'https://example.com/manual.zip'
 				},
 				linkedSimFileId: '42',
 				containsDtxFiles: true
@@ -1821,8 +1825,8 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
-					google_drive_file_id: 'drive-old',
-					download_url: 'https://example.com/manual.zip'
+					googleDriveFileId: 'drive-old',
+					downloadUrl: 'https://example.com/manual.zip'
 				},
 				linkedSimFileId: '42',
 				containsDtxFiles: true
@@ -1834,7 +1838,7 @@ describe('SongDetails', () => {
 					/next successful Drive upload will replace the download URL/
 				)
 			).toBeInTheDocument();
-			expect(song.linkedSimFile?.google_drive_file_id).toBe('drive-old');
+			expect(song.linkedSimFile?.googleDriveFileId).toBe('drive-old');
 			expect(screen.queryByRole('button', { name: /unlink|delete associated/i })).toBeNull();
 
 			googleDriveStore.setConnection({ connected: false });
@@ -1844,8 +1848,8 @@ describe('SongDetails', () => {
 					return {
 						success: true,
 						data: {
-							google_drive_file_id: 'drive-old',
-							download_url: ''
+							googleDriveFileId: 'drive-old',
+							downloadUrl: ''
 						}
 					};
 				}
@@ -1863,8 +1867,8 @@ describe('SongDetails', () => {
 			});
 
 			await waitFor(() => {
-				expect(song.linkedSimFile?.google_drive_file_id).toBe('drive-old');
-				expect(song.linkedSimFile?.download_url).toBe('');
+				expect(song.linkedSimFile?.googleDriveFileId).toBe('drive-old');
+				expect(song.linkedSimFile?.downloadUrl).toBe('');
 			});
 			expect(mockDesktopHost.uploadSongZipToGoogleDrive).not.toHaveBeenCalled();
 		});
@@ -2044,7 +2048,7 @@ describe('SongDetails', () => {
 			const song = makeNode('TestSong', '/test/TestSong', {
 				linkedSimFile: {
 					...makeLinkedSimFile(),
-					google_drive_file_id: 'drive-old'
+					googleDriveFileId: 'drive-old'
 				},
 				linkedSimFileId: '42',
 				containsDtxFiles: true
@@ -2120,13 +2124,13 @@ describe('SongDetails', () => {
 								title: 'TestSong',
 								artist: 'Artist',
 								bpm: 120,
-								display_id: 42,
-								is_published: false,
-								publish_date: '2024-01-01',
-								download_url: '',
-								preview_url: '',
-								video_preview_url: '',
-								dtx_files: []
+								displayId: 42,
+								isPublished: false,
+								publishDate: '2024-01-01',
+								downloadUrl: '',
+								previewUrl: '',
+								videoPreviewUrl: '',
+								dtxFiles: []
 							}
 						};
 					}
@@ -2140,7 +2144,7 @@ describe('SongDetails', () => {
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -2195,13 +2199,13 @@ describe('SongDetails', () => {
 								title: 'TestSong',
 								artist: 'Artist',
 								bpm: 120,
-								display_id: 42,
-								is_published: true,
-								publish_date: '2024-01-01',
-								download_url: '',
-								preview_url: '',
-								video_preview_url: '',
-								dtx_files: []
+								displayId: 42,
+								isPublished: true,
+								publishDate: '2024-01-01',
+								downloadUrl: '',
+								previewUrl: '',
+								videoPreviewUrl: '',
+								dtxFiles: []
 							}
 						};
 					}
@@ -2212,7 +2216,7 @@ describe('SongDetails', () => {
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -2250,7 +2254,7 @@ describe('SongDetails', () => {
 			render(SongDetails, { props: { song } });
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -2288,13 +2292,13 @@ describe('SongDetails', () => {
 								title: 'Linked Song',
 								artist: 'Cloud Artist',
 								bpm: 130,
-								is_published: false,
-								publish_date: '2024-01-01',
-								display_id: 77,
-								download_url: '',
-								preview_url: '',
-								video_preview_url: '',
-								dtx_files: []
+								isPublished: false,
+								publishDate: '2024-01-01',
+								displayId: 77,
+								downloadUrl: '',
+								previewUrl: '',
+								videoPreviewUrl: '',
+								dtxFiles: []
 							}
 						};
 					}
@@ -2316,7 +2320,7 @@ describe('SongDetails', () => {
 					id: string;
 					title: string;
 					artist: string;
-					is_published: boolean;
+					isPublished: boolean;
 				}) => void;
 			};
 
@@ -2324,7 +2328,7 @@ describe('SongDetails', () => {
 				id: '77',
 				title: 'Linked Song',
 				artist: 'Cloud Artist',
-				is_published: false
+				isPublished: false
 			});
 
 			await waitFor(() => {
@@ -2359,11 +2363,11 @@ describe('SongDetails', () => {
 					id: string;
 					title: string;
 					artist: string;
-					is_published: boolean;
+					isPublished: boolean;
 				}) => void;
 			};
 
-			props?.onselect?.({ id: '77', title: 'Song', artist: 'Artist', is_published: false });
+			props?.onselect?.({ id: '77', title: 'Song', artist: 'Artist', isPublished: false });
 
 			await waitFor(() => {
 				expect(mockHostInvoke).toHaveBeenCalledWith('fetch-cloud-song', {
@@ -2544,13 +2548,13 @@ describe('SongDetails', () => {
 								title: 'TestSong',
 								artist: 'Artist',
 								bpm: 120,
-								display_id: 42,
-								is_published: false,
-								publish_date: '2024-01-01',
-								download_url: '',
-								preview_url: '',
-								video_preview_url: '',
-								dtx_files: []
+								displayId: 42,
+								isPublished: false,
+								publishDate: '2024-01-01',
+								downloadUrl: '',
+								previewUrl: '',
+								videoPreviewUrl: '',
+								dtxFiles: []
 							},
 							warnings: ['Preview image: file not found', 'Sound preview: too large']
 						};
@@ -2566,7 +2570,7 @@ describe('SongDetails', () => {
 			});
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
@@ -2632,7 +2636,7 @@ describe('SongDetails', () => {
 
 			await waitFor(() => {
 				const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
-				expect(props?.simfile?.display_id).toBe(42);
+				expect(props?.simfile?.displayId).toBe(42);
 			});
 			const props = getLastProps<ChartDetailTestProps>(vi.mocked(ChartDetail));
 			await props?.$$events?.onSave?.({
@@ -2658,7 +2662,7 @@ describe('SongDetails', () => {
 		});
 	});
 
-	describe('display_id auto-populate retry', () => {
+	describe('displayId auto-populate retry', () => {
 		it('re-fetches next display id when retry handler fires after a failure', async () => {
 			// populateNextDisplayId caches failures as displayIdAutoPopulateError;
 			// the renderer exposes a Retry button that re-invokes the IPC.

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/svelte';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 import type { TreeNode, ShellSection } from '../stores/workspaceStore';
 
 vi.mock('@lucide/svelte');
@@ -14,7 +14,7 @@ vi.mock('../stores/workspaceStore', () => {
 		isLoading: false,
 		error: null as string | null,
 		selectedSong: null as TreeNode | null,
-		selectedCloudSimFile: null as SimfileWithDtx | null,
+		selectedCloudSimFile: null as SimfileModel | null,
 		showCloudSongDetails: false,
 		showNewSong: false,
 		activeSection: 'library' as ShellSection

@@ -230,17 +230,17 @@
 									<Music size="14" />
 									{simFile.bpm} BPM
 								</div>
-								{#if simFile.publish_date}
+								{#if simFile.publishDate}
 									<div class="flex items-center gap-1">
 										<Calendar size="14" />
-										{formatDate(simFile.publish_date)}
+										{formatDate(simFile.publishDate)}
 									</div>
 								{/if}
 							</div>
-							{#if simFile.dtx_files && simFile.dtx_files.length > 0}
+							{#if simFile.dtxFiles && simFile.dtxFiles.length > 0}
 								<div class="mt-2">
 									<span class="text-dim text-xs">
-										Levels: {simFile.dtx_files
+										Levels: {simFile.dtxFiles
 											.map((f) => formatLevel(f.level))
 											.join(', ')}
 									</span>
@@ -256,7 +256,7 @@
 									Linked
 								</span>
 							{/if}
-							{#if simFile.is_published}
+							{#if simFile.isPublished}
 								<span
 									class="border-green/40 bg-green/10 text-green rounded px-2 py-1 text-xs"
 								>

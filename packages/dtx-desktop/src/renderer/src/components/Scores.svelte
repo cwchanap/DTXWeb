@@ -293,7 +293,7 @@
 
 		// Refresh placeholder titles in place. Charts/matches are already
 		// loaded from the upload-time restore, so only the title/artist/
-		// is_published fields are updated — no chart re-fetch needed.
+		// isPublished fields are updated — no chart re-fetch needed.
 		let applied = 0;
 		for (let idx = 0; idx < placeholderEntries.length; idx++) {
 			const { i, cloudId } = placeholderEntries[idx];
@@ -311,7 +311,7 @@
 					id: cloudId,
 					title: result.value.cloudSongData.title,
 					artist: result.value.cloudSongData.artist,
-					is_published: result.value.cloudSongData.is_published
+					isPublished: result.value.cloudSongData.isPublished
 				};
 				applied += 1;
 			}
@@ -334,7 +334,7 @@
 				id: cloudId,
 				title: `${PLACEHOLDER_PREFIX}${cloudId}`,
 				artist: songRow.artist,
-				is_published: false
+				isPublished: false
 			};
 			if (fetchTitles) {
 				const result = titleResults[idx];
@@ -347,7 +347,7 @@
 						id: cloudId,
 						title: result.value.cloudSongData.title,
 						artist: result.value.cloudSongData.artist,
-						is_published: result.value.cloudSongData.is_published
+						isPublished: result.value.cloudSongData.isPublished
 					};
 				}
 			}

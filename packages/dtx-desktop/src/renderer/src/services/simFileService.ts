@@ -1,26 +1,29 @@
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 import { desktopHost } from './desktopHost';
 
-const CACHE_KEY = 'simfiles_cache';
-const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp';
+// v2: current SimfileModel-shaped cache. The v1 keys ('simfiles_cache' /
+// 'simfiles_cache_timestamp') held the legacy snake_case shape and are
+// deliberately left untouched — no read, migration, or deletion.
+const CACHE_KEY = 'simfiles_cache_v2';
+const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp_v2';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
 // Match the discriminated union type from Rust backend
 type MainProcessSimFileResult =
 	| {
 			success: true;
-			data: SimfileWithDtx[];
+			data: SimfileModel[];
 			fromCache: boolean;
 	  }
 	| {
 			success: false;
 			error: string;
-			data: SimfileWithDtx[];
+			data: SimfileModel[];
 			fromCache: boolean;
 	  };
 
 export interface SimFileServiceResult {
-	data: SimfileWithDtx[];
+	data: SimfileModel[];
 	fromCache: boolean;
 	error?: string;
 }
@@ -75,7 +78,7 @@ class SimFileService {
 	private getCachedData(
 		cacheKey: string = CACHE_KEY,
 		timestampKey: string = CACHE_TIMESTAMP_KEY
-	): SimfileWithDtx[] | null {
+	): SimfileModel[] | null {
 		try {
 			const cachedData = localStorage.getItem(cacheKey);
 			const cacheTimestamp = localStorage.getItem(timestampKey);
@@ -109,7 +112,7 @@ class SimFileService {
 	 * Caches simFiles data in localStorage
 	 */
 	private setCachedData(
-		data: SimfileWithDtx[],
+		data: SimfileModel[],
 		cacheKey: string = CACHE_KEY,
 		timestampKey: string = CACHE_TIMESTAMP_KEY
 	): void {

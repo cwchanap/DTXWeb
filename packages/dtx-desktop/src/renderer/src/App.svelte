@@ -17,7 +17,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { _ } from 'svelte-i18n';
 	import type { Session } from '@supabase/supabase-js';
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileModel } from '@dtx/common';
 
 	type MagicLinkResult = {
 		success: boolean;
@@ -206,7 +206,7 @@
 	}
 
 	// Function to trigger automatic linking between remote simFiles and local folders
-	function triggerAutoLinking(remoteSimFiles: SimfileWithDtx[]) {
+	function triggerAutoLinking(remoteSimFiles: SimfileModel[]) {
 		// Get current workspace state
 		let currentWorkspaceState: WorkspaceState | null = null;
 		const unsubscribe = workspaceStore.subscribe((state) => {

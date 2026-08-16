@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { simFileService } from './simFileService';
 import { desktopHost } from './desktopHost';
 
@@ -12,6 +14,15 @@ vi.mock('./desktopHost', () => ({
 }));
 
 const host = vi.mocked(desktopHost);
+
+// Shared behavioral seam: the exact camelCase full-simfile JSON emitted by
+// the native boundary (src-tauri/tests/fixtures/simfile_model.json). Read at
+// runtime with Node so tests stay excluded from the production typecheck
+// (tsconfig.web.json). This test asserts the renderer reads the current
+// model's field names off real native-shaped traffic.
+const sharedSimfileFixture = JSON.parse(
+	readFileSync(resolve(process.cwd(), 'src-tauri/tests/fixtures/simfile_model.json'), 'utf8')
+);
 
 // Mock localStorage
 const localStorageMock = {
@@ -34,32 +45,29 @@ describe('SimFileService', () => {
 
 	describe('fetchUserSimFiles', () => {
 		it('should fetch user simFiles from the Rust backend', async () => {
-			const mockData = [
-				{
-					id: '1',
-					title: 'Test Song',
-					artist: 'Test Artist',
-					bpm: 120,
-					dtx_files: [{ level: 5 }]
-				}
-			];
-
 			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
-				data: mockData,
+				data: [sharedSimfileFixture],
 				fromCache: false
 			});
 
 			const result = await simFileService.fetchUserSimFiles();
 
 			expect(host.fetchUserSimfiles).toHaveBeenCalledWith();
-			expect(result.data).toEqual(mockData);
+			expect(result.data).toEqual([sharedSimfileFixture]);
+			// Renderer code reads the current-model field names of the native payload
+			expect(result.data[0].title).toBe('Fixture Song');
+			expect(result.data[0].artist).toBe('Fixture Artist');
+			expect(result.data[0].bpm).toBe(123.5);
+			expect(result.data[0].isPublished).toBe(true);
+			expect(result.data[0].publishDate).toBe('2026-08-15');
+			expect(result.data[0].dtxFiles).toEqual([{ id: 99, label: 'EXT', level: 85 }]);
 			expect(result.fromCache).toBe(false);
 			expect(result.error).toBeUndefined();
 		});
 
 		it('should return cached data when available', async () => {
-			const cachedData = [{ id: '1', title: 'Cached Song' }];
+			const cachedData = [sharedSimfileFixture];
 			const cacheTimestamp = Date.now().toString();
 
 			localStorageMock.getItem
@@ -70,6 +78,7 @@ describe('SimFileService', () => {
 
 			expect(host.fetchUserSimfiles).not.toHaveBeenCalled();
 			expect(result.data).toEqual(cachedData);
+			expect(result.data[0].title).toBe('Fixture Song');
 			expect(result.fromCache).toBe(true);
 		});
 
@@ -100,8 +109,36 @@ describe('SimFileService', () => {
 
 			await simFileService.fetchUserSimFiles();
 
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache');
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_v2');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp_v2');
+		});
+
+		it('ignores a valid-looking legacy cache under the v1 key and still calls IPC', async () => {
+			// A previous app version cached the old snake_case shape under
+			// 'simfiles_cache'. The v2 service must not read, migrate, or
+			// delete it — it simply misses and falls through to IPC.
+			localStorageMock.getItem.mockImplementation((key: string) => {
+				if (key === 'simfiles_cache') {
+					return JSON.stringify([{ id: 1, title: 'Old Shape', is_published: false }]);
+				}
+				if (key === 'simfiles_cache_timestamp') return Date.now().toString();
+				return null;
+			});
+
+			host.fetchUserSimfiles.mockResolvedValue({
+				success: true,
+				data: [sharedSimfileFixture],
+				fromCache: false
+			});
+
+			const result = await simFileService.fetchUserSimFiles();
+
+			expect(host.fetchUserSimfiles).toHaveBeenCalledWith();
+			expect(result.data).toEqual([sharedSimfileFixture]);
+			expect(localStorageMock.removeItem).not.toHaveBeenCalledWith('simfiles_cache');
+			expect(localStorageMock.removeItem).not.toHaveBeenCalledWith(
+				'simfiles_cache_timestamp'
+			);
 		});
 	});
 
@@ -109,12 +146,12 @@ describe('SimFileService', () => {
 		it('should clear cache', () => {
 			simFileService.clearCache();
 
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache');
-			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_v2');
+			expect(localStorageMock.removeItem).toHaveBeenCalledWith('simfiles_cache_timestamp_v2');
 		});
 
 		it('should refresh user simFiles by clearing cache and fetching new data', async () => {
-			const mockData = [{ id: '1', title: 'Refreshed Song' }];
+			const mockData = [{ id: 1, title: 'Refreshed Song' }];
 			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
 				data: mockData,
@@ -130,7 +167,7 @@ describe('SimFileService', () => {
 		it('should fall through to IPC when cache timestamp is expired', async () => {
 			const expiredTimestamp = (Date.now() - 10 * 60 * 1000).toString();
 			localStorageMock.getItem
-				.mockReturnValueOnce(JSON.stringify([{ id: '1' }]))
+				.mockReturnValueOnce(JSON.stringify([{ id: 1 }]))
 				.mockReturnValueOnce(expiredTimestamp);
 
 			host.fetchUserSimfiles.mockResolvedValue({ success: true, data: [], fromCache: false });
@@ -147,7 +184,7 @@ describe('SimFileService', () => {
 			});
 			host.fetchUserSimfiles.mockResolvedValue({
 				success: true,
-				data: [{ id: '1', title: 'Test' }],
+				data: [{ id: 1, title: 'Test' }],
 				fromCache: false
 			});
 

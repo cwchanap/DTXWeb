@@ -90,11 +90,11 @@ beforeEach(() => {
 	host.parseDtxmaniaScores.mockResolvedValue(parsedSongs);
 	host.searchCloudSongs.mockResolvedValue({
 		success: true,
-		data: [{ id: '42', title: 'Cloud Song', artist: 'Artist A', is_published: true }]
+		data: [{ id: '42', title: 'Cloud Song', artist: 'Artist A', isPublished: true }]
 	});
 	host.fetchCloudSong.mockResolvedValue({
 		success: true,
-		cloudSongData: { id: 42, title: 'Cloud Song', artist: 'Artist A', is_published: true }
+		cloudSongData: { id: 42, title: 'Cloud Song', artist: 'Artist A', isPublished: true }
 	});
 	host.fetchCloudSongCharts.mockResolvedValue({
 		success: true,
@@ -293,7 +293,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Song 11',
 				artist: 'Artist',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
@@ -736,7 +736,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Mega Song',
 				artist: 'Artist A',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
@@ -797,7 +797,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Mega Song',
 				artist: 'Artist A',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
@@ -872,7 +872,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Mega Song',
 				artist: 'Artist A',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
@@ -938,7 +938,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Mega Song',
 				artist: 'Artist A',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({
@@ -1066,8 +1066,8 @@ describe('Scores', () => {
 		host.searchCloudSongs.mockResolvedValue({
 			success: true,
 			data: [
-				{ id: '42', title: 'Cloud Song A', artist: 'Artist A', is_published: true },
-				{ id: '99', title: 'Cloud Song B', artist: 'Artist A', is_published: true }
+				{ id: '42', title: 'Cloud Song A', artist: 'Artist A', isPublished: true },
+				{ id: '99', title: 'Cloud Song B', artist: 'Artist A', isPublished: true }
 			]
 		});
 
@@ -1203,7 +1203,7 @@ describe('Scores', () => {
 				id: 42,
 				title: 'Cloud Mega Song',
 				artist: 'Artist A',
-				is_published: true
+				isPublished: true
 			}
 		});
 		host.fetchCloudSongCharts.mockResolvedValue({

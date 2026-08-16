@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { linkingService } from './linkingService';
 import { workspaceStore } from '../stores/workspaceStore';
 import type { TreeNode } from '../stores/workspaceStore';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
 // Mock the workspace store
 vi.mock('../stores/workspaceStore', () => ({
@@ -137,38 +137,40 @@ describe('LinkingService', () => {
 	});
 
 	describe('findMatchingSimFile', () => {
-		const mockSimFiles: SimfileWithDtx[] = [
+		const mockSimFiles: SimfileModel[] = [
 			{
 				id: 1,
 				title: 'Test Song',
 				artist: 'Test Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'test-user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'test-user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			},
 			{
 				id: 2,
 				title: 'Test Song Extended Version',
 				artist: 'Test Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'test-user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'test-user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			}
 		];
 
@@ -241,38 +243,40 @@ describe('LinkingService', () => {
 		});
 
 		it('should match Japanese titles exactly', () => {
-			const japaneseSimFiles: SimfileWithDtx[] = [
+			const japaneseSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: '千本桜',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				},
 				{
 					id: 2,
 					title: 'ボーカロイド',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 
@@ -293,22 +297,23 @@ describe('LinkingService', () => {
 		});
 
 		it('should match mixed Japanese and ASCII titles', () => {
-			const mixedSimFiles: SimfileWithDtx[] = [
+			const mixedSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: 'BEMANI 音楽',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 
@@ -331,22 +336,23 @@ describe('LinkingService', () => {
 
 	describe('autoLinkSimFilesToFolders', () => {
 		it('should link matching folders to simFiles', () => {
-			const mockSimFiles: SimfileWithDtx[] = [
+			const mockSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: 'Test Song',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 
@@ -372,22 +378,23 @@ describe('LinkingService', () => {
 		});
 
 		it('should not link already linked folders', () => {
-			const mockSimFiles: SimfileWithDtx[] = [
+			const mockSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: 'Test Song',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 
@@ -413,22 +420,23 @@ describe('LinkingService', () => {
 
 	describe('linkSimFilesToNewNodes', () => {
 		it('should link newly loaded folders to simFiles', () => {
-			const mockSimFiles: SimfileWithDtx[] = [
+			const mockSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: 'New Song',
 					artist: 'Test Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'test-user-id',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'test-user-id',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 
@@ -484,16 +492,17 @@ describe('LinkingService', () => {
 				title: null as unknown as string,
 				artist: 'Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			const result = linkingService.findMatchingFolder(simFile, mockFolders);
@@ -506,16 +515,17 @@ describe('LinkingService', () => {
 				title: 'Test Song',
 				artist: 'Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			const result = linkingService.findMatchingFolder(simFile, mockFolders);
@@ -529,16 +539,17 @@ describe('LinkingService', () => {
 				title: 'Test Song Extended',
 				artist: 'Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			const result = linkingService.findMatchingFolder(simFile, mockFolders);
@@ -551,16 +562,17 @@ describe('LinkingService', () => {
 				title: 'Completely Different Song XYZ',
 				artist: 'Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			const result = linkingService.findMatchingFolder(simFile, mockFolders);
@@ -585,16 +597,17 @@ describe('LinkingService', () => {
 				title: 'Any Song',
 				artist: 'Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			const result = linkingService.findMatchingFolder(simFile, foldersWithoutTitles);
@@ -627,16 +640,17 @@ describe('LinkingService', () => {
 				title: 'Test Song',
 				artist: 'Test Artist',
 				bpm: 120,
-				preview_url: null,
-				download_url: null,
-				is_published: true,
-				display_id: null,
-				publish_date: '2024-01-01',
-				video_preview_url: null,
-				created_at: '2024-01-01T00:00:00Z',
-				updated_at: '2024-01-01T00:00:00Z',
-				user_id: 'test-user-id',
-				dtx_files: []
+				previewUrl: null,
+				downloadUrl: null,
+				isPublished: true,
+				displayId: null,
+				publishDate: '2024-01-01',
+				videoPreviewUrl: null,
+				createdAt: '2024-01-01T00:00:00Z',
+				updatedAt: '2024-01-01T00:00:00Z',
+				userId: 'test-user-id',
+				googleDriveFileId: null,
+				dtxFiles: []
 			};
 
 			linkingService.linkSimFileToFolder(simFile, '/path/to/folder');
@@ -669,22 +683,23 @@ describe('LinkingService', () => {
 
 	describe('linkSimFilesToNewNodes - already linked folder', () => {
 		it('should skip folders that already have a linked simFile', () => {
-			const mockSimFiles: SimfileWithDtx[] = [
+			const mockSimFiles: SimfileModel[] = [
 				{
 					id: 1,
 					title: 'Song',
 					artist: 'Artist',
 					bpm: 120,
-					preview_url: null,
-					download_url: null,
-					is_published: true,
-					display_id: null,
-					publish_date: '2024-01-01',
-					video_preview_url: null,
-					created_at: '2024-01-01T00:00:00Z',
-					updated_at: '2024-01-01T00:00:00Z',
-					user_id: 'user',
-					dtx_files: []
+					previewUrl: null,
+					downloadUrl: null,
+					isPublished: true,
+					displayId: null,
+					publishDate: '2024-01-01',
+					videoPreviewUrl: null,
+					createdAt: '2024-01-01T00:00:00Z',
+					updatedAt: '2024-01-01T00:00:00Z',
+					userId: 'user',
+					googleDriveFileId: null,
+					dtxFiles: []
 				}
 			];
 

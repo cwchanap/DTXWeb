@@ -22,8 +22,8 @@ afterEach(() => {
 });
 
 const defaultSongs = [
-	{ id: '1', title: 'Song Alpha', artist: 'Artist One', bpm: 120, is_published: true },
-	{ id: '2', title: 'Song Beta', artist: 'Artist Two', bpm: 140, is_published: false }
+	{ id: '1', title: 'Song Alpha', artist: 'Artist One', bpm: 120, isPublished: true },
+	{ id: '2', title: 'Song Beta', artist: 'Artist Two', bpm: 140, isPublished: false }
 ];
 
 describe('CloudSongAutocomplete – closed state', () => {

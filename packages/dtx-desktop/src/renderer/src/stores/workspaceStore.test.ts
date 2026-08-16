@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { get } from 'svelte/store';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 import type { TreeNode } from './workspaceStore';
 
 // Mock linkageCacheService before importing workspaceStore
@@ -16,21 +16,22 @@ vi.mock('../services/linkageCacheService', () => ({
 const { workspaceStore } = await import('./workspaceStore');
 const { linkageCacheService } = await import('../services/linkageCacheService');
 
-const makeSimFile = (id: number): SimfileWithDtx => ({
+const makeSimFile = (id: number): SimfileModel => ({
 	id,
 	title: `Song ${id}`,
 	artist: 'Artist',
 	bpm: 120,
-	preview_url: null,
-	download_url: null,
-	is_published: false,
-	display_id: null,
-	publish_date: '2024-01-01',
-	video_preview_url: null,
-	created_at: '2024-01-01T00:00:00Z',
-	updated_at: '2024-01-01T00:00:00Z',
-	user_id: 'test-user',
-	dtx_files: []
+	previewUrl: null,
+	downloadUrl: null,
+	isPublished: false,
+	displayId: null,
+	publishDate: '2024-01-01',
+	videoPreviewUrl: null,
+	createdAt: '2024-01-01T00:00:00Z',
+	updatedAt: '2024-01-01T00:00:00Z',
+	userId: 'test-user',
+	googleDriveFileId: null,
+	dtxFiles: []
 });
 
 const makeTreeNode = (name: string, path: string, children = []) => ({
@@ -420,8 +421,8 @@ describe('workspaceStore', () => {
 		it('merges only returned Drive fields into the linked tree and cache', () => {
 			const old = {
 				...makeSimFile(42),
-				google_drive_file_id: 'drive-old',
-				download_url: 'https://example.com/old.zip',
+				googleDriveFileId: 'drive-old',
+				downloadUrl: 'https://example.com/old.zip',
 				title: 'Fresh cloud title'
 			};
 			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
@@ -436,8 +437,8 @@ describe('workspaceStore', () => {
 			const linked = get(workspaceStore).treeStructure[0].linkedSimFile;
 			expect(linked).toEqual({
 				...old,
-				google_drive_file_id: 'drive-new',
-				download_url: 'https://drive.google.com/uc?id=drive-new'
+				googleDriveFileId: 'drive-new',
+				downloadUrl: 'https://drive.google.com/uc?id=drive-new'
 			});
 			expect(linkageCacheService.saveLinkage).toHaveBeenCalledWith('/path/Song1', 42, linked);
 		});
@@ -445,8 +446,8 @@ describe('workspaceStore', () => {
 		it('does not clear an old Drive ID or URL when successful output omits a field', () => {
 			const old = {
 				...makeSimFile(42),
-				google_drive_file_id: 'drive-old',
-				download_url: 'https://example.com/old.zip'
+				googleDriveFileId: 'drive-old',
+				downloadUrl: 'https://example.com/old.zip'
 			};
 			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
 			workspaceStore.linkSimFileToFolder('/path/Song1', old);
@@ -459,8 +460,8 @@ describe('workspaceStore', () => {
 		it('ignores a stale result for a different linked simfile', () => {
 			const current = {
 				...makeSimFile(99),
-				google_drive_file_id: 'current-drive',
-				download_url: 'https://example.com/current.zip'
+				googleDriveFileId: 'current-drive',
+				downloadUrl: 'https://example.com/current.zip'
 			};
 			workspaceStore.setTreeStructure([makeTreeNode('Song1', '/path/Song1')]);
 			workspaceStore.linkSimFileToFolder('/path/Song1', current);

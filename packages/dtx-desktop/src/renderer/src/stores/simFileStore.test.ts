@@ -1,23 +1,24 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { get } from 'svelte/store';
 import { simFileStore } from './simFileStore';
-import type { SimfileWithDtx } from '@dtx/common';
+import type { SimfileModel } from '@dtx/common';
 
-const makeSimFile = (id: number, title: string = `Song ${id}`): SimfileWithDtx => ({
+const makeSimFile = (id: number, title: string = `Song ${id}`): SimfileModel => ({
 	id,
 	title,
 	artist: 'Artist',
 	bpm: 120,
-	preview_url: null,
-	download_url: null,
-	is_published: false,
-	display_id: null,
-	publish_date: '2024-01-01',
-	video_preview_url: null,
-	created_at: '2024-01-01T00:00:00Z',
-	updated_at: '2024-01-01T00:00:00Z',
-	user_id: 'test-user',
-	dtx_files: []
+	previewUrl: null,
+	downloadUrl: null,
+	isPublished: false,
+	displayId: null,
+	publishDate: '2024-01-01',
+	videoPreviewUrl: null,
+	createdAt: '2024-01-01T00:00:00Z',
+	updatedAt: '2024-01-01T00:00:00Z',
+	userId: 'test-user',
+	googleDriveFileId: null,
+	dtxFiles: []
 });
 
 describe('simFileStore', () => {

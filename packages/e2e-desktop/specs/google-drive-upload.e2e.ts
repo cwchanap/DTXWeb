@@ -70,27 +70,33 @@ const linkedSimfile = ({
 	title: string;
 	artist: string;
 	bpm: number;
-	is_published: boolean;
-	publish_date: string;
-	display_id: number;
-	download_url: string | null;
-	google_drive_file_id: string | null;
-	preview_url: string | null;
-	video_preview_url: string | null;
-	dtx_files: never[];
+	displayId: number;
+	userId: null;
+	googleDriveFileId: string | null;
+	isPublished: boolean;
+	downloadUrl: string | null;
+	previewUrl: null;
+	videoPreviewUrl: null;
+	publishDate: string;
+	createdAt: string;
+	updatedAt: string;
+	dtxFiles: never[];
 } => ({
 	id: Number(simfileId),
 	title: rendererTitle,
 	artist: 'Integration Test',
 	bpm: 120,
-	is_published: false,
-	publish_date: '2026-07-25',
-	display_id: Number(simfileId),
-	download_url: downloadUrl,
-	google_drive_file_id: googleDriveFileId,
-	preview_url: null,
-	video_preview_url: null,
-	dtx_files: []
+	displayId: Number(simfileId),
+	userId: null,
+	googleDriveFileId,
+	isPublished: false,
+	downloadUrl,
+	previewUrl: null,
+	videoPreviewUrl: null,
+	publishDate: '2026-07-25',
+	createdAt: '2026-07-25T00:00:00.000Z',
+	updatedAt: '2026-07-25T00:00:00.000Z',
+	dtxFiles: []
 });
 
 const openAuthenticatedLinkedSong = async ({
@@ -118,7 +124,7 @@ const openAuthenticatedLinkedSong = async ({
 				})
 			);
 			localStorage.setItem(
-				'dtx_linkage_cache',
+				'dtx_linkage_cache_v2',
 				JSON.stringify({
 					[songPath]: {
 						linkedSimFileId: String(cloudSong.id),

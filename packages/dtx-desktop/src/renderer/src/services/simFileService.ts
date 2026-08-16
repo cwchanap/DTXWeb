@@ -8,20 +8,6 @@ const CACHE_KEY = 'simfiles_cache_v2';
 const CACHE_TIMESTAMP_KEY = 'simfiles_cache_timestamp_v2';
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
-// Match the discriminated union type from Rust backend
-type MainProcessSimFileResult =
-	| {
-			success: true;
-			data: SimfileModel[];
-			fromCache: boolean;
-	  }
-	| {
-			success: false;
-			error: string;
-			data: SimfileModel[];
-			fromCache: boolean;
-	  };
-
 export interface SimFileServiceResult {
 	data: SimfileModel[];
 	fromCache: boolean;
@@ -45,7 +31,7 @@ class SimFileService {
 			}
 
 			// Call host process to fetch simFiles
-			const result = await desktopHost.fetchUserSimfiles<MainProcessSimFileResult>();
+			const result = await desktopHost.fetchUserSimfiles();
 
 			if (result.success === false) {
 				return {

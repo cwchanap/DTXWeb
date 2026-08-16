@@ -274,10 +274,33 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.createSimfileRecord({ title: 'Song' }),
+			() =>
+				desktopHost.createSimfileRecord({
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 120,
+					displayId: null,
+					isPublished: false,
+					publishDate: '',
+					downloadUrl: '',
+					videoPreviewUrl: '',
+					levels: [],
+					songPath: '/songs'
+				}),
 			'create_simfile_record',
 			{
-				simfileData: { title: 'Song' }
+				simfileData: {
+					title: 'Song',
+					artist: 'Artist',
+					bpm: 120,
+					displayId: null,
+					isPublished: false,
+					publishDate: '',
+					downloadUrl: '',
+					videoPreviewUrl: '',
+					levels: [],
+					songPath: '/songs'
+				}
 			}
 		);
 		await expectTauriInvoke(43, () => desktopHost.getNextDisplayId(), 'get_next_display_id');
@@ -298,7 +321,7 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			{ success: true },
-			() => desktopHost.fetchCloudSong({ cloudSongId: '42' }),
+			() => desktopHost.fetchCloudSong('42'),
 			'fetch_cloud_song',
 			{
 				cloudSongId: '42'
@@ -309,12 +332,12 @@ describe('desktopHost', () => {
 			() =>
 				desktopHost.updateSimfileRecord({
 					simfileId: '42',
-					updateData: { title: 'New' }
+					updateData: { title: 'Updated' }
 				}),
 			'update_simfile_record',
 			{
 				simfileId: '42',
-				updateData: { title: 'New' }
+				updateData: { title: 'Updated' }
 			}
 		);
 		await expectTauriInvoke(
@@ -711,14 +734,6 @@ describe('desktopHost', () => {
 		await desktopHost.fetchCloudSong('42');
 
 		expect(runtime.invoke).toHaveBeenCalledWith('fetch_cloud_song', { cloudSongId: '42' });
-	});
-
-	it('accepts a numeric argument for fetchCloudSong', async () => {
-		vi.mocked(runtime.invoke).mockResolvedValue({ success: true });
-
-		await desktopHost.fetchCloudSong(99);
-
-		expect(runtime.invoke).toHaveBeenCalledWith('fetch_cloud_song', { cloudSongId: 99 });
 	});
 
 	it('resolves app and tauri versions from the Tauri runtime', async () => {

@@ -1,4 +1,3 @@
-import type { SimfileModel } from '@dtx/common';
 import type { CloudChart } from './scoreMatching';
 
 export interface ScorePayload {
@@ -58,11 +57,8 @@ export interface CloudSong {
 // The Rust backend (api.rs) wraps every IPC response in one of two shapes:
 //   api_success: { success: true,  data: Value }
 //   api_failure: { success: false, error: String }
-// fetch_cloud_song is the one exception: it uses `cloudSongData` instead of
-// `data` (api.rs:817-820). These envelope types are hoisted here so call
-// sites don't re-declare them inline (drift risk). The generic `ApiResult<T>`
-// covers the standard `data` envelope; `FetchCloudSongResult<T>` covers the
-// `cloudSongData` variant.
+// These envelope types are hoisted here so call sites don't re-declare them
+// inline (drift risk).
 // ---------------------------------------------------------------------------
 
 /** Standard IPC envelope: `{ success, data?, error? }`. */
@@ -83,19 +79,6 @@ export interface UploadScoresData {
 	updatedCharts: number;
 	insertedScores: number;
 	skipped: SkippedChart[];
-}
-
-/**
- * `fetch_cloud_song` envelope. Uses `cloudSongData` (not `data`) to match the
- * Rust side (api.rs:817-820). Generic over the payload shape so call sites
- * that need richer simfile fields (e.g. SongDetails.svelte) can substitute
- * their own type while sharing the envelope structure. Defaults to the
- * current full `SimfileModel` shape the native boundary emits.
- */
-export interface FetchCloudSongResult<T = SimfileModel> {
-	success: boolean;
-	cloudSongData?: T;
-	error?: string;
 }
 
 /** `fetch_cloud_song_charts` envelope. */

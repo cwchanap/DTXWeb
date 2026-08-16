@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { formatLevel, formatLevelDisplay, filterFiles, buildPreviewUrl } from './utils';
-import type { DtxFileRow } from '@dtx/common';
+import type { SimfileDtxFile } from '@dtx/common';
 
 describe('utils', () => {
 	describe('formatLevel', () => {
@@ -47,24 +47,18 @@ describe('utils', () => {
 
 	describe('formatLevelDisplay', () => {
 		it('should format level display for normal levels', () => {
-			const dtxFiles: DtxFileRow[] = [
+			const dtxFiles: SimfileDtxFile[] = [
 				{
 					level: 25,
-					id: 1,
-					label: 'Test 1',
-					simfile_id: 1
+					label: 'Test 1'
 				},
 				{
 					level: 15,
-					id: 2,
-					label: 'Test 2',
-					simfile_id: 1
+					label: 'Test 2'
 				},
 				{
 					level: 35,
-					id: 3,
-					label: 'Test 3',
-					simfile_id: 1
+					label: 'Test 3'
 				}
 			];
 
@@ -73,18 +67,14 @@ describe('utils', () => {
 		});
 
 		it('should format level display for high levels (> 100)', () => {
-			const dtxFiles: DtxFileRow[] = [
+			const dtxFiles: SimfileDtxFile[] = [
 				{
 					level: 150,
-					id: 1,
-					label: 'Test 1',
-					simfile_id: 1
+					label: 'Test 1'
 				},
 				{
 					level: 250,
-					id: 2,
-					label: 'Test 2',
-					simfile_id: 1
+					label: 'Test 2'
 				}
 			];
 
@@ -93,18 +83,14 @@ describe('utils', () => {
 		});
 
 		it('should handle mixed level ranges', () => {
-			const dtxFiles: DtxFileRow[] = [
+			const dtxFiles: SimfileDtxFile[] = [
 				{
 					level: 25,
-					id: 1,
-					label: 'Test 1',
-					simfile_id: 1
+					label: 'Test 1'
 				},
 				{
 					level: 150,
-					id: 2,
-					label: 'Test 2',
-					simfile_id: 1
+					label: 'Test 2'
 				}
 			];
 
@@ -115,18 +101,14 @@ describe('utils', () => {
 		});
 
 		it('should handle zero levels', () => {
-			const dtxFiles: DtxFileRow[] = [
+			const dtxFiles: SimfileDtxFile[] = [
 				{
 					level: 0,
-					id: 1,
-					label: 'Test 1',
-					simfile_id: 1
+					label: 'Test 1'
 				},
 				{
 					level: 25,
-					id: 2,
-					label: 'Test 2',
-					simfile_id: 1
+					label: 'Test 2'
 				}
 			];
 
@@ -137,9 +119,9 @@ describe('utils', () => {
 		it('should sort mixed ×10 and ×100 encodings by normalized level', () => {
 			// 55 → 5.50 (×10), 500 → 5.00 (×100). Raw sort would give
 			// 5.50 / 5.00 (55 < 500); normalized sort gives 5.00 / 5.50.
-			const dtxFiles: DtxFileRow[] = [
-				{ level: 55, id: 1, label: 'BSC', simfile_id: 1 },
-				{ level: 500, id: 2, label: 'ADV', simfile_id: 1 }
+			const dtxFiles: SimfileDtxFile[] = [
+				{ level: 55, label: 'BSC' },
+				{ level: 500, label: 'ADV' }
 			];
 			const result = formatLevelDisplay(dtxFiles);
 			expect(result).toBe('5.00 / 5.50');
@@ -151,24 +133,18 @@ describe('utils', () => {
 		});
 
 		it('should sort levels correctly', () => {
-			const dtxFiles: DtxFileRow[] = [
+			const dtxFiles: SimfileDtxFile[] = [
 				{
 					level: 35,
-					id: 3,
-					label: 'Test 3',
-					simfile_id: 1
+					label: 'Test 3'
 				},
 				{
 					level: 15,
-					id: 1,
-					label: 'Test 1',
-					simfile_id: 1
+					label: 'Test 1'
 				},
 				{
 					level: 25,
-					id: 2,
-					label: 'Test 2',
-					simfile_id: 1
+					label: 'Test 2'
 				}
 			];
 
@@ -176,11 +152,11 @@ describe('utils', () => {
 			expect(result).toBe('1.50 / 2.50 / 3.50');
 		});
 
-		it('should not mutate the original dtx_files array order', () => {
-			const dtxFiles: DtxFileRow[] = [
-				{ level: 35, id: 3, label: 'Third', simfile_id: 1 },
-				{ level: 15, id: 1, label: 'First', simfile_id: 1 },
-				{ level: 25, id: 2, label: 'Second', simfile_id: 1 }
+		it('should not mutate the original dtxFiles array order', () => {
+			const dtxFiles: SimfileDtxFile[] = [
+				{ level: 35, label: 'Third' },
+				{ level: 15, label: 'First' },
+				{ level: 25, label: 'Second' }
 			];
 
 			formatLevelDisplay(dtxFiles);

@@ -91,7 +91,7 @@ import ChartDetailPage from './+page.svelte';
 import { ChartDetail, UploadedAssetFiles } from '@dtx/common/components';
 import toastStore from '$lib/toaster';
 
-const mockSimfileResponse = { id: 123, title: 'Test Song', is_published: false };
+const mockSimfileResponse = { id: 123, title: 'Test Song', isPublished: false };
 
 describe('Chart Detail Page', () => {
 	beforeEach(() => {
@@ -159,7 +159,7 @@ describe('handleUpdateSimfile via ChartDetail onSave prop', () => {
 
 	it('calls updateSimfile and shows success toast when update succeeds', async () => {
 		mockGetSimfile.mockResolvedValue(mockSimfileResponse);
-		mockUpdateSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: true });
+		mockUpdateSimfile.mockResolvedValue({ ...mockSimfileResponse, isPublished: true });
 
 		render(ChartDetailPage);
 
@@ -376,7 +376,7 @@ describe('handleUpdateSimfile basic update flow', () => {
 			bpm: 120
 		};
 		mockGetSimfile.mockResolvedValue(simfileResponse);
-		mockUpdateSimfile.mockResolvedValue({ ...simfileResponse, is_published: true });
+		mockUpdateSimfile.mockResolvedValue({ ...simfileResponse, isPublished: true });
 
 		render(ChartDetailPage);
 
@@ -460,7 +460,7 @@ describe('Chart Detail Page - preview link visibility', () => {
 	});
 
 	it('hides the preview link when the simfile is unpublished', async () => {
-		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: false });
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, isPublished: false });
 		render(ChartDetailPage);
 		await waitFor(() => {
 			expect(vi.mocked(ChartDetail).mock.calls.length).toBeGreaterThan(0);
@@ -469,7 +469,7 @@ describe('Chart Detail Page - preview link visibility', () => {
 	});
 
 	it('shows the preview link when the simfile is published', async () => {
-		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, is_published: true });
+		mockGetSimfile.mockResolvedValue({ ...mockSimfileResponse, isPublished: true });
 		render(ChartDetailPage);
 		const link = await screen.findByText('preview.open');
 		expect(link).toBeInTheDocument();

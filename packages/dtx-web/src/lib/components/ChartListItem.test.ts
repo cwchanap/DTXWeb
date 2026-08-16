@@ -70,16 +70,19 @@ const mockItem = {
 	title: 'Test Song 1',
 	artist: 'Test Artist 1',
 	bpm: 120,
-	download_url: 'https://example.com/download1',
-	has_uploaded_files: true,
-	is_published: true,
-	display_id: 1,
-	dtx_files: [{ level: 3 }, { level: 5 }],
-	created_at: '2023-01-01',
-	updated_at: '2023-01-02',
-	publish_date: '2023-01-03',
-	user_id: 'user-1',
-	video_preview_url: null,
+	downloadUrl: 'https://example.com/download1',
+	hasUploadedFiles: true,
+	isPublished: true,
+	displayId: 1,
+	dtxFiles: [
+		{ level: 3, label: 'BSC' },
+		{ level: 5, label: 'ADV' }
+	],
+	createdAt: '2023-01-01',
+	updatedAt: '2023-01-02',
+	publishDate: '2023-01-03',
+	userId: 'user-1',
+	videoPreviewUrl: null,
 	label: 'Test Label 1',
 	value: 'test-value-1',
 	bg_video_url: null,
@@ -96,16 +99,16 @@ const mockItemNoPreview = {
 	title: 'Test Song 2',
 	artist: 'Test Artist 2',
 	bpm: 140,
-	download_url: null,
-	has_uploaded_files: false,
-	is_published: false,
-	display_id: 2,
-	dtx_files: [{ level: 4 }],
-	created_at: '2023-02-01',
-	updated_at: '2023-02-02',
-	publish_date: '2023-02-03',
-	user_id: 'user-1',
-	video_preview_url: null,
+	downloadUrl: null,
+	hasUploadedFiles: false,
+	isPublished: false,
+	displayId: 2,
+	dtxFiles: [{ level: 4, label: 'ADV' }],
+	createdAt: '2023-02-01',
+	updatedAt: '2023-02-02',
+	publishDate: '2023-02-03',
+	userId: 'user-1',
+	videoPreviewUrl: null,
 	label: 'Test Label 2',
 	value: 'test-value-2',
 	bg_video_url: null,
@@ -135,10 +138,10 @@ describe('ChartListItem Component Logic', () => {
 	// Test the togglePublishChart function
 	it('calls togglePublishChart with correct parameters', async () => {
 		// Call the function directly with the expected parameters
-		await mockTogglePublishChart(mockItem.id, mockItem.is_published);
+		await mockTogglePublishChart(mockItem.id, mockItem.isPublished);
 
 		// Verify the function was called with the correct parameters
-		expect(mockTogglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.is_published);
+		expect(mockTogglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.isPublished);
 		expect(mockTogglePublishChart).toHaveBeenCalledTimes(1);
 	});
 
@@ -170,13 +173,13 @@ describe('ChartListItem Component Logic', () => {
 		const isBlog = true;
 
 		// Test with an item that has a download URL
-		if (isBlog && mockItem.download_url) {
-			expect(mockItem.download_url).toBe('https://example.com/download1');
+		if (isBlog && mockItem.downloadUrl) {
+			expect(mockItem.downloadUrl).toBe('https://example.com/download1');
 		}
 
 		// Test with an item that doesn't have a download URL
-		if (isBlog && !mockItemNoPreview.download_url) {
-			expect(mockItemNoPreview.download_url).toBeNull();
+		if (isBlog && !mockItemNoPreview.downloadUrl) {
+			expect(mockItemNoPreview.downloadUrl).toBeNull();
 		}
 	});
 
@@ -213,7 +216,7 @@ describe('ChartListItem Component Logic', () => {
 			render(ChartListItem, {
 				props: {
 					...baseProps,
-					item: { ...mockItem, has_uploaded_files: false }
+					item: { ...mockItem, hasUploadedFiles: false }
 				}
 			});
 
@@ -222,7 +225,7 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 			expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
 				'href',
-				mockItem.download_url
+				mockItem.downloadUrl
 			);
 		});
 	});
@@ -236,7 +239,7 @@ describe('ChartListItem Component Logic', () => {
 			onFileDelete: vi.fn()
 		};
 
-		it('renders display_id', () => {
+		it('renders displayId', () => {
 			render(ChartListItem, { props: renderProps });
 			expect(screen.getByText(/#1/)).toBeInTheDocument();
 		});
@@ -331,7 +334,7 @@ describe('ChartListItem Component Logic', () => {
 					...renderProps,
 					isBlog: true,
 					enableDownload: true,
-					item: { ...renderProps.item, download_url: 'https://example.com/download1' }
+					item: { ...renderProps.item, downloadUrl: 'https://example.com/download1' }
 				}
 			});
 			const downloadButton = screen.getByRole('button', { name: 'chart_actions.download' });
@@ -346,7 +349,7 @@ describe('ChartListItem Component Logic', () => {
 					enableDownload: true,
 					item: (() => {
 						const item = { ...mockItem };
-						delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+						delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 						return item;
 					})()
 				}
@@ -365,7 +368,7 @@ describe('ChartListItem Component Logic', () => {
 					...renderProps,
 					isBlog: true,
 					enableDownload: true,
-					item: { ...mockItem, has_uploaded_files: false }
+					item: { ...mockItem, hasUploadedFiles: false }
 				}
 			});
 			expect(
@@ -373,19 +376,19 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('shows external link in blog mode when download_url is set and downloads are disabled', () => {
+		it('shows external link in blog mode when downloadUrl is set and downloads are disabled', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 			const externalLink = screen.getByRole('link', { name: /blog\.download/i });
 			expect(externalLink).toBeInTheDocument();
-			expect(externalLink).toHaveAttribute('href', renderProps.item.download_url);
+			expect(externalLink).toHaveAttribute('href', renderProps.item.downloadUrl);
 		});
 
-		it('shows download unavailable state in blog mode when download_url is null and downloads are disabled', () => {
+		it('shows download unavailable state in blog mode when downloadUrl is null and downloads are disabled', () => {
 			render(ChartListItem, {
 				props: {
 					...renderProps,
 					isBlog: true,
-					item: { ...mockItem, download_url: null }
+					item: { ...mockItem, downloadUrl: null }
 				}
 			});
 			expect(
@@ -394,26 +397,26 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByText('Download not available')).toBeInTheDocument();
 		});
 
-		it('shows R2 download link in blog mode when download_url is null', () => {
+		it('shows R2 download link in blog mode when downloadUrl is null', () => {
 			render(ChartListItem, {
 				props: {
 					...renderProps,
 					isBlog: true,
 					enableDownload: true,
-					item: { ...mockItem, download_url: null }
+					item: { ...mockItem, downloadUrl: null }
 				}
 			});
 			const downloadLink = screen.getByRole('button', { name: 'chart_actions.download' });
 			expect(downloadLink).toBeInTheDocument();
 		});
 
-		it('hides R2 download link in blog mode when download_url is null and uploads are unavailable', () => {
+		it('hides R2 download link in blog mode when downloadUrl is null and uploads are unavailable', () => {
 			render(ChartListItem, {
 				props: {
 					...renderProps,
 					isBlog: true,
 					enableDownload: true,
-					item: { ...mockItemNoPreview, download_url: null, has_uploaded_files: false }
+					item: { ...mockItemNoPreview, downloadUrl: null, hasUploadedFiles: false }
 				}
 			});
 			expect(
@@ -431,7 +434,7 @@ describe('ChartListItem Component Logic', () => {
 					item: {
 						...mockItem,
 						id: undefined,
-						download_url: 'https://example.com/download1'
+						downloadUrl: 'https://example.com/download1'
 					}
 				}
 			});
@@ -485,7 +488,7 @@ describe('ChartListItem Component Logic', () => {
 				props: {
 					...renderProps,
 					isBlog: true,
-					item: { ...mockItem, is_published: false }
+					item: { ...mockItem, isPublished: false }
 				}
 			});
 			expect(
@@ -566,7 +569,7 @@ describe('ChartListItem Component Logic', () => {
 			render(ChartListItem, { props: { ...handlerProps, togglePublishChart } });
 
 			await fireEvent.click(screen.getByRole('button', { name: /unpublish/i }));
-			expect(togglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.is_published);
+			expect(togglePublishChart).toHaveBeenCalledWith(mockItem.id, mockItem.isPublished);
 		});
 	});
 
@@ -603,18 +606,18 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
-		it('"Open in Editor" menu item is not shown when has_uploaded_files is false', () => {
+		it('"Open in Editor" menu item is not shown when hasUploadedFiles is false', () => {
 			render(ChartListItem, {
-				props: { ...navProps, item: { ...mockItem, has_uploaded_files: false } }
+				props: { ...navProps, item: { ...mockItem, hasUploadedFiles: false } }
 			});
 			expect(
 				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();
 		});
 
-		it('"Open in Editor" menu item is not shown when has_uploaded_files is undefined', () => {
+		it('"Open in Editor" menu item is not shown when hasUploadedFiles is undefined', () => {
 			const item = { ...mockItem };
-			delete (item as { has_uploaded_files?: boolean }).has_uploaded_files;
+			delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 			render(ChartListItem, { props: { ...navProps, item } });
 			expect(
 				screen.queryByRole('button', { name: 'Open in Editor' })

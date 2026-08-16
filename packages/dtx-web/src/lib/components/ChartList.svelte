@@ -38,9 +38,9 @@
 		enableDownload?: boolean;
 	}
 
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileModel } from '@dtx/common';
 
-	type ListedChart = SimfileWithDtx & { has_uploaded_files?: boolean };
+	type ListedChart = SimfileModel;
 
 	let { pageSize = 12, isBlog = false, enableDownload = false }: Props = $props();
 
@@ -61,7 +61,7 @@
 
 	// Replace the run() function with a reactive effect using $effect
 	$effect(() => {
-		filteredItems = hideUnpublished ? items.filter((item) => item.is_published) : items;
+		filteredItems = hideUnpublished ? items.filter((item) => item.isPublished) : items;
 	});
 
 	const togglePublishChart = async (id: number, published: boolean) => {
@@ -70,7 +70,7 @@
 
 			// Update local state
 			items = items.map((item) =>
-				item.id === id ? { ...item, is_published: !published } : item
+				item.id === id ? { ...item, isPublished: !published } : item
 			);
 
 			toastStore.success({
@@ -380,10 +380,10 @@
 									<a
 										href={chartTitleHref(item, isBlog)}
 										class="hover:text-purple-300"
-										>{item.display_id}. {item.title}</a
+										>{item.displayId}. {item.title}</a
 									>
 								{:else}
-									{item.display_id}. {item.title}
+									{item.displayId}. {item.title}
 								{/if}
 							</h3>
 						</div>
@@ -420,7 +420,7 @@
 								</svg>
 								<span class="font-medium text-cyan-300">{item.bpm} BPM</span>
 							</div>
-							{#if item.publish_date}
+							{#if item.publishDate}
 								<div class="flex items-center gap-2 text-slate-300">
 									<svg
 										class="h-4 w-4 text-amber-400"
@@ -436,16 +436,16 @@
 										></path>
 									</svg>
 									<span class="font-medium text-amber-300">
-										{new Date(item.publish_date).toLocaleDateString()}
+										{new Date(item.publishDate).toLocaleDateString()}
 									</span>
 								</div>
 							{/if}
 						</div>
-						{#if item.dtx_files && item.dtx_files.length > 0}
+						{#if item.dtxFiles && item.dtxFiles.length > 0}
 							<div class="mt-3 flex items-center gap-2">
 								<span class="text-xs font-medium text-slate-400">Levels:</span>
 								<div class="flex flex-wrap gap-1">
-									{#each formatLevelDisplay(item.dtx_files).split(', ') as level}
+									{#each formatLevelDisplay(item.dtxFiles).split(', ') as level}
 										<span
 											class="rounded-full border border-purple-500/30 bg-linear-to-r from-purple-600/30 to-cyan-600/30 px-2 py-1 text-xs text-purple-200"
 										>

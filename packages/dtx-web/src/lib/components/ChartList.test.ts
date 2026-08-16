@@ -57,16 +57,16 @@ const mockListedChart = {
 	title: 'Test Song 1',
 	artist: 'Test Artist 1',
 	bpm: 120,
-	download_url: 'https://example.com/download1',
-	has_uploaded_files: true,
-	is_published: true,
-	display_id: 'TST001',
-	dtx_files: [{ level: 3 }, { level: 5 }],
-	created_at: '2023-01-01',
-	updated_at: '2023-01-02',
-	publish_date: '2023-01-03',
-	user_id: 'user-1',
-	video_preview_url: null
+	downloadUrl: 'https://example.com/download1',
+	hasUploadedFiles: true,
+	isPublished: true,
+	displayId: 1,
+	dtxFiles: [{ level: 3, label: 'BSC' }],
+	createdAt: '2023-01-01',
+	updatedAt: '2023-01-02',
+	publishDate: '2023-01-03',
+	userId: 'user-1',
+	videoPreviewUrl: null
 };
 
 const createJsonResponse = (body: unknown, status = 200): Response =>
@@ -307,7 +307,7 @@ describe('ChartList helpers', () => {
 	it('allows bulk selection only for charts with uploaded files', () => {
 		expect(chartListHelpers.canBulkSelect(mockListedChart)).toBe(true);
 		expect(
-			chartListHelpers.canBulkSelect({ ...mockListedChart, has_uploaded_files: false })
+			chartListHelpers.canBulkSelect({ ...mockListedChart, hasUploadedFiles: false })
 		).toBe(false);
 		expect(chartListHelpers.canBulkSelect({})).toBe(false);
 	});
@@ -334,9 +334,9 @@ describe('ChartList helpers', () => {
 	});
 
 	it('treats a chart as previewable only when published and uploaded', () => {
-		const previewable = { id: 1, is_published: true, has_uploaded_files: true };
-		const unpublished = { ...previewable, is_published: false };
-		const withoutUpload = { ...previewable, has_uploaded_files: false };
+		const previewable = { id: 1, isPublished: true, hasUploadedFiles: true };
+		const unpublished = { ...previewable, isPublished: false };
+		const withoutUpload = { ...previewable, hasUploadedFiles: false };
 
 		expect(chartListHelpers.isPreviewable(previewable)).toBe(true);
 		expect(chartListHelpers.isPreviewable(unpublished)).toBe(false);
@@ -345,9 +345,9 @@ describe('ChartList helpers', () => {
 	});
 
 	it('resolves the title navigation destination by context', () => {
-		const previewable = { id: 1, is_published: true, has_uploaded_files: true };
-		const unpublished = { ...previewable, is_published: false };
-		const withoutUpload = { ...previewable, has_uploaded_files: false };
+		const previewable = { id: 1, isPublished: true, hasUploadedFiles: true };
+		const unpublished = { ...previewable, isPublished: false };
+		const withoutUpload = { ...previewable, hasUploadedFiles: false };
 
 		// Blog: only previewable charts link to /preview/[id].
 		expect(chartListHelpers.chartTitleHref(previewable, true)).toBe('/preview/1');
@@ -384,14 +384,14 @@ describe('ChartList component bulk download behavior', () => {
 				...mockListedChart,
 				id: i + 1,
 				title: `Song ${i + 1}`,
-				display_id: `D${i + 1}`
+				displayId: `D${i + 1}`
 			})
 		);
 		const extraChart = {
 			...mockListedChart,
 			id: chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS + 1,
 			title: 'Extra Song',
-			display_id: 'EX'
+			displayId: 'EX'
 		};
 		const allCharts = [...maxCharts, extraChart];
 
@@ -556,12 +556,12 @@ describe('ChartList Rendering', () => {
 					title: 'My Song',
 					artist: 'Artist',
 					bpm: 120,
-					is_published: true,
-					display_id: 1,
-					dtx_files: [],
-					publish_date: '2024-01-01',
-					download_url: null,
-					video_preview_url: null
+					isPublished: true,
+					displayId: 1,
+					dtxFiles: [],
+					publishDate: '2024-01-01',
+					downloadUrl: null,
+					videoPreviewUrl: null
 				}
 			],
 			1
@@ -581,13 +581,13 @@ describe('ChartList Rendering', () => {
 					title: 'My Song',
 					artist: 'Artist',
 					bpm: 120,
-					is_published: true,
-					display_id: 1,
-					has_uploaded_files: true,
-					dtx_files: [],
-					publish_date: '2024-01-01',
-					download_url: null,
-					video_preview_url: null
+					isPublished: true,
+					displayId: 1,
+					hasUploadedFiles: true,
+					dtxFiles: [],
+					publishDate: '2024-01-01',
+					downloadUrl: null,
+					videoPreviewUrl: null
 				}
 			],
 			1
@@ -752,12 +752,12 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		title: 'Delete Me',
 		artist: 'Artist',
 		bpm: 120,
-		is_published: true,
-		display_id: 1,
-		dtx_files: [],
-		publish_date: null,
-		download_url: null,
-		video_preview_url: null
+		isPublished: true,
+		displayId: 1,
+		dtxFiles: [],
+		publishDate: null,
+		downloadUrl: null,
+		videoPreviewUrl: null
 	};
 
 	it('handleFileDelete calls deleteSimfile and shows success toast on clean deletion', async () => {
@@ -862,17 +862,17 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		title: 'Toggle Chart',
 		artist: 'Artist',
 		bpm: 120,
-		is_published: true,
-		display_id: 2,
-		dtx_files: [],
-		publish_date: null,
-		download_url: null,
-		video_preview_url: null
+		isPublished: true,
+		displayId: 2,
+		dtxFiles: [],
+		publishDate: null,
+		downloadUrl: null,
+		videoPreviewUrl: null
 	};
 
 	it('togglePublishChart calls updateSimfile and shows success toast when publish succeeds', async () => {
 		mockApi.listSimfiles.mockResolvedValueOnce({ data: [item], count: 1 });
-		mockApi.updateSimfile.mockResolvedValueOnce({ ...item, is_published: false });
+		mockApi.updateSimfile.mockResolvedValueOnce({ ...item, isPublished: false });
 
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));

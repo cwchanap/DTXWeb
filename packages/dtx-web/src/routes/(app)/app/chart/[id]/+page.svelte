@@ -3,13 +3,13 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { _ } from 'svelte-i18n';
-	import type { SimFile, DTXFile } from '@dtx/common';
+	import type { SimFile, DTXFile, SimfileModel } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
 	import toastStore from '@/lib/toaster';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
-	import { getSimfile, updateSimfile, type LegacySimfile } from '$lib/api';
+	import { getSimfile, updateSimfile } from '$lib/api';
 
-	let simfile: LegacySimfile | null = $state(null);
+	let simfile: SimfileModel | null = $state(null);
 	let loading = $state(true);
 	let error: string | null = $state(null);
 	let updatedHighestDtx = $state<DTXFile | null>(null);
@@ -96,7 +96,7 @@
 	{:else if error}
 		<p class="text-red-500">Error: {error}</p>
 	{:else if simfile}
-		{#if simfile.is_published}
+		{#if simfile.isPublished}
 			<div class="mb-4">
 				<a
 					class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
@@ -109,7 +109,7 @@
 			</div>
 		{/if}
 		<ChartDetail
-			simfile={simfile as import('@dtx/common').SimfileWithDtxFiles}
+			{simfile}
 			on:onSave={(e) =>
 				handleUpdateSimfile(
 					e.detail.displayId,

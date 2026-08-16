@@ -48,20 +48,20 @@ export const supportsBulkDownloadStreaming = (saveFilePickerWindow: SaveFilePick
 
 export const resetBulkSelection = () => new Set<number>();
 
-export const canBulkSelect = (item: { has_uploaded_files?: boolean }) =>
-	item.has_uploaded_files === true;
+export const canBulkSelect = (item: { hasUploadedFiles?: boolean }) =>
+	item.hasUploadedFiles === true;
 
 export type ChartNavigationItem = {
 	id?: number;
-	is_published?: boolean;
-	has_uploaded_files?: boolean;
+	isPublished?: boolean;
+	hasUploadedFiles?: boolean;
 };
 
 /** A `ChartNavigationItem` whose `id` is a defined number, narrowed by `isPreviewable`. */
 export type PreviewableChartItem = ChartNavigationItem & { id: number };
 
 export const isPreviewable = (item: ChartNavigationItem): item is PreviewableChartItem =>
-	item.id !== undefined && item.is_published === true && item.has_uploaded_files === true;
+	item.id !== undefined && item.isPublished === true && item.hasUploadedFiles === true;
 
 /**
  * Resolves the primary navigation destination for a chart title.
@@ -73,7 +73,7 @@ export const isPreviewable = (item: ChartNavigationItem): item is PreviewableCha
 export const chartTitleHref = (item: ChartNavigationItem, isBlog: boolean): string | null => {
 	if (item.id === undefined) return null;
 	if (isBlog) return isPreviewable(item) ? `/preview/${item.id}` : null;
-	return item.has_uploaded_files === true ? `/editor/${item.id}` : null;
+	return item.hasUploadedFiles === true ? `/editor/${item.id}` : null;
 };
 
 export const changePage = (newPage: number, totalPages: number) => {

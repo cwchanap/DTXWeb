@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SimfileWithDtx } from '@dtx/common';
+	import type { SimfileModel } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import { EllipsisVertical, ExternalLink, Eye } from '@lucide/svelte/icons';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
@@ -10,8 +10,8 @@
 	import { isPreviewable } from '$lib/components/ChartList.helpers';
 	import { _ } from 'svelte-i18n';
 
-	type ChartListTableItemData = Pick<SimfileWithDtx, 'id' | 'is_published' | 'download_url'> & {
-		has_uploaded_files?: boolean;
+	type ChartListTableItemData = Pick<SimfileModel, 'id' | 'isPublished' | 'downloadUrl'> & {
+		hasUploadedFiles?: boolean;
 	};
 
 	let {
@@ -31,7 +31,7 @@
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);
 
-	const canOpenEditor = $derived(item.has_uploaded_files === true);
+	const canOpenEditor = $derived(item.hasUploadedFiles === true);
 	const previewable = $derived(isPreviewable(item));
 
 	function handleDeleteConfirm() {
@@ -98,12 +98,12 @@
 				</a>
 
 				<Button
-					onclick={() => togglePublishChart(item.id, item.is_published)}
+					onclick={() => togglePublishChart(item.id, item.isPublished)}
 					variant="menuItem"
 					fullWidth
 					justify="start"
 				>
-					{#snippet children()}{item.is_published ? 'Unpublish' : 'Publish'}{/snippet}
+					{#snippet children()}{item.isPublished ? 'Unpublish' : 'Publish'}{/snippet}
 				</Button>
 
 				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
@@ -127,13 +127,13 @@
 		{#if enableDownload}
 			<DownloadDropdown
 				simfileId={item.id}
-				externalUrl={item.download_url ?? null}
-				hasUploadedFiles={item.has_uploaded_files}
+				externalUrl={item.downloadUrl ?? null}
+				hasUploadedFiles={item.hasUploadedFiles}
 				compact={true}
 			/>
-		{:else if item.download_url}
+		{:else if item.downloadUrl}
 			<a
-				href={item.download_url}
+				href={item.downloadUrl}
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"

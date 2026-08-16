@@ -1,0 +1,3 @@
+mutation DesktopUpdateSimfile($id: ID!, $input: UpdateSimfileInput!) {
+  updateSimfile(id: $id, input: $input) { ...DesktopSimfileFull }
+}

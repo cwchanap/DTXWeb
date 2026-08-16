@@ -178,23 +178,19 @@ fn native_simfile_typescript_keeps_nullable_fields_required() {
 }
 
 #[test]
-fn list_simfiles_query_requests_persisted_catalog_urls_and_timestamps() {
-    // The list feeds auto-linking, which caches linked simfiles via
-    // `native_simfile_from_graphql`. Those cached records later populate
-    // the metadata editor, so the persisted URL fields must be present in
-    // the list response — otherwise opening and saving an auto-linked song
-    // overwrites the real URLs with empty strings. Timestamps are part of
-    // the current simfile model and must not be optional.
-    assert!(LIST_SIMFILES_QUERY.contains("downloadUrl"));
-    assert!(LIST_SIMFILES_QUERY.contains("previewUrl"));
-    assert!(LIST_SIMFILES_QUERY.contains("videoPreviewUrl"));
-    assert!(LIST_SIMFILES_QUERY.contains("publishDate"));
-    assert!(LIST_SIMFILES_QUERY.contains("createdAt"));
-    assert!(LIST_SIMFILES_QUERY.contains("updatedAt"));
-    assert!(LIST_SIMFILES_QUERY.contains("dtxFiles"));
-    // Still a curated field set (not the full fragment) to keep the
-    // payload lean.
-    assert!(!LIST_SIMFILES_QUERY.contains("...SimfileFull"));
+fn list_simfiles_query_reuses_full_simfile_fragment() {
+    assert!(LIST_SIMFILES_QUERY.contains("...DesktopSimfileFull"));
+    let document = graphql_document(LIST_SIMFILES_QUERY);
+    assert!(document.contains("fragment DesktopSimfileFull on Simfile"));
+    assert!(document.contains("googleDriveFileId"));
+    assert!(document.contains("createdAt"));
+    assert!(document.contains("updatedAt"));
+    assert!(document.contains("dtxFiles"));
+}
+
+#[test]
+fn asset_file_query_uses_moved_full_simfile_fragment_name() {
+    assert!(GET_SIMFILE_WITH_FILES_QUERY.contains("...DesktopSimfileFull"));
 }
 
 #[tokio::test]
@@ -1719,16 +1715,18 @@ fn api_success_envelope_wraps_payload_under_data_key() {
 }
 
 #[test]
-fn graphql_document_prefixes_operation_with_simfile_full_fragment() {
+fn graphql_document_prefixes_operation_with_desktop_simfile_full_fragment() {
     // The fragment defines the field set the renderer depends on; omitting it
     // would make the GraphQL request fail with "Cannot query field on type
     // Simfile".
     let document = graphql_document("query Foo { simfile { id } }");
 
-    assert!(document.contains("fragment SimfileFull on Simfile"));
+    assert!(document.contains("fragment DesktopSimfileFull on Simfile"));
     assert!(document.contains("query Foo { simfile { id } }"));
     // Fragment comes first so subsequent spreads resolve.
-    assert!(document.find("fragment SimfileFull").unwrap() < document.find("query Foo").unwrap());
+    assert!(
+        document.find("fragment DesktopSimfileFull").unwrap() < document.find("query Foo").unwrap()
+    );
 }
 
 #[test]

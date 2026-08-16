@@ -1,0 +1,3 @@
+query DesktopGetSimfile($id: ID!) {
+  simfile(id: $id) { ...DesktopSimfileFull }
+}

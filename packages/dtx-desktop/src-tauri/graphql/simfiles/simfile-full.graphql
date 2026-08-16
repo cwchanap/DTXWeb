@@ -1,0 +1,21 @@
+fragment DesktopSimfileFull on Simfile {
+  id
+  displayId
+  title
+  artist
+  bpm
+  userId
+  googleDriveFileId
+  isPublished
+  downloadUrl
+  previewUrl
+  videoPreviewUrl
+  publishDate
+  createdAt
+  updatedAt
+  dtxFiles {
+    id
+    level
+    label
+  }
+}

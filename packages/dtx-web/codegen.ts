@@ -20,6 +20,15 @@ const config: CodegenConfig = {
 				enumType: 'native',
 				scalars: { ID: 'string' }
 			}
+		},
+		'.svelte-kit/dtx-desktop-graphql-validation.ts': {
+			documents: ['../dtx-desktop/src-tauri/graphql/**/*.graphql'],
+			plugins: ['typescript', 'typescript-operations'],
+			config: {
+				skipTypename: true,
+				useTypeImports: true,
+				scalars: { ID: 'string' }
+			}
 		}
 	}
 };

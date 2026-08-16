@@ -399,14 +399,17 @@ pub fn simfile_model_from_graphql(simfile: &Value) -> Result<Value> {
             files
                 .iter()
                 .map(|file| {
-                    json!({
-                        "id": file["id"],
-                        "level": file["level"],
-                        "label": file["label"],
-                    })
+                    let mut entry = Map::new();
+                    if let Some(id) = file.get("id").filter(|id| !id.is_null()) {
+                        entry.insert("id".to_string(), json!(number_id(id)?));
+                    }
+                    entry.insert("level".to_string(), file["level"].clone());
+                    entry.insert("label".to_string(), file["label"].clone());
+                    Ok(Value::Object(entry))
                 })
-                .collect::<Vec<_>>()
+                .collect::<Result<Vec<_>>>()
         })
+        .transpose()?
         .unwrap_or_default();
     mapped.insert("dtxFiles".to_string(), Value::Array(dtx_files));
 

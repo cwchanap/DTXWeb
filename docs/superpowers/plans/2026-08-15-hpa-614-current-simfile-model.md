@@ -37,12 +37,14 @@
 ## Task 1: Add the neutral model and migrate `ChartDetail`
 
 **Files:**
+
 - Create: `packages/common/src/lib/types/simfile.ts`
 - Modify: `packages/common/src/lib/index.ts`
 - Modify: `packages/common/src/lib/components/ChartDetail.svelte`
 - Modify: `packages/common/src/lib/components/ChartDetail.test.ts`
 
 **Interfaces:**
+
 - Produces: `SimfileModel`, `SimfileDtxFile`, `SimfileAssetFile` from the main `@dtx/common` barrel.
 - Temporarily preserves: existing main-barrel `SimfileWithDtx`, D1 row exports, and `toSimfileWithDtx` until Task 5.
 
@@ -180,6 +182,7 @@ git commit -m "refactor(common): add current simfile model"
 ## Task 2: Migrate the web GraphQL boundary and web consumers
 
 **Files:**
+
 - Modify: `packages/dtx-web/src/lib/api/chart.ts`
 - Modify: `packages/dtx-web/src/lib/api/chart.test.ts`
 - Modify: `packages/dtx-web/src/lib/components/ChartList.helpers.ts`
@@ -195,6 +198,7 @@ git commit -m "refactor(common): add current simfile model"
 - Modify: `packages/dtx-web/src/routes/(app)/app/chart/[id]/chart-detail-page.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SimfileModel`, `SimfileDtxFile` from Task 1.
 - Produces: `toSimfileModel()` as the only web GraphQL→full-model adapter.
 
@@ -318,13 +322,13 @@ Do not alter UI behavior/styling.
 Rename:
 
 ```ts
-formatLevelDisplay(dtx_files)
+formatLevelDisplay(dtx_files);
 ```
 
 to:
 
 ```ts
-formatLevelDisplay(dtxFiles)
+formatLevelDisplay(dtxFiles);
 ```
 
 and update the comment to describe DTX level values rather than naming the D1 column. Keep the function behavior unchanged.
@@ -343,7 +347,7 @@ let simfile: SimfileModel | null = $state(null);
 Delete the `LegacySimfile` import and render:
 
 ```svelte
-<ChartDetail simfile={simfile} ... />
+<ChartDetail {simfile} ... />
 ```
 
 with no `SimfileWithDtxFiles` cast. Update page-level field reads and tests to camelCase.
@@ -388,11 +392,13 @@ git commit -m "refactor(web): consume current simfile model"
 ## Task 3: Make the Rust/Tauri full-simfile boundary emit the current model
 
 **Files:**
+
 - Create: `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json`
 - Modify: `packages/dtx-desktop/src-tauri/src/api.rs`
 - Modify: `packages/dtx-desktop/src-tauri/src/tests/api_tests.rs`
 
 **Interfaces:**
+
 - Produces: camelCase full-model JSON from `simfile_model_from_graphql`.
 - Produces: one cross-language behavioral fixture consumed again in Task 4.
 - Preserves: score-search string ids and general-update exclusion of `googleDriveFileId`.
@@ -403,23 +409,21 @@ Create:
 
 ```json
 {
-  "id": 42,
-  "displayId": 7,
-  "title": "Fixture Song",
-  "artist": "Fixture Artist",
-  "bpm": 123.5,
-  "userId": "user-1",
-  "googleDriveFileId": null,
-  "isPublished": true,
-  "downloadUrl": "https://example.test/chart.zip",
-  "previewUrl": null,
-  "videoPreviewUrl": null,
-  "publishDate": "2026-08-15",
-  "createdAt": "2026-08-15T00:00:00Z",
-  "updatedAt": "2026-08-15T00:00:01Z",
-  "dtxFiles": [
-    { "id": 99, "label": "EXT", "level": 85 }
-  ]
+	"id": 42,
+	"displayId": 7,
+	"title": "Fixture Song",
+	"artist": "Fixture Artist",
+	"bpm": 123.5,
+	"userId": "user-1",
+	"googleDriveFileId": null,
+	"isPublished": true,
+	"downloadUrl": "https://example.test/chart.zip",
+	"previewUrl": null,
+	"videoPreviewUrl": null,
+	"publishDate": "2026-08-15",
+	"createdAt": "2026-08-15T00:00:00Z",
+	"updatedAt": "2026-08-15T00:00:01Z",
+	"dtxFiles": [{ "id": 99, "label": "EXT", "level": 85 }]
 }
 ```
 
@@ -555,6 +559,7 @@ Do not open/merge this native change as a separate implementation PR. Continue i
 ## Task 4: Migrate every desktop consumer, test fixture, cache seed, and score projection
 
 **Files — services/stores/app:**
+
 - Modify: `packages/dtx-desktop/src/renderer/src/services/simFileService.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/services/simFileService.test.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/services/linkageCacheService.ts`
@@ -569,6 +574,7 @@ Do not open/merge this native change as a separate implementation PR. Continue i
 - Modify as fixtures require: `packages/dtx-desktop/src/renderer/src/App.test.ts`
 
 **Files — renderer components:**
+
 - Modify: `packages/dtx-desktop/src/renderer/src/components/SongDetails.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/SongDetails.test.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/CloudSongDetail.svelte`
@@ -582,16 +588,19 @@ Do not open/merge this native change as a separate implementation PR. Continue i
 - Modify: `packages/dtx-desktop/src/renderer/src/components/shell/CommandPalette.test.ts`
 
 **Files — score projection:**
+
 - Modify: `packages/dtx-desktop/src/renderer/src/lib/scoreTypes.ts`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/ScoreSongCard.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`
 - Modify: `packages/dtx-desktop/src/renderer/src/components/Scores.test.ts`
 
 **Files — desktop E2E:**
+
 - Modify: `packages/e2e-desktop/specs/google-drive-upload.e2e.ts`
 - Modify: `packages/e2e-desktop/scripts/google-drive-crash-recovery.ts`
 
 **Interfaces:**
+
 - Consumes: `SimfileModel` and camelCase full native JSON from Tasks 1/3.
 - Consumes: `packages/dtx-desktop/src-tauri/tests/fixtures/simfile_model.json` in Vitest as behavioral seam proof.
 - Keeps separate: score-link `Record<string, string>` and string-id `CloudSong` projection.
@@ -618,8 +627,8 @@ This test is behavioral. Do not claim the fixture import type-checks `SimfileMod
 Migrate cache expectations to:
 
 ```ts
-'simfiles_cache_v2'
-'simfiles_cache_timestamp_v2'
+'simfiles_cache_v2';
+'simfiles_cache_timestamp_v2';
 ```
 
 Add a test where a valid-looking old shape exists only under `simfiles_cache`; verify IPC is still called.
@@ -803,13 +812,16 @@ In `google-drive-upload.e2e.ts`, seed a camelCase object containing at least:
 Use:
 
 ```ts
-localStorage.setItem('dtx_linkage_cache_v2', JSON.stringify({
-	[songPath]: {
-		linkedSimFileId: String(cloudSong.id),
-		linkedAt: '2026-07-25T00:00:00.000Z',
-		cloudSongData: cloudSong
-	}
-}));
+localStorage.setItem(
+	'dtx_linkage_cache_v2',
+	JSON.stringify({
+		[songPath]: {
+			linkedSimFileId: String(cloudSong.id),
+			linkedAt: '2026-07-25T00:00:00.000Z',
+			cloudSongData: cloudSong
+		}
+	})
+);
 ```
 
 Apply the same key/shape migration in `scripts/google-drive-crash-recovery.ts`. Do not seed v1 as fallback.
@@ -918,6 +930,7 @@ The current docs-only PR may remain draft; this requirement applies to the later
 ## Task 5: Delete compatibility residue, update docs, and run load-bearing completion gates
 
 **Files:**
+
 - Modify: `packages/common/src/lib/index.ts`
 - Modify: `packages/common/src/lib/server.ts`
 - Modify: `packages/common/src/lib/types/d1.types.ts`
@@ -927,6 +940,7 @@ The current docs-only PR may remain draft; this requirement applies to the later
 - Modify only if final gates reveal a missed active consumer: files under `packages/dtx-web`, `packages/dtx-desktop`, or `packages/e2e-desktop`
 
 **Interfaces:**
+
 - Deletes: `SimfileWithDtx` and application-barrel D1/compatibility exports.
 - Keeps: `SimfileWithDtxFiles`, D1 rows/helpers under `@dtx/common/server`; `Database` auth type; narrow `PreviewSimfile` and string-id `CloudSong` projections.
 

@@ -191,6 +191,28 @@ fn native_simfile_from_graphql_rejects_missing_null_and_invalid_dtx_ids() {
 }
 
 #[test]
+fn native_simfile_from_graphql_rejects_non_string_nullable_fields() {
+    // A nullable string field (e.g. userId) must be null, absent, or a string.
+    // A non-string value (number, bool, array) is malformed and must error
+    // rather than silently coercing — covering the nullable_string error branch.
+    for field in [
+        "userId",
+        "googleDriveFileId",
+        "downloadUrl",
+        "previewUrl",
+        "videoPreviewUrl",
+    ] {
+        let mut graphql_value = gql_simfile();
+        graphql_value[field] = json!(42);
+
+        assert!(
+            native_simfile_from_graphql(&graphql_value).is_err(),
+            "{field} as a number should fail conversion"
+        );
+    }
+}
+
+#[test]
 fn native_simfile_typescript_keeps_nullable_fields_required() {
     let decl = NativeSimfile::decl(&Default::default());
     assert!(decl.contains("displayId: number | null"));

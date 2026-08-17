@@ -14,6 +14,6 @@ export type NativeSimfile = { id: number, displayId: number | null, title: strin
 
 export type NativeSimfileDtxFile = { id: number, label: string, level: number, };
 
-export type UpdateSimfileRecordInput = { title?: string, artist?: string, bpm?: number, displayId?: number, isPublished?: boolean, publishDate?: string, downloadUrl?: string, videoPreviewUrl?: string, };
+export type UpdateSimfileRecordInput = { title?: string, artist?: string, bpm?: number, displayId?: number | null, isPublished?: boolean, publishDate?: string, downloadUrl?: string | null, videoPreviewUrl?: string | null, };
 
 export type UpdateSimfileRecordResult = { success: boolean, data?: NativeSimfile, error?: string, };

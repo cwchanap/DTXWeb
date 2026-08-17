@@ -259,6 +259,96 @@ fn update_simfile_input_omits_absent_fields() {
 }
 
 #[test]
+fn update_simfile_input_serializes_explicit_null_as_null() {
+    // Tri-state: Some(None) is an explicit request to clear the stored
+    // value and must reach GraphQL as `null`, distinct from an omitted
+    // field (None) which means "leave unchanged". The GraphQL
+    // `updateSimfile` resolver applies displayId/downloadUrl/videoPreviewUrl
+    // only when the input property is `!== undefined`.
+    let input = UpdateSimfileRecordInput {
+        display_id: Some(None),
+        download_url: Some(None),
+        video_preview_url: Some(None),
+        ..Default::default()
+    };
+    assert_eq!(
+        serde_json::to_value(input).expect("serializes"),
+        json!({
+            "displayId": null,
+            "downloadUrl": null,
+            "videoPreviewUrl": null
+        })
+    );
+}
+
+#[tokio::test]
+async fn update_simfile_record_impl_sends_explicit_null_to_graphql() {
+    // Wire-level proof that an explicit clear request ({ displayId: null })
+    // reaches the GraphQL mutation input as `"displayId": null` rather than
+    // being silently omitted. The API intentionally distinguishes null
+    // (clear) from undefined (omit) for displayId/downloadUrl/videoPreviewUrl.
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/graphql"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "data": { "updateSimfile": gql_simfile() }
+        })))
+        .mount(&server)
+        .await;
+
+    let input = UpdateSimfileRecordInput {
+        display_id: Some(None),
+        ..Default::default()
+    };
+
+    update_simfile_record_impl(&server.uri(), "token-1", "42".to_string(), input)
+        .await
+        .expect("result");
+
+    let requests = server.received_requests().await.expect("received request");
+    assert_eq!(requests.len(), 1);
+    let body: Value = serde_json::from_slice(&requests[0].body).expect("GraphQL JSON body");
+    assert_eq!(body["variables"]["id"], "42");
+    assert!(
+        body["variables"]["input"]["displayId"].is_null(),
+        "explicit null displayId must reach GraphQL as null, not be omitted"
+    );
+    assert!(
+        body["variables"]["input"]
+            .as_object()
+            .unwrap()
+            .contains_key("displayId"),
+        "displayId key must be present in the GraphQL input"
+    );
+    assert!(
+        !body["variables"]["input"]
+            .as_object()
+            .unwrap()
+            .contains_key("downloadUrl"),
+        "absent fields must remain omitted from the GraphQL input"
+    );
+}
+
+#[test]
+fn update_simfile_input_deserializes_tri_state() {
+    // Pinning the deserialization side of the tri-state: an explicit null
+    // becomes Some(None) (clear), a missing field becomes None (omit), and a
+    // value becomes Some(Some(_)) (set). Without double_option, serde
+    // collapses both null and missing into None, silently dropping clears.
+    let omitted: UpdateSimfileRecordInput =
+        serde_json::from_str(json!({ "title": "T" }).to_string().as_str()).expect("parses");
+    assert_eq!(omitted.display_id, None);
+
+    let cleared: UpdateSimfileRecordInput =
+        serde_json::from_str(json!({ "displayId": null }).to_string().as_str()).expect("parses");
+    assert_eq!(cleared.display_id, Some(None));
+
+    let set: UpdateSimfileRecordInput =
+        serde_json::from_str(json!({ "displayId": 7 }).to_string().as_str()).expect("parses");
+    assert_eq!(set.display_id, Some(Some(7)));
+}
+
+#[test]
 fn create_simfile_input_preserves_null_display_id() {
     let input = create_input_fixture_with_display_id(None);
     let value = serde_json::to_value(input).expect("serializes");

@@ -20,6 +20,67 @@ mod f64_as_number {
     }
 }
 
+/// Tri-state deserializer for `Option<Option<T>>` that distinguishes an
+/// absent field from an explicit `null`.
+///
+/// The GraphQL `updateSimfile` resolver applies `displayId`, `downloadUrl`,
+/// `previewUrl`, and `videoPreviewUrl` only when the input property is
+/// `!== undefined`, so an explicit `null` is a valid request to clear the
+/// stored value while an omitted property means "leave unchanged". serde's
+/// default `Option<Option<T>>` deserialization collapses both `null` and a
+/// missing field into `None`, which would silently turn a clear request into
+/// a no-op. This module maps:
+///
+/// - missing field (handled via `#[serde(default)]`) -> `None` (omit)
+/// - `null` -> `Some(None)` (clear)
+/// - value -> `Some(Some(value))` (set)
+///
+/// Serialization is left to serde's default `Option` impl, which emits
+/// `Some(None)` as `null` and `Some(Some(v))` as `v`; the outer `None` is
+/// dropped by `skip_serializing_if = "Option::is_none"`.
+mod double_option {
+    use serde::de::{self, Visitor};
+    use serde::{Deserialize, Deserializer};
+    use std::fmt;
+    use std::marker::PhantomData;
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+    where
+        T: Deserialize<'de>,
+        D: Deserializer<'de>,
+    {
+        struct DoubleOptionVisitor<T>(PhantomData<T>);
+
+        impl<'de, T> Visitor<'de> for DoubleOptionVisitor<T>
+        where
+            T: Deserialize<'de>,
+        {
+            type Value = Option<Option<T>>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a nullable value or absent field")
+            }
+
+            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(Some(None))
+            }
+
+            fn visit_some<E: Deserializer<'de>>(
+                self,
+                deserializer: E,
+            ) -> Result<Self::Value, E::Error> {
+                T::deserialize(deserializer).map(|v| Some(Some(v)))
+            }
+
+            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+                Ok(Some(None))
+            }
+        }
+
+        deserializer.deserialize_option(DoubleOptionVisitor(PhantomData))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(
@@ -110,21 +171,41 @@ pub struct UpdateSimfileRecordInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub bpm: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "number")]
-    pub display_id: Option<i64>,
+    // Tri-state: None = omit (leave unchanged), Some(None) = clear, Some(Some(_)) = set.
+    // The GraphQL `updateSimfile` resolver applies displayId only when
+    // `!== undefined`, so an explicit null must reach GraphQL as `null`
+    // rather than being silently dropped.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "double_option::deserialize"
+    )]
+    #[ts(optional, type = "number | null")]
+    pub display_id: Option<Option<i64>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub is_published: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub publish_date: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub download_url: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub video_preview_url: Option<String>,
+    // Tri-state: see `display_id`. downloadUrl is Drive-owned when
+    // `google_drive_file_id` is set, but for non-Drive records a null here
+    // is a valid request to clear the stored URL.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "double_option::deserialize"
+    )]
+    #[ts(optional, type = "string | null")]
+    pub download_url: Option<Option<String>>,
+    // Tri-state: see `display_id`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "double_option::deserialize"
+    )]
+    #[ts(optional, type = "string | null")]
+    pub video_preview_url: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]

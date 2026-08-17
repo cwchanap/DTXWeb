@@ -4,132 +4,237 @@
 
 Reduce ready-PR CI cost and feedback time without replacing the repository's current GitHub Actions structure.
 
-Use a hybrid model:
+Use the repository's existing seams:
 
-- keep the two required status-check jobs (`test` and `lint-and-format`) present on every non-draft PR, but let them stop after a cheap Turborepo affected-package check when no relevant workspace/configuration changed;
+- keep the two required status-check jobs (`test` and `lint-and-format`) present on every non-draft PR;
+- put one small, tested fail-open scope script under `.github/scripts/` so the required jobs and CodeQL do not each grow their own Bash classifier;
+- use Turborepo's affected workspace graph for package-aware decisions;
+- keep repo-wide formatting and ESLint on every ready PR, while gating only the expensive generated/schema/typecheck portion of `lint-and-format`;
 - use native `pull_request.paths` filters for non-required web E2E, desktop E2E, and Tauri Rust workflows;
 - remove ordinary pull-request packaging from the Windows/macOS build workflow while preserving `preview`, `main`, release-tag, and manual release behavior;
-- keep CodeQL on `main` and the weekly schedule, but on pull requests build a dynamic language matrix from changed source/workflow paths;
-- make Codecov upload transport failures non-blocking while leaving the existing Codecov project/patch coverage policy unchanged.
+- keep CodeQL full on `main` and its weekly schedule, but on pull requests select only languages touched by relevant source/workflow paths;
+- flag the three Codecov upload streams and enable carryforward so partial CI runs keep the existing 90% coverage policy meaningful;
+- make Codecov uploader/service failures non-blocking without weakening project or patch targets.
 
-This is deliberately a CI-routing change, not a new CI framework or dependency-graph service.
+This is deliberately a CI-routing change, not a new CI framework, dependency-graph service, or workflow consolidation.
 
 Linear: HPA-613
 
 ## Why HPA-613 is the next slice
 
-HPA-613 is the only medium-priority item in the DTXWeb backlog and has no blockers. HPA-614 and HPA-615 are complete, so HPA-616 is now available but remains a low-priority behavior-preserving refactor; HPA-617 is downstream cleanup and HPA-193 is low-priority test hardening.
+HPA-613 is unblocked and is the current medium-priority DTXWeb backlog item. It targets repeated runner cost on ready PRs without changing product behavior.
 
-The current workflows make HPA-613 immediately valuable:
+The repository already has the pieces needed for a small solution:
 
-- `unit-test.yml` runs full repository coverage for any ready PR;
-- `lint-and-format.yml` installs the full workspace, builds common, regenerates schema/client output, typechecks both E2E packages, lints, and formats for any ready PR;
-- `e2e-test.yml` starts Supabase, Playwright, API, and web infrastructure for any ready PR;
-- `tauri-rust-ci.yml` runs two Linux Rust jobs for any ready PR;
-- `desktop-build-deploy.yml` builds both Windows and macOS packages for any ready PR;
-- `codeql.yml` starts four language jobs for any ready PR.
+- Turborepo already owns the workspace dependency graph;
+- `desktop-e2e-test.yml` already demonstrates native GitHub Actions path filtering;
+- the active `Main` ruleset requires only the `test` and `lint-and-format` contexts;
+- draft PR jobs are already skipped;
+- release/deploy workflows already distinguish PR, `preview`, `main`, tag, and manual behavior.
 
-The live `Main` repository ruleset currently requires only the GitHub Actions contexts `test` and `lint-and-format`. That distinction is load-bearing: GitHub documents that a required workflow skipped by event-level path filtering can remain pending, while a job that completes or intentionally skips inside a triggered workflow can satisfy its status context.
+The design should extend those seams rather than add a CI platform.
+
+## Current problem
+
+### Required jobs cannot be path-skipped at the workflow event
+
+The active `Main` ruleset requires exactly:
+
+- `test`
+- `lint-and-format`
+
+If either required workflow is excluded at the `pull_request` event through `paths`, GitHub may never create the required context for the PR. Therefore both workflows must continue to start for ready PRs and finish successfully even when their expensive work is unnecessary.
+
+### Unit coverage currently means the whole Turborepo coverage task
+
+`unit-test.yml` runs root `bun run test:coverage`, which is one Turborepo task over every workspace that defines `test:coverage`.
+
+HPA-613 does not split that command package-by-package. The gate is binary:
+
+- relevant coverage-producing workspace/config changed -> run the existing root coverage command;
+- no relevant workspace/config changed -> skip dependency installation, tests, and upload while preserving the `test` job context.
+
+The five coverage-producing workspaces are:
+
+- `@dtx/common`
+- `@dtx/ui-components`
+- `dtx-web`
+- `dtx-api`
+- `dtx-desktop`
+
+Changes only to `dtx-e2e-web` or `dtx-e2e-desktop` do not make the root unit coverage task useful.
+
+### Lint is not one all-or-nothing expense
+
+`lint-and-format.yml` mixes two kinds of work.
+
+Repository-wide checks:
+
+- `bun install --frozen-lockfile`
+- ESLint
+- Prettier
+
+Workspace/generated checks:
+
+- SvelteKit/common build preparation
+- GraphQL schema generation
+- generated web client drift verification
+- web and desktop E2E package typechecks
+
+A docs-only PR still needs Prettier because Markdown is included by the repo-wide format check. Skipping the entire lint job would allow formatting failures to merge and only surface on `main`.
+
+Therefore `lint-and-format` always installs dependencies and runs ESLint + Prettier on a ready PR. Only the workspace/generated block is gated.
+
+### The affected query itself is safety-critical
+
+A green required check produced by a broken detector is worse than running too much CI.
+
+The current plan originally duplicated scope Bash in two YAML files and did not execute it before relying on it. It also assumed the wrong `turbo ls --output=json` traversal and did not fail open if `git diff` failed.
+
+The revised design gives the risky logic one ownership seam and requires executable verification before workflow wiring.
+
+## Reuse decisions
+
+| Proposed work | Existing seam |
+| --- | --- |
+| Affected workspace calculation | Turborepo `turbo ls --affected --output=json` |
+| Comparison refs | `TURBO_SCM_BASE` / `TURBO_SCM_HEAD` with full checkout history |
+| Required-job scope logic | new small `.github/scripts/ci-affected-scope.sh`; no existing equivalent |
+| Web/native workflow path filtering | existing `desktop-e2e-test.yml` `paths` pattern |
+| Unit coverage command | existing root `bun run test:coverage`; do not split |
+| GraphQL/codegen drift | existing `lint-and-format.yml` sequence |
+| Packaging reduction | existing `desktop-build-deploy.yml` event/PR branches |
+| CodeQL languages | existing static four-language matrix, narrowed only on PR |
+| Coverage streams | existing three Codecov upload steps, now named by flags |
+| Workflow documentation | existing `CLAUDE.md` CI guidance |
 
 ## Goals
 
-- Make docs-only and unrelated PRs avoid expensive application/native CI.
-- Preserve deterministic required contexts `test` and `lint-and-format`.
-- Keep shared changes capable of triggering both web and desktop validation.
-- Keep GraphQL schema generation and generated-client drift checks intact.
-- Keep all current validation/release behavior on pushes to `main` unless HPA-613 explicitly changes PR-only behavior.
-- Stop routine PRs from building Windows/macOS installers.
-- Reduce CodeQL PR work to languages that can be affected by the changed paths.
-- Keep the implementation understandable from the workflow files and contributor documentation.
+- Keep required check names deterministic.
+- Make scope-detection failure conservative: run more CI, never silently less.
+- Skip the full unit-coverage stack on docs-only and E2E-only changes.
+- Keep repo-wide lint/format coverage on every ready PR.
+- Skip generated/schema/E2E-typecheck lint work when no workspace can be affected.
+- Skip web E2E for unrelated PRs.
+- Skip Rust CI for changes that cannot affect Rust/native generated contracts.
+- Preserve common/shared changes as triggers for desktop E2E and web validation where they matter.
+- Stop Windows/macOS packaging on ordinary PRs.
+- Keep CodeQL full on `main`/schedule and language-scoped on PRs.
+- Keep Codecov's 90% project/patch targets while making partial suite execution compatible with coverage aggregation.
+- Document a concrete affected-area matrix.
 
 ## Non-goals
 
-- No new CI SaaS, custom dependency graph, or long-lived CI service.
-- No merge of all workflows into one monolithic `ci.yml`.
-- No removal of unit tests, web E2E, desktop E2E, Rust tests/clippy/fmt, CodeQL, schema generation, or generated-client drift checks.
-- No remote Turborepo cache project.
-- No coverage-threshold redesign. `codecov.yml` remains authoritative for project and patch targets.
-- No release-channel redesign, signing redesign, or Tauri packaging refactor beyond removing ordinary PR packaging.
-- No attempt to infer every possible dependency from file extensions when Turborepo already models workspace dependencies.
+- No monolithic `ci.yml`.
+- No external classifier service.
+- No handwritten package dependency graph.
+- No remote Turborepo cache.
+- No package-by-package rewrite of root `test:coverage`.
+- No removal of unit, E2E, Rust, CodeQL, schema, codegen, or formatting coverage.
+- No Codecov threshold change.
+- No product/application code changes.
+- No general release workflow rewrite.
 
-## Alternatives considered
+## Chosen architecture
 
-### A. Add `paths` to every workflow
+### 1. One small fail-open scope script
 
-This is the smallest YAML diff, but it is wrong for `unit-test.yml` and `lint-and-format.yml`: those jobs back the required `test` and `lint-and-format` contexts. If GitHub filters the whole workflow before it starts, a required check can remain pending and block merge.
+Create:
 
-Reject this for required workflows.
+` .github/scripts/ci-affected-scope.sh`
 
-### B. Replace all CI with one workflow and one central classifier
+The script has three explicit modes:
 
-One scope job could feed every test/build job, but it would combine six independently understandable workflows and the release workflow into a larger orchestration file. That is more migration risk and maintenance work than the ticket justifies.
+- `unit` -> prints `true` when root unit coverage must run, otherwise `false`;
+- `lint` -> prints `true` when the expensive workspace/generated lint block must run, otherwise `false`;
+- `codeql` -> prints a non-empty JSON array of CodeQL languages for the PR.
 
-Reject this as over-engineering.
+Diagnostics, including the raw affected-package JSON and changed-file list, go to stderr so the machine-readable stdout stays stable.
 
-### C. Hybrid required-job gate + native path filters
+The script is intentionally not a generic rules engine. Package and path lists stay literal and close to the workflows they serve.
 
-Keep required workflows triggered, detect workspace impact cheaply inside their existing required jobs, and use event-level path filters only where missing workflow checks cannot block branch protection. Handle CodeQL separately because its unit of work is language rather than package.
+For `unit` and `lint` it:
 
-Choose this option.
+1. requires `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`;
+2. obtains changed files with `git diff --name-only "$TURBO_SCM_BASE" "$TURBO_SCM_HEAD"`;
+3. runs `bunx turbo ls --affected --output=json` using the same refs;
+4. validates the JSON shape before reading package names;
+5. reads names from `packages.items` and validates the reported package count;
+6. applies the mode's small allowlist/force-full rules.
 
-## Chosen design
+Any missing ref, Git failure, Turbo failure, malformed/unexpected JSON, or jq failure exits non-zero. Each workflow wrapper converts that failure to the conservative result (`true` or all CodeQL languages).
 
-### 1. Required `test` stays present, but expensive coverage runs only for relevant workspace changes
+`fetch-depth: 0` is the only git-history mechanism. Do not add a second merge-base/fetch scheme.
 
-Keep `unit-test.yml` triggered on ready pull requests exactly as today. Do not add a PR `paths` filter.
+### 2. Execute the detector before trusting it
 
-Before `bun install`, add a small scope step after checkout/setup-Bun:
+The implementation includes recorded Turbo JSON fixtures representing:
 
-1. on `push`, set `run_expensive=true` so `main` behavior stays full;
-2. on `pull_request`, check out enough Git history and set `TURBO_SCM_BASE` / `TURBO_SCM_HEAD` from the PR base/head SHAs;
-3. run Turborepo's package query (`turbo ls --affected --output=json`);
-4. set `run_expensive=true` when one of the unit-test-bearing packages is affected:
-   - `@dtx/common`
-   - `@dtx/ui-components`
-   - `dtx-api`
-   - `dtx-web`
-   - `dtx-desktop`
-5. also force the full job when `unit-test.yml`, `package.json`, `bun.lock`, `turbo.json`, or `codecov.yml` changes.
+- a web workspace affected;
+- no workspace affected;
+- malformed/unexpected output.
 
-All current expensive steps (`bun install`, SvelteKit sync, common build, `bun run test:coverage`, Codecov upload) receive the same step-level condition. A docs-only PR therefore still gets a successful `test` job/context, but the job exits after checkout/setup/scope detection.
+Fixture assertions verify the actual jq traversal used by the script. In addition, the script is run against one real local Git base/head pair so the checked-in Turborepo version, Git refs, and JSON parsing are exercised together.
 
-Do **not** change `bun run test:coverage` to partial package coverage in this ticket. The current Codecov project/patch policy expects one coherent TypeScript coverage upload; package-selective coverage is a separate problem and could make the coverage signal harder to interpret.
+A `packages/dtx-web/**` case must resolve `unit=true` before any YAML gate is considered complete.
 
-### 2. Required `lint-and-format` uses the same cheap package query, with a broader relevant set
+### 3. Required `test` keeps one binary coverage gate
 
-Keep `lint-and-format.yml` triggered on every ready PR and keep job id `lint-and-format` unchanged.
+`unit-test.yml` keeps job id `test` and stays event-visible for every ready PR.
 
-The scope step uses the same Turborepo base/head comparison. Run the existing full lint/codegen sequence when any workspace package is affected, including `dtx-e2e-web` and `dtx-e2e-desktop`, because this workflow typechecks both E2E packages.
+After checkout (`fetch-depth: 0`) and Bun setup, a scope step calls the shared script.
 
-Also force the full sequence for root lint/format/build configuration changes:
+For pull requests:
 
-- `.editorconfig`
-- `.eslintignore`
-- `.eslintrc.cjs`
-- `.prettierignore`
-- `.prettierrc`
-- `package.json`
-- `bun.lock`
-- `turbo.json`
-- `.github/workflows/lint-and-format.yml`
+- script success controls `run_expensive`;
+- script failure sets `run_expensive=true`.
 
-Keep the current schema/client order exactly:
+For pushes to `main`/`master`, `run_expensive=true` without scope reduction.
 
-1. generate SvelteKit types;
-2. build `@dtx/common`;
-3. regenerate and diff `packages/dtx-api/dist/schema.graphql`;
-4. run `dtx-web lint:codegen`;
-5. typecheck both E2E packages;
-6. lint;
-7. Prettier check.
+Only when `run_expensive=true` run:
 
-This deliberately favors one complete lint/codegen gate over trying to micro-filter every lint command.
+- dependency installation;
+- SvelteKit/common preparation;
+- root `bun run test:coverage`;
+- TypeScript Codecov upload.
 
-### 3. Web E2E gets a PR path filter
+Do not split the root coverage task into per-package test commands.
 
-`e2e-test.yml` is not a required context, so use native `pull_request.paths` and avoid starting a runner at all when the web stack cannot be affected.
+Force full unit coverage when scope infrastructure or root dependency/config files change, including the unit workflow itself, the shared scope script, `package.json`, `bun.lock`, `turbo.json`, and `codecov.yml`.
 
-Trigger web E2E for PR changes under:
+### 4. Required `lint-and-format` is two-tier
+
+`lint-and-format.yml` keeps job id `lint-and-format` and remains event-visible.
+
+Always on ready PRs:
+
+- checkout;
+- setup Bun;
+- `bun install --frozen-lockfile`;
+- repository ESLint;
+- repository Prettier check.
+
+Run the workspace/generated block when:
+
+- any workspace package is affected; or
+- root dependency/Turborepo config, lint workflow, or shared scope script changes; or
+- scope detection fails.
+
+The gated block preserves the current ordering:
+
+1. SvelteKit/common build preparation;
+2. common build;
+3. API GraphQL schema generation and tracked-schema drift check;
+4. generated web client verification;
+5. web and desktop E2E typechecks.
+
+This keeps docs formatting guarded without paying schema/codegen/typecheck cost on docs-only PRs.
+
+### 5. Non-required workflows use native path filters
+
+#### Web E2E
+
+Add PR paths for surfaces that can affect the web stack:
 
 - `packages/dtx-web/**`
 - `packages/dtx-api/**`
@@ -142,156 +247,171 @@ Trigger web E2E for PR changes under:
 - `bun.lock`
 - `turbo.json`
 
-Keep push-to-`main` behavior unchanged and keep the existing draft guard.
+Keep `main`/`master` push behavior full.
 
-This intentionally does not trigger web E2E for desktop-only or `e2e-desktop`-only changes.
+#### Desktop E2E
 
-### 4. Desktop E2E keeps its existing path gate and documents the matrix
+Keep the existing path-filter model. It already covers renderer/shared/E2E dependencies and should continue to trigger on `packages/common/**` and `packages/ui-components/**`.
 
-`desktop-e2e-test.yml` already has the correct basic shape. Keep and verify these PR-impact paths:
+#### Tauri Rust CI
 
-- `packages/dtx-desktop/**`
-- `packages/e2e-desktop/**`
-- `packages/common/**`
-- `packages/ui-components/**`
-- `.github/workflows/desktop-e2e-test.yml`
-- `package.json`
-- `bun.lock`
-- `turbo.json`
-
-Do not add web/API paths merely because the desktop app talks to the API at runtime; the native E2E harness uses its own deterministic test environment and HPA-613's scope calls out desktop/common/UI/E2E/native/shared configuration.
-
-### 5. Tauri Rust CI gets a PR path filter, while `main` remains full
-
-Add `pull_request.paths` to `tauri-rust-ci.yml` for:
+Narrow PR paths to actual native/generated-contract inputs:
 
 - `packages/dtx-desktop/**`
 - `packages/e2e-desktop/**`
-- `packages/common/**`
-- `packages/ui-components/**`
 - `.github/workflows/tauri-rust-ci.yml`
 - `package.json`
 - `bun.lock`
 - `turbo.json`
 
-Keep the `push` trigger broad on `main`/`master`. The two existing Rust jobs and generated-TypeScript drift verification remain unchanged when the workflow runs.
+Do not add `packages/common/**` or `packages/ui-components/**` merely because desktop E2E needs them. Rust CI's generated-type drift files live under desktop/E2E-desktop, and desktop E2E already exercises shared renderer changes.
 
-The path set is intentionally conservative: a renderer/shared change can still affect Tauri command contracts and generated native types, so HPA-613 should not try to distinguish renderer-only from native-only changes inside `dtx-desktop`.
+Keep `main`/`master` push behavior full.
 
-### 6. Ordinary PRs stop running cross-platform packaging
+### 6. Ordinary PR packaging disappears
 
 Remove the `pull_request` trigger from `desktop-build-deploy.yml`.
 
-Preserve these existing entry points:
+Delete PR-only unsigned build branches and simplify conditions/env setup that existed only for ordinary PR packaging.
+
+Keep:
 
 - push to `preview`;
 - push to `main`;
 - `v*` tags;
-- `workflow_dispatch`.
+- `workflow_dispatch`;
+- signed release behavior and deployment semantics.
 
-Because PRs no longer invoke this workflow, remove PR-only dead branches from the workflow where they become unreachable (for example unsigned PR build steps and `github.event_name == 'pull_request'` conditions), but do not redesign release signing or deployment.
+No replacement packaging-validation workflow is added in HPA-613.
 
-Manual dispatch remains the escape hatch when a packaging-specific change needs pre-merge validation.
+### 7. CodeQL stays language-scoped on PRs
 
-### 7. CodeQL keeps full `main`/scheduled scanning and selects languages on PRs
+HPA-613 explicitly requires PR analysis to be limited to source/workflow changes relevant to each language, so the language selector remains in scope rather than being deferred.
 
-Keep push-to-`main` and weekly scheduled CodeQL behavior as a full four-language scan.
+Reduce its machinery in two ways:
 
-For pull requests:
+1. add a PR-level `paths` filter so docs-only PRs never start CodeQL;
+2. use the same tested scope script's `codeql` mode rather than another inline Bash classifier.
 
-1. add a combined source/workflow `paths` filter so docs-only PRs do not start CodeQL at all;
-2. add one lightweight selector job that diffs PR base/head files and emits a JSON matrix;
-3. map changed paths to the existing CodeQL languages:
-   - `actions`: `.github/workflows/**` (and `.github/actions/**` if that directory is introduced);
-   - `javascript-typescript`: JS/TS/Svelte source/config/package-manifest changes;
-   - `python`: `scripts/**/*.py` and Python dependency/config files;
-   - `rust`: `packages/dtx-desktop/src-tauri/**`;
-4. feed only selected languages into the existing `analyze` matrix.
+PR language mapping:
 
-Do not split CodeQL into four duplicated jobs. The current `analyze` implementation remains one matrix job; only matrix construction changes.
+- `actions` for `.github/workflows/**`;
+- `javascript-typescript` for JS/TS/Svelte source/config files;
+- `python` for `scripts/**/*.py`;
+- `rust` for `packages/dtx-desktop/src-tauri/**/*.rs`.
 
-CodeQL is not a required status context in the current ruleset, so omitted language jobs do not need placeholder checks.
+Unexpected/no mapping after a triggered PR is conservative: analyze all four languages.
 
-### 8. Codecov upload outages stop failing otherwise-green test jobs
+Pushes to `main` and scheduled scans always analyze all four languages.
 
-Change `fail_ci_if_error: true` to `false` for every current Codecov upload action:
+### 8. Codecov uses three carryforward flags
 
-- TypeScript coverage in `unit-test.yml`;
-- Rust coverage in `tauri-rust-ci.yml`;
-- desktop E2E Rust coverage in `desktop-e2e-test.yml`.
+Keep current project and patch targets at 90% with `threshold: 0%` and current status behavior.
 
-Do **not** change `codecov.yml` targets or make Codecov's project/patch statuses informational. HPA-613 only prevents uploader/network/service failures from turning a successful test suite red.
+Name the existing upload streams:
 
-### 9. Document one affected-area matrix in `CLAUDE.md`
+- root TypeScript/Vitest coverage -> `typescript`;
+- Tauri Rust unit coverage -> `tauri-rust`;
+- desktop E2E Rust coverage -> `desktop-e2e-rust`.
 
-Add a concise CI section explaining:
+Set `carryforward: true` for all three flags in `codecov.yml` and pass the matching flag from each upload action.
 
-| Change | Unit `test` | `lint-and-format` | Web E2E | Desktop E2E | Tauri Rust | PR packaging | CodeQL PR |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| docs only | cheap gate only | cheap gate only | no | no | no | no | no |
-| `dtx-web` | full | full | yes | no | no | no | JS/TS |
-| `dtx-api` | full | full | yes | no | no | no | JS/TS |
-| `dtx-desktop` | full | full | no | yes | yes | no | JS/TS and/or Rust by path |
-| `common` | full | full | yes | yes | yes | no | JS/TS |
-| `ui-components` | full | full | yes | yes | yes | no | JS/TS |
-| `e2e-web` | cheap/no unit work | full | yes | no | no | no | JS/TS |
-| `e2e-desktop` | cheap/no unit work | full | no | yes | yes | no | JS/TS |
-| shared root package config | full | full | yes | yes | yes | no | relevant language(s) |
-| workflow-only | workflow-specific | workflow-specific | workflow-specific | workflow-specific | workflow-specific | no ordinary PR packaging | Actions |
+This lets Codecov reuse the previous flag's coverage when that suite is intentionally skipped on the current commit, instead of treating affected CI as an incomplete coverage model.
 
-Also document that `test` and `lint-and-format` are the two required status contexts, which is why those workflows gate *inside* the job instead of using PR-level path filtering.
+Set `fail_ci_if_error: false` on all three uploads. This only makes uploader/service transport failures informational; coverage policy remains enforced by `codecov.yml`.
 
-## Error handling and safety
+The implementation PR changes all three upload/workflow surfaces plus `codecov.yml`, so it should run all three streams and establish a flagged baseline before later PRs rely on carryforward.
 
-- If Turborepo cannot determine the PR diff (missing ref/history, malformed output, query failure), required jobs must fail open to **run the existing expensive validation**, not silently skip it.
-- Root dependency/config changes should be conservative and run more validation, not less.
-- `main`, scheduled, tag, preview, and manual release events must not depend on PR-only scope outputs.
-- The CodeQL selector should emit all four languages if its PR diff calculation fails.
-- No secrets or release signing material move into new jobs.
+### 9. Documentation records the matrix, not implementation history
 
-## Validation
+Update `CLAUDE.md` with the resulting ready-PR matrix and fail-open rule.
+
+Document behavior such as:
+
+| Change | Required unit coverage | Repo lint/format | Heavy lint/codegen | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| docs only | skip | run | skip | skip | skip | skip | skip | skip |
+| `dtx-web` | run | run | run | run | skip | skip | skip | JS/TS |
+| `dtx-api` | run | run | run | run | skip | skip | skip | JS/TS |
+| `common` | run | run | run | run | run | skip | skip | JS/TS |
+| `ui-components` | run | run | run | run | run | skip | skip | JS/TS |
+| desktop renderer | run | run | run | skip | run | run | skip | JS/TS |
+| desktop Rust | run | run | run | skip | run | run | skip | Rust |
+| web E2E only | skip | run | run | run | skip | skip | skip | JS/TS if source changes |
+| desktop E2E only | skip | run | run | skip | run | run | skip | JS/TS if source changes |
+| shared/root CI config | conservative full where relevant | run | run | according to path filters | according to path filters | according to path filters | no PR packaging | mapped/all on failure |
+
+## Error handling
+
+Scope reduction is an optimization, never a correctness dependency.
+
+- missing `TURBO_SCM_BASE` / `TURBO_SCM_HEAD` -> full relevant validation;
+- `git diff` failure -> full relevant validation;
+- `turbo ls` failure -> full relevant validation;
+- malformed or unexpected Turbo JSON -> full relevant validation;
+- jq failure -> full relevant validation;
+- CodeQL mapping failure -> all four languages;
+- Codecov uploader/service failure -> informational upload failure, not a replacement for coverage policy.
+
+Raw scope inputs/results are logged so a wrong skip can be diagnosed from one workflow run.
+
+## Testing and verification
+
+### Scope script
+
+Before workflow wiring is accepted:
+
+- shell syntax check;
+- recorded web-affected JSON -> `unit=true`;
+- recorded empty-affected JSON -> `unit=false` and `lint=false`;
+- malformed JSON -> wrapper chooses full validation;
+- missing/invalid Git refs -> wrapper chooses full validation;
+- real local base/head pair executes the checked-in Turbo command successfully;
+- raw affected JSON appears in diagnostics.
 
 ### Workflow syntax
 
-Run `actionlint` over every changed workflow before implementation is considered complete.
+Run `actionlint` over every changed workflow.
 
-### Turborepo scope behavior
+### Required checks
 
-Use explicit PR base/head SHAs and inspect `turbo ls --affected --output=json` for representative changes. The important invariant is that shared package changes include their dependent application packages; no handwritten dependency graph should duplicate Turborepo's workspace graph.
+Confirm job ids remain exactly `test` and `lint-and-format` and neither required workflow has event-level PR `paths` filtering.
 
-### Dry-run matrix
+### Path matrix
 
-Document and manually verify at least these cases in the implementation PR:
+Inspect/dry-run the documented cases for docs, web, API, common, UI, desktop renderer, desktop Rust, web E2E, desktop E2E, and root CI configuration.
 
-1. docs-only;
-2. web-only;
-3. API-only;
-4. desktop renderer-only;
-5. desktop Rust-only;
-6. `packages/common/**`;
-7. `packages/ui-components/**`;
-8. `packages/e2e-web/**`;
-9. `packages/e2e-desktop/**`;
-10. root `package.json` / `bun.lock` / `turbo.json`;
-11. workflow-only changes;
-12. push to `main`;
-13. manual desktop release.
+### Release behavior
 
-### Branch-protection invariant
+Verify `desktop-build-deploy.yml` still has `preview`, `main`, `v*`, and manual entry points, and no ordinary PR trigger.
 
-Re-read the active repository ruleset after the workflow change. The required contexts must still be named exactly `test` and `lint-and-format`.
+### Codecov
 
-## Expected implementation file scope
+Verify all three uploads use their configured flags, all three flags have carryforward enabled, and 90% project/patch targets are unchanged.
+
+### Final implementation-PR gate
+
+Before treating HPA-613 implementation as complete, a PR changing `packages/dtx-web/**` must demonstrably resolve the detector to unit coverage enabled. The expensive-gate logic is not considered proven solely because `actionlint` passes.
+
+## Expected file scope
+
+New:
+
+- `.github/scripts/ci-affected-scope.sh`
+- `.github/scripts/fixtures/turbo-ls-web.json`
+- `.github/scripts/fixtures/turbo-ls-empty.json`
+- `.github/scripts/fixtures/turbo-ls-malformed.json`
 
 Modify:
 
 - `.github/workflows/unit-test.yml`
 - `.github/workflows/lint-and-format.yml`
 - `.github/workflows/e2e-test.yml`
-- `.github/workflows/desktop-e2e-test.yml`
+- `.github/workflows/desktop-e2e-test.yml` only for Codecov flag/transport handling
 - `.github/workflows/tauri-rust-ci.yml`
 - `.github/workflows/desktop-build-deploy.yml`
 - `.github/workflows/codeql.yml`
+- `codecov.yml`
 - `CLAUDE.md`
 
-No application/package source files are required.
+No application source files are changed.

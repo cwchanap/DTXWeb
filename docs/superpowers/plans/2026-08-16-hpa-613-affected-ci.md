@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Reduce ready-PR GitHub Actions cost by running expensive validation only for affected application/native areas while preserving the required `test` and `lint-and-format` status contexts and all current `main`/release behavior.
+**Goal:** Reduce ready-PR GitHub Actions cost by running expensive validation only for affected application/native areas while preserving the required `test` and `lint-and-format` status contexts, repo-wide formatting/lint coverage, Codecov's 90% policy, and all current `main`/release behavior.
 
-**Architecture:** Keep the current workflow boundaries. The two required jobs perform a cheap Turborepo affected-package query inside the existing job and conditionally skip expensive steps; non-required workflows use PR path filters; packaging stops running on ordinary PRs; CodeQL dynamically selects relevant languages on PRs while remaining full on `main` and schedule.
+**Architecture:** Keep the current workflow boundaries. Add one small tested fail-open scope script that uses Git diff plus Turborepo's affected-package JSON; the required unit job uses it as a binary coverage gate, the required lint job gates only schema/codegen/typecheck work while always running install/ESLint/Prettier, and CodeQL reuses it for PR language selection. Non-required E2E/Rust workflows use native path filters, ordinary PR packaging is removed, and Codecov uses carryforward flags for intentionally skipped suites.
 
 **Tech Stack:** GitHub Actions, Bun 1.3.9, Turborepo 2.10.x, Bash/jq, CodeQL, Codecov, Tauri/Rust 1.95.
 
@@ -12,171 +12,362 @@
 
 - Keep job ids `test` in `.github/workflows/unit-test.yml` and `lint-and-format` in `.github/workflows/lint-and-format.yml` unchanged; the active `Main` ruleset requires those exact contexts.
 - Do not add `pull_request.paths` to either required workflow.
-- On any scope-detection error, run the existing expensive validation rather than silently skipping it.
-- Pushes to `main` keep full validation behavior.
+- Keep checkout `fetch-depth: 0` for affected-scope jobs; do not add a second Git-history scheme.
+- On any missing ref, Git diff failure, Turbo failure, unexpected Turbo JSON, jq failure, or wrapper failure, run the existing expensive validation rather than silently skipping it.
+- Root `bun run test:coverage` remains one all-or-nothing Turborepo command; do not split it into package-specific coverage commands.
+- `lint-and-format` always runs dependency installation, repo ESLint, and repo Prettier on ready PRs.
 - Keep GraphQL schema generation before generated-client verification.
-- Keep Codecov project/patch targets in `codecov.yml` unchanged; only uploader failures become non-blocking.
+- Keep Codecov project/patch targets at 90% with `threshold: 0%`; carryforward flags are routing support, not a threshold change.
 - Keep `preview`, `main`, `v*`, and `workflow_dispatch` desktop packaging/release entry points.
-- No new CI service, dependency graph implementation, remote cache, or monolithic CI workflow.
+- Keep CodeQL full on `main` and schedule; PR scans remain language-specific because HPA-613 explicitly requires it.
+- No new CI service, dependency graph implementation, remote cache, generic classifier framework, or monolithic CI workflow.
 
 ---
 
-## File map
+## File structure
 
-- `.github/workflows/unit-test.yml` — required `test` context and TypeScript coverage upload.
-- `.github/workflows/lint-and-format.yml` — required lint/codegen/typecheck/format context.
-- `.github/workflows/e2e-test.yml` — web/Supabase/Playwright E2E path gate.
-- `.github/workflows/desktop-e2e-test.yml` — existing desktop path gate and Codecov uploader behavior.
-- `.github/workflows/tauri-rust-ci.yml` — Rust PR path gate and Codecov uploader behavior.
-- `.github/workflows/desktop-build-deploy.yml` — release-only cross-platform packaging after this change.
-- `.github/workflows/codeql.yml` — PR path gate, changed-language selector, and dynamic matrix.
-- `CLAUDE.md` — contributor-facing affected-area matrix and required-check explanation.
+**Create**
+
+- `.github/scripts/ci-affected-scope.sh` — one fail-open scope implementation for `unit`, `lint`, and `codeql` modes.
+- `.github/scripts/fixtures/turbo-ls-web.json` — recorded Turbo JSON with `dtx-web` affected.
+- `.github/scripts/fixtures/turbo-ls-empty.json` — recorded Turbo JSON with zero affected packages.
+- `.github/scripts/fixtures/turbo-ls-malformed.json` — intentionally invalid/unexpected payload for failure coverage.
+
+**Modify**
+
+- `.github/workflows/unit-test.yml` — preserve required `test`; gate full root coverage.
+- `.github/workflows/lint-and-format.yml` — preserve required `lint-and-format`; always lint/format, gate workspace/generated work.
+- `.github/workflows/e2e-test.yml` — add web-stack PR paths.
+- `.github/workflows/desktop-e2e-test.yml` — add Codecov flag and non-blocking uploader transport behavior only.
+- `.github/workflows/tauri-rust-ci.yml` — add narrow native PR paths and Codecov flag/transport behavior.
+- `.github/workflows/desktop-build-deploy.yml` — remove ordinary PR packaging and PR-only unsigned branches.
+- `.github/workflows/codeql.yml` — add PR source paths and reuse the shared script for language selection.
+- `codecov.yml` — define three carryforward flags; keep existing 90% statuses.
+- `CLAUDE.md` — document the ready-PR affected-area matrix and fail-open rule.
 
 ---
 
-### Task 1: Make the two required jobs cheap on unrelated PRs
+### Task 1: Add and execute the fail-open scope script
+
+**Files:**
+- Create: `.github/scripts/ci-affected-scope.sh`
+- Create: `.github/scripts/fixtures/turbo-ls-web.json`
+- Create: `.github/scripts/fixtures/turbo-ls-empty.json`
+- Create: `.github/scripts/fixtures/turbo-ls-malformed.json`
+
+**Interfaces:**
+- Consumes: `TURBO_SCM_BASE`, `TURBO_SCM_HEAD`; optional fixture-only `CI_CHANGED_FILES_FILE` and `CI_AFFECTED_JSON_FILE`.
+- Produces: stdout is exactly `true`/`false` for `unit`/`lint`, or a non-empty compact JSON language array for `codeql`; diagnostics go to stderr. Unexpected runtime failures exit non-zero so workflow wrappers can fail open.
+
+- [ ] **Step 1: Record representative Turbo JSON fixtures using the live `turbo ls --affected --output=json` schema**
+
+`turbo-ls-web.json`:
+
+```json
+{
+  "packageManager": "bun",
+  "packages": {
+    "count": 1,
+    "items": [
+      {
+        "name": "dtx-web",
+        "path": "packages/dtx-web"
+      }
+    ]
+  }
+}
+```
+
+`turbo-ls-empty.json`:
+
+```json
+{
+  "packageManager": "bun",
+  "packages": {
+    "count": 0,
+    "items": []
+  }
+}
+```
+
+`turbo-ls-malformed.json`:
+
+```text
+{"packages":{"count":1,"items":"not-an-array"}}
+```
+
+The exact recorded non-package metadata may differ from the fixture above when the implementation is started. If the checked-in Turbo command emits a different real schema, update these fixtures and the parser together **before** wiring any workflow. Do not preserve a parser contradicted by live output.
+
+- [ ] **Step 2: Implement the small shared script**
+
+Create `.github/scripts/ci-affected-scope.sh` with this shape:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode="${1:-}"
+all_codeql='["actions","javascript-typescript","python","rust"]'
+
+case "$mode" in
+  unit|lint|codeql) ;;
+  *)
+    echo "usage: $0 <unit|lint|codeql>" >&2
+    exit 2
+    ;;
+esac
+
+read_changed_files() {
+  if [[ -n "${CI_CHANGED_FILES_FILE:-}" ]]; then
+    cat "$CI_CHANGED_FILES_FILE"
+    return
+  fi
+
+  : "${TURBO_SCM_BASE:?TURBO_SCM_BASE is required}"
+  : "${TURBO_SCM_HEAD:?TURBO_SCM_HEAD is required}"
+  git diff --name-only "$TURBO_SCM_BASE" "$TURBO_SCM_HEAD"
+}
+
+read_affected_json() {
+  if [[ -n "${CI_AFFECTED_JSON_FILE:-}" ]]; then
+    cat "$CI_AFFECTED_JSON_FILE"
+    return
+  fi
+
+  : "${TURBO_SCM_BASE:?TURBO_SCM_BASE is required}"
+  : "${TURBO_SCM_HEAD:?TURBO_SCM_HEAD is required}"
+  TURBO_SCM_BASE="$TURBO_SCM_BASE" \
+    TURBO_SCM_HEAD="$TURBO_SCM_HEAD" \
+    bunx turbo ls --affected --output=json
+}
+
+changed_files="$(read_changed_files)"
+printf '%s\n' '--- changed files ---' "$changed_files" >&2
+
+if [[ "$mode" == "codeql" ]]; then
+  languages=()
+
+  grep -Eq '^\.github/workflows/' <<<"$changed_files" && languages+=(actions)
+  grep -Eq '(^|/)[^/]+\.(js|jsx|cjs|mjs|ts|tsx|svelte)$' <<<"$changed_files" \
+    && languages+=(javascript-typescript)
+  grep -Eq '^scripts/.*\.py$' <<<"$changed_files" && languages+=(python)
+  grep -Eq '^packages/dtx-desktop/src-tauri/.*\.rs$' <<<"$changed_files" \
+    && languages+=(rust)
+
+  if [[ ${#languages[@]} -eq 0 ]]; then
+    printf '%s\n' "$all_codeql"
+  else
+    printf '%s\n' "${languages[@]}" | jq -R . | jq -sc .
+  fi
+  exit 0
+fi
+
+affected_json="$(read_affected_json)"
+printf '%s\n' '--- turbo affected json ---' "$affected_json" >&2
+
+jq -e '
+  (.packages | type) == "object" and
+  (.packages.count | type) == "number" and
+  (.packages.items | type) == "array" and
+  .packages.count == (.packages.items | length) and
+  all(.packages.items[]; (.name | type) == "string" and (.path | type) == "string")
+' <<<"$affected_json" >/dev/null
+
+if [[ "$mode" == "unit" ]]; then
+  if grep -Eq '^(\.github/workflows/unit-test\.yml|\.github/scripts/ci-affected-scope\.sh|package\.json|bun\.lock|turbo\.json|codecov\.yml)$' \
+    <<<"$changed_files"; then
+    echo true
+    exit 0
+  fi
+
+  if jq -e '
+    [.packages.items[].name]
+    | any(
+        . == "@dtx/common" or
+        . == "@dtx/ui-components" or
+        . == "dtx-web" or
+        . == "dtx-api" or
+        . == "dtx-desktop"
+      )
+  ' <<<"$affected_json" >/dev/null; then
+    echo true
+  else
+    echo false
+  fi
+  exit 0
+fi
+
+if grep -Eq '^(\.github/workflows/lint-and-format\.yml|\.github/scripts/ci-affected-scope\.sh|package\.json|bun\.lock|turbo\.json)$' \
+  <<<"$changed_files"; then
+  echo true
+elif jq -e '.packages.count > 0' <<<"$affected_json" >/dev/null; then
+  echo true
+else
+  echo false
+fi
+```
+
+Keep the literal rules here. Do not introduce config files, reusable workflow abstractions, or a generic rule DSL.
+
+- [ ] **Step 3: Make the script executable and syntax-check it**
+
+Run:
+
+```bash
+chmod +x .github/scripts/ci-affected-scope.sh
+bash -n .github/scripts/ci-affected-scope.sh
+```
+
+Expected: exit 0.
+
+- [ ] **Step 4: Verify the package parser against fixtures before any YAML wiring**
+
+Create an empty changed-files fixture temporarily:
+
+```bash
+empty_changed="$(mktemp)"
+: > "$empty_changed"
+```
+
+Run:
+
+```bash
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-web.json \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected stdout:
+
+```text
+true
+```
+
+Run:
+
+```bash
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-empty.json \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected stdout:
+
+```text
+false
+```
+
+Run:
+
+```bash
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-empty.json \
+  .github/scripts/ci-affected-scope.sh lint
+```
+
+Expected stdout:
+
+```text
+false
+```
+
+Run:
+
+```bash
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-malformed.json \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected: non-zero. This is intentional; the workflow wrapper added in Tasks 2/3 turns it into full validation.
+
+- [ ] **Step 5: Verify force-full root changes**
+
+```bash
+changed="$(mktemp)"
+printf '%s\n' 'codecov.yml' > "$changed"
+CI_CHANGED_FILES_FILE="$changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-empty.json \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected stdout: `true`.
+
+- [ ] **Step 6: Execute the script with a real Git/Turborepo comparison**
+
+Run from a branch with at least one parent commit:
+
+```bash
+TURBO_SCM_BASE="$(git rev-parse HEAD^)" \
+TURBO_SCM_HEAD="$(git rev-parse HEAD)" \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected: exit 0 and stderr contains the raw `turbo ls --affected --output=json` payload. The boolean result depends on the actual last commit.
+
+This step is load-bearing. Do not proceed to workflow gating if the live Turbo JSON contradicts the fixture/parser.
+
+- [ ] **Step 7: Verify a dtx-web fixture still turns coverage on**
+
+Re-run the web fixture from Step 4 immediately before committing. Expected: `true`.
+
+- [ ] **Step 8: Commit the detector seam**
+
+```bash
+git add .github/scripts/ci-affected-scope.sh .github/scripts/fixtures/
+git commit -m "ci: add affected scope detector"
+```
+
+---
+
+### Task 2: Gate the required root unit-coverage job
 
 **Files:**
 - Modify: `.github/workflows/unit-test.yml`
-- Modify: `.github/workflows/lint-and-format.yml`
 
 **Interfaces:**
-- Consumes: PR base/head SHAs from `github.event.pull_request`, the repository workspace graph from Turborepo, and the existing job ids.
-- Produces: `steps.scope.outputs.run_expensive` (`true` or `false`) used only by later steps in the same required job.
+- Consumes: `.github/scripts/ci-affected-scope.sh unit`.
+- Produces: existing required job id `test`; output `steps.scope.outputs.run_expensive` controls the existing coverage stack.
 
-- [ ] **Step 1: Preserve full git history in the required workflows**
+- [ ] **Step 1: Give checkout full history**
 
-In both workflows, keep `actions/checkout@v7` but add:
+Change checkout to:
 
 ```yaml
-with:
-  fetch-depth: 0
+- name: Checkout code
+  uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
 ```
 
-The scope query needs both PR SHAs locally. Do not add workflow-level path filters.
+Keep the existing draft job guard.
 
-- [ ] **Step 2: Add the unit-test scope step before dependency installation**
-
-After `Setup Bun`, add this step to `unit-test.yml`:
+- [ ] **Step 2: Add the fail-open scope wrapper after Bun setup and before install**
 
 ```yaml
-- name: Detect affected unit-test packages
+- name: Determine unit coverage scope
   id: scope
   shell: bash
   env:
-    EVENT_NAME: ${{ github.event_name }}
-    BASE_SHA: ${{ github.event.pull_request.base.sha }}
-    HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+    TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha }}
   run: |
-    set -euo pipefail
-
-    if [[ "$EVENT_NAME" != "pull_request" ]]; then
+    if [[ "${{ github.event_name }}" != "pull_request" ]]; then
       echo "run_expensive=true" >> "$GITHUB_OUTPUT"
       exit 0
     fi
 
-    changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-    if grep -Eq '^(\.github/workflows/unit-test\.yml|package\.json|bun\.lock|turbo\.json|codecov\.yml)$' <<<"$changed_files"; then
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-      exit 0
-    fi
-
-    if ! affected="$(
-      TURBO_SCM_BASE="$BASE_SHA" \
-      TURBO_SCM_HEAD="$HEAD_SHA" \
-      bunx turbo@2.10.9 ls --affected --output=json
-    )"; then
-      echo "::warning::Affected-package detection failed; running full unit coverage."
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-      exit 0
-    fi
-
-    if jq -e '
-      [.packages[].name]
-      | any(
-          . == "@dtx/common"
-          or . == "@dtx/ui-components"
-          or . == "dtx-api"
-          or . == "dtx-web"
-          or . == "dtx-desktop"
-        )
-    ' <<<"$affected" >/dev/null; then
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
+    if run_expensive="$(.github/scripts/ci-affected-scope.sh unit)"; then
+      echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
     else
-      echo "run_expensive=false" >> "$GITHUB_OUTPUT"
-      echo "No unit-test-bearing workspace package is affected; required test context will finish after the cheap gate."
+      echo "Affected-scope detection failed; running full unit coverage." >&2
+      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
     fi
 ```
 
-Keep the full `bun run test:coverage` command when the gate is true. Do not switch to partial-package coverage in this task.
+Do not use a bare `git diff` in the YAML. Git/Turbo/jq failures belong behind the wrapper and must resolve to `true`.
 
-- [ ] **Step 3: Condition all expensive unit-test steps on the scope output**
-
-Add this condition to the existing steps from `Install dependencies` through `Upload coverage to Codecov`:
-
-```yaml
-if: steps.scope.outputs.run_expensive == 'true'
-```
-
-The required job itself must still run and finish successfully when the condition is false.
-
-- [ ] **Step 4: Make the TypeScript Codecov uploader non-blocking**
-
-Change only the uploader transport behavior:
-
-```yaml
-with:
-  token: ${{ secrets.CODECOV_TOKEN }}
-  fail_ci_if_error: false
-```
-
-Do not edit `codecov.yml`.
-
-- [ ] **Step 5: Add the broader lint/codegen scope step**
-
-After `Setup Bun` in `lint-and-format.yml`, add:
-
-```yaml
-- name: Detect affected lint/codegen scope
-  id: scope
-  shell: bash
-  env:
-    EVENT_NAME: ${{ github.event_name }}
-    BASE_SHA: ${{ github.event.pull_request.base.sha }}
-    HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-  run: |
-    set -euo pipefail
-
-    if [[ "$EVENT_NAME" != "pull_request" ]]; then
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-      exit 0
-    fi
-
-    changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
-    if grep -Eq '^(\.editorconfig|\.eslintignore|\.eslintrc\.cjs|\.prettierignore|\.prettierrc|\.github/workflows/lint-and-format\.yml|package\.json|bun\.lock|turbo\.json)$' <<<"$changed_files"; then
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-      exit 0
-    fi
-
-    if ! affected="$(
-      TURBO_SCM_BASE="$BASE_SHA" \
-      TURBO_SCM_HEAD="$HEAD_SHA" \
-      bunx turbo@2.10.9 ls --affected --output=json
-    )"; then
-      echo "::warning::Affected-package detection failed; running full lint/codegen validation."
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-      exit 0
-    fi
-
-    if jq -e '.packages | length > 0' <<<"$affected" >/dev/null; then
-      echo "run_expensive=true" >> "$GITHUB_OUTPUT"
-    else
-      echo "run_expensive=false" >> "$GITHUB_OUTPUT"
-      echo "No workspace package is affected; required lint-and-format context will finish after the cheap gate."
-    fi
-```
-
-- [ ] **Step 6: Condition the existing full lint/codegen sequence without reordering it**
+- [ ] **Step 3: Condition the existing expensive steps, not the job**
 
 Add:
 
@@ -184,55 +375,163 @@ Add:
 if: steps.scope.outputs.run_expensive == 'true'
 ```
 
-to every existing step after scope detection:
+to the existing steps for:
 
-- `Install dependencies`
-- `Generate SvelteKit types`
-- `Build packages`
-- `Generate and verify GraphQL schema`
-- `Verify generated GraphQL client`
-- `Typecheck e2e packages`
-- `Run linting`
-- `Run formatting check`
+- `bun install --frozen-lockfile`;
+- SvelteKit type preparation;
+- `@dtx/common` build;
+- `bun run test:coverage`;
+- Codecov upload.
 
-Do not split schema generation and client drift into separate gates.
+Do not change root `bun run test:coverage` itself.
 
-- [ ] **Step 7: Validate the required-job YAML and status names**
+- [ ] **Step 4: Validate workflow syntax and required context**
 
 Run:
 
 ```bash
-actionlint .github/workflows/unit-test.yml .github/workflows/lint-and-format.yml
+actionlint .github/workflows/unit-test.yml
 grep -n '^  test:' .github/workflows/unit-test.yml
-grep -n '^  lint-and-format:' .github/workflows/lint-and-format.yml
-git diff --check
+grep -n 'paths:' .github/workflows/unit-test.yml || true
 ```
 
-Expected: `actionlint` and `git diff --check` are clean; the existing job ids are unchanged.
+Expected:
 
-- [ ] **Step 8: Commit the required-job gate**
+- actionlint passes;
+- job id remains `test`;
+- no PR event-level `paths` was introduced.
+
+- [ ] **Step 5: Re-run the detector web fixture before accepting the workflow gate**
 
 ```bash
-git add .github/workflows/unit-test.yml .github/workflows/lint-and-format.yml
-git commit -m "ci: gate required checks by affected workspace"
+empty_changed="$(mktemp)"
+: > "$empty_changed"
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-web.json \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected: `true`. If not, stop; a green required `test` would be unsafe.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .github/workflows/unit-test.yml
+git commit -m "ci: gate root unit coverage by affected scope"
 ```
 
 ---
 
-### Task 2: Add PR path gates to the non-required web/native test workflows
+### Task 3: Keep repo lint/format always-on and gate only heavy lint work
+
+**Files:**
+- Modify: `.github/workflows/lint-and-format.yml`
+
+**Interfaces:**
+- Consumes: `.github/scripts/ci-affected-scope.sh lint`.
+- Produces: existing required job id `lint-and-format`; `steps.scope.outputs.run_workspace_checks` controls only build/schema/codegen/E2E typecheck steps.
+
+- [ ] **Step 1: Give checkout full history**
+
+```yaml
+- name: Checkout code
+  uses: actions/checkout@v7
+  with:
+    fetch-depth: 0
+```
+
+- [ ] **Step 2: Add the fail-open heavy-work wrapper after Bun setup**
+
+```yaml
+- name: Determine workspace lint scope
+  id: scope
+  shell: bash
+  env:
+    TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+    TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha }}
+  run: |
+    if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+      echo "run_workspace_checks=true" >> "$GITHUB_OUTPUT"
+      exit 0
+    fi
+
+    if run_workspace_checks="$(.github/scripts/ci-affected-scope.sh lint)"; then
+      echo "run_workspace_checks=$run_workspace_checks" >> "$GITHUB_OUTPUT"
+    else
+      echo "Affected-scope detection failed; running full workspace lint checks." >&2
+      echo "run_workspace_checks=true" >> "$GITHUB_OUTPUT"
+    fi
+```
+
+- [ ] **Step 3: Leave install, ESLint, and Prettier unconditional**
+
+These steps must have **no** `if: steps.scope...` condition:
+
+```yaml
+- name: Install dependencies
+  run: bun install --frozen-lockfile
+
+- name: Run linting
+  run: bun run lint
+
+- name: Run formatting check
+  run: bunx prettier --check .
+```
+
+This is what keeps a docs-only PR from merging Markdown that fails the repo format check.
+
+- [ ] **Step 4: Gate only the workspace/generated sequence**
+
+Add:
+
+```yaml
+if: steps.scope.outputs.run_workspace_checks == 'true'
+```
+
+to the existing steps that:
+
+- generate SvelteKit types / prepare the web package;
+- build `@dtx/common`;
+- generate and verify the API GraphQL schema;
+- verify the generated web GraphQL client;
+- typecheck `dtx-e2e-web` and `dtx-e2e-desktop`.
+
+Keep schema generation before `lint:codegen`.
+
+- [ ] **Step 5: Verify docs-only still reaches repo-wide checks**
+
+Run:
+
+```bash
+actionlint .github/workflows/lint-and-format.yml
+grep -n 'Run linting\|Run formatting check' .github/workflows/lint-and-format.yml
+grep -n '^  lint-and-format:' .github/workflows/lint-and-format.yml
+```
+
+Inspect the two repo-wide steps and confirm they have no affected-scope `if`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .github/workflows/lint-and-format.yml
+git commit -m "ci: gate generated lint work by affected scope"
+```
+
+---
+
+### Task 4: Add native PR path filters to non-required validation
 
 **Files:**
 - Modify: `.github/workflows/e2e-test.yml`
-- Modify: `.github/workflows/desktop-e2e-test.yml`
 - Modify: `.github/workflows/tauri-rust-ci.yml`
 
 **Interfaces:**
-- Consumes: GitHub's native `pull_request.paths` evaluation.
-- Produces: web E2E, desktop E2E, and Tauri Rust workflows that are not created for unrelated PRs; push behavior remains unchanged.
+- Consumes: GitHub Actions native event path matching.
+- Produces: web E2E starts only for web/shared/E2E/root-test inputs; Rust CI starts only for native/generated-contract/root-build inputs. `main`/`master` pushes remain full.
 
-- [ ] **Step 1: Gate web E2E by the web/API/shared path set**
+- [ ] **Step 1: Add web E2E PR paths**
 
-Keep the existing `push` trigger broad. Add only this PR path list under `pull_request` in `e2e-test.yml`:
+Under `pull_request` in `e2e-test.yml`, keep the existing branches/types and add:
 
 ```yaml
 paths:
@@ -248,104 +547,60 @@ paths:
   - 'turbo.json'
 ```
 
-Do not add desktop paths.
+Do not add this path filter to the push trigger; `main`/`master` web E2E stays full.
 
-- [ ] **Step 2: Keep the existing desktop E2E path set and make its Codecov uploader non-blocking**
+- [ ] **Step 2: Add a narrower Tauri Rust PR path set**
 
-Verify `desktop-e2e-test.yml` still includes:
-
-```yaml
-paths:
-  - 'packages/dtx-desktop/**'
-  - 'packages/e2e-desktop/**'
-  - 'packages/common/**'
-  - 'packages/ui-components/**'
-  - '.github/workflows/desktop-e2e-test.yml'
-  - 'package.json'
-  - 'bun.lock'
-  - 'turbo.json'
-```
-
-Then change its Codecov action to:
-
-```yaml
-fail_ci_if_error: false
-```
-
-Do not change coverage generation or artifact upload behavior.
-
-- [ ] **Step 3: Add the desktop/shared PR path set to Tauri Rust CI**
-
-Keep `push` on `main`/`master` unchanged. Add under `pull_request`:
+Under `pull_request` in `tauri-rust-ci.yml`, add:
 
 ```yaml
 paths:
   - 'packages/dtx-desktop/**'
   - 'packages/e2e-desktop/**'
-  - 'packages/common/**'
-  - 'packages/ui-components/**'
   - '.github/workflows/tauri-rust-ci.yml'
   - 'package.json'
   - 'bun.lock'
   - 'turbo.json'
 ```
 
-Keep both existing Rust jobs and the generated-TypeScript drift check unchanged.
+Do **not** include `packages/common/**` or `packages/ui-components/**`. The Rust workflow's generated drift outputs live under desktop/E2E-desktop, while the existing desktop E2E workflow already covers renderer/shared changes.
 
-- [ ] **Step 4: Make the Tauri Rust Codecov uploader non-blocking**
+Do not path-filter the Rust push trigger; `main`/`master` remains full.
 
-Change:
+- [ ] **Step 3: Leave desktop E2E's existing shared paths intact**
 
-```yaml
-fail_ci_if_error: true
-```
+Do not narrow `desktop-e2e-test.yml` in this task. It should continue to include `packages/common/**` and `packages/ui-components/**` because those are real desktop-renderer/E2E dependencies.
 
-to:
-
-```yaml
-fail_ci_if_error: false
-```
-
-Only for the Codecov upload action. Test/coverage generation failures still fail the job.
-
-- [ ] **Step 5: Validate workflow syntax**
-
-Run:
+- [ ] **Step 4: Validate syntax**
 
 ```bash
-actionlint \
-  .github/workflows/e2e-test.yml \
-  .github/workflows/desktop-e2e-test.yml \
-  .github/workflows/tauri-rust-ci.yml
+actionlint .github/workflows/e2e-test.yml .github/workflows/tauri-rust-ci.yml
 git diff --check
 ```
 
-Expected: clean.
+Expected: pass.
 
-- [ ] **Step 6: Commit the non-required test gates**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add \
-  .github/workflows/e2e-test.yml \
-  .github/workflows/desktop-e2e-test.yml \
-  .github/workflows/tauri-rust-ci.yml
-git commit -m "ci: skip unaffected web and desktop validation"
+git add .github/workflows/e2e-test.yml .github/workflows/tauri-rust-ci.yml
+git commit -m "ci: scope e2e and rust checks by path"
 ```
 
 ---
 
-### Task 3: Remove ordinary PR packaging while preserving release channels
+### Task 5: Remove ordinary PR desktop packaging
 
 **Files:**
 - Modify: `.github/workflows/desktop-build-deploy.yml`
 
 **Interfaces:**
-- Consumes: existing `preview`, `main`, tag, and manual-dispatch events.
-- Produces: Windows/macOS packaging only for those release/preproduction entry points; no ordinary PR packaging runs.
+- Consumes: existing `preview`, `main`, `v*`, and `workflow_dispatch` entry points.
+- Produces: no Windows/macOS packaging for ordinary PRs; current release/preview paths remain.
 
-- [ ] **Step 1: Remove the PR trigger**
+- [ ] **Step 1: Remove the pull-request trigger**
 
-Delete only the `pull_request` event block. The top-level trigger must remain equivalent to:
+Delete the `pull_request` block from `on:`. Keep:
 
 ```yaml
 on:
@@ -356,106 +611,90 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered as an update.'
-        required: true
-        type: string
 ```
 
-- [ ] **Step 2: Remove job conditions that only existed to admit/skip PR builds**
+Preserve existing manual inputs below `workflow_dispatch`.
 
-Delete the Windows/macOS job-level conditions shaped like:
+- [ ] **Step 2: Remove job conditions that only filtered PRs**
+
+Delete/simplify conditions such as:
 
 ```yaml
-if: github.event_name != 'pull_request' || (...)
+if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.head_ref != 'preview')
 ```
 
-All remaining triggers are intended packaging events.
+They are unnecessary once the workflow has no PR event.
 
-- [ ] **Step 3: Retarget Google Drive environment conditions to `preview` vs release only**
+- [ ] **Step 3: Remove both unsigned PR build steps**
 
-For both Windows and macOS jobs, change preproduction selection to:
+Delete Windows/macOS steps whose only branch is:
 
 ```yaml
-if: github.ref == 'refs/heads/preview'
+if: github.event_name == 'pull_request'
 ```
 
-and production selection to:
+Keep the existing non-PR signed build commands and their signing secrets.
 
-```yaml
-if: github.ref != 'refs/heads/preview'
-```
+- [ ] **Step 4: Simplify preproduction/production configuration conditions without changing preview semantics**
 
-Do not change the validation scripts or environment variable names.
+Change preproduction Google Drive configuration from PR-or-preview to preview only.
 
-- [ ] **Step 4: Delete unsigned PR build steps and make the existing signed build the single build step**
+Keep production configuration for non-preview release paths.
 
-Remove both platform steps named like:
+Do not change updater versioning, artifact layout, signing, R2 deployment, release manifests, or target architectures.
 
-```text
-Build Tauri App for ... (PR, unsigned)
-```
-
-Rename the signed steps to normal platform build names and remove their now-always-true `if: github.event_name != 'pull_request'` conditions. Keep the signing-key environment variables exactly as they are.
-
-- [ ] **Step 5: Remove stale PR-only comments and prove no PR condition remains**
-
-Run:
-
-```bash
-grep -n "pull_request" .github/workflows/desktop-build-deploy.yml
-```
-
-Expected: no matches.
-
-Do not rewrite unrelated release/version/signing comments.
-
-- [ ] **Step 6: Validate and commit**
+- [ ] **Step 5: Validate release entry points and syntax**
 
 ```bash
 actionlint .github/workflows/desktop-build-deploy.yml
-git diff --check
+grep -n 'pull_request' .github/workflows/desktop-build-deploy.yml || true
+grep -n 'preview\|main\|v\*\|workflow_dispatch' .github/workflows/desktop-build-deploy.yml
+```
+
+Expected: no executable PR trigger/PR-only build branches remain; release entry points remain present.
+
+- [ ] **Step 6: Commit**
+
+```bash
 git add .github/workflows/desktop-build-deploy.yml
-git commit -m "ci: reserve desktop packaging for release flows"
+git commit -m "ci: stop packaging desktop apps on pull requests"
 ```
 
 ---
 
-### Task 4: Select only relevant CodeQL languages on pull requests
+### Task 6: Keep PR CodeQL language-scoped without a third classifier
 
 **Files:**
 - Modify: `.github/workflows/codeql.yml`
+- Reuse: `.github/scripts/ci-affected-scope.sh`
 
 **Interfaces:**
-- Consumes: changed PR file paths.
-- Produces: `select-languages.outputs.matrix` and `select-languages.outputs.should_run`; the existing `analyze` job consumes the dynamic matrix.
+- Consumes: `.github/scripts/ci-affected-scope.sh codeql` and GitHub PR source path filtering.
+- Produces: non-empty JSON language matrix; main/schedule always use all four existing languages.
 
-- [ ] **Step 1: Add a combined PR source-path trigger without changing push/schedule**
+- [ ] **Step 1: Add PR-level source/workflow paths**
 
-Under `pull_request`, add:
+Keep push-to-main and schedule unchanged. Under `pull_request`, add paths matching at least one CodeQL language:
 
 ```yaml
 paths:
   - '.github/workflows/**'
-  - '.github/actions/**'
   - '**/*.js'
+  - '**/*.jsx'
   - '**/*.cjs'
   - '**/*.mjs'
   - '**/*.ts'
+  - '**/*.tsx'
   - '**/*.svelte'
-  - '**/package.json'
-  - 'bun.lock'
   - 'scripts/**/*.py'
-  - 'scripts/**/requirements*.txt'
-  - 'packages/dtx-desktop/src-tauri/**'
+  - 'packages/dtx-desktop/src-tauri/**/*.rs'
 ```
 
-CodeQL is not a required context, so workflow-level path filtering is safe here.
+This is the cheap docs-only filter. It does not replace per-language PR selection.
 
-- [ ] **Step 2: Add a `select-languages` job before `analyze`**
+- [ ] **Step 2: Add a selector job that reuses the shared script**
 
-Add:
+Add before `analyze`:
 
 ```yaml
 select-languages:
@@ -463,219 +702,375 @@ select-languages:
   permissions:
     contents: read
   outputs:
-    matrix: ${{ steps.select.outputs.matrix }}
-    should_run: ${{ steps.select.outputs.should_run }}
+    languages: ${{ steps.scope.outputs.languages }}
   steps:
     - name: Checkout repository
+      if: github.event_name == 'pull_request'
       uses: actions/checkout@v7
       with:
         fetch-depth: 0
 
     - name: Select CodeQL languages
-      id: select
+      id: scope
       shell: bash
       env:
-        EVENT_NAME: ${{ github.event_name }}
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha }}
+        TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha }}
       run: |
-        set -euo pipefail
+        all='["actions","javascript-typescript","python","rust"]'
 
-        languages='[]'
-        add_language() {
-          local language="$1"
-          languages="$(jq -c --arg language "$language" '. + [{language: $language, "build-mode": "none"}]' <<<"$languages")"
-        }
-
-        if [[ "$EVENT_NAME" != "pull_request" ]]; then
-          add_language actions
-          add_language javascript-typescript
-          add_language python
-          add_language rust
-        else
-          if ! changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"; then
-            echo "::warning::Could not calculate PR diff; scanning all CodeQL languages."
-            add_language actions
-            add_language javascript-typescript
-            add_language python
-            add_language rust
-          else
-            if grep -Eq '^\.github/(workflows|actions)/' <<<"$changed_files"; then
-              add_language actions
-            fi
-
-            if grep -Eq '(^|/)(package\.json)$|^bun\.lock$|\.(js|cjs|mjs|ts|svelte)$' <<<"$changed_files"; then
-              add_language javascript-typescript
-            fi
-
-            if grep -Eq '^scripts/.*\.py$|^scripts/.*/requirements[^/]*\.txt$|^scripts/requirements[^/]*\.txt$' <<<"$changed_files"; then
-              add_language python
-            fi
-
-            if grep -Eq '^packages/dtx-desktop/src-tauri/' <<<"$changed_files"; then
-              add_language rust
-            fi
-          fi
+        if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+          echo "languages=$all" >> "$GITHUB_OUTPUT"
+          exit 0
         fi
 
-        matrix="$(jq -cn --argjson include "$languages" '{include: $include}')"
-        echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
-        if [[ "$(jq 'length' <<<"$languages")" -gt 0 ]]; then
-          echo "should_run=true" >> "$GITHUB_OUTPUT"
+        if languages="$(.github/scripts/ci-affected-scope.sh codeql)"; then
+          echo "languages=$languages" >> "$GITHUB_OUTPUT"
         else
-          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "CodeQL scope detection failed; analyzing all languages." >&2
+          echo "languages=$all" >> "$GITHUB_OUTPUT"
         fi
 ```
 
-The failure fallback is intentionally all languages.
+The script returns all four on an unexpected empty mapping after the workflow has triggered, so the matrix is never empty.
 
-- [ ] **Step 3: Feed the selector into the existing analyze job**
+- [ ] **Step 3: Replace the static analyze matrix source**
 
 Add:
 
 ```yaml
 needs: select-languages
-if: >-
-  ${{
-    (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
-    && needs.select-languages.outputs.should_run == 'true'
-  }}
 ```
 
-Replace the static matrix `include` block with:
+and change the matrix to:
 
 ```yaml
 strategy:
   fail-fast: false
-  matrix: ${{ fromJSON(needs.select-languages.outputs.matrix) }}
+  matrix:
+    language: ${{ fromJSON(needs.select-languages.outputs.languages) }}
 ```
 
-Keep the existing dynamic job name, runner choice, permissions, CodeQL init, and analyze steps unchanged.
+Retain the existing runner selection, permissions, CodeQL init, and analysis steps.
 
-- [ ] **Step 4: Validate the four mapping cases directly**
+- [ ] **Step 4: Fixture-check language mapping**
 
-Before committing, copy the selector shell into a temporary local shell function or inspect it with representative newline-separated paths and verify:
+```bash
+changed="$(mktemp)"
+printf '%s\n' \
+  '.github/workflows/unit-test.yml' \
+  'packages/dtx-web/src/lib/example.ts' \
+  'packages/dtx-desktop/src-tauri/src/api.rs' > "$changed"
 
-```text
-.github/workflows/unit-test.yml                     -> actions
-packages/dtx-web/src/routes/+page.svelte           -> javascript-typescript
-scripts/cli.py                                      -> python
-packages/dtx-desktop/src-tauri/src/api.rs           -> rust
+CI_CHANGED_FILES_FILE="$changed" \
+  .github/scripts/ci-affected-scope.sh codeql
 ```
 
-A path list containing both renderer TypeScript and Rust must emit both languages exactly once.
+Expected JSON contains exactly:
 
-- [ ] **Step 5: Validate and commit**
+```json
+["actions", "javascript-typescript", "rust"]
+```
+
+(order may be compacted but stays deterministic from the script).
+
+- [ ] **Step 5: Validate workflow syntax**
 
 ```bash
 actionlint .github/workflows/codeql.yml
-git diff --check
+```
+
+Expected: pass.
+
+- [ ] **Step 6: Commit**
+
+```bash
 git add .github/workflows/codeql.yml
-git commit -m "ci: scope CodeQL PR analysis by language"
+git commit -m "ci: scope PR CodeQL by changed language"
 ```
 
 ---
 
-### Task 5: Document the affected-area matrix and perform final verification
+### Task 7: Make partial coverage uploads compatible with Codecov policy
+
+**Files:**
+- Modify: `codecov.yml`
+- Modify: `.github/workflows/unit-test.yml`
+- Modify: `.github/workflows/tauri-rust-ci.yml`
+- Modify: `.github/workflows/desktop-e2e-test.yml`
+
+**Interfaces:**
+- Produces three named coverage streams: `typescript`, `tauri-rust`, and `desktop-e2e-rust`, each with carryforward enabled.
+
+- [ ] **Step 1: Add carryforward flag definitions without touching thresholds**
+
+Extend `codecov.yml`:
+
+```yaml
+coverage:
+  status:
+    project:
+      default:
+        target: 90%
+        threshold: 0%
+        informational: false
+        if_not_found: failure
+    patch:
+      default:
+        target: 90%
+        threshold: 0%
+        informational: false
+        if_not_found: failure
+
+flags:
+  typescript:
+    carryforward: true
+  tauri-rust:
+    carryforward: true
+  desktop-e2e-rust:
+    carryforward: true
+```
+
+Do not change the 90% values, threshold, or informational settings.
+
+- [ ] **Step 2: Flag root TypeScript coverage and make uploader transport informational**
+
+In `unit-test.yml`:
+
+```yaml
+with:
+  token: ${{ secrets.CODECOV_TOKEN }}
+  flags: typescript
+  fail_ci_if_error: false
+```
+
+Keep the upload step under the Task 2 `run_expensive` gate.
+
+- [ ] **Step 3: Flag Tauri Rust unit coverage**
+
+In `tauri-rust-ci.yml`:
+
+```yaml
+with:
+  token: ${{ secrets.CODECOV_TOKEN }}
+  files: packages/dtx-desktop/src-tauri/lcov.info
+  flags: tauri-rust
+  fail_ci_if_error: false
+```
+
+- [ ] **Step 4: Flag desktop E2E Rust coverage**
+
+In `desktop-e2e-test.yml`:
+
+```yaml
+with:
+  token: ${{ secrets.CODECOV_TOKEN }}
+  files: packages/dtx-desktop/src-tauri/e2e-lcov.info
+  flags: desktop-e2e-rust
+  fail_ci_if_error: false
+```
+
+- [ ] **Step 5: Verify the implementation PR establishes all three flags**
+
+Because this implementation changes `unit-test.yml`, `tauri-rust-ci.yml`, `desktop-e2e-test.yml`, and `codecov.yml`, all three coverage-producing workflows should be selected on the implementation PR. Confirm Codecov receives one upload for each flag before relying on carryforward on later PRs.
+
+- [ ] **Step 6: Validate thresholds and upload settings**
+
+```bash
+grep -n 'target: 90%\|threshold: 0%\|carryforward: true' codecov.yml
+grep -R -n 'flags: \|fail_ci_if_error:' \
+  .github/workflows/unit-test.yml \
+  .github/workflows/tauri-rust-ci.yml \
+  .github/workflows/desktop-e2e-test.yml
+actionlint \
+  .github/workflows/unit-test.yml \
+  .github/workflows/tauri-rust-ci.yml \
+  .github/workflows/desktop-e2e-test.yml
+```
+
+Expected: three carryforward flags, three matching uploader flags, all uploader transport failures non-blocking, 90% policy unchanged.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add codecov.yml \
+  .github/workflows/unit-test.yml \
+  .github/workflows/tauri-rust-ci.yml \
+  .github/workflows/desktop-e2e-test.yml
+git commit -m "ci: carry forward partial coverage suites"
+```
+
+---
+
+### Task 8: Document and verify the complete affected-area matrix
 
 **Files:**
 - Modify: `CLAUDE.md`
+- Verify: every HPA-613 workflow/script/config change
 
 **Interfaces:**
-- Consumes: the final workflow path/gate behavior from Tasks 1-4.
-- Produces: one contributor-facing matrix that future workflow edits can compare against.
+- Produces: contributor-visible CI rules and final evidence that scope reduction cannot silently suppress required validation.
 
-- [ ] **Step 1: Add an `Affected-area CI` subsection near the development/testing commands**
+- [ ] **Step 1: Add the ready-PR matrix to `CLAUDE.md`**
 
-Document these invariants:
+Document these cases:
 
-```markdown
-### Affected-area CI
+| Change | Unit coverage | ESLint/Prettier | Heavy lint/codegen | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| docs only | skip | run | skip | skip | skip | skip | skip | skip |
+| `dtx-web` | run | run | run | run | skip | skip | skip | JS/TS |
+| `dtx-api` | run | run | run | run | skip | skip | skip | JS/TS |
+| `common` | run | run | run | run | run | skip | skip | JS/TS |
+| `ui-components` | run | run | run | run | run | skip | skip | JS/TS |
+| desktop renderer | run | run | run | skip | run | run | skip | JS/TS |
+| desktop Rust | run | run | run | skip | run | run | skip | Rust |
+| web E2E only | skip | run | run | run | skip | skip | skip | JS/TS when source matches |
+| desktop E2E only | skip | run | run | skip | run | run | skip | JS/TS when source matches |
 
-The `Main` ruleset requires the `test` and `lint-and-format` job contexts. Those two workflows always start for a ready PR and perform a cheap Turborepo affected-package gate inside the existing required job; do not add PR-level `paths` filters to them.
+Also state:
 
-| PR change | `test` | `lint-and-format` | Web E2E | Desktop E2E | Tauri Rust | PR packaging | CodeQL |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| docs only | cheap gate | cheap gate | no | no | no | no | no |
-| `dtx-web` | full | full | yes | no | no | no | JS/TS |
-| `dtx-api` | full | full | yes | no | no | no | JS/TS |
-| `dtx-desktop` renderer | full | full | no | yes | yes | no | JS/TS |
-| `dtx-desktop/src-tauri` | full | full | no | yes | yes | no | Rust (+ JS/TS only when JS/TS files also change) |
-| `common` | full | full | yes | yes | yes | no | JS/TS |
-| `ui-components` | full | full | yes | yes | yes | no | JS/TS |
-| `e2e-web` | cheap/no unit work | full | yes | no | no | no | JS/TS |
-| `e2e-desktop` | cheap/no unit work | full | no | yes | yes | no | JS/TS |
-| `package.json` / `bun.lock` / `turbo.json` | full | full | yes | yes | yes | no | JS/TS |
+- `test` and `lint-and-format` must remain event-visible required contexts;
+- scope-detection failures run more CI, never less;
+- ordinary PR packaging is intentionally absent;
+- `main` and scheduled CodeQL remain full;
+- skipped coverage suites use Codecov carryforward flags.
 
-Windows/macOS packaging runs only from `preview`, `main`, `v*` tags, or manual dispatch. `main`/scheduled CodeQL remains a full language scan.
-```
-
-Keep the wording concise; this is an operational matrix, not a second design document.
-
-- [ ] **Step 2: Run final workflow lint and diff checks**
+- [ ] **Step 2: Re-run script verification**
 
 ```bash
-actionlint .github/workflows/*.yml
+bash -n .github/scripts/ci-affected-scope.sh
+
+empty_changed="$(mktemp)"
+: > "$empty_changed"
+
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-web.json \
+  .github/scripts/ci-affected-scope.sh unit | grep -qx true
+
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-empty.json \
+  .github/scripts/ci-affected-scope.sh unit | grep -qx false
+
+CI_CHANGED_FILES_FILE="$empty_changed" \
+CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-empty.json \
+  .github/scripts/ci-affected-scope.sh lint | grep -qx false
+```
+
+Expected: all pass.
+
+- [ ] **Step 3: Prove the malformed detector path fails open at wrapper level**
+
+Run the script directly and require failure:
+
+```bash
+if CI_CHANGED_FILES_FILE="$empty_changed" \
+  CI_AFFECTED_JSON_FILE=.github/scripts/fixtures/turbo-ls-malformed.json \
+  .github/scripts/ci-affected-scope.sh unit; then
+  echo 'expected malformed Turbo JSON to fail' >&2
+  exit 1
+fi
+```
+
+Then inspect `unit-test.yml` and `lint-and-format.yml` and confirm their `else` branches write `true` to the relevant outputs.
+
+- [ ] **Step 4: Re-run one real Turbo comparison**
+
+```bash
+TURBO_SCM_BASE="$(git rev-parse HEAD^)" \
+TURBO_SCM_HEAD="$(git rev-parse HEAD)" \
+  .github/scripts/ci-affected-scope.sh unit
+```
+
+Expected: exits 0 and logs raw changed files plus affected JSON.
+
+- [ ] **Step 5: Validate every changed workflow**
+
+```bash
+actionlint \
+  .github/workflows/unit-test.yml \
+  .github/workflows/lint-and-format.yml \
+  .github/workflows/e2e-test.yml \
+  .github/workflows/desktop-e2e-test.yml \
+  .github/workflows/tauri-rust-ci.yml \
+  .github/workflows/desktop-build-deploy.yml \
+  .github/workflows/codeql.yml
+```
+
+Expected: pass.
+
+- [ ] **Step 6: Verify required checks and release entry points stayed deterministic**
+
+```bash
+grep -n '^  test:' .github/workflows/unit-test.yml
+grep -n '^  lint-and-format:' .github/workflows/lint-and-format.yml
+grep -n 'preview\|main\|v\*\|workflow_dispatch' .github/workflows/desktop-build-deploy.yml
+```
+
+Expected: required job ids unchanged; release entry points retained.
+
+- [ ] **Step 7: Verify no PR packaging remains**
+
+```bash
+if grep -n 'pull_request' .github/workflows/desktop-build-deploy.yml; then
+  echo 'ordinary PR packaging reference remains' >&2
+  exit 1
+fi
+```
+
+Expected: no match.
+
+- [ ] **Step 8: Verify Codecov routing without policy drift**
+
+```bash
+grep -n 'target: 90%\|threshold: 0%' codecov.yml
+grep -n 'typescript:\|tauri-rust:\|desktop-e2e-rust:\|carryforward: true' codecov.yml
+```
+
+Expected: 90%/0% policy unchanged and all three flags present.
+
+- [ ] **Step 9: Run repository formatting validation for the changed docs/config**
+
+```bash
+bunx prettier --check \
+  .github/workflows/unit-test.yml \
+  .github/workflows/lint-and-format.yml \
+  .github/workflows/e2e-test.yml \
+  .github/workflows/desktop-e2e-test.yml \
+  .github/workflows/tauri-rust-ci.yml \
+  .github/workflows/desktop-build-deploy.yml \
+  .github/workflows/codeql.yml \
+  codecov.yml \
+  CLAUDE.md
+
 git diff --check
 ```
 
-Expected: clean.
+Expected: pass.
 
-- [ ] **Step 3: Re-check the active required status contexts**
-
-With authenticated `gh`:
-
-```bash
-gh api repos/cwchanap/DTXWeb/rulesets/6439239 \
-  --jq '.rules[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'
-```
-
-Expected output contains exactly:
-
-```text
-test
-lint-and-format
-```
-
-If the live ruleset changed since planning, update the gate strategy before merging rather than assuming these contexts.
-
-- [ ] **Step 4: Review the documented dry-run matrix against every workflow**
-
-For each row in `CLAUDE.md`, point to the corresponding PR `paths` list or required-job scope condition. Specifically verify `packages/common/**` and `packages/ui-components/**` fan out to both web and desktop validation, and a docs-only PR reaches only the two cheap required gates.
-
-- [ ] **Step 5: Confirm release behavior is unchanged for non-PR events**
-
-Inspect `desktop-build-deploy.yml` and verify all of these remain present:
-
-```text
-preview branch push
-main branch push
-v* tag push
-workflow_dispatch
-```
-
-Inspect `unit-test.yml`, `lint-and-format.yml`, `e2e-test.yml`, `tauri-rust-ci.yml`, and `codeql.yml` and verify push-to-`main` remains full rather than affected-only.
-
-- [ ] **Step 6: Commit the contributor documentation**
+- [ ] **Step 10: Commit documentation**
 
 ```bash
 git add CLAUDE.md
-git commit -m "docs: explain affected-area CI matrix"
+git commit -m "docs: document affected CI matrix"
 ```
 
-- [ ] **Step 7: Final branch verification**
+- [ ] **Step 11: Final implementation-PR proof before declaring HPA-613 complete**
 
-```bash
-git status --short
-git log --oneline main..HEAD
-git diff --stat main...HEAD
-actionlint .github/workflows/*.yml
-git diff --check main...HEAD
-```
+On the implementation PR, inspect the scope step log for a commit that changes `packages/dtx-web/**` (the implementation branch may include such a fixture/tested comparison rather than manufacturing a product change). The detector must show the web package in raw Turbo JSON and resolve unit coverage to `true`.
 
-Expected: clean worktree, only the seven workflow files plus `CLAUDE.md` changed, and every workflow passes `actionlint`.
+Do not accept `actionlint` alone as proof of scope correctness.
 
-## Implementation PR verification notes
+---
 
-When the implementation branch is marked ready for review, record which jobs actually ran/skipped for the branch's changed paths. The branch itself changes workflows and `CLAUDE.md`, so it is not a pure docs-only example; use the matrix above as the acceptance artifact rather than creating throwaway test infrastructure solely to manufacture every path combination.
+## Expected implementation commit sequence
+
+1. `ci: add affected scope detector`
+2. `ci: gate root unit coverage by affected scope`
+3. `ci: gate generated lint work by affected scope`
+4. `ci: scope e2e and rust checks by path`
+5. `ci: stop packaging desktop apps on pull requests`
+6. `ci: scope PR CodeQL by changed language`
+7. `ci: carry forward partial coverage suites`
+8. `docs: document affected CI matrix`
+
+Each commit is independently reviewable after the detector seam exists. Do not start relying on path filters or packaging reductions until Task 1 has executed successfully against both fixture JSON and one real Turborepo comparison.

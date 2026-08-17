@@ -44,40 +44,46 @@ mod double_option {
     use std::fmt;
     use std::marker::PhantomData;
 
+    pub(crate) struct DoubleOptionVisitor<T>(PhantomData<T>);
+
+    impl<T> DoubleOptionVisitor<T> {
+        pub(crate) fn new() -> Self {
+            DoubleOptionVisitor(PhantomData)
+        }
+    }
+
+    impl<'de, T> Visitor<'de> for DoubleOptionVisitor<T>
+    where
+        T: Deserialize<'de>,
+    {
+        type Value = Option<Option<T>>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a nullable value or absent field")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Some(None))
+        }
+
+        fn visit_some<E: Deserializer<'de>>(
+            self,
+            deserializer: E,
+        ) -> Result<Self::Value, E::Error> {
+            T::deserialize(deserializer).map(|v| Some(Some(v)))
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(Some(None))
+        }
+    }
+
     pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
     where
         T: Deserialize<'de>,
         D: Deserializer<'de>,
     {
-        struct DoubleOptionVisitor<T>(PhantomData<T>);
-
-        impl<'de, T> Visitor<'de> for DoubleOptionVisitor<T>
-        where
-            T: Deserialize<'de>,
-        {
-            type Value = Option<Option<T>>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a nullable value or absent field")
-            }
-
-            fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
-                Ok(Some(None))
-            }
-
-            fn visit_some<E: Deserializer<'de>>(
-                self,
-                deserializer: E,
-            ) -> Result<Self::Value, E::Error> {
-                T::deserialize(deserializer).map(|v| Some(Some(v)))
-            }
-
-            fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
-                Ok(Some(None))
-            }
-        }
-
-        deserializer.deserialize_option(DoubleOptionVisitor(PhantomData))
+        deserializer.deserialize_option(DoubleOptionVisitor::<T>::new())
     }
 }
 
@@ -275,4 +281,42 @@ pub struct UpdateSimfileRecordResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub error: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::double_option::DoubleOptionVisitor;
+    use serde::de::value::Error;
+    use serde::de::Visitor;
+
+    #[test]
+    fn double_option_treats_unit_as_clear() {
+        // visit_unit maps a unit value to Some(None) (clear), matching the
+        // semantics of visit_none for deserializers that represent null as
+        // unit. serde_json never produces unit values, so this branch is
+        // exercised directly via the visitor.
+        let visitor = DoubleOptionVisitor::<i64>::new();
+        let result = visitor
+            .visit_unit::<Error>()
+            .expect("unit is a clear request");
+        assert_eq!(result, Some(None));
+    }
+
+    #[test]
+    fn double_option_rejects_unexpected_type_via_expecting() {
+        // An unexpected type (bool) hits the default visit_bool impl, which
+        // calls Error::invalid_type → DoubleOptionVisitor::expecting. This
+        // covers the expecting formatter, which serde_json never reaches for
+        // an option visitor.
+        let visitor = DoubleOptionVisitor::<i64>::new();
+        let error = visitor
+            .visit_bool::<Error>(true)
+            .expect_err("bool is not a valid option value");
+        assert!(
+            error
+                .to_string()
+                .contains("a nullable value or absent field"),
+            "expecting message should appear in error: {error}"
+        );
+    }
 }

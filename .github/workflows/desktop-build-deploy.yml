@@ -1,9 +1,6 @@
 name: Desktop App Cross-Platform Build and Deploy
 
 on:
-  pull_request:
-    branches: [main, master]
-    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - preview
@@ -47,7 +44,6 @@ jobs:
     permissions:
       contents: read
     name: Windows Tauri Build
-    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.head_ref != 'preview')
     runs-on: windows-latest
     # Each platform build targets its own GitHub environment so concurrent
     # build-windows / build-mac runs each get their own "active" deployment
@@ -85,7 +81,6 @@ jobs:
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: packages/dtx-desktop/src-tauri
-          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
@@ -94,14 +89,14 @@ jobs:
         run: bun run --filter=@dtx/common build
 
       - name: Configure Google Drive build for preproduction
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+        if: github.ref == 'refs/heads/preview'
         shell: bash
         env:
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
 
       - name: Configure Google Drive build for production
-        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/preview'
+        if: github.ref != 'refs/heads/preview'
         shell: bash
         env:
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
@@ -141,8 +136,7 @@ jobs:
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           # Re-enable updater artifact generation for this signed release build.
           # The committed tauri.conf.json ships with createUpdaterArtifacts=false
-          # so that PR builds (which deliberately run WITHOUT the signing key)
-          # and local builds without TAURI_SIGNING_PRIVATE_KEY don't hard-fail:
+          # so local builds without TAURI_SIGNING_PRIVATE_KEY don't hard-fail:
           # Tauri errors out whenever an updater-enabled target (nsis) is built
           # with a configured pubkey but no private key. Only signed release
           # builds (tag / workflow_dispatch / push to main) flip it back on,
@@ -152,20 +146,7 @@ jobs:
           jq --tab '.bundle.createUpdaterArtifacts = true' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
           echo "Baked release version $VERSION into tauri.conf.json and Cargo.toml"
 
-      # PR builds run unsigned: the updater signing key must never be exposed
-      # to PR-controlled build scripts (beforeBuildCommand runs PR-controlled
-      # Vite/Cargo code that could exfiltrate it). A leaked signing key lets an
-      # attacker ship trusted updater bundles to every installed desktop client.
-      # With createUpdaterArtifacts=false in the committed config, PR builds skip
-      # signing entirely and succeed without the private key.
-      - name: Build Tauri App for Windows (PR, unsigned)
-        if: github.event_name == 'pull_request'
-        run: bun run --filter=dtx-desktop tauri build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build Tauri App for Windows (release, signed)
-        if: github.event_name != 'pull_request'
         run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -196,7 +177,6 @@ jobs:
     permissions:
       contents: read
     name: macOS Tauri Build
-    if: github.event_name != 'pull_request' || (github.event.pull_request.draft == false && github.head_ref != 'preview')
     runs-on: macos-latest
     # See build-windows for the rationale on per-platform environments.
     environment: Desktop-macOS
@@ -225,7 +205,6 @@ jobs:
         uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           workspaces: packages/dtx-desktop/src-tauri
-          save-if: ${{ github.event_name != 'pull_request' }}
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
@@ -234,14 +213,14 @@ jobs:
         run: bun run --filter=@dtx/common build
 
       - name: Configure Google Drive build for preproduction
-        if: github.event_name == 'pull_request' || github.ref == 'refs/heads/preview'
+        if: github.ref == 'refs/heads/preview'
         shell: bash
         env:
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
 
       - name: Configure Google Drive build for production
-        if: github.event_name != 'pull_request' && github.ref != 'refs/heads/preview'
+        if: github.ref != 'refs/heads/preview'
         shell: bash
         env:
           GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
@@ -275,20 +254,13 @@ jobs:
           awk -v v="\"$VERSION\"" '/^version = / && !done {print "version = " v; done=1; next} {print}' "$CARGO" > "$tmp" && mv "$tmp" "$CARGO"
           # Re-enable updater artifact generation for this signed release build.
           # See the Windows job for the full rationale: the committed config
-          # ships createUpdaterArtifacts=false so unsigned PR/local builds don't
-          # hard-fail on the missing TAURI_SIGNING_PRIVATE_KEY.
+          # ships createUpdaterArtifacts=false so local builds don't hard-fail
+          # on the missing TAURI_SIGNING_PRIVATE_KEY.
           tmp=$(mktemp)
           jq --tab '.bundle.createUpdaterArtifacts = true' "$CONF" > "$tmp" && mv "$tmp" "$CONF"
           echo "Baked release version $VERSION into tauri.conf.json and Cargo.toml"
 
-      - name: Build Tauri App for macOS (PR, unsigned)
-        if: github.event_name == 'pull_request'
-        run: bun run --filter=dtx-desktop tauri build
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Build Tauri App for macOS (release, signed)
-        if: github.event_name != 'pull_request'
         run: bun run --filter=dtx-desktop tauri build
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

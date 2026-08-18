@@ -114,7 +114,7 @@ Prefer the existing account-level serial-number list/posture rule when DTXWeb is
 
 Verify the two policy clauses separately. A failed-posture device proves only the `Require` rule. The production rollout must also use the trusted device with a second IdP identity that is not in the `Include` list and confirm Access denies it.
 
-Do not change the account's instant-authentication setting merely to make `curl` output easier to recognize. During setup, record whether the reused Perseus login method uses the Cloudflare Access login page or instant authentication, then use the same mode for both DTXWeb applications and configure the verification helper to recognize that tenant's actual Access redirect target.
+Do not change the account's instant-authentication setting merely to make `curl` output easier to recognize. During setup, record whether the reused Perseus login method uses the Cloudflare Access login page or instant authentication, then use the same mode for both DTXWeb applications and configure the verification helper to recognize that tenant's actual Access interception signal: a redirect when present, or HTTP `403` with both `cf-access-aud` and `cf-access-domain` headers.
 
 Do not add Service Auth, Managed OAuth, or service tokens. API and other non-browser traffic stay outside these Access applications.
 
@@ -186,7 +186,7 @@ No source or deployment code changes are planned. If verification shows that Sve
 
 ## Verification Requirements
 
-The durable runbook must make a missing HTTP response fail loudly. A DNS failure, connection failure, or timeout may not count as a successful `assert_no_access_redirect` result.
+The durable runbook must make a missing HTTP response fail loudly. A DNS failure, connection failure, or timeout may not count as a successful `assert_no_access_interception` result.
 
 The runbook owns one pre-production matrix and one production matrix. The implementation plan must invoke those sections rather than duplicate their commands.
 

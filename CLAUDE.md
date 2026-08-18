@@ -219,6 +219,29 @@ Check `__mocks__/` folder before creating new mocks:
 - Vitest with jsdom environment
 - Global mocks auto-loaded
 
+### Affected CI matrix
+
+Pull requests keep the required unit and lint workflows present; affected scope
+only gates their expensive steps. The expected validation matrix is:
+
+| Change               | Unit | ESLint/Prettier | Heavy lint | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
+| -------------------- | ---- | --------------- | ---------- | ------- | ----------- | ------- | --------- | ------ |
+| docs only            | skip | run             | skip       | skip    | skip        | skip    | skip      | skip   |
+| web/API              | run  | run             | run        | run     | skip        | skip    | skip      | JS/TS  |
+| common/ui            | run  | run             | run        | run     | run         | skip    | skip      | JS/TS  |
+| desktop renderer     | run  | run             | run        | skip    | run         | run     | skip      | JS/TS  |
+| desktop Rust         | run  | run             | run        | skip    | run         | run     | skip      | Rust   |
+| `tsconfig.base.json` | run  | run             | run        | run     | run         | skip    | skip      | JS/TS  |
+
+The required `test` context belongs to the unit workflow; Playwright publishes
+the `playwright` context. Required workflows are never event-level path-skipped.
+If affected-scope detection is uncertain, unit and lint run more validation and
+CodeQL analyzes all languages. Codecov upload transport is informational by
+HPA-613 design. Risky desktop packaging changes can be exercised with
+`workflow_dispatch` before merge; normal PR packaging is intentionally absent.
+CodeQL uses `build-mode: none`, runs all languages on `main` pushes and scheduled
+scans, and conservatively selects mapped languages for pull requests.
+
 ### Unit Testing Approach
 
 - For unit tests, only write tests involving code logic

@@ -8,12 +8,12 @@ die() {
 }
 
 if [[ "$#" -ne 1 ]]; then
-	die 'usage: ci-affected-scope.sh <unit|lint>'
+	die 'usage: ci-affected-scope.sh <unit|lint|codeql>'
 fi
 
 mode="$1"
 case "$mode" in
-	unit | lint) ;;
+	unit | lint | codeql) ;;
 	*) die "unsupported mode: $mode" ;;
 esac
 
@@ -22,6 +22,61 @@ esac
 
 if ! changed_paths="$(git diff --name-only --merge-base "$TURBO_SCM_BASE" "$TURBO_SCM_HEAD")"; then
 	die 'could not determine changed paths'
+fi
+
+if [[ "$mode" == codeql ]]; then
+	codeql_actions=false
+	codeql_javascript_typescript=false
+	codeql_python=false
+	codeql_rust=false
+	while IFS= read -r changed_path; do
+		if [[ -z "$changed_path" ]]; then
+			continue
+		fi
+
+		case "$changed_path" in
+			.github/workflows/* | .github/actions/*)
+				codeql_actions=true
+				;;
+			packages/dtx-desktop/src-tauri/*)
+				if [[ "$changed_path" == *.rs ]]; then
+					codeql_rust=true
+				else
+					die "uncertain CodeQL language mapping for native path: $changed_path"
+				fi
+				;;
+			scripts/*.py)
+				codeql_python=true
+				;;
+			scripts/requirements*.txt | scripts/*/requirements*.txt)
+				codeql_python=true
+				;;
+			*.js | *.cjs | *.mjs | *.jsx | *.ts | *.tsx | *.svelte | package.json | */package.json | bun.lock | tsconfig.base.json)
+				codeql_javascript_typescript=true
+				;;
+		esac
+	done <<<"$changed_paths"
+
+	codeql_output=()
+	if [[ "$codeql_actions" == true ]]; then
+		codeql_output+=('"actions"')
+	fi
+	if [[ "$codeql_javascript_typescript" == true ]]; then
+		codeql_output+=('"javascript-typescript"')
+	fi
+	if [[ "$codeql_python" == true ]]; then
+		codeql_output+=('"python"')
+	fi
+	if [[ "$codeql_rust" == true ]]; then
+		codeql_output+=('"rust"')
+	fi
+
+	if [[ "${#codeql_output[@]}" -eq 0 ]]; then
+		die 'CodeQL language selection was empty'
+	fi
+
+	(IFS=,; printf '[%s]\n' "${codeql_output[*]}")
+	exit 0
 fi
 
 if ! turbo_json="$(bunx turbo@2.10.9 ls --affected --output=json)"; then

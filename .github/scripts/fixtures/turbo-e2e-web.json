@@ -1,0 +1,12 @@
+{
+	"packageManager": "bun",
+	"packages": {
+		"count": 1,
+		"items": [
+			{
+				"name": "dtx-e2e-web",
+				"path": "packages/e2e-web"
+			}
+		]
+	}
+}

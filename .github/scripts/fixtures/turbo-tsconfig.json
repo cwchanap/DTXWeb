@@ -1,0 +1,36 @@
+{
+	"packageManager": "bun",
+	"packages": {
+		"count": 7,
+		"items": [
+			{
+				"name": "@dtx/common",
+				"path": "packages/common"
+			},
+			{
+				"name": "@dtx/ui-components",
+				"path": "packages/ui-components"
+			},
+			{
+				"name": "dtx-api",
+				"path": "packages/dtx-api"
+			},
+			{
+				"name": "dtx-desktop",
+				"path": "packages/dtx-desktop"
+			},
+			{
+				"name": "dtx-e2e-desktop",
+				"path": "packages/e2e-desktop"
+			},
+			{
+				"name": "dtx-e2e-web",
+				"path": "packages/e2e-web"
+			},
+			{
+				"name": "dtx-web",
+				"path": "packages/dtx-web"
+			}
+		]
+	}
+}

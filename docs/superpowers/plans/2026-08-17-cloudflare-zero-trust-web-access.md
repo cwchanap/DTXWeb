@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make production DTXWeb `/app` and production desktop login operator-only behind Cloudflare Zero Trust, while protecting the entire pre-production web hostname and leaving the public production site plus both API hostnames outside Access.
+**Goal:** Make production DTXWeb `/app` and desktop login against deployed web environments operator-only behind Cloudflare Zero Trust, while protecting the entire pre-production web hostname and leaving the public production site plus both API hostnames outside Access.
 
-**Architecture:** Configure two manually managed Cloudflare Access self-hosted public-hostname applications. Roll out hostname-wide pre-production first to prove identity, device posture, Supabase login/OAuth, and rollback; only then create the production application scoped to exactly `/app` and `/app/*`. Supabase stays as the inner application-authentication gate, and route boundaries are verified with HTTP headers plus trusted-device browser/desktop smoke tests.
+**Architecture:** Configure two manually managed Cloudflare Access self-hosted public-hostname applications. Roll out hostname-wide pre-production first; only after identity, posture, Supabase auth, and the verification harness are proven should production be scoped to exactly `/app` and `/app/*`. The checked-in runbook is the single executable source of truth for all matrices and manual checks; this plan references those sections instead of duplicating their command blocks.
 
 **Tech Stack:** Cloudflare Zero Trust Access dashboard, Cloudflare One Client/WARP device posture, SvelteKit/Supabase existing authentication, Markdown operator documentation, `curl` header verification.
 
@@ -15,20 +15,21 @@
 - Do not add Pulumi, Terraform, or another infrastructure-as-code system.
 - Do not add CI deployment for Zero Trust.
 - Do not modify `packages/dtx-web`, `packages/dtx-api`, or `packages/dtx-desktop` in this slice.
-- Production `/app` and production desktop login are intentionally operator-only behind Access; normal Supabase users are not expected to enter production `/app`.
+- Production `/app` and desktop login against production are intentionally operator-only behind Access.
 - Production Access destinations must be exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`.
-- Production `/`, `/blog`, `/preview`, `/editor`, `/tool/*`, `/game`, `/login`, `/auth/*`, and every route outside `/app` remain outside Access.
+- Production `/`, `/blog`, `/preview/*`, `/editor`, `/tool/*`, `/game`, `/login`, `/auth/*`, and every intended public route outside `/app` remain outside Access.
 - Pre-production Access covers the entire `pre-prod.dtx.hapadona.com` hostname with no path bypass.
 - `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com` remain outside Access.
 - Use an `Allow` policy that includes the intended operator identity/email and requires the trusted-device serial-number posture check used for Perseus.
 - Use a `12h` Access session duration.
-- Prefer reusing the existing account-level Perseus serial-number list/posture rule when available in the same Zero Trust account. If DTXWeb is in another Zero Trust account, create an equivalent list/posture rule there without weakening the requirement.
-- Do not create Service Auth policies, service tokens, or Access credentials for API, desktop, CLI, or CI traffic.
-- Do not enable Managed OAuth or add machine-auth behavior in this slice.
-- Keep the normal Cloudflare Access login-page flow during rollout rather than enabling instant authentication; the header checks below use the Access `302`/`Location` signal.
+- Reuse the existing Perseus identity-provider and instant-authentication mode; do not change instant authentication merely to simplify `curl` verification.
+- Verify the Access `Include` identity selector independently from the device-posture `Require` selector.
+- Do not create Service Auth, Managed OAuth, service tokens, or other Access credentials for API, desktop, E2E, CLI, or CI traffic.
+- Unattended E2E against the Access-protected pre-production hostname is unsupported by this slice.
+- Standalone desktop development that targets a deployed web hostname is subject to the same Access gate; the full local-stack `dev:local-web` path remains the non-operator development option.
 - Do not commit the operator email, device serial numbers, Access cookies, tokens, screenshots containing credentials, or other personal/security identifiers.
-- Configure and verify pre-production before creating the production Access application.
-- If implementation reveals that application code must change for the approved model to work, stop and create a separate follow-up rather than widening this slice.
+- Configure and prove pre-production before creating the production Access application.
+- If verification reveals that application code must change for the approved model to work, stop and create a separate follow-up rather than widening this slice.
 
 ---
 
@@ -41,17 +42,17 @@
 
 **Interfaces:**
 
-- Consumes: the approved protection matrix and rollout order from the design spec.
-- Produces: the durable repository source of truth for manual Access configuration, verification, rollback, and the operator-only product intent.
+- Consumes: the approved protection matrix, rollout order, and product consequences from the design spec.
+- Produces: the single executable source of truth for dashboard configuration, HTTP helpers, route matrices, browser/desktop checks, known limitations, and rollback.
 
-- [ ] **Step 1: Create the runbook with the exact configuration and rollout contract**
+- [ ] **Step 1: Create the runbook**
 
 Create `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md` with:
 
 ```markdown
 # Cloudflare Zero Trust Web Access Runbook
 
-## Scope
+## Scope And Invariants
 
 DTXWeb uses manually managed Cloudflare Zero Trust Access for two web surfaces:
 
@@ -61,144 +62,173 @@ DTXWeb uses manually managed Cloudflare Zero Trust Access for two web surfaces:
 | `DTXWeb Production App` | `dtx.hapadona.com/app` |
 | `DTXWeb Production App` | `dtx.hapadona.com/app/*` |
 
-Production `/app` and production desktop login are intentionally operator-only. The configured Access identity and trusted-device posture are an outer gate; Supabase remains the inner application-authentication gate.
+Production `/app` and production desktop login are intentionally operator-only. The Access identity and trusted-device posture are an outer gate; Supabase remains the inner application-authentication gate.
 
-A normal Supabase user may reach public `/login`, authenticate successfully, and then be denied when returning to `/app`. That is expected for this configuration: public `/login` is an entry point, not an Access bypass.
+Production Access covers the intended private route family: exact `/app` and descendants under `/app/`. New private production pages MUST live under `/app`; a new private sibling such as `/studio` or `/admin` would be publicly reachable until this Access design is updated. `hooks.server.ts` currently uses the slightly broader `pathname.startsWith('/app')`; do not rely on that string-prefix quirk for new routes.
 
-The production landing page and public content/tools remain outside Access, including `/blog`, `/preview`, `/editor`, `/tool/*`, and `/game`. Both GraphQL API hostnames remain outside Access.
+A normal Supabase user may reach public `/login`, authenticate successfully, and then be denied when returning to `/app`. If they now hold a Supabase session, the server redirects `/login` back to `/app` and the only current sign-out UI is inside the protected `(app)` layout. The current recovery is to clear the Drumery/Supabase cookies for `dtx.hapadona.com`. A public `/logout` route or changing the authenticated `/login` redirect is a deferred product decision, not part of this dashboard-only slice.
 
-This runbook is the durable Zero Trust source of truth. `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md` is useful precedent for human-executed Cloudflare operations but remains a historical API-migration runbook and is not modified for this feature.
+Standalone desktop development (`bun run dev:desktop`) loads `VITE_DTX_SERVER_URL` from the ignored root `.env`. In the current operator setup that points to production, so the ordinary standalone `tauri dev` login is operator-only after this rollout. Pointing it at pre-production does not help a non-operator because pre-production is hostname-wide Access-protected. Non-operator contributors must use the full local stack (`bun run dev`, which uses `dtx-desktop#dev:local-web`) or a separately designed ungated development environment.
+
+The web E2E harness can override `PLAYWRIGHT_BASE_URL`, but this slice provides no non-interactive Access credential. Unattended E2E/CI against `pre-prod.dtx.hapadona.com` is therefore unsupported until a separate Access-authentication design is approved.
+
+This runbook is the durable Zero Trust source of truth. `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md` is precedent for human-executed Cloudflare operations but remains a historical API-migration checklist.
 
 ## Required Policy
 
 Both Access applications use the same policy semantics:
 
 - Action: `Allow`
-- Include: the intended operator identity/email used for existing Perseus access
+- Include: the intended operator identity/email used for Perseus access
 - Require: the trusted-device serial-number posture check used for Perseus
 - Session duration: `12h`
 - Service Auth: none
 - Managed OAuth: off
-- Instant authentication: off during this rollout so unauthenticated header verification has a stable Access-login redirect
 
-Reuse the existing account-level Perseus serial-number list/posture rule when it is available in the same Zero Trust account. If DTXWeb is in another Zero Trust account, create an equivalent serial-number list and posture rule there using the same intended trusted devices.
+Reuse the existing Perseus identity provider and its current instant-authentication mode. Do not toggle instant authentication merely to make a header test easier.
 
-Never commit the email address, device serial numbers, Access cookies, tokens, or other security identifiers to this repository.
+Before rollout, inspect a known protected Perseus route and set an uncommitted shell regex that matches the actual unauthenticated Access redirect for this tenant:
 
-## Rollout Order
+```bash
+export ACCESS_REDIRECT_RE='<regex matching this tenant\'s Access redirect Location>'
+```
 
-1. Confirm the operator identity and trusted-device posture rule.
-2. Create and verify `DTXWeb Pre-prod`.
-3. Prove pre-production password login, Google OAuth, posture denial, and API non-interception.
-4. Stop and roll back pre-production if any check fails.
-5. Create `DTXWeb Production App` with only `/app` and `/app/*`.
-6. Run the complete production public/protected header matrix.
-7. Run the trusted production browser and desktop-login checks.
-8. Re-run both API non-interception checks.
+For a tenant using the normal Cloudflare Access login page, a suitable value is:
 
-Do not create the production Access application until the pre-production checks are green.
+```bash
+export ACCESS_REDIRECT_RE='^location: https://[^/]+\.cloudflareaccess\.com/cdn-cgi/access/'
+```
+
+If Perseus uses instant authentication, set the regex to the known direct IdP redirect shape observed from that existing protected route. Keep one redirect mode for the whole DTXWeb rollout.
+
+Never commit the operator email, device serial numbers, tenant-specific cookies/tokens, or other credentials.
 
 ## Header Verification Helpers
 
-Use unauthenticated requests with no Access cookies:
+Use unauthenticated requests with no Access cookies. A request that fails DNS, connection, TLS, or timeout checks MUST fail the assertion instead of being interpreted as an unprotected route.
 
 ```bash
-access_headers() {
-  curl -sS -o /dev/null -D - "$1" | tr -d '\r'
+http_headers() {
+  url="$1"
+  raw="$(curl -sS --max-time 15 -o /dev/null -D - "$url")" || {
+    echo "FAIL: no HTTP response from $url" >&2
+    return 1
+  }
+
+  headers="$(printf '%s\n' "$raw" | tr -d '\r')"
+  printf '%s\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ [0-9]{3}' || {
+    echo "FAIL: no HTTP status line from $url" >&2
+    return 1
+  }
+
+  printf '%s\n' "$headers"
 }
 
 assert_access_redirect() {
   url="$1"
-  headers="$(access_headers "$url")"
+  : "${ACCESS_REDIRECT_RE:?set ACCESS_REDIRECT_RE from the current Perseus Access flow}"
+  headers="$(http_headers "$url")" || return 1
   printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip'
-  printf '%s\n' "$headers" \
-    | grep -Eiq '^location: https://[^/]+\.cloudflareaccess\.com/cdn-cgi/access/' \
-    || { echo "FAIL: Access did not intercept $url" >&2; return 1; }
+  printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE" || {
+    echo "FAIL: Access did not intercept $url" >&2
+    return 1
+  }
 }
 
 assert_no_access_redirect() {
   url="$1"
-  headers="$(access_headers "$url")"
+  : "${ACCESS_REDIRECT_RE:?set ACCESS_REDIRECT_RE from the current Perseus Access flow}"
+  headers="$(http_headers "$url")" || return 1
   printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip'
-  if printf '%s\n' "$headers" \
-    | grep -Eiq '^location: https://[^/]+\.cloudflareaccess\.com/cdn-cgi/access/'; then
+  if printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
     echo "FAIL: Access unexpectedly intercepted $url" >&2
     return 1
   fi
 }
 ```
 
-An origin `200`, `3xx`, `4xx`, or `5xx` can all be valid for an unprotected URL. The boundary assertion is whether Cloudflare Access intercepted the request.
+Dry-run the harness before changing DTXWeb:
+
+- `assert_access_redirect` against a known protected Perseus URL must pass.
+- `assert_no_access_redirect https://dtx.hapadona.com/` must pass before production Access exists.
+- `http_headers https://this-host-does-not-exist-zzz.hapadona.com/` must fail non-zero.
+
+Do not proceed until the invalid-host check fails loudly.
+
+## Rollout Order
+
+1. Confirm the Perseus IdP, instant-auth mode, operator identity, and serial posture rule.
+2. Dry-run the header helpers.
+3. Create and verify `DTXWeb Pre-prod`.
+4. Prove pre-production password login, Google OAuth, posture denial, and API non-interception.
+5. Stop and roll back if any required pre-production check fails.
+6. Create `DTXWeb Production App` with only `/app` and `/app/*`.
+7. Run the complete production matrix.
+8. Prove the Access identity selector and posture selector independently.
+9. Run production browser and desktop-login checks.
+10. Characterize expired Access behavior during SvelteKit client-side navigation.
+11. Record final non-sensitive results and deferred limitations.
 
 ## Pre-production Configuration
 
-In **Zero Trust > Access controls > Applications**:
+Create `DTXWeb Pre-prod` as **Self-hosted and private** for the entire public hostname:
 
-1. Create a **Self-hosted and private** application.
-2. Name it `DTXWeb Pre-prod`.
-3. Add one public hostname for `pre-prod.dtx.hapadona.com` with no path restriction.
-4. Set session duration to `12h`.
-5. Attach the operator `Allow` policy with the serial-number posture requirement.
-6. Leave Service Auth, Managed OAuth, and instant authentication off.
-7. Save the application.
+```text
+pre-prod.dtx.hapadona.com
+```
 
-Do not add `api.pre-prod.dtx.hapadona.com`.
+Set session duration to `12h`, attach the operator `Allow` policy with the serial-number posture requirement, and use the same IdP/instant-auth mode as Perseus. Do not add `api.pre-prod.dtx.hapadona.com`, Service Auth, Managed OAuth, or service tokens.
 
-## Pre-production Verification
+## Pre-production Verification Matrix
 
-Run:
+Run the following with no Access session:
 
 ```bash
 assert_access_redirect https://pre-prod.dtx.hapadona.com/
 assert_access_redirect https://pre-prod.dtx.hapadona.com/login
 assert_access_redirect https://pre-prod.dtx.hapadona.com/auth/callback
 assert_access_redirect https://pre-prod.dtx.hapadona.com/blog
-assert_access_redirect https://pre-prod.dtx.hapadona.com/preview
+assert_access_redirect https://pre-prod.dtx.hapadona.com/preview/1
 assert_access_redirect https://pre-prod.dtx.hapadona.com/editor
 assert_access_redirect https://pre-prod.dtx.hapadona.com/tool/dtx-to-midi
 assert_access_redirect https://pre-prod.dtx.hapadona.com/game
 assert_access_redirect https://pre-prod.dtx.hapadona.com/app
+assert_access_redirect https://pre-prod.dtx.hapadona.com/app/
 assert_access_redirect https://pre-prod.dtx.hapadona.com/app/score
+assert_access_redirect https://pre-prod.dtx.hapadona.com/app/__data.json
 assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
 ```
 
-Then, on the trusted WARP/Cloudflare One device with the allowed identity:
+Every command must exit `0`. If one fails, disable/delete `DTXWeb Pre-prod` and stop before production.
 
-- enter the pre-production hostname through Access;
-- complete a password login and return to the application;
-- complete Google OAuth and confirm the callback returns behind the same hostname-wide Access gate;
-- confirm normal pre-production API-backed application behavior still works;
-- from a device that fails the serial posture rule, confirm the hostname is denied before DTXWeb loads.
+On the trusted operator device, complete both password login and Google OAuth behind the hostname-wide Access session and confirm an API-backed `/app` page works normally.
 
-If any pre-production check fails, disable/delete `DTXWeb Pre-prod` and stop. Do not create production Access yet.
+From a device that fails the serial posture rule, confirm pre-production is denied before DTXWeb loads.
 
 ## Production Configuration
 
-Only after pre-production verification succeeds:
+Only after all required pre-production checks pass, create `DTXWeb Production App` as **Self-hosted and private** with exactly:
 
-1. Create a **Self-hosted and private** application.
-2. Name it `DTXWeb Production App`.
-3. Add exactly these public-hostname destinations:
-   - `dtx.hapadona.com/app`
-   - `dtx.hapadona.com/app/*`
-4. Set session duration to `12h`.
-5. Attach the operator `Allow` policy with the serial-number posture requirement.
-6. Leave Service Auth, Managed OAuth, and instant authentication off.
-7. Save the application.
+```text
+dtx.hapadona.com/app
+dtx.hapadona.com/app/*
+```
 
-Do not add a hostname-wide `dtx.hapadona.com` destination or any other production path.
+Set session duration to `12h`, attach the same operator `Allow` policy and serial posture requirement, and preserve the Perseus IdP/instant-auth mode. Do not add a hostname-wide production destination, public routes, Service Auth, Managed OAuth, or service tokens.
 
 ## Production Header Matrix
 
-Run:
+Run with no Access session:
 
 ```bash
 assert_access_redirect https://dtx.hapadona.com/app
+assert_access_redirect https://dtx.hapadona.com/app/
 assert_access_redirect https://dtx.hapadona.com/app/score
+assert_access_redirect https://dtx.hapadona.com/app/__data.json
 
 assert_no_access_redirect https://dtx.hapadona.com/
 assert_no_access_redirect https://dtx.hapadona.com/blog
-assert_no_access_redirect https://dtx.hapadona.com/preview
+assert_no_access_redirect https://dtx.hapadona.com/preview/1
 assert_no_access_redirect https://dtx.hapadona.com/editor
 assert_no_access_redirect https://dtx.hapadona.com/tool/dtx-to-midi
 assert_no_access_redirect https://dtx.hapadona.com/game
@@ -208,47 +238,93 @@ assert_no_access_redirect https://api.dtx.hapadona.com/
 assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
 ```
 
-The public matrix is intentionally broad enough to catch an accidentally hostname-wide or over-broad production destination; `/tool/dtx-to-midi` also catches accidental `/t*`-style scoping.
+Every command must exit `0`. `/app/` is an explicit path-semantics probe; do not assume its behavior from the dashboard string alone. `/app/__data.json` proves SvelteKit data requests are inside the Access boundary. `/preview/1` exercises the real dynamic preview route instead of a 404 prefix.
+
+If any public route or API is intercepted, disable the production application, correct the destinations, and rerun this entire matrix before continuing.
+
+## Production Identity And Posture Verification
+
+Verify the two Access policy clauses independently:
+
+1. Configured operator identity on the trusted device: allowed.
+2. On that same trusted device, use a fresh browser profile/session and authenticate to Access with a second IdP identity that is NOT in the `Include` list: denied by Access.
+3. Configured operator identity from a device that fails the serial posture rule: denied by Access.
+
+A second Supabase account is not a substitute for check 2; the Access identity selector and Supabase session are separate gates.
+
+Do not claim the identity selector verified if no non-allowed IdP identity was actually exercised.
 
 ## Trusted Production Browser Verification
 
-On the trusted WARP/Cloudflare One device with the allowed identity:
+On the trusted operator device:
 
-1. Open production `/app` and pass Access.
-2. With no Supabase session, confirm SvelteKit redirects to public `/login`.
-3. Complete normal Supabase login.
-4. Confirm the browser returns to protected `/app` using the existing Access session.
-5. Confirm a Supabase logout does not remove the Access gate.
+1. Open `/app` and pass Access.
+2. With no Supabase session, confirm DTXWeb redirects to public `/login`.
+3. Complete Supabase login and confirm return to protected `/app` succeeds under the existing Access session.
+4. Sign out of Supabase and confirm `/app` remains Access-protected.
 
-From a Supabase account that does not match the configured Access identity, confirm `/login` can still be public while `/app` remains inaccessible. Do not add a bypass to make that account reach `/app`; operator-only access is intentional.
+Characterize the non-operator dead end separately:
+
+1. Use a Supabase account that does not correspond to the allowed Access identity.
+2. Authenticate on public `/login` and confirm the return to `/app` is denied by Access.
+3. Confirm revisiting `/login` with that Supabase session redirects back to `/app` and no public sign-out UI is reachable.
+4. Recover by clearing the production Drumery/Supabase cookies.
+
+Record this as a known limitation. Do not widen Access to make the non-operator account work.
+
+## Access Session Expiry / Client-side Navigation Check
+
+The root server layout has a server `load`, so client-side navigation uses SvelteKit data requests under paths such as `/app/__data.json`.
+
+On the trusted operator device with a valid Supabase session:
+
+1. Keep a browser tab on a public production page.
+2. End the Access session using the tenant's normal Access logout/session-clearing procedure so a new protected request requires Access again.
+3. Trigger a SvelteKit client-side navigation into `/app` without first doing a full-page protected navigation.
+4. Record what the UI shows when the framework data request encounters Access reauthentication.
+5. Navigate directly/reload `/app` and confirm the browser can complete Access reauthentication and recover.
+
+If client-side navigation shows an opaque fetch error but a direct `/app` reload recovers, document that UX as a deferred follow-up. Do not add a bypass. If the operator cannot recover with a direct browser navigation, disable the production Access application and investigate before acceptance.
 
 ## Production Desktop Login Verification
 
-This is a required production check, not an optional smoke test.
+This is required because standalone desktop development against a deployed web environment also traverses the protected production `/app` handoff in the current operator setup.
 
-On the trusted device:
+### Bundled desktop
 
-1. Start desktop login so the browser opens `/login?redirect=desktop&desktop_callback=...`.
-2. Confirm `/login` remains public.
-3. Complete password login and confirm the return to `/app?redirect=desktop...` passes Access and opens the desktop callback.
+On the trusted operator device:
+
+1. Start desktop login and confirm public `/login?redirect=desktop&desktop_callback=...` loads without Access interception.
+2. Complete password login and confirm the return through protected `/app?redirect=desktop...` succeeds.
+3. Confirm the generated magic link reaches `dtx://auth-callback` and the desktop session authenticates.
 4. Repeat with Google login.
-5. Verify the bundled `dtx://auth-callback` flow.
-6. When a `tauri dev` instance is available, verify its loopback `http://127.0.0.1:<port>/auth-callback` flow in the same browser tab so the `sessionStorage` callback handoff is exercised.
 
-If the browser reaches public `/login` but cannot complete the protected `/app` handoff on the trusted operator device, disable the production Access app and investigate separately. Do not widen the policy or add path bypasses in this slice.
+### Standalone `tauri dev`
+
+Using the current standalone desktop-development setup:
+
+1. Start `bun run dev:desktop` and confirm the browser login target is the expected deployed production web hostname.
+2. Keep the login flow in the same browser tab so `/login` can preserve `desktop_callback` in `sessionStorage`.
+3. Complete password login and confirm protected `/app?redirect=desktop...` passes Access.
+4. Confirm the magic link reaches `http://127.0.0.1:<configured-port>/auth-callback`.
+5. Repeat with Google login.
+
+This check is required when the current `.env` points standalone desktop development at production. If the local operator configuration has deliberately changed, record the actual target and still verify the deployed-environment loopback flow before accepting production Access.
+
+The full local-stack `bun run dev` path is not an Access test: it uses `dev:local-web` and localhost intentionally.
 
 ## Rollback
 
 Pre-production:
 
-- Disable or delete `DTXWeb Pre-prod` if the hostname-wide gate breaks identity, posture, login, OAuth, or route behavior.
+- Disable/delete `DTXWeb Pre-prod` if the hostname-wide gate fails a required check.
 
 Production:
 
-- Disable or delete `DTXWeb Production App` if `/app` or desktop login fails for the trusted operator device.
-- If any public production route is intercepted, disable the application, correct it back to exactly `/app` and `/app/*`, and rerun the full header matrix before re-enabling.
+- Disable/delete `DTXWeb Production App` if the trusted operator cannot use `/app`, cannot recover after Access reauthentication, or cannot complete required desktop login.
+- If a public route or API is intercepted, disable the production application, restore exactly `/app` and `/app/*`, and rerun the entire Production Header Matrix.
 
-If either API hostname is intercepted, remove it from Access. Do not introduce service tokens as an emergency workaround.
+Do not introduce service tokens, API Access, route bypasses, or policy widening as an emergency workaround.
 
 No Worker rollback or code deployment is required for these dashboard-only changes.
 
@@ -258,28 +334,10 @@ No Worker rollback or code deployment is required for these dashboard-only chang
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
 - https://developers.cloudflare.com/cloudflare-one/access-controls/policies/
 - https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/
+- https://developers.cloudflare.com/learning-paths/clientless-access/customize-ux/login-page/
 ```
 
-- [ ] **Step 2: Format-check the runbook**
-
-Run:
-
-```bash
-bunx prettier --check docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-```
-
-Expected: exit `0`.
-
-If formatting differs:
-
-```bash
-bunx prettier --write docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-bunx prettier --check docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-```
-
-Expected: the second command exits `0`.
-
-- [ ] **Step 3: Review the staged runbook for secrets and scope drift**
+- [ ] **Step 2: Review scope/secrets and commit the runbook**
 
 Run:
 
@@ -287,22 +345,24 @@ Run:
 git diff -- docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
 ```
 
-Expected:
+Confirm:
 
-- no actual operator email;
-- no device serial number;
-- no Access cookie/token;
-- rollout order is pre-production before production;
-- production destinations are only `/app` and `/app/*`;
-- `/tool/*` and `/game` are explicitly public in production;
-- API hostnames remain outside Access.
+- no actual operator email, device serial, Access cookie, JWT, or token is present;
+- the invalid-host harness check fails loudly;
+- the runbook has exactly one pre-production matrix and one production matrix;
+- production destinations remain only `/app` and `/app/*`;
+- `/tool/*`, `/game`, `/preview/1`, `/login`, and `/auth/*` remain public in production;
+- both API hostnames remain outside Access;
+- standalone deployed-environment desktop development and non-operator recovery limitations are documented.
 
-- [ ] **Step 4: Commit the runbook**
+Commit:
 
 ```bash
 git add docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
 git commit -m "docs: add Zero Trust web access runbook"
 ```
+
+The repository's staged Markdown hook runs Prettier during the commit; do not add a separate format-only task unless the hook itself fails.
 
 ---
 
@@ -315,81 +375,41 @@ git commit -m "docs: add Zero Trust web access runbook"
 
 **Interfaces:**
 
-- Consumes: the existing Zero Trust tenant, intended operator identity, trusted-device posture rule, and `pre-prod.dtx.hapadona.com` web hostname.
-- Produces: a verified `DTXWeb Pre-prod` Access application and a go/no-go decision for production.
+- Consumes: the runbook's **Required Policy**, **Header Verification Helpers**, **Pre-production Configuration**, and **Pre-production Verification Matrix** sections.
+- Produces: a verified `DTXWeb Pre-prod` application and a hard go/no-go decision for production.
 
-- [ ] **Step 1: Confirm the Perseus posture components are reusable**
+- [ ] **Step 1: Establish and validate the tenant-specific Access signal**
 
-In Cloudflare Zero Trust, inspect the identity/policy and device posture resources used for Perseus.
+Follow **Required Policy** and **Header Verification Helpers** from the runbook.
 
 Expected:
 
-- the intended operator identity is known to the operator but not copied into git;
-- the serial-number posture rule is selectable in the DTXWeb Zero Trust account; or
-- if the zone is under another Zero Trust account, an equivalent serial list/posture rule is created there before continuing.
+- current Perseus IdP/instant-auth mode is recorded for the operator session;
+- `ACCESS_REDIRECT_RE` matches a known protected Perseus route;
+- production `/` is recognized as currently unprotected;
+- the intentionally invalid hostname causes `http_headers` to exit non-zero.
+
+Do not create either DTXWeb Access application until the harness passes these checks.
 
 - [ ] **Step 2: Create `DTXWeb Pre-prod`**
 
-In **Zero Trust > Access controls > Applications**:
+Follow **Pre-production Configuration** from the runbook exactly.
 
-1. Create a **Self-hosted and private** application.
-2. Name it `DTXWeb Pre-prod`.
-3. Add `pre-prod.dtx.hapadona.com` as the public hostname with no path.
-4. Set session duration to `12h`.
-5. Add the operator `Allow` policy and require the serial-number posture rule.
-6. Leave Service Auth, Managed OAuth, and instant authentication off.
-7. Save.
+Expected: the entire pre-production web hostname is protected and `api.pre-prod.dtx.hapadona.com` is not part of the application.
 
-Expected: every path on the pre-production web hostname is under this application; the pre-production API hostname is not.
+- [ ] **Step 3: Execute the runbook's pre-production verification**
 
-- [ ] **Step 3: Run the unauthenticated pre-production header matrix**
+Run the complete **Pre-production Verification Matrix** from the runbook, then perform its trusted-operator password/Google checks and failed-posture check.
 
-Source the two shell helpers from the runbook, then run:
+Expected: every required matrix command exits `0`; both Supabase login paths work behind Access; failed posture is denied.
 
-```bash
-assert_access_redirect https://pre-prod.dtx.hapadona.com/
-assert_access_redirect https://pre-prod.dtx.hapadona.com/login
-assert_access_redirect https://pre-prod.dtx.hapadona.com/auth/callback
-assert_access_redirect https://pre-prod.dtx.hapadona.com/blog
-assert_access_redirect https://pre-prod.dtx.hapadona.com/preview
-assert_access_redirect https://pre-prod.dtx.hapadona.com/editor
-assert_access_redirect https://pre-prod.dtx.hapadona.com/tool/dtx-to-midi
-assert_access_redirect https://pre-prod.dtx.hapadona.com/game
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app/score
-assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
-```
+- [ ] **Step 4: Make the production go/no-go decision**
 
-Expected: all commands exit `0`.
-
-If any command fails, disable/delete `DTXWeb Pre-prod` and stop before production.
-
-- [ ] **Step 4: Prove trusted-device pre-production login and OAuth**
-
-On the trusted WARP/Cloudflare One device with the configured operator identity:
-
-1. Enter `https://pre-prod.dtx.hapadona.com/` through Access.
-2. Open `/login` under the established Access session.
-3. Complete password login and confirm the existing app flow succeeds.
-4. Log out of Supabase while keeping the Access session.
-5. Complete Google login and confirm `/auth/callback` returns successfully under Access.
-6. Open `/app` and one API-backed page to confirm normal application behavior.
-
-Expected: Access remains the outer hostname gate and both existing Supabase login paths work behind it.
-
-- [ ] **Step 5: Prove posture denial on pre-production**
-
-From a device that does not satisfy the serial posture rule, request the pre-production hostname.
-
-Expected: Cloudflare denies access before DTXWeb loads.
-
-- [ ] **Step 6: Record the pre-production go/no-go**
-
-Proceed only if Steps 3-5 all pass. Otherwise roll back pre-production and stop this implementation before Task 3.
+Proceed only if Step 3 is fully green. Otherwise disable/delete `DTXWeb Pre-prod`, record the non-sensitive failure, and stop before production.
 
 ---
 
-### Task 3: Configure Production `/app` And Prove The Route Boundary
+### Task 3: Configure Production And Prove Both Access Policy Clauses
 
 **Files:**
 
@@ -398,82 +418,56 @@ Proceed only if Steps 3-5 all pass. Otherwise roll back pre-production and stop 
 
 **Interfaces:**
 
-- Consumes: successful Task 2 verification and the same operator identity/posture semantics.
-- Produces: `DTXWeb Production App` with only `/app` and `/app/*`, plus deterministic evidence that public production routes were not captured.
+- Consumes: successful Task 2 verification plus the runbook's **Production Configuration**, **Production Header Matrix**, **Production Identity And Posture Verification**, **Trusted Production Browser Verification**, and **Access Session Expiry / Client-side Navigation Check** sections.
+- Produces: a path-scoped production Access application with route-boundary, identity, posture, and browser-session evidence.
 
-- [ ] **Step 1: Create the production Access application**
+- [ ] **Step 1: Create `DTXWeb Production App`**
 
-In **Zero Trust > Access controls > Applications**:
+Follow **Production Configuration** from the runbook exactly.
 
-1. Create a **Self-hosted and private** application.
-2. Name it `DTXWeb Production App`.
-3. Add exactly:
+Expected: exactly two destinations exist: `/app` and `/app/*`.
 
-```text
-dtx.hapadona.com/app
-dtx.hapadona.com/app/*
-```
+- [ ] **Step 2: Run the single production route matrix**
 
-4. Set session duration to `12h`.
-5. Add the operator `Allow` policy and require the serial-number posture rule.
-6. Leave Service Auth, Managed OAuth, and instant authentication off.
-7. Save.
+Execute the complete **Production Header Matrix** from the runbook.
 
-Expected: no hostname-wide production destination and no third destination.
+Expected: `/app`, `/app/`, `/app/score`, and `/app/__data.json` are intercepted; every public route and both API hostnames are not intercepted; every assertion has a real HTTP response.
 
-- [ ] **Step 2: Run the protected production assertions**
+If any assertion fails, use the runbook's production rollback and do not continue.
 
-```bash
-assert_access_redirect https://dtx.hapadona.com/app
-assert_access_redirect https://dtx.hapadona.com/app/score
-```
+- [ ] **Step 3: Prove Access identity and device posture independently**
 
-Expected: both commands exit `0`.
+Execute **Production Identity And Posture Verification** from the runbook.
 
-- [ ] **Step 3: Run the full public production matrix**
+Expected:
 
-```bash
-assert_no_access_redirect https://dtx.hapadona.com/
-assert_no_access_redirect https://dtx.hapadona.com/blog
-assert_no_access_redirect https://dtx.hapadona.com/preview
-assert_no_access_redirect https://dtx.hapadona.com/editor
-assert_no_access_redirect https://dtx.hapadona.com/tool/dtx-to-midi
-assert_no_access_redirect https://dtx.hapadona.com/game
-assert_no_access_redirect https://dtx.hapadona.com/login
-assert_no_access_redirect https://dtx.hapadona.com/auth/callback
-```
+- operator identity + trusted device: allowed;
+- non-allowed IdP identity on the same trusted device: denied;
+- operator identity on failed-posture device: denied.
 
-Expected: every command exits `0`.
+A second Supabase account does not satisfy the non-allowed Access-identity check.
 
-If any route shows an Access redirect, disable `DTXWeb Production App` immediately, correct the destination set, and rerun Steps 2-3 before continuing.
+- [ ] **Step 4: Prove browser behavior and document the known non-operator dead end**
 
-- [ ] **Step 4: Prove the operator-only browser behavior**
+Execute **Trusted Production Browser Verification** from the runbook.
 
-On the trusted operator device:
+Expected: operator `/app -> /login -> /app` works; non-operator Supabase login reaches the intended Access denial; revisiting `/login` while still signed in reproduces the documented dead end; clearing production site cookies recovers the browser.
 
-1. Open `/app` and pass Access.
-2. With no Supabase session, confirm DTXWeb sends the browser to public `/login`.
-3. Complete Supabase login and confirm return to protected `/app` succeeds under the existing Access session.
-4. Sign out of Supabase and confirm `/app` remains Access-protected.
+Do not treat the non-operator dead end as a reason to widen Access. The public logout/auth-guard change is deferred.
 
-Expected: Access and Supabase remain independent gates.
+- [ ] **Step 5: Characterize Access-session expiry during client navigation**
 
-Using a Supabase identity that is not the configured Access identity, confirm public `/login` does not grant entry to `/app`.
+Execute **Access Session Expiry / Client-side Navigation Check** from the runbook.
 
-Expected: the user is denied by Access on the `/app` return. This is intentional; do not widen the Access policy.
-
-- [ ] **Step 5: Prove production posture denial**
-
-From a device that fails the serial posture rule, request `https://dtx.hapadona.com/app`.
-
-Expected: denied before DTXWeb loads.
+Expected: the observed client-side behavior is recorded, and a direct protected navigation/reload provides a usable reauthentication path for the operator. If direct recovery fails, roll back production and stop.
 
 ---
 
-### Task 4: Verify Production Desktop Login, APIs, And Final Acceptance
+### Task 4: Verify Production Desktop Development And Final Acceptance
 
 **Files:**
 
+- Reference: `packages/dtx-desktop/package.json`
 - Reference: `packages/dtx-desktop/src/renderer/src/services/authService.ts`
 - Reference: `packages/dtx-web/src/routes/(login)/login/+page.svelte`
 - Reference: `packages/dtx-web/src/routes/(login)/login/+page.server.ts`
@@ -485,72 +479,43 @@ Expected: denied before DTXWeb loads.
 **Interfaces:**
 
 - Consumes: verified pre-production and production Access applications.
-- Produces: final acceptance evidence for the desktop `/login -> /app -> callback` handoff and API exclusion.
+- Produces: final acceptance evidence for deployed-environment desktop auth plus the documented non-operator/local-development consequences.
 
-- [ ] **Step 1: Verify the bundled production desktop login flow**
+- [ ] **Step 1: Run all production desktop checks from the runbook**
 
-On the trusted operator device with the bundled desktop app:
+Execute **Production Desktop Login Verification**, including both bundled `dtx://` and standalone `tauri dev` loopback flows against the deployed production web target used by the current operator setup.
 
-1. Start desktop login.
-2. Confirm the browser opens the public production `/login?redirect=desktop&desktop_callback=...` flow without an Access challenge on `/login`.
-3. Complete password login.
-4. Confirm the browser return to `/app?redirect=desktop...` passes Access.
-5. Confirm the generated magic link reaches `dtx://auth-callback` and the desktop session becomes authenticated.
-6. Repeat the flow with Google login.
+Expected: password and Google login succeed for the trusted operator in both required flows; the loopback callback survives the `/login` `sessionStorage` handoff through protected `/app`.
 
-Expected: both password and Google desktop logins complete through protected `/app` for the trusted operator.
+If the current ignored `.env` has deliberately changed away from production, record the actual target and still exercise a deployed-environment loopback flow before accepting production Access. The full local-stack `dev:local-web` path is not a substitute for this check.
 
-- [ ] **Step 2: Verify the Tauri-development loopback handoff when available**
+- [ ] **Step 2: Re-run durable acceptance sections, not copied commands**
 
-With a `tauri dev` instance running on its configured loopback callback port:
+Re-run the runbook's **Production Header Matrix** and confirm Task 2's pre-production application remains enabled and usable.
 
-1. Start desktop login from that development instance.
-2. Keep the login and callback flow in the same browser tab.
-3. Complete password login and confirm `/app?redirect=desktop...` passes Access.
-4. Confirm the magic link returns to `http://127.0.0.1:<configured-port>/auth-callback`.
-5. Repeat with Google login if practical in the development environment.
+Expected: the single checked-in matrices still pass after the desktop verification; no public/API boundary drift occurred during troubleshooting.
 
-Expected: the loopback callback succeeds, proving the `/login` `sessionStorage` callback handoff survived the Access-gated return to `/app`.
+- [ ] **Step 3: Record final non-sensitive outcomes**
 
-If this fails while bundled `dtx://` succeeds, disable the production Access application and investigate the handoff separately. Do not add an Access bypass in this slice.
-
-- [ ] **Step 3: Re-run both API exclusion assertions**
-
-```bash
-assert_no_access_redirect https://api.dtx.hapadona.com/
-assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
-```
-
-Expected: both commands exit `0`. The APIs may return their own redirect/error/status; they must not redirect into Cloudflare Access.
-
-- [ ] **Step 4: Re-run the production boundary spot check**
-
-```bash
-assert_access_redirect https://dtx.hapadona.com/app
-assert_no_access_redirect https://dtx.hapadona.com/tool/dtx-to-midi
-assert_no_access_redirect https://dtx.hapadona.com/game
-assert_no_access_redirect https://dtx.hapadona.com/login
-```
-
-Expected: all commands exit `0`.
-
-- [ ] **Step 5: Record final operator verification**
-
-In the implementation notes/PR checklist, record only non-sensitive outcomes:
+Record only outcomes, for example:
 
 ```text
+Header harness invalid-host failure: PASS
 Pre-prod hostname-wide Access: PASS
 Pre-prod password + Google auth: PASS
 Prod /app + /app/* Access: PASS
-Prod public route matrix: PASS
+Prod public/API matrix: PASS
+Prod Access identity selector: PASS
+Prod posture selector: PASS
+Prod operator browser auth: PASS
+Prod non-operator lockout characterized: PASS
+Prod expired-session client navigation characterized: PASS
 Prod bundled desktop login: PASS
-Prod tauri-dev loopback login: PASS or NOT RUN (environment unavailable)
-Prod + pre-prod API exclusion: PASS
-Untrusted-device posture denial: PASS
+Prod standalone tauri-dev loopback login: PASS
 ```
 
-Do not paste cookies, JWTs, operator email addresses, device serial numbers, or screenshots containing those values.
+Do not paste cookies, JWTs, IdP identities, operator email addresses, device serial numbers, or screenshots containing those values.
 
-- [ ] **Step 6: Stop if any required acceptance check is red**
+- [ ] **Step 4: Stop if a required acceptance check is red**
 
-Required checks are all lines above except the Tauri-development loopback line when no development instance is available. A required failure means disable the affected Access application and investigate separately; do not broaden routes or policies in this slice to force a green result.
+A required failure means follow the environment-specific rollback in the runbook and investigate separately. Do not broaden routes/policies, add a service token, or change application code inside this slice merely to force a green result.

@@ -65,7 +65,7 @@ tokio = { version = "1", features = [
 ] }
 tokio-util = { version = "0.7", features = ["rt"] }
 url = "2"
-uuid = { version = "=1.24.0", features = ["serde", "v4"] }
+uuid = { version = "=1.24.1", features = ["serde", "v4"] }
 zeroize = "=1.9.0"
 zip = "=8.6.0"
 

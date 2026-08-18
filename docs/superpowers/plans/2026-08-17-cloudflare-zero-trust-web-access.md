@@ -87,19 +87,23 @@ Both Access applications use the same policy semantics:
 
 Reuse the existing Perseus identity provider and its current instant-authentication mode. Do not toggle instant authentication merely to make a header test easier.
 
-Before rollout, inspect a known protected Perseus route and set an uncommitted shell regex that matches the actual unauthenticated Access redirect for this tenant:
+Before rollout, inspect a known protected Perseus route and identify its actual unauthenticated Access signal. The response can differ by client and device posture:
 
-```bash
-export ACCESS_REDIRECT_RE='<regex matching this tenant\'s Access redirect Location>'
-```
+- If it returns an Access or direct-IdP redirect, set an uncommitted regex that matches the `Location` value:
 
-For a tenant using the normal Cloudflare Access login page, a suitable value is:
+  ```bash
+  export ACCESS_REDIRECT_RE='<regex matching the tenant Access redirect Location>'
+  ```
 
-```bash
-export ACCESS_REDIRECT_RE='^location: https://[^/]+\.cloudflareaccess\.com/cdn-cgi/access/'
-```
+  For the normal Cloudflare Access login page, a suitable value is:
 
-If Perseus uses instant authentication, set the regex to the known direct IdP redirect shape observed from that existing protected route. Keep one redirect mode for the whole DTXWeb rollout.
+  ```bash
+  export ACCESS_REDIRECT_RE='^location: https://[^/]+\\.cloudflareaccess\\.com/cdn-cgi/access/'
+  ```
+
+- If it returns HTTP `403` with both `cf-access-aud` and `cf-access-domain` headers, leave `ACCESS_REDIRECT_RE` unset. The helpers below recognize that Access-denial signal directly.
+
+If Perseus uses instant authentication, use the observed direct IdP redirect shape when a redirect is present. Keep one identity-provider and instant-authentication mode for the whole DTXWeb rollout.
 
 Never commit the operator email, device serial numbers, tenant-specific cookies/tokens, or other credentials.
 
@@ -124,23 +128,38 @@ http_headers() {
   printf '%s\n' "$headers"
 }
 
-assert_access_redirect() {
+has_access_interception() {
+  headers="$1"
+
+  if [ -n "${ACCESS_REDIRECT_RE:-}" ] &&
+    printf '%s\\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
+    return 0
+  fi
+
+  if printf '%s\\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ 403' &&
+    printf '%s\\n' "$headers" | grep -Eiq '^cf-access-aud:' &&
+    printf '%s\\n' "$headers" | grep -Eiq '^cf-access-domain:'; then
+    return 0
+  fi
+
+  return 1
+}
+
+assert_access_intercepted() {
   url="$1"
-  : "${ACCESS_REDIRECT_RE:?set ACCESS_REDIRECT_RE from the current Perseus Access flow}"
   headers="$(http_headers "$url")" || return 1
-  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip'
-  printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE" || {
+  printf '%s\\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\\(aud\\|domain\\):/Ip'
+  has_access_interception "$headers" || {
     echo "FAIL: Access did not intercept $url" >&2
     return 1
   }
 }
 
-assert_no_access_redirect() {
+assert_no_access_interception() {
   url="$1"
-  : "${ACCESS_REDIRECT_RE:?set ACCESS_REDIRECT_RE from the current Perseus Access flow}"
   headers="$(http_headers "$url")" || return 1
-  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip'
-  if printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
+  printf '%s\\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\\(aud\\|domain\\):/Ip'
+  if has_access_interception "$headers"; then
     echo "FAIL: Access unexpectedly intercepted $url" >&2
     return 1
   fi
@@ -149,8 +168,8 @@ assert_no_access_redirect() {
 
 Dry-run the harness before changing DTXWeb:
 
-- `assert_access_redirect` against a known protected Perseus URL must pass.
-- `assert_no_access_redirect https://dtx.hapadona.com/` must pass before production Access exists.
+- `assert_access_intercepted` against a known protected Perseus URL must pass.
+- `assert_no_access_interception https://dtx.hapadona.com/` must pass before production Access exists.
 - `http_headers https://this-host-does-not-exist-zzz.hapadona.com/` must fail non-zero.
 
 Do not proceed until the invalid-host check fails loudly.
@@ -184,19 +203,19 @@ Set session duration to `12h`, attach the operator `Allow` policy with the seria
 Run the following with no Access session:
 
 ```bash
-assert_access_redirect https://pre-prod.dtx.hapadona.com/
-assert_access_redirect https://pre-prod.dtx.hapadona.com/login
-assert_access_redirect https://pre-prod.dtx.hapadona.com/auth/callback
-assert_access_redirect https://pre-prod.dtx.hapadona.com/blog
-assert_access_redirect https://pre-prod.dtx.hapadona.com/preview/1
-assert_access_redirect https://pre-prod.dtx.hapadona.com/editor
-assert_access_redirect https://pre-prod.dtx.hapadona.com/tool/dtx-to-midi
-assert_access_redirect https://pre-prod.dtx.hapadona.com/game
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app/
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app/score
-assert_access_redirect https://pre-prod.dtx.hapadona.com/app/__data.json
-assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/login
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/auth/callback
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/blog
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/preview/1
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/editor
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/tool/dtx-to-midi
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/game
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/app
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/score
+assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/__data.json
+assert_no_access_interception https://api.pre-prod.dtx.hapadona.com/
 ```
 
 Every command must exit `0`. If one fails, disable/delete `DTXWeb Pre-prod` and stop before production.
@@ -221,21 +240,21 @@ Set session duration to `12h`, attach the same operator `Allow` policy and seria
 Run with no Access session:
 
 ```bash
-assert_access_redirect https://dtx.hapadona.com/app
-assert_access_redirect https://dtx.hapadona.com/app/
-assert_access_redirect https://dtx.hapadona.com/app/score
-assert_access_redirect https://dtx.hapadona.com/app/__data.json
+assert_access_intercepted https://dtx.hapadona.com/app
+assert_access_intercepted https://dtx.hapadona.com/app/
+assert_access_intercepted https://dtx.hapadona.com/app/score
+assert_access_intercepted https://dtx.hapadona.com/app/__data.json
 
-assert_no_access_redirect https://dtx.hapadona.com/
-assert_no_access_redirect https://dtx.hapadona.com/blog
-assert_no_access_redirect https://dtx.hapadona.com/preview/1
-assert_no_access_redirect https://dtx.hapadona.com/editor
-assert_no_access_redirect https://dtx.hapadona.com/tool/dtx-to-midi
-assert_no_access_redirect https://dtx.hapadona.com/game
-assert_no_access_redirect https://dtx.hapadona.com/login
-assert_no_access_redirect https://dtx.hapadona.com/auth/callback
-assert_no_access_redirect https://api.dtx.hapadona.com/
-assert_no_access_redirect https://api.pre-prod.dtx.hapadona.com/
+assert_no_access_interception https://dtx.hapadona.com/
+assert_no_access_interception https://dtx.hapadona.com/blog
+assert_no_access_interception https://dtx.hapadona.com/preview/1
+assert_no_access_interception https://dtx.hapadona.com/editor
+assert_no_access_interception https://dtx.hapadona.com/tool/dtx-to-midi
+assert_no_access_interception https://dtx.hapadona.com/game
+assert_no_access_interception https://dtx.hapadona.com/login
+assert_no_access_interception https://dtx.hapadona.com/auth/callback
+assert_no_access_interception https://api.dtx.hapadona.com/
+assert_no_access_interception https://api.pre-prod.dtx.hapadona.com/
 ```
 
 Every command must exit `0`. `/app/` is an explicit path-semantics probe; do not assume its behavior from the dashboard string alone. `/app/__data.json` proves SvelteKit data requests are inside the Access boundary. `/preview/1` exercises the real dynamic preview route instead of a 404 prefix.
@@ -385,7 +404,7 @@ Follow **Required Policy** and **Header Verification Helpers** from the runbook.
 Expected:
 
 - current Perseus IdP/instant-auth mode is recorded for the operator session;
-- `ACCESS_REDIRECT_RE` matches a known protected Perseus route;
+- a known protected Perseus route is recognized by either the configured `ACCESS_REDIRECT_RE` or the `403` Access-header signal;
 - production `/` is recognized as currently unprotected;
 - the intentionally invalid hostname causes `http_headers` to exit non-zero.
 

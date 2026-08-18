@@ -57,6 +57,7 @@
 	"globalDependencies": [
 		"package.json",
 		"turbo.json",
+		"tsconfig.base.json",
 		".env",
 		".env.local",
 		".env.production",

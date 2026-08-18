@@ -5,6 +5,18 @@ on:
   pull_request:
     branches: [main, master]
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'packages/dtx-web/**'
+      - 'packages/dtx-api/**'
+      - 'packages/common/**'
+      - 'packages/ui-components/**'
+      - 'packages/e2e-web/**'
+      - 'supabase/**'
+      - '.github/workflows/e2e-test.yml'
+      - 'package.json'
+      - 'bun.lock'
+      - 'turbo.json'
+      - 'tsconfig.base.json'
 
 permissions:
   contents: read

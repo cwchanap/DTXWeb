@@ -7,6 +7,13 @@ on:
       - master
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'packages/dtx-desktop/**'
+      - 'packages/e2e-desktop/**'
+      - '.github/workflows/tauri-rust-ci.yml'
+      - 'package.json'
+      - 'bun.lock'
+      - 'turbo.json'
 
 # Minimal permissions: this workflow only builds, lints, and tests — it never
 # pushes commits, creates releases, or deploys. Reduces blast radius if the

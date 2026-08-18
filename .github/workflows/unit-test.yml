@@ -39,6 +39,11 @@ jobs:
             exit 0
           fi
 
+          function bunx() {
+            printf '{malformed JSON\\n'
+          }
+          export -f bunx
+
           if run_expensive="$(.github/scripts/ci-affected-scope.sh unit)"; then
             echo "run_expensive=$run_expensive" >> "$GITHUB_OUTPUT"
           else

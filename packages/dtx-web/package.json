@@ -69,7 +69,7 @@
 		"vexflow": "4.2.5",
 		"winston": "^3.17.0",
 		"xa_decoder": "^0.1.2",
-		"zod": "^3.25.67"
+		"zod": "^4.4.3"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "^4.62.4",

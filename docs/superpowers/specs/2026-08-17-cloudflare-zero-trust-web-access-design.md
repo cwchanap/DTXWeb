@@ -2,165 +2,213 @@
 
 ## Summary
 
-DTXWeb will use Cloudflare Zero Trust Access as an outer access gate for the authenticated web application surface while preserving the public website and existing Supabase authentication flow.
+DTXWeb will use Cloudflare Zero Trust Access as an outer gate for private web surfaces while keeping the public production site and both GraphQL API hostnames outside Access.
 
-Production will protect only the authenticated application routes under `/app`. Pre-production will protect the entire web hostname. The GraphQL API hostnames remain outside Cloudflare Access so web and desktop API clients do not need service tokens or Access-specific request headers.
+Production protects only `/app` and its descendants. This is intentionally an operator-only surface: the Perseus-style Access policy allows the configured operator identity on a trusted device, so other Supabase users can still reach public `/login` but cannot enter production `/app` or complete desktop login against production.
 
-The Zero Trust configuration will be managed manually in the Cloudflare dashboard. This slice does not introduce Pulumi, Terraform, CI deployment, Worker-side Access JWT validation, or any other infrastructure-as-code layer.
+Pre-production protects the entire `pre-prod.dtx.hapadona.com` web hostname. It is configured and verified first so identity, device posture, Supabase login/OAuth, and rollback are proven before the production path-scoped application is created.
+
+The Zero Trust configuration is managed manually in the Cloudflare dashboard. This slice does not introduce Pulumi, Terraform, CI deployment, Worker-side Access JWT validation, service tokens, or application-code changes.
 
 ## Goals
 
-- Require Cloudflare Access before users can reach production `/app` routes.
-- Keep production public routes such as `/`, `/blog`, `/preview`, `/editor`, `/login`, and `/auth/*` outside Cloudflare Access.
+- Make production `/app` and production desktop login intentionally operator-only behind Cloudflare Access.
+- Keep the production public site outside Access, including `/`, `/blog`, `/preview`, `/editor`, `/tool/*`, `/game`, `/login`, and `/auth/*`.
 - Require Cloudflare Access for every route served by `pre-prod.dtx.hapadona.com`.
-- Reuse the same identity and trusted-device posture model already used for Perseus admin access.
-- Preserve the existing Supabase application authentication as an independent inner gate.
-- Keep both production and pre-production API hostnames outside Cloudflare Access.
-- Document the intended dashboard configuration and verification procedure in the repository so future manual edits have a source of truth.
+- Reuse the same configured operator identity and trusted-device serial-number posture model used for Perseus.
+- Preserve Supabase authentication as an independent inner gate after Access allows a request.
+- Keep `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com` outside Access.
+- Roll out pre-production first, then production only after the pre-production gate and auth round-trip are verified.
+- Verify route boundaries from HTTP response headers in addition to browser smoke tests.
+- Document the dashboard configuration, verification matrix, and rollback procedure in a dedicated operator runbook.
 
 ## Non-Goals
 
-- Add Pulumi, Terraform, or another infrastructure-as-code system to DTXWeb.
+- Add Pulumi, Terraform, or another infrastructure-as-code system.
 - Protect the entire production `dtx.hapadona.com` hostname.
-- Protect `api.dtx.hapadona.com` or `api.pre-prod.dtx.hapadona.com`.
+- Protect either API hostname.
+- Make production `/app` available to every Supabase user.
 - Replace Supabase authentication.
 - Add Worker-side validation of `CF_Authorization` or Access JWTs.
 - Add Cloudflare Access service tokens for desktop, API, CLI, or CI traffic.
-- Protect preview/development Worker URLs outside the named production and pre-production custom hostnames.
-- Change SvelteKit, GraphQL API, or desktop application code as part of this slice.
+- Protect preview/development Worker URLs outside the named custom hostnames.
+- Change SvelteKit, GraphQL API, or desktop application code in this slice.
 
 ## Existing Context
 
-`packages/dtx-web/wrangler.jsonc` deploys the production web Worker to `dtx.hapadona.com` and the pre-production web Worker to `pre-prod.dtx.hapadona.com`. The web application calls a separate GraphQL API at `api.dtx.hapadona.com` in production and `api.pre-prod.dtx.hapadona.com` in pre-production.
+`packages/dtx-web/wrangler.jsonc` deploys the production web Worker to `dtx.hapadona.com` and pre-production to `pre-prod.dtx.hapadona.com`. The web application uses separate API hostnames: `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com`.
 
-`packages/dtx-web/src/hooks.server.ts` already treats `/app` as the application-authenticated route family. An unauthenticated request to `/app` is redirected to the public `/login` route, after which the existing Supabase flow returns the browser to `/app`.
+`packages/dtx-web/src/hooks.server.ts` treats paths beginning with `/app` as the Supabase-authenticated application family. An unauthenticated request to `/app` is redirected to public `/login`, and successful web login returns to `/app` or another validated `/app/*` destination.
 
-The desktop login flow also opens the web `/login` route and eventually returns through `/app?redirect=desktop...`. Production `/login` therefore must stay public while `/app` is Access-protected.
+The desktop flow also starts at public `/login` and finishes through `/app?redirect=desktop...`. Password login redirects there directly; Google OAuth does the same through the auth callback. The login page preserves the desktop callback in `sessionStorage` so the `/app` page can hand the magic link back to either the bundled `dtx://` callback or the Tauri-development loopback callback.
 
-The repository documents Cloudflare Worker deployments as manual and currently has no infrastructure deployment package or CI workflow. Zero Trust should follow that operating model for now.
+Because production `/app` sits behind a single-operator Access policy, that desktop handoff is also operator-only. Public `/login` is an entry form, not a bypass around Access. A non-operator Supabase user may authenticate successfully and then be denied when the browser returns to `/app`; that is the intended product behavior for this slice.
+
+The repository already uses human-executed Cloudflare runbooks, for example `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md`. That file is a historical API-migration cutover checklist, so Zero Trust gets its own durable runbook rather than mixing permanent security operations into the completed Phase 4 migration document.
 
 ## Protection Matrix
 
 | Surface | Cloudflare Access | Notes |
 | --- | --- | --- |
-| `dtx.hapadona.com/app` | Protected | Exact parent route must be covered. |
-| `dtx.hapadona.com/app/*` | Protected | Covers all descendants explicitly. |
-| `dtx.hapadona.com/` | Public | Landing page remains public. |
-| `dtx.hapadona.com/blog/*` | Public | Public content remains public. |
-| `dtx.hapadona.com/preview/*` | Public | Public tool remains public. |
-| `dtx.hapadona.com/editor/*` | Public | Public tool remains public. |
-| `dtx.hapadona.com/login` | Public | Required by normal web and desktop login entry flows. |
-| `dtx.hapadona.com/auth/*` | Public | Supabase/OAuth callback routes remain public. |
-| Other production web routes outside `/app` | Public | Do not broaden the production application accidentally. |
-| `pre-prod.dtx.hapadona.com/*` | Protected | Entire pre-production web hostname is private. |
-| `api.dtx.hapadona.com/*` | Public to Access | Existing API/application auth remains authoritative. |
-| `api.pre-prod.dtx.hapadona.com/*` | Public to Access | Existing API/application auth remains authoritative. |
+| `dtx.hapadona.com/app` | Protected | Operator-only; exact parent must be covered. |
+| `dtx.hapadona.com/app/*` | Protected | Operator-only descendants. |
+| `dtx.hapadona.com/` | Public | Landing page. |
+| `dtx.hapadona.com/blog/*` | Public | Public content. |
+| `dtx.hapadona.com/preview/*` | Public | Public preview surface. |
+| `dtx.hapadona.com/editor/*` | Public | Public editor surface. |
+| `dtx.hapadona.com/tool/*` | Public | Public tools, including `/tool/dtx-to-midi`. |
+| `dtx.hapadona.com/game` | Public | Public game entry. |
+| `dtx.hapadona.com/login` | Public | Web and desktop login entry. |
+| `dtx.hapadona.com/auth/*` | Public | Supabase/OAuth callbacks. |
+| Other production web paths outside `/app` | Public | Do not broaden production Access. |
+| `pre-prod.dtx.hapadona.com/*` | Protected | Entire pre-production web hostname. |
+| `api.dtx.hapadona.com/*` | Outside Access | Existing API auth remains authoritative. |
+| `api.pre-prod.dtx.hapadona.com/*` | Outside Access | Existing API auth remains authoritative. |
 
-Cloudflare documents that a wildcard path such as `/app/*` does not cover the parent `/app`. The production Access application therefore records both the exact parent and wildcard descendant destinations instead of relying on path inheritance.
+Cloudflare Access application paths can protect either an entire hostname or selected paths. Production records both `/app` and `/app/*` explicitly so the parent and descendants are both protected.
 
 ## Access Applications
 
+### Pre-production
+
+Create `DTXWeb Pre-prod` first as a self-hosted public-hostname application for:
+
+- `pre-prod.dtx.hapadona.com`
+
+There is no path bypass. `/`, `/login`, `/auth/*`, `/blog`, `/preview`, `/editor`, `/tool/*`, `/game`, `/app`, and future routes on that web hostname all pass through Access.
+
+Do not include `api.pre-prod.dtx.hapadona.com`.
+
 ### Production
 
-Create one self-hosted public-hostname Access application named `DTXWeb Production App` with exactly these destinations:
+Only after the pre-production checks pass, create `DTXWeb Production App` with exactly:
 
 - `dtx.hapadona.com/app`
 - `dtx.hapadona.com/app/*`
 
-Do not add a hostname-wide production destination. Do not add `/login`, `/auth/*`, `/blog`, `/preview`, `/editor`, or other public routes.
-
-### Pre-production
-
-Create a second self-hosted public-hostname Access application named `DTXWeb Pre-prod` for the entire hostname:
-
-- `pre-prod.dtx.hapadona.com`
-
-No path exception is required. Because the entire hostname is protected, `/`, `/login`, `/auth/*`, `/blog`, `/preview`, `/editor`, `/app`, and future routes on the pre-production web hostname all require Access first.
+Do not add a hostname-wide production destination or any public path.
 
 ## Access Policy
 
 Both applications use the same policy semantics:
 
 - Action: `Allow`.
-- Include: the intended operator identity/email used for the existing Perseus Zero Trust access.
+- Include: the intended operator identity/email used for Perseus access.
 - Require: the trusted-device serial-number posture check used for Perseus.
-- Session duration: `12h`, matching the existing Perseus Access configuration.
+- Session duration: `12h`.
 
-Prefer reusing the existing account-level device serial list/posture rule when it is available in the same Cloudflare Zero Trust account. If the DTXWeb zone is managed in a different Zero Trust account, create an equivalent serial-number list and posture rule using the same intended trusted devices rather than weakening the requirement.
+Prefer the existing account-level serial-number list/posture rule when DTXWeb is in the same Zero Trust account. If it is not reusable because the zone is under a different Zero Trust account, create an equivalent list/posture rule there using the same intended trusted devices. Do not weaken the posture requirement.
 
-Do not add a Service Auth policy or service token. The protected surfaces are browser routes, and API/desktop non-browser traffic remains outside Access.
+Do not add a Service Auth policy or service token. API and other non-browser traffic stay outside these Access applications.
+
+## Rollout Order
+
+1. Add the dedicated DTXWeb Zero Trust operator runbook.
+2. Confirm the intended operator identity and serial-number posture rule are available without copying personal identifiers into git.
+3. Create the hostname-wide pre-production Access application.
+4. Verify pre-production interception, trusted-device admission, posture denial, Supabase password login, Google OAuth callback behavior, and API non-interception.
+5. If any pre-production check fails, disable/remove the pre-production Access app and stop. Do not touch production.
+6. Create the production application with only `/app` and `/app/*`.
+7. Run the complete production header matrix, including `/tool/*` and `/game`, before considering the rollout accepted.
+8. Run the trusted-device production browser and desktop-login checks, including the Tauri-development loopback callback path.
+9. Re-run API non-interception checks and record the final state in the operator runbook/checklist.
 
 ## Request Flows
 
-### Production web application
+### Production browser
 
-1. Browser requests `https://dtx.hapadona.com/app` or a descendant.
-2. Cloudflare Access evaluates identity and device posture.
+1. Browser requests `/app` or `/app/*`.
+2. Cloudflare Access evaluates the operator identity and device posture.
 3. A denied request never reaches DTXWeb.
-4. An allowed request reaches SvelteKit.
-5. SvelteKit applies the existing Supabase session guard.
-6. If the user lacks a Supabase session, SvelteKit redirects to public `/login`.
-7. After login, the browser returns to `/app`; the existing Cloudflare Access session allows it through the outer gate again.
+4. An allowed request reaches SvelteKit and the existing Supabase guard.
+5. Without a Supabase session, SvelteKit redirects to public `/login`.
+6. After Supabase login, the browser returns to protected `/app` and must still satisfy the Access gate.
 
-Public production routes skip steps 2-3 entirely because they are not part of the Access application.
+A normal Supabase user who does not match the Access policy is intentionally denied at step 2 or when returning to `/app` after public login.
 
-### Pre-production web application
+### Production desktop login
 
-1. Any request to `pre-prod.dtx.hapadona.com` reaches Cloudflare Access first.
-2. After Access succeeds, the existing DTXWeb route and Supabase behavior runs normally.
-3. OAuth/login callbacks on the same pre-production hostname remain behind Access, but the browser already has an Access session from entering the site.
+1. Desktop opens public `/login?redirect=desktop&desktop_callback=...`.
+2. `/login` preserves the callback for the post-login handoff.
+3. Password or Google login returns the browser to `/app?redirect=desktop...`.
+4. Cloudflare Access gates that `/app` return.
+5. Only the configured operator on a trusted device can reach the `/app` handoff that generates and forwards the desktop magic link.
+
+Verification must cover both a bundled `dtx://auth-callback` flow and, when available, a `tauri dev` loopback callback in the same browser tab because the loopback path depends on the preserved callback state.
+
+### Pre-production
+
+Any request to `pre-prod.dtx.hapadona.com` reaches Access first. Once the browser has a valid Access session, the existing Supabase login and callback routes on that same hostname run normally behind the gate.
 
 ### API traffic
 
-Requests to production and pre-production GraphQL API hostnames do not pass through these Access applications. Existing Supabase/API authorization remains unchanged, and desktop/API clients do not need Cloudflare service credentials.
+Requests to the two GraphQL API hostnames do not pass through these Access applications. Existing Supabase/API authorization stays unchanged and API/desktop callers require no Cloudflare Access credential.
 
 ## Repository Changes
 
-The implementation should add one operator runbook documenting:
+Implementation creates one focused runbook:
 
-- the two Access application names and exact destinations;
-- policy requirements;
-- the public/protected route matrix;
-- dashboard setup steps;
-- verification commands and browser checks;
-- rollback steps;
-- the explicit rule that email addresses and device serial numbers must not be committed.
+- `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
 
-No application or deployment code should change unless implementation verification reveals an existing bug that prevents the approved design. Such a bug is outside this slice and should be handled separately instead of silently expanding scope.
+The runbook records the two applications, operator-only product intent, pre-production-first rollout, exact production destinations, policy semantics, header-based verification matrix, trusted-device browser/desktop checks, API exclusions, and rollback.
+
+Do not edit the historical Phase 4 API migration runbook except for a future independent documentation cleanup; it is useful precedent for human-executed Cloudflare operations but not the ownership location for this permanent Access configuration.
+
+No source or deployment code changes are planned. If verification shows that SvelteKit, desktop, API, or routing code must change for this approved model to work, stop this slice and create a separate follow-up rather than widening scope.
 
 ## Verification
 
-Verify from a browser without a current Access session:
+### Header-based boundary checks
 
-- production `/app` prompts for or redirects through Cloudflare Access;
-- a production `/app/*` descendant also requires Access;
-- production `/`, `/blog`, `/preview`, `/editor`, `/login`, and `/auth/*` do not trigger Cloudflare Access;
-- every tested route on `pre-prod.dtx.hapadona.com` requires Access;
-- both API hostnames do not trigger Cloudflare Access.
+For unauthenticated requests, inspect response headers rather than relying only on what a browser appears to show. Cloudflare's normal Access login flow returns an interception redirect; the durable failure signal for routes that must remain public is a `Location` pointing to the account's `cloudflareaccess.com/cdn-cgi/access/` flow.
 
-Verify from the allowed identity on the trusted device:
+Run the matrix with `curl -sS -o /dev/null -D - <url>` and inspect the status plus `Location` header.
 
-- production `/app` passes Access and continues into the existing Supabase behavior;
-- an unauthenticated Supabase session can still go `/app` -> `/login` -> `/app` successfully;
-- the production desktop browser-login flow can enter through public `/login` and return through protected `/app`;
-- pre-production login and callback flows work after the hostname-wide Access gate;
-- public production routes remain usable without a Cloudflare Access session.
+Pre-production must show Access interception for representative routes across the hostname, including `/`, `/login`, `/auth/callback`, `/blog`, `/preview`, `/editor`, `/tool/dtx-to-midi`, `/game`, `/app`, and `/app/score`.
 
-Verify from a device that does not satisfy the posture rule that protected production and pre-production surfaces are denied before DTXWeb loads.
+Production must show Access interception for `/app` and `/app/score`, while these must not return a Cloudflare Access `Location`:
+
+- `/`
+- `/blog`
+- `/preview`
+- `/editor`
+- `/tool/dtx-to-midi`
+- `/game`
+- `/login`
+- `/auth/callback`
+
+Both API hostnames must also avoid a Cloudflare Access `Location`; their application-specific HTTP status is otherwise irrelevant to this boundary check.
+
+If the Zero Trust account uses instant authentication and therefore redirects directly to the identity provider instead of the Cloudflare Access login page, use the equivalent known Access redirect behavior for that tenant plus the browser checks below; do not mistake an application redirect for Access interception.
+
+### Trusted browser and desktop checks
+
+On the WARP/Cloudflare One-enrolled trusted device with the configured operator identity:
+
+- prove pre-production login and callback flows before production configuration;
+- prove production `/app -> /login -> /app` still works as two independent gates;
+- prove production desktop login returns through protected `/app` and reaches the desktop callback;
+- specifically exercise the Tauri-development loopback callback when available so the `sessionStorage` handoff is tested, not just the bundled `dtx://` path.
+
+### Denial check
+
+From a device that fails the serial-number posture rule, protected pre-production and production surfaces must be denied before DTXWeb loads.
 
 ## Failure Handling And Rollback
 
-If production public routes become Access-protected, remove the overly broad destination immediately and restore the production application to only `/app` plus `/app/*`.
+If pre-production identity, posture, login, callback, or route-boundary checks fail, disable/delete `DTXWeb Pre-prod` and stop before production.
 
-If pre-production authentication callbacks fail, first confirm the browser retains a valid Access session across the OAuth redirect. Do not make `/auth/*` public on pre-production without a separate design decision; the approved policy is hostname-wide protection.
+If any production public route is intercepted, disable `DTXWeb Production App` immediately and correct its destinations before re-enabling it. The accepted production destination set is only `/app` and `/app/*`.
 
-If API or desktop non-browser traffic begins receiving Access challenges, remove the API hostname from Access. Service-token support is explicitly outside this slice.
+If either API hostname is intercepted, remove the API hostname from Access. Do not add service tokens as a workaround in this slice.
 
-Rollback consists of disabling or deleting the two DTXWeb Access applications. No Worker rollback or code deploy should be necessary because the application binaries are unchanged.
+If the trusted production desktop flow cannot complete the `/login -> /app -> desktop` handoff, disable the production Access application and investigate separately. Do not widen the Access policy or add a bypass to make the test pass.
+
+Rollback is dashboard-only: disable or delete the relevant Access application. No Worker rollback or code deployment is required.
 
 ## References
 
 - Cloudflare Access application paths: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/
 - Cloudflare self-hosted public applications: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/
 - Cloudflare Access policies: https://developers.cloudflare.com/cloudflare-one/access-controls/policies/
-- Cloudflare ZTNA policy design and device posture: https://developers.cloudflare.com/reference-architecture/design-guides/designing-ztna-access-policies/
+- Cloudflare Access authorization cookie: https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/

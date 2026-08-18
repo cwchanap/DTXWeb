@@ -1,0 +1,1 @@
+Temporary hosted-CI fixture for HPA-613. This non-Rust native path deliberately exercises the conservative CodeQL all-language fallback and will be closed unmerged.

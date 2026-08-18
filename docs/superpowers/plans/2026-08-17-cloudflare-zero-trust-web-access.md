@@ -98,7 +98,7 @@ Before rollout, inspect a known protected Perseus route and identify its actual 
   For the normal Cloudflare Access login page, a suitable value is:
 
   ```bash
-  export ACCESS_REDIRECT_RE='^location: https://[^/]+\\.cloudflareaccess\\.com/cdn-cgi/access/'
+  export ACCESS_REDIRECT_RE='^location: https://[^/]+\.cloudflareaccess\.com/cdn-cgi/access/'
   ```
 
 - If it returns HTTP `403` with both `cf-access-aud` and `cf-access-domain` headers, leave `ACCESS_REDIRECT_RE` unset. The helpers below recognize that Access-denial signal directly.
@@ -132,13 +132,13 @@ has_access_interception() {
   headers="$1"
 
   if [ -n "${ACCESS_REDIRECT_RE:-}" ] &&
-    printf '%s\\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
+    printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
     return 0
   fi
 
-  if printf '%s\\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ 403' &&
-    printf '%s\\n' "$headers" | grep -Eiq '^cf-access-aud:' &&
-    printf '%s\\n' "$headers" | grep -Eiq '^cf-access-domain:'; then
+  if printf '%s\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ 403' &&
+    printf '%s\n' "$headers" | grep -Eiq '^cf-access-aud:' &&
+    printf '%s\n' "$headers" | grep -Eiq '^cf-access-domain:'; then
     return 0
   fi
 
@@ -148,7 +148,7 @@ has_access_interception() {
 assert_access_intercepted() {
   url="$1"
   headers="$(http_headers "$url")" || return 1
-  printf '%s\\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\\(aud\\|domain\\):/Ip'
+  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\(aud\|domain\):/Ip'
   has_access_interception "$headers" || {
     echo "FAIL: Access did not intercept $url" >&2
     return 1
@@ -158,7 +158,7 @@ assert_access_intercepted() {
 assert_no_access_interception() {
   url="$1"
   headers="$(http_headers "$url")" || return 1
-  printf '%s\\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\\(aud\\|domain\\):/Ip'
+  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\(aud\|domain\):/Ip'
   if has_access_interception "$headers"; then
     echo "FAIL: Access unexpectedly intercepted $url" >&2
     return 1

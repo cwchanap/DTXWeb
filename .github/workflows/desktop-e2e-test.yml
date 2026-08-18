@@ -135,7 +135,8 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: packages/dtx-desktop/src-tauri/e2e-lcov.info
-          fail_ci_if_error: true
+          flags: desktop-e2e-rust
+          fail_ci_if_error: false
 
       - name: Upload desktop e2e logs
         if: failure()

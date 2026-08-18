@@ -1,3 +1,5 @@
+# Codecov provides coverage reporting and policy statuses; it is not a
+# branch-protection gate.
 coverage:
   status:
     project:
@@ -12,3 +14,12 @@ coverage:
         threshold: 0%
         informational: false
         if_not_found: failure
+
+flag_management:
+  individual_flags:
+    - name: typescript
+      carryforward: true
+    - name: tauri-rust
+      carryforward: true
+    - name: desktop-e2e-rust
+      carryforward: true

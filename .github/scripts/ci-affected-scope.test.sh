@@ -177,6 +177,22 @@ if (cd "$unknown_repo" && PATH="$unknown_repo/bin:$ORIGINAL_PATH" REAL_GIT="$REA
 fi
 echo 'PASS: unknown package fails closed'
 
+empty_identity_repo="$TEST_ROOT/empty-package-identity"
+create_repo "$empty_identity_repo" packages/dtx-web/src/change.ts web
+printf '%s\n' '{"packageManager":"bun","packages":{"count":1,"items":[{"name":"","path":""}]}}' >"$TEST_ROOT/empty-package-identity.json"
+if (cd "$empty_identity_repo" && PATH="$empty_identity_repo/bin:$ORIGINAL_PATH" REAL_GIT="$REAL_GIT" FAKE_TURBO_FIXTURE="$TEST_ROOT/empty-package-identity.json" TURBO_SCM_BASE=main TURBO_SCM_HEAD=feature "$DETECTOR" unit >/dev/null 2>"$empty_identity_repo/stderr.log"); then
+	fail 'empty package identity unexpectedly passed'
+fi
+echo 'PASS: empty package identity fails closed'
+
+multi_document_repo="$TEST_ROOT/multi-document-json"
+create_repo "$multi_document_repo" packages/dtx-web/src/change.ts web
+printf '%s\n%s\n' '{"packageManager":"bun","packages":{"count":0,"items":[]}}' '{"packageManager":"bun","packages":{"count":1,"items":[{"name":"dtx-web","path":"packages/dtx-web"}]}}' >"$TEST_ROOT/multi-document-json.json"
+if (cd "$multi_document_repo" && PATH="$multi_document_repo/bin:$ORIGINAL_PATH" REAL_GIT="$REAL_GIT" FAKE_TURBO_FIXTURE="$TEST_ROOT/multi-document-json.json" TURBO_SCM_BASE=main TURBO_SCM_HEAD=feature "$DETECTOR" unit >/dev/null 2>"$multi_document_repo/stderr.log"); then
+	fail 'multiple JSON documents unexpectedly passed'
+fi
+echo 'PASS: multiple JSON documents fail'
+
 invalid_refs_repo="$TEST_ROOT/invalid-refs"
 create_repo "$invalid_refs_repo" packages/dtx-web/src/change.ts web
 if run_detector "$invalid_refs_repo" unit turbo-web.json missing-ref feature >/dev/null; then

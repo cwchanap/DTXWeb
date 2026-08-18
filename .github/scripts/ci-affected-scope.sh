@@ -28,6 +28,10 @@ if ! turbo_json="$(bunx turbo@2.10.9 ls --affected --output=json)"; then
 	die 'Turbo affected-package discovery failed'
 fi
 
+if ! turbo_json="$(jq -e -s 'if length == 1 then .[0] else error("expected exactly one JSON document") end' <<<"$turbo_json")"; then
+	die 'Turbo returned more than one JSON document'
+fi
+
 if ! jq -e '
 	.packageManager == "bun" and
 	(.packages | type == "object") and
@@ -53,26 +57,27 @@ if ! affected_items="$(jq -r '.packages.items[] | [.name, .path] | @tsv' <<<"$tu
 fi
 
 unit_affected=false
-while IFS=$'\t' read -r package_name package_path; do
-	[[ -z "$package_name" && -z "$package_path" ]] && continue
+if [[ "$packages_affected" == true ]]; then
+	while IFS=$'\t' read -r package_name package_path; do
 
-	case "$package_name:$package_path" in
-		'@dtx/common:packages/common' | \
-		'@dtx/ui-components:packages/ui-components' | \
-		'dtx-api:packages/dtx-api' | \
-		'dtx-desktop:packages/dtx-desktop' | \
-		'dtx-web:packages/dtx-web' | \
-		'dtx-e2e-web:packages/e2e-web' | \
-		'dtx-e2e-desktop:packages/e2e-desktop') ;;
-		*) die "Turbo returned an unknown package: $package_name ($package_path)" ;;
-	esac
+		case "$package_name:$package_path" in
+			'@dtx/common:packages/common' | \
+			'@dtx/ui-components:packages/ui-components' | \
+			'dtx-api:packages/dtx-api' | \
+			'dtx-desktop:packages/dtx-desktop' | \
+			'dtx-web:packages/dtx-web' | \
+			'dtx-e2e-web:packages/e2e-web' | \
+			'dtx-e2e-desktop:packages/e2e-desktop') ;;
+			*) die "Turbo returned an unknown package: $package_name ($package_path)" ;;
+		esac
 
-	case "$package_name" in
-		'@dtx/common' | '@dtx/ui-components' | dtx-api | dtx-desktop | dtx-web)
-			unit_affected=true
-			;;
-	esac
-done <<<"$affected_items"
+		case "$package_name" in
+			'@dtx/common' | '@dtx/ui-components' | dtx-api | dtx-desktop | dtx-web)
+				unit_affected=true
+				;;
+		esac
+	done <<<"$affected_items"
+fi
 
 if [[ "$mode" == unit ]]; then
 	printf '%s\n' "$unit_affected"

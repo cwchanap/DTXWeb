@@ -202,10 +202,11 @@ jobs:
           if-no-files-found: error
 
       - name: Upload coverage to Codecov
-        # Codecov merges this Rust upload with the TypeScript coverage uploaded
-        # by unit-test.yml for the same commit, so overall coverage spans both.
+        # Codecov reports this named Rust stream for coverage policy and carries
+        # it forward when this workflow is skipped; it is not a branch-protection gate.
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: packages/dtx-desktop/src-tauri/lcov.info
-          fail_ci_if_error: true
+          flags: tauri-rust
+          fail_ci_if_error: false

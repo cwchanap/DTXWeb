@@ -6,101 +6,118 @@
 
 ## Summary
 
-DTXWeb already stores application data in Cloudflare D1. Supabase remains as the authentication provider and as Supabase-shaped session plumbing across the web app, API, desktop app, tests, environment configuration, and generated types.
+DTXWeb already stores application data in Cloudflare D1. Supabase remains as the authentication provider and as Supabase-shaped session plumbing across the web app, API, desktop app, E2E setup, dependencies, generated types, and environment configuration.
 
-This design completes the migration by hosting Better Auth in `dtx-api`, storing Better Auth data in the existing D1 database, moving browser requests to Better Auth cookie sessions, and replacing the desktop magic-link/deep-link protocol with Better Auth Device Authorization plus Bearer sessions.
+Complete the migration by hosting Better Auth 1.6.25 in `dtx-api`, storing Better Auth tables in the existing D1 database, using cookies for web authentication, and replacing the desktop magic-link/deep-link protocol with Better Auth Device Authorization plus opaque Bearer sessions.
 
-The cutover is intentionally direct. There is no dual-auth feature flag, long-lived Supabase verifier, custom device protocol, OAuth Provider/JWT layer, or second auth Worker.
+The cutover stays intentionally small:
+
+- one auth runtime in `dtx-api`;
+- one D1 database;
+- the official Better Auth Drizzle adapter;
+- no dual-auth compatibility mode;
+- no OAuth Provider/JWT/JWKS layer;
+- no second Worker;
+- no custom device protocol;
+- no permanent bcrypt compatibility.
+
+The migration invalidates active Supabase sessions. Existing application ownership identifiers are preserved exactly.
 
 ## Current State
 
-### Application data
+### Application data is already D1-backed
 
-The application data path is already D1-backed:
+`dtx-api` owns the `DB` binding and versioned Wrangler D1 migrations. Shared application queries use the existing D1 schema for simfiles, DTX files, user profiles, chart scores, and scores.
 
-- `dtx-api` owns the `DB` binding and versioned D1 migrations.
-- Shared server queries use the existing D1 schema for simfiles, DTX files, user profiles, chart scores, and scores.
-- Runtime code no longer uses Supabase tables or Supabase Storage.
+Runtime application data no longer depends on Supabase tables or Supabase Storage.
 
-Application ownership is keyed by the current Supabase user UUID stored as text. At minimum, `simfiles.user_id`, `user_profiles.user_id`, and `chart_scores.user_id` depend on that value.
+Application ownership is keyed by Supabase UUIDs stored as text, including `simfiles.user_id`, `user_profiles.user_id`, and `chart_scores.user_id`. Those columns do not need to become foreign keys to Better Auth.
 
 ### Remaining Supabase responsibilities
 
 Supabase still owns or shapes:
 
-- Web SSR/browser session creation and validation.
-- Password sign-in, Google OAuth, explicit provider linking, and logout.
-- API bearer-token validation.
-- Desktop magic-link generation and exchange.
-- Desktop deep-link and loopback callback handling.
-- Desktop JWT expiry parsing and refresh-token rotation.
-- E2E user provisioning.
-- Environment variables, dependencies, generated Supabase types, and mocks.
+- SvelteKit SSR/browser session creation and validation;
+- password sign-in, Google sign-in, explicit provider linking, and logout;
+- API Bearer-token validation;
+- desktop magic-link generation and exchange;
+- desktop deep-link and loopback callback handling;
+- desktop JWT expiry parsing and refresh-token rotation;
+- E2E user provisioning;
+- environment variables, dependencies, generated Supabase types, and mocks.
 
-The desktop path has the largest migration payoff. Better Auth Device Authorization replaces the custom GraphQL magic-link mutation, callback validation, URI schemes, loopback server, JWT decoding, refresh lock, and session-refresh events.
+The desktop path has the largest simplification opportunity. Device Authorization removes the custom magic-link mutation, callback allowlists, auth URI schemes, loopback HTTP server, JWT decoder, refresh lock, and session-refresh events.
 
 ## Goals
 
 1. Make D1 the only database used by DTXWeb runtime services.
 2. Replace Supabase Auth with Better Auth 1.6.25.
-3. Preserve every migrated user's existing UUID as the Better Auth user ID.
+3. Preserve every migrated Supabase UUID as the matching Better Auth `user.id`.
 4. Keep password and Google sign-in for existing users.
-5. Keep Google account linking explicit.
-6. Use Better Auth Device Authorization for desktop sign-in.
-7. Use Better Auth's Bearer plugin for desktop GraphQL and REST requests.
-8. Remove runtime Supabase dependencies, variables, callbacks, refresh logic, generated types, and test bootstrap code.
-9. Keep the architecture small and first-party-client focused.
+5. Keep Google linking explicit and signup disabled.
+6. Authenticate browser API traffic with Better Auth cookies.
+7. Authenticate desktop API traffic with Device Authorization plus opaque Bearer sessions.
+8. Remove all runtime Supabase dependencies, variables, callbacks, refresh logic, generated types, and E2E bootstrap code.
+9. Keep production cutover operations in an operator runbook, not in the implementation task list.
 
 ## Non-goals
 
-This migration does not add:
+Do not add:
 
-- Public registration.
-- Password-reset or email-verification delivery.
-- Passkeys, two-factor authentication, organizations, roles, or an admin dashboard.
-- Better Auth Infrastructure.
-- An OAuth 2.1/OIDC provider, JWT/JWKS issuance, scopes, or API keys.
-- A second auth Worker or second D1 database.
-- KV/Redis session storage.
-- Desktop keychain migration.
-- Backward compatibility for active Supabase sessions.
-- A permanent bcrypt compatibility layer.
+- public registration;
+- password-reset or email-verification delivery;
+- passkeys, 2FA, organizations, roles, or an admin dashboard;
+- Better Auth Infrastructure;
+- OAuth Provider, OIDC Provider, JWT/JWKS, API keys, scopes, or resource audiences;
+- another Worker or database;
+- KV/Redis session storage;
+- desktop keychain migration;
+- backward compatibility for active Supabase sessions;
+- permanent bcrypt verification.
 
-Active Supabase sessions are invalidated at cutover. Users sign in again through Better Auth.
+Google Drive OAuth remains separate from application authentication.
 
 ## Decisions
 
 ### 1. Host Better Auth in `dtx-api`
 
-`dtx-api` already owns D1 and the public API hostname. It mounts Better Auth under `/api/auth/*` before the existing GraphQL and REST router.
+`dtx-api` already owns D1 and the public API hostname. Mount Better Auth under `/api/auth/*` before the existing GraphQL and REST routes in the current hand-written router.
 
-This avoids giving the web Worker a D1 binding, running two auth instances, sharing auth internals between Workers, or making desktop polling depend on a Cloudflare Access-protected hostname.
+`dtx-web` does not receive a D1 binding. Production web also has no API service binding today, so browser production traffic continues to call `PUBLIC_DTX_API_URL` directly.
 
-`dtx-web` remains the browser UI and desktop approval surface.
+This avoids two auth instances, another Worker, or a new internal auth service.
 
-### 2. Use Better Auth's official Drizzle adapter over D1
+### 2. Use the official Drizzle-on-D1 adapter
 
-Better Auth 1.6.25's Cloudflare fixture uses a request-scoped Drizzle client and the official adapter:
+Follow Better Auth 1.6.25's Cloudflare pattern:
 
 ```ts
-database: drizzleAdapter(drizzle(env.DB, { schema }), {
-  provider: "sqlite",
-})
+const db = drizzle(env.DB, { schema: authSchema });
+
+database: drizzleAdapter(db, {
+  provider: 'sqlite',
+});
 ```
 
-The generated auth schema lives at `packages/dtx-api/src/auth/schema.ts`. The existing application-data schema remains unchanged.
+This mirrors the existing `createDrizzleDb()` shape in `@dtx/common/server`, but the Better Auth schema remains owned by `dtx-api` because it is auth-runtime data, not application-domain data.
 
-The pinned Better Auth CLI generates the Drizzle schema. `drizzle-kit export` emits reviewed SQL into the repository's existing Wrangler D1 migration flow. Wrangler remains the only production migration executor.
+The pinned Better Auth CLI generates `packages/dtx-api/src/auth/schema.ts`. `drizzle-kit export` produces reviewed flat SQL for `packages/dtx-api/d1-migrations/0008_better_auth.sql`. Wrangler remains the only production migration executor.
 
-### 3. Keep auth rate limiting inside Better Auth
+### 3. Keep one origin allowlist
 
-Better Auth uses its database-backed rate limiter. Behind Cloudflare it reads `cf-connecting-ip` rather than trusting a client-controlled forwarded chain.
+`CORS_ALLOWED_ORIGINS` is the single configured list of browser origins trusted to call `dtx-api`.
 
-The existing `RATE_LIMIT_API` KV binding remains for downloads and other API features. Only magic-link-specific rate-limit code and variables are removed.
+Export the parser/read helper from `packages/dtx-api/src/lib/cors.ts` and reuse the same set for:
+
+- CORS response headers;
+- Better Auth `trustedOrigins`;
+- cookie-authenticated unsafe API request validation.
+
+Do not introduce a second `TRUSTED_ORIGINS` setting.
+
+`DTX_WEB_URL` remains because Device Authorization needs one canonical web URL for `verificationUri`.
 
 ### 4. Use cross-subdomain cookies for web sessions
-
-Better Auth runs on the API hostname while SvelteKit runs on the web hostname.
 
 | Environment | API base URL | Web origin | Cookie domain |
 | --- | --- | --- | --- |
@@ -108,9 +125,37 @@ Better Auth runs on the API hostname while SvelteKit runs on the web hostname.
 | Pre-production | `https://api.pre-prod.dtx.hapadona.com` | `https://pre-prod.dtx.hapadona.com` | `pre-prod.dtx.hapadona.com` |
 | Local | `http://localhost:8787` | `http://localhost:5173` | omitted |
 
-CORS echoes only configured origins, sets `Access-Control-Allow-Credentials: true`, and includes `Vary: Origin`. Browser auth and GraphQL requests use `credentials: "include"`.
+CORS echoes only allow-listed origins, sets `Access-Control-Allow-Credentials: true`, and includes `Vary: Origin`. Browser auth, GraphQL, and authenticated REST requests use `credentials: 'include'`.
 
-### 5. Disable signup and implicit linking
+Because the production cookie domain is a parent of pre-production hostnames, cookie authentication must not rely on CORS alone as its CSRF boundary.
+
+### 5. Enforce Origin on unsafe cookie-authenticated API requests
+
+`resolveAuthSession()` distinguishes authentication transport:
+
+- If a valid `Authorization: Bearer` header is present, validate it with Better Auth and do not require `Origin`. This is the desktop/native path.
+- If authentication comes from cookies and the method is `POST`, `PUT`, `PATCH`, or `DELETE`, require `Origin` to be present and contained in `CORS_ALLOWED_ORIGINS` before accepting the session.
+- Cookie-authenticated `GET`/`HEAD` stays usable without `Origin` so normal authenticated reads and navigation/download paths are not broken.
+
+An unsafe request with a cookie but an absent/disallowed Origin is treated as unauthenticated at the shared session boundary. Protected GraphQL/REST code then returns its existing forbidden/unauthorized result.
+
+SvelteKit service-binding GraphQL calls explicitly forward both the incoming cookie and the trusted web origin so they satisfy the same rule. Production, which has no service binding, uses normal browser `Origin` headers.
+
+Better Auth's own `/api/auth/*` handler keeps Better Auth's built-in origin/CSRF checks enabled.
+
+### 6. Preserve multiple `Set-Cookie` headers
+
+Cloudflare Workers exposes multiple `Set-Cookie` values separately. Any wrapper that reconstructs a `Response` must preserve their cardinality.
+
+`withCors()` gets a regression test with two `Set-Cookie` values. When copying a response, preserve the array returned by the Workers `Headers` cookie API rather than flattening cookies through `headers.get('set-cookie')`.
+
+The SvelteKit session hook also reads all returned Set-Cookie values and appends each raw header to the eventual web response. It does not parse and reserialize Better Auth cookies.
+
+This keeps login/session rotation correct without adding a cookie-parsing dependency.
+
+### 7. Disable signup and implicit linking
+
+Use:
 
 ```ts
 emailAndPassword: {
@@ -119,8 +164,8 @@ emailAndPassword: {
 },
 socialProviders: {
   google: {
-    clientId: env.GOOGLE_AUTH_CLIENT_ID,
-    clientSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
+    clientId: config.googleClientId,
+    clientSecret: config.googleClientSecret,
     disableSignUp: true,
     disableImplicitSignUp: true,
   },
@@ -133,47 +178,71 @@ account: {
 },
 ```
 
-Imported Google accounts can sign in. An authenticated user can link Google explicitly with `linkSocial()`.
+Imported Google identities may sign in. An authenticated user links Google explicitly with `linkSocial()`.
 
-The Google Auth client is separate from the existing Google Drive OAuth client used by the desktop app.
+### 8. Reuse the existing web redirect/error allowlist
 
-### 6. Use Device Authorization and Bearer, not OAuth Provider/JWT
+Do not create a second redirect helper.
 
-DTX Desktop is a first-party client of the same application. It does not need third-party client registration, scopes, resource audiences, refresh tokens, JWT verification, or JWKS.
+Keep `packages/dtx-web/src/lib/auth/google.ts` as the application-auth redirect/error seam:
+
+- retain `safeAppRedirectPath()`;
+- retain sanitized Google/auth error messages;
+- retain explicit-linking messages;
+- delete only the Supabase-specific `/auth/callback` URL builders and desktop redirect intent after callers are migrated.
+
+Existing login and callback tests are retargeted so the current allowlist/error cases remain covered instead of being replaced by thinner tests.
+
+### 9. Use Device Authorization and Bearer for desktop
+
+DTX Desktop is a first-party client of the same application. It does not need OAuth Provider, scopes, JWT access tokens, JWKS, or refresh-token rotation.
+
+Configure:
 
 ```ts
 plugins: [
   deviceAuthorization({
-    verificationUri: `${env.DTX_WEB_URL}/app/desktop-auth`,
-    validateClient: (clientId) => clientId === "dtx-desktop",
+    verificationUri: `${config.webURL}/app/desktop-auth`,
+    validateClient: (clientId) => clientId === 'dtx-desktop',
   }),
   bearer(),
 ]
 ```
 
-`/device/token` returns a Better Auth session token in `access_token`. Desktop sends that opaque token as `Authorization: Bearer <token>`. `auth.api.getSession({ headers })` validates both browser cookies and desktop bearer sessions.
+`/device/token` returns a Better Auth session token in `access_token`. Desktop sends it as `Authorization: Bearer <token>`. The same Better Auth `getSession` path validates browser cookies and desktop bearer sessions.
 
-## Target Architecture
+### 10. Preserve desktop session-validation semantics
+
+Keep the existing renderer/native contract:
 
 ```text
-                                 Cloudflare D1
-                    application tables + Better Auth tables
-                                        ▲
-                                        │
-                         api.dtx.hapadona.com
-                 ┌──────────────────────┴──────────────────────┐
-                 │                                             │
-          /api/auth/*                                  /graphql + REST
-        Better Auth handler                         resolve Better Auth session
-                 │                                             │
-       ┌─────────┴─────────┐                                   │
-       │                   │                                   │
-Web browser cookie    Desktop device flow ── Bearer session ───┘
-       │
-dtx.hapadona.com
-login, account, and
-/app/desktop-auth UI
+valid | invalid | not-configured
 ```
+
+`validate_session` is retargeted, not redesigned:
+
+- missing/blank desktop API configuration => `not-configured`;
+- authenticated `/api/auth/get-session` returns the user => `valid`;
+- 401/no session => `invalid`;
+- transport/server failure remains fail-closed according to the current restore behavior and must not be mislabeled as local configuration absence.
+
+The desktop never receives `BETTER_AUTH_SECRET`; that secret remains server-only.
+
+### 11. Keep API auth user types minimal
+
+After the magic-link mutation is removed, GraphQL/REST authorization only needs the user identifier.
+
+Use a neutral API type such as:
+
+```ts
+type ApiAuthUser = {
+  id: string;
+};
+```
+
+Add `email` only at a boundary that actually renders or needs it. Do not re-export or emulate Supabase `User`/`Session` shapes.
+
+The web session model may expose Better Auth user fields needed by the UI; that is separate from `dtx-api`'s authorization type.
 
 ## Better Auth Server
 
@@ -184,226 +253,195 @@ packages/dtx-api/src/auth/options.ts
 packages/dtx-api/src/auth/auth.ts
 packages/dtx-api/src/auth/auth.cli.ts
 packages/dtx-api/src/auth/schema.ts
-packages/dtx-api/src/auth/session.ts
+packages/dtx-api/src/auth/session.ts   # rename/rewrite of the current verifier seam
 packages/dtx-api/src/auth/*.test.ts
 packages/dtx-api/drizzle.auth.config.ts
 packages/dtx-api/d1-migrations/0008_better_auth.sql
 ```
 
-`createAuthOptions(config)` contains shared provider, cookie, rate-limit, and plugin settings. Runtime supplies D1 and real secrets. CLI schema generation supplies non-production placeholders and the pinned Drizzle SQLite adapter metadata.
-
-### Runtime instance
-
-```ts
-export const createAuth = (env: Env) =>
-  betterAuth({
-    ...createAuthOptions({
-      baseURL: env.BETTER_AUTH_URL,
-      webURL: env.DTX_WEB_URL,
-      cookieDomain: env.AUTH_COOKIE_DOMAIN,
-      googleClientId: env.GOOGLE_AUTH_CLIENT_ID,
-      googleClientSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
-      secret: env.BETTER_AUTH_SECRET,
-    }),
-    database: drizzleAdapter(drizzle(env.DB, { schema }), {
-      provider: "sqlite",
-    }),
-  });
-```
-
-The instance is request-scoped because the Cloudflare D1 binding is request-scoped.
+`createAuthOptions()` contains provider, cookie, rate-limit, origin, and plugin settings. Runtime supplies D1 and real secrets. CLI schema generation supplies non-production placeholders.
 
 ### Router order
 
-`packages/dtx-api/src/index.ts` handles requests in this order:
+`packages/dtx-api/src/index.ts` handles:
 
-1. CORS preflight.
-2. Better Auth `/api/auth/*` GET/POST handler.
-3. Existing GraphQL and REST routes.
-4. Existing not-found response.
+1. CORS preflight;
+2. Better Auth `/api/auth/*` GET/POST;
+3. GraphQL and REST;
+4. not-found.
 
-The Worker does not add Hono or another router solely for auth mounting.
+Do not add Hono solely to mount auth.
 
 ### Neutral session resolver
 
-`packages/dtx-api/src/auth/session.ts` exposes one boundary:
+Rename/rewrite the current verifier seam into `packages/dtx-api/src/auth/session.ts`:
 
 ```ts
-resolveAuthSession(request, env): Promise<{
-  user: AuthUser | null;
-  session: AuthSession | null;
-}>
+type ResolvedAuthSession = {
+  user: ApiAuthUser;
+  session: { id: string };
+};
+
+resolveAuthSession(request, env): Promise<ResolvedAuthSession | null>
 ```
 
-It calls `createAuth(env).api.getSession({ headers: request.headers })` and normalizes missing or invalid sessions to null.
+The implementation:
 
-GraphQL context and protected REST routes use the same helper. The current `verifyToken()` function is removed.
+1. classifies Bearer versus cookie transport;
+2. applies the unsafe-cookie Origin rule;
+3. calls `createAuth(env).api.getSession({ headers: request.headers })`;
+4. normalizes provider-specific data to the local type;
+5. returns null for missing/invalid credentials.
 
-### Remove custom magic links
+GraphQL context and protected REST routes use this one helper.
 
-Delete:
+### Auth rate limiting
 
-- GraphQL `generateMagicLink` mutation and service.
-- Generated web GraphQL operation and wrapper.
-- Web `/app?redirect=desktop` handoff.
-- Magic-link rate-limit configuration.
+Use Better Auth's database-backed rate limiter with `cf-connecting-ip`.
 
-Device Authorization endpoints become the only desktop authentication protocol.
+Keep `RATE_LIMIT_API` for downloads and other existing API rate limits. Delete only magic-link-specific keys/configuration.
 
 ## Web Authentication
 
-### Server hook
+### SvelteKit hook
 
-The SvelteKit hook no longer constructs a Supabase client. It calls the API session endpoint with the incoming cookie header, stores neutral user/session data in `event.locals`, and keeps the existing `/app` route guard and safe `next` handling.
+The hook no longer constructs a Supabase client.
 
-When Better Auth rotates a cookie, the hook forwards all returned `Set-Cookie` headers to the browser.
+It:
 
-### Browser client
+1. forwards the incoming `Cookie` header to `/api/auth/get-session`;
+2. captures all returned Set-Cookie headers;
+3. stores neutral user/session data in `event.locals`;
+4. appends each raw Set-Cookie header to the SvelteKit response;
+5. guards `/app` and preserves a validated `next` destination.
 
-Create one Better Auth Svelte client pointed at `PUBLIC_DTX_API_URL` with `credentials: "include"` and the Device Authorization client plugin.
+Delete the old desktop-specific branches:
 
-The root layout stops exposing a Supabase client. Page data contains only neutral session/user data.
+- `redirect=desktop`;
+- `desktop_callback` forwarding;
+- the `DTXDesktopApp` form-CSRF bypass.
+
+Device Authorization no longer posts forms from the desktop app into the web Worker.
 
 ### Login and Google OAuth
 
-The login page uses:
+Use the Better Auth browser client for password and Google sign-in. Preserve `safeAppRedirectPath()` and sanitized errors from `$lib/auth/google.ts`.
 
-```ts
-authClient.signIn.email({ email, password })
-authClient.signIn.social({ provider: "google", callbackURL })
-```
+Google callbacks terminate at `dtx-api`'s Better Auth handler. Delete the SvelteKit `/auth/callback` route after its reusable allowlist/error assertions have been moved to the retained helper/login/account tests.
 
-After password sign-in, the page performs a full navigation to the validated `next` route. Google callbacks terminate at the API hostname; the custom SvelteKit `/auth/callback` route is removed.
+### Every web API call uses cookies
 
-### GraphQL transport
+The cookie cutover is complete only when all browser/SSR API seams are converted before `token.ts` is deleted.
 
-The generated GraphQL layer remains unchanged.
+Update together:
 
-- Browser requests use `credentials: "include"` and no bearer header.
-- SvelteKit service-binding requests forward the incoming `Cookie` header.
-- Desktop requests keep `Authorization: Bearer`, now carrying a Better Auth session token.
+- `packages/dtx-web/src/lib/api/transport.ts`;
+- `packages/dtx-web/src/lib/api/client.ts`;
+- `packages/dtx-web/src/lib/api/download.ts`;
+- API wrapper tests that mock `./token`;
+- components/tests that consume `bulkDownloadHeaders`.
 
-`packages/dtx-web/src/lib/api/token.ts` is removed.
+Browser GraphQL and download fetches use `credentials: 'include'` and no Authorization header.
 
-### Logout and account linking
+Service-binding SSR GraphQL forwards `Cookie` and the trusted web `Origin`. No token-shaped `ClientCtx.accessToken` remains.
 
-Logout calls `authClient.signOut()` and navigates to `/login`.
-
-The account page uses Better Auth account APIs and explicit `linkSocial({ provider: "google" })`. Supabase identity objects disappear from the UI contract.
+Only after those imports/tests are gone is `packages/dtx-web/src/lib/api/token.ts` deleted.
 
 ## Desktop Authentication
 
 ### Browser approval flow
 
-1. Rust posts to `/api/auth/device/code` with `client_id=dtx-desktop`.
+1. Native code posts to `/api/auth/device/code` with `client_id=dtx-desktop`.
 2. Better Auth returns device/user codes, verification URLs, interval, and expiry.
-3. Rust stores only the opaque `device_code` in native memory and returns display-safe attempt data.
-4. The renderer calls the existing `open_external_url` command with `verification_uri_complete` and shows `user_code`.
-5. The browser reaches `/app/desktop-auth?user_code=...`.
-6. The web auth guard requires a Better Auth browser session.
-7. The page calls the Device Authorization verification endpoint to claim the code for that session.
-8. The page shows the code/client and requires explicit Approve or Deny.
-9. Rust polls `/api/auth/device/token` at the server interval.
+3. Native code keeps `device_code` only in memory and returns display-safe attempt data.
+4. Renderer calls existing `open_external_url(verificationUriComplete)`.
+5. Browser reaches `/app/desktop-auth?user_code=...`.
+6. The `/app` guard requires a Better Auth web session.
+7. The page verifies/claims the user code for that session.
+8. The page requires explicit Approve or Deny.
+9. Native code polls `/api/auth/device/token` at the required interval.
 10. On approval, Better Auth returns the opaque session token.
-11. Rust calls `/api/auth/get-session` with Bearer auth to obtain the user.
-12. Native and renderer state persist one session token plus user data.
+11. Native code calls `/api/auth/get-session` with Bearer auth to obtain the user.
+12. Native/renderer state stores one session token plus user data.
 
-The API hostname stays outside Cloudflare Access so issuance and polling work. The approval route remains under `/app`, preserving PR #221's operator-only production gate.
+The API hostname stays outside Cloudflare Access. `/app/desktop-auth` stays under the protected application surface.
 
 ### Native command boundary
+
+Add:
 
 ```text
 begin_device_authorization
 poll_device_authorization
 cancel_device_authorization
+```
+
+Retarget without renaming:
+
+```text
 validate_session
 get_current_session
 logout_session
 open_external_url
 ```
 
-The migration preserves the existing `validate_session`, `get_current_session`, `logout_session`, and `open_external_url` names. Only their Supabase-shaped payloads change.
+Keep Device Authorization HTTP protocol code in `device_auth.rs`, independent of Tauri UI APIs, and cover it with WireMock.
 
-`begin_device_authorization` returns `userCode`, `verificationUri`, `verificationUriComplete`, and `expiresAt`. It never exposes `device_code`.
+### Native DTOs and state
 
-`poll_device_authorization` handles:
+Define renderer-facing DTOs in `packages/dtx-desktop/src-tauri/src/api_contracts.rs` and generate TypeScript through the existing `ts-rs` export target.
 
-- `authorization_pending`: continue.
-- `slow_down`: add five seconds.
-- `access_denied`: stop with denial.
-- `expired_token`: stop and require restart.
-- `invalid_grant`: clear the attempt.
-- Network failure: return a retryable error.
+Preserve the current authenticated user ID, session generation, and session epoch used by Google Drive reconciliation.
 
-Only one pending attempt exists. A generation counter or cancellation token prevents an older poll from committing after cancel/restart.
+Remove:
 
-### Native state and persistence
-
-Replace arbitrary Supabase JSON with typed `DesktopAuthUser`, `DesktopAuthSession`, and `DeviceAuthorizationAttempt` contracts generated from `src-tauri/src/api_contracts.rs` into `src/renderer/src/lib/generated/native-api-contracts.ts`.
-
-Renderer persistence stores only:
-
-```ts
-interface StoredDesktopAuthSession {
-  sessionToken: string;
-  user: DesktopAuthUser;
-}
-```
-
-Keep the existing local-storage mechanism for this migration. Moving the token to the OS keychain is a separate hardening task.
-
-Preserve the current authenticated user ID, session generation, and session epoch used by Google Drive state reconciliation.
-
-### Remove callback machinery
-
-Delete:
-
-- Magic-link parsing/exchange.
-- Auth deep-link handlers and queues.
-- Loopback TCP callback server.
-- Callback URL/port validation.
-- JWT payload parsing.
-- Supabase refresh/logout REST calls.
-- Refresh single-flight mutex.
+- magic-link parsing/exchange;
+- auth deep-link handlers/queues;
+- loopback TCP callback server;
+- callback URL/port validation;
+- JWT parsing;
+- Supabase refresh/logout requests;
+- refresh single-flight mutex;
 - `magic-link-result` and `session-refreshed` events.
 
-Remove `tauri-plugin-deep-link` after no non-test use remains. Keep `tauri-plugin-single-instance` for window focusing, without auth URL extraction.
+Remove the auth deep-link plugin/config only after repository search proves it has no non-auth use. Keep single-instance window focusing.
 
 ## Identity Migration
 
 ### Preserve IDs
 
-Every Better Auth `user.id` must equal the existing Supabase UUID. Application ownership rows are not rewritten.
+Every imported Better Auth `user.id` equals the existing Supabase UUID. Application ownership rows are not rewritten.
 
-The migration imports:
+Import:
 
-- User ID.
-- Email and name.
-- Email verification state.
-- Created/updated timestamps.
-- Google provider/account identity.
-- Credential account only when a replacement password is supplied.
+- user ID;
+- email/name;
+- verification state;
+- timestamps;
+- Google account identity;
+- credential account only when an explicit replacement password is supplied.
 
-Do not import Supabase sessions, access tokens, or refresh tokens.
+Do not import Supabase sessions/access/refresh tokens.
 
 ### Password policy
 
-Supabase password hashes are bcrypt while Better Auth defaults to scrypt. There are no external users and backward compatibility is not required, so do not add permanent bcrypt verification.
+Do not add bcrypt compatibility. Replacement credential passwords are hashed with Better Auth's own password helper during the one-shot import.
 
-For each credential user, provide a replacement password during the one-shot import and hash it with Better Auth's own password helper. Users without a replacement password use an imported Google account or are reset manually before cutover.
+### Import tooling
 
-### One-shot import tool
+Create a local-only script that consumes a sanitized Supabase Admin export and emits reviewed D1 SQL under `tmp/auth-migration/`.
 
-Create a local-only script that consumes a sanitized Supabase Admin export and emits reviewed D1 SQL. It must:
+It must:
 
-- Validate UUIDs and unique emails.
-- Reject unsupported providers instead of guessing.
-- Generate deterministic account IDs.
-- Escape SQL values safely.
-- Exclude sessions.
-- Reconcile every distinct application owner ID against imported users.
-- Write only under `tmp/auth-migration/`, which remains ignored.
-- Never send Supabase secrets to a Worker.
+- validate UUIDs and unique emails;
+- reject unsupported providers;
+- generate deterministic account IDs;
+- escape SQL values safely;
+- exclude sessions;
+- reconcile every distinct application owner ID;
+- never send Supabase secrets to a Worker.
+
+Local/E2E setup seeds the Better Auth test user into the same D1 prepared by `prepare-stack.ts`, which already applies every D1 migration in lexical order.
 
 ## Environment Contract
 
@@ -418,7 +456,13 @@ GOOGLE_AUTH_CLIENT_ID
 GOOGLE_AUTH_CLIENT_SECRET
 ```
 
-Secrets are Wrangler secrets. URL/domain/client-ID values are environment vars.
+Continue using:
+
+```text
+CORS_ALLOWED_ORIGINS
+```
+
+as the single browser-origin trust list.
 
 Keep desktop:
 
@@ -428,149 +472,106 @@ VITE_DTX_API_URL
 GOOGLE_DRIVE_OAUTH_CLIENT_ID
 ```
 
-Remove Supabase and desktop auth-callback variables after cutover.
+Remove all Supabase and desktop auth-callback variables after the cutover implementation is complete.
 
-## Error Handling
+## Cutover Strategy
 
-### Web
+### Code PR
 
-- Invalid credentials remain on login with a sanitized message.
-- `account_not_linked` instructs the user to sign in with the existing method and link Google explicitly.
-- Invalid/expired device codes show a restart message.
-- Approval/denial controls disable while in flight.
+The implementation PR ends when:
 
-### Desktop
+- static/type/unit/Rust checks pass;
+- generated auth/GraphQL/native artifacts are clean;
+- Supabase residue gates pass;
+- web and desktop E2E pass without Supabase credentials;
+- pre-production migration/deployment/acceptance has been proven;
+- the production runbook is complete.
 
-- Pending and slow-down are internal polling states.
-- Denial and expiry are distinct user-facing outcomes.
-- Invalid stored sessions clear local/native state.
-- Logout clears local state even when server revocation fails.
-- Browser-opening failure shows the plain verification URL and code.
+Do not execute production D1 identity import, production deployment, desktop publication, or credential removal as an implementation-plan task.
 
-### API
+### Operator runbook
 
-- Better Auth owns auth endpoint errors.
-- GraphQL and REST preserve current unauthorized semantics.
-- Public download behavior remains controlled by the existing flag.
-- Credentialed CORS never uses `*`.
+The runbook owns production actions:
 
-## Security Boundary
+1. backup/export;
+2. configure Better Auth/Google secrets and callbacks;
+3. apply `0008_better_auth.sql`;
+4. apply reviewed identity-import SQL;
+5. reconcile owner IDs;
+6. deploy API then web;
+7. publish/install the desktop build;
+8. run web/desktop/Access smoke matrices;
+9. prove Supabase can be disabled;
+10. retain rollback artifacts for the cutover window.
 
-Better Auth owns password hashing, OAuth state/callback validation, signed cookies, session storage/expiry, CSRF/origin checks, device-code generation/claiming/approval/polling/expiry, Bearer validation/revocation, and auth rate limiting.
-
-DTXWeb owns exact origins/cookie domains, secret storage, Access placement, approval UI, ownership-ID preservation, and local desktop cleanup.
-
-## Deployment and Cutover
-
-The implementation ships as one code PR but is proved in stages.
-
-### Pre-production
-
-1. Apply `0008_better_auth.sql`.
-2. Configure Better Auth and Google secrets.
-3. Import pre-production identities.
-4. Deploy API and web.
-5. Build desktop against pre-production.
-6. Prove password, Google, linking, logout, GraphQL, REST, device approval/denial/expiry/restore/logout.
-7. Confirm API auth endpoints remain outside Access and `/app/desktop-auth` remains protected.
-
-### Production
-
-1. Export and back up Supabase Auth data.
-2. Apply the D1 auth migration.
-3. Generate, review, and apply identity-import SQL.
-4. Deploy API and web in the same cutover window.
-5. Release the Better Auth desktop build.
-6. Require users to sign in again.
-7. Run ownership and end-to-end checks.
-8. Remove/revoke Supabase credentials only after acceptance.
-
-A short coordinated cutover is simpler than a dual verifier.
-
-## Coordination with PR #221
-
-After PR #221 lands, update its Zero Trust design, plan, and runbook to state:
-
-- Better Auth is the inner application-authentication gate.
-- `/app/desktop-auth` is the desktop approval route.
-- API device-code/polling endpoints remain outside Access.
-- Production desktop authorization remains operator-only because approval is under `/app`.
-- `/login?redirect=desktop`, auth deep links, and loopback verification are removed.
-
-Implementation can begin before PR #221 merges, but production rollout must reconcile both document sets.
+Rollback redeploys the previous API/web/desktop versions. Additive Better Auth tables may remain during rollback.
 
 ## Testing Strategy
 
 ### API
 
-- Generated schema/migration parity.
-- Better Auth GET/POST handler mounting.
-- Cookie and Bearer session resolution.
-- Missing/invalid session normalization.
-- Existing GraphQL scopes and REST authorization.
-- Credentialed CORS.
+Cover:
+
+- generated schema/migration contract;
+- auth handler routing;
+- credentialed CORS;
+- two Set-Cookie values survive `withCors`;
+- cookie and Bearer session resolution;
+- unsafe cookie request with allowed Origin;
+- unsafe cookie request with missing/disallowed Origin;
+- Bearer request with no Origin;
+- neutral `{ id }` user type through GraphQL/REST;
+- magic-link schema removal.
 
 ### Web
 
-- Server hook and safe redirects.
-- Password and Google sign-in.
-- Explicit linking and logout.
-- Browser cookie transport and service-binding cookie forwarding.
-- Device code claim, approve, deny, invalid, and expired UI.
+Cover:
+
+- session loading/rolling Set-Cookie propagation;
+- `/app` guard and safe `next`;
+- removal of desktop redirect/callback branches and desktop CSRF bypass;
+- password login;
+- Google login error mapping;
+- explicit Google linking;
+- logout;
+- browser GraphQL credentials;
+- service-binding Cookie + Origin forwarding;
+- single/bulk download credentials;
+- no remaining `getAccessTokenOrNull` mocks/imports;
+- device code claim/approve/deny.
 
 ### Desktop
 
-- Code request parsing.
-- Pending/slow-down polling.
-- Approval, denial, expiry, invalid grant, and network failure.
-- Stored-session validation and logout.
-- Renderer persistence and restore.
-- Google Drive session-generation invariants.
-- No callback listener or auth deep-link remains.
+Cover:
 
-### End-to-end
+- code request;
+- pending/slow-down/approve/deny/expiry/invalid-grant;
+- cancellation/generation races;
+- one-token persistence;
+- `SessionValidationStatus` valid/invalid/not-configured;
+- restore/logout;
+- Bearer API requests;
+- preserved session epoch/Drive reconciliation;
+- absence of magic-link/deep-link/loopback/JWT/refresh behavior.
 
-- Local D1 Better Auth user provisioning.
-- Web authenticated score flow.
-- Desktop Device Authorization, restore, and logout.
-- Pre-production production-like flow with Cloudflare Access.
+### E2E
 
-## Rejected Alternatives
+Web E2E uses a D1-seeded Better Auth user. Desktop integration uses the supported Device Authorization flow or seeded Better Auth session setup, without test-only auth protocols.
 
-- **Keep Supabase only for auth:** leaves the most complex cross-runtime dependency.
-- **Handcraft a device protocol:** Better Auth already owns the protocol and security rules.
-- **Keep magic links:** retains callback, deep-link, refresh, and JWT machinery.
-- **Use OAuth Provider/JWT:** unnecessary for one first-party desktop client and one resource server.
-- **Use Better Auth Electron plugin:** DTX Desktop is Tauri; Device Authorization is framework-neutral.
-- **Put Better Auth in `dtx-web`:** web has no D1 binding and desktop polling must stay outside Access.
-- **Create a dedicated auth Worker:** extra deployment boundary without another consumer.
-- **Keep bcrypt compatibility:** replacement passwords are cheaper than permanent legacy hashing.
-
-## Acceptance Criteria
+## Completion Definition
 
 The migration is complete when:
 
-1. D1 contains Better Auth core, device-code, and rate-limit tables.
-2. Password and Google web sign-in create valid Better Auth sessions.
-3. Browser GraphQL/REST authenticate through cookies.
-4. Desktop uses Device Authorization and an opaque Better Auth Bearer session.
-5. Existing ownership remains valid because user IDs are preserved.
-6. Google linking is explicit and implicit linking remains disabled.
-7. Public signup remains disabled.
-8. Desktop has no magic link, auth deep link, loopback callback, JWT decoder, or refresh-token rotation.
-9. No runtime package or active environment contract depends on Supabase.
-10. Unit, integration, Rust, web E2E, and desktop E2E checks pass.
-11. PR #221 documentation identifies Better Auth and `/app/desktop-auth`.
-12. Disabling Supabase causes no DTXWeb runtime failure.
-
-## References
-
-- Better Auth Cloudflare fixture v1.6.25: https://github.com/better-auth/better-auth/tree/v1.6.25/e2e/smoke/test/fixtures/cloudflare
-- Better Auth Drizzle adapter: https://better-auth.com/docs/adapters/drizzle
-- Drizzle Kit export: https://orm.drizzle.team/docs/drizzle-kit-export
-- Better Auth Device Authorization: https://better-auth.com/docs/plugins/device-authorization
-- Better Auth Bearer plugin: https://better-auth.com/docs/plugins/bearer
-- Better Auth cookies: https://better-auth.com/docs/concepts/cookies
-- Better Auth Supabase migration guide: https://better-auth.com/docs/guides/supabase-migration-guide
-- Better Auth CLI: https://better-auth.com/docs/concepts/cli
-- Better Auth 1.6.25: https://github.com/better-auth/better-auth/releases/tag/v1.6.25
+- D1 holds Better Auth core, Device Authorization, and rate-limit tables;
+- existing application owner UUIDs are preserved;
+- password and Google web sign-in use Better Auth;
+- implicit linking/signup remain disabled;
+- browser GraphQL/REST uses cookie sessions with unsafe-method Origin validation;
+- desktop uses Device Authorization and opaque Bearer sessions;
+- desktop retains the valid/invalid/not-configured restore contract;
+- no auth magic-link/deep-link/loopback/JWT/refresh-token machinery remains;
+- no active package/config/test depends on Supabase;
+- the obsolete root/turbo Supabase `gen-types` task is removed;
+- unit, integration, Rust, web E2E, and desktop E2E checks pass;
+- pre-production acceptance passes;
+- the production runbook is ready for operator execution.

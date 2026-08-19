@@ -2,29 +2,35 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove Supabase from DTXWeb by hosting Better Auth in `dtx-api`, storing auth data in the existing Cloudflare D1 database, moving web authentication to cookies, and replacing desktop magic-link/deep-link authentication with Device Authorization plus Bearer sessions.
+**Goal:** Remove Supabase from DTXWeb by hosting Better Auth in `dtx-api`, storing auth data in the existing Cloudflare D1 database, moving web authentication to cookies, and replacing desktop magic-link/deep-link authentication with Device Authorization plus opaque Bearer sessions.
 
-**Architecture:** `dtx-api` owns one request-scoped Better Auth instance, the official Better Auth Drizzle adapter, generated auth schema, D1 migration, and neutral session resolution. `dtx-web` is a separate-origin SvelteKit client that uses a shared-parent cookie and hosts `/app/desktop-auth`. DTX Desktop requests a device code, opens the verification URL, polls natively, stores one opaque session token, and sends it as Bearer auth to the existing GraphQL and REST API. Existing application tables continue using preserved auth user IDs.
+**Architecture:** `dtx-api` owns one request-scoped Better Auth instance, the official Better Auth Drizzle adapter, generated auth schema, D1 migration, and one neutral session-resolution seam. `dtx-web` uses Better Auth cookies and hosts `/app/desktop-auth`; unsafe cookie-authenticated API requests are accepted only from the existing `CORS_ALLOWED_ORIGINS` set. DTX Desktop requests a device code, opens the browser, polls natively, stores one opaque session token, and keeps the existing `valid | invalid | not-configured` restore contract.
 
-**Tech Stack:** Better Auth 1.6.25, Better Auth Device Authorization and Bearer plugins, Cloudflare Workers, D1, Drizzle ORM/Drizzle Kit, SvelteKit 2/Svelte 5, Tauri 2/Rust, Vitest, Playwright, WireMock.
+**Tech Stack:** Better Auth 1.6.25, Device Authorization and Bearer plugins, Cloudflare Workers, D1, Drizzle ORM/Drizzle Kit, SvelteKit 2/Svelte 5, Tauri 2/Rust, Vitest, Playwright, WireMock.
 
 **Spec:** `docs/superpowers/specs/2026-08-18-better-auth-d1-migration-design.md`
 
 ## Global Constraints
 
-- [ ] Use Better Auth 1.6.25 exactly; do not adopt a prerelease during this migration.
-- [ ] Follow Better Auth's Cloudflare fixture: request-scoped `drizzle(env.DB, { schema })` plus `drizzleAdapter(..., { provider: "sqlite" })`.
-- [ ] Keep Wrangler D1 migrations as the only production migration executor.
+- [ ] Implement HPA-644 in **one implementation PR**. The tasks below are reviewable commits/checkpoints, not separate PRs.
+- [ ] Use Better Auth **1.6.25 exactly**; do not adopt a prerelease in this migration.
+- [ ] Follow Better Auth's Cloudflare pattern: request-scoped `drizzle(env.DB, { schema })` plus `drizzleAdapter(..., { provider: 'sqlite' })`.
+- [ ] Keep Better Auth schema in `packages/dtx-api`; do not add it to `packages/common/src/lib/server/db/schema.ts`.
+- [ ] Keep Wrangler D1 migrations as the only production migration executor; next migration is `0008_better_auth.sql`.
 - [ ] Preserve every existing Supabase UUID used by application ownership rows.
-- [ ] Do not add dual-auth mode, OAuth Provider, JWT/JWKS, API keys, another Worker, another database, or custom device protocol.
+- [ ] Do not add dual-auth mode, OAuth Provider, JWT/JWKS, API keys, another Worker/database, custom device protocol, or bcrypt compatibility.
 - [ ] Do not preserve active Supabase sessions or old desktop access/refresh-token storage.
 - [ ] Keep Google linking explicit and signup disabled.
-- [ ] Keep the existing application-data schema and authorization scopes unchanged.
-- [ ] Write tests before each behavior change and keep each task compiling before commit.
+- [ ] Keep Google Drive OAuth independent from application Google Auth.
+- [ ] Reuse `CORS_ALLOWED_ORIGINS` as Better Auth `trustedOrigins`; do not create a parallel origin setting.
+- [ ] Preserve all `Set-Cookie` values when a Worker/SvelteKit response is reconstructed.
+- [ ] Keep `SessionValidationStatus = valid | invalid | not-configured` on desktop.
+- [ ] Production data import/deploy remains an operator-runbook action, not an implementation-plan task.
+- [ ] Write failing tests before each behavior change and keep each task compiling before commit.
 
 ---
 
-## Task 1: Pin Better Auth and create a reproducible D1 auth schema
+## Task 1: Pin Better Auth and generate the D1 auth schema
 
 **Files:**
 
@@ -40,23 +46,23 @@
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `.env.example`
 
-### Step 1: Add a failing schema contract test
+**Interfaces:**
 
-- [ ] Create `src/auth/schema.test.ts`.
-- [ ] Read `src/auth/schema.ts` and `d1-migrations/0008_better_auth.sql`.
-- [ ] Assert the generated schema and SQL include Better Auth core models, Device Authorization, and database rate limiting.
-- [ ] Assert user IDs are text primary keys and session/account/device rows reference the Better Auth user table.
-- [ ] Run:
+- Produces `createAuthOptions(config)` for Task 2.
+- Produces generated `authSchema` plus `0008_better_auth.sql` for runtime/E2E.
+- Keeps `CORS_ALLOWED_ORIGINS` as the canonical trusted-origin input.
+
+- [ ] **Step 1: Write the failing schema contract test.**
+
+Assert that generated schema/SQL contain Better Auth core tables, Device Authorization, database rate limiting, text user IDs, and the expected foreign keys.
 
 ```bash
 bun run --filter=dtx-api test -- src/auth/schema.test.ts
 ```
 
-Expected: FAIL because the schema and migration do not exist.
+Expected: FAIL because the schema/migration do not exist.
 
-### Step 2: Install pinned dependencies
-
-- [ ] Run:
+- [ ] **Step 2: Install pinned dependencies.**
 
 ```bash
 cd packages/dtx-api
@@ -67,12 +73,11 @@ bun add --dev drizzle-kit
 cd ../..
 ```
 
-- [ ] Do not add a third-party Better Auth Cloudflare adapter.
+Do not add a third-party Cloudflare adapter.
 
-### Step 3: Define shared options
+- [ ] **Step 3: Define shared Better Auth options.**
 
-- [ ] Create `options.ts` with one `createAuthOptions(config)` function.
-- [ ] Include:
+`createAuthOptions(config)` includes:
 
 ```ts
 emailAndPassword: {
@@ -93,32 +98,31 @@ account: {
     disableImplicitLinking: true,
   },
 },
+trustedOrigins: config.trustedOrigins,
 advanced: {
   crossSubDomainCookies: config.cookieDomain
     ? { enabled: true, domain: config.cookieDomain }
     : { enabled: false },
-  ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+  ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
 },
 rateLimit: {
   enabled: true,
-  storage: "database",
+  storage: 'database',
 },
 plugins: [
   deviceAuthorization({
     verificationUri: `${config.webURL}/app/desktop-auth`,
-    validateClient: (clientId) => clientId === "dtx-desktop",
+    validateClient: (clientId) => clientId === 'dtx-desktop',
   }),
   bearer(),
 ],
 ```
 
-- [ ] Set `baseURL`, `secret`, and `trustedOrigins` explicitly.
-- [ ] Do not disable Better Auth CSRF or origin checks.
+Keep Better Auth CSRF/origin checks enabled.
 
-### Step 4: Generate the Drizzle schema
+- [ ] **Step 4: Generate schema with the pinned CLI.**
 
-- [ ] Create `auth.cli.ts` using the shared options and non-production placeholder values.
-- [ ] Add scripts:
+Add package scripts:
 
 ```json
 {
@@ -128,20 +132,13 @@ plugins: [
 }
 ```
 
-- [ ] Run `bun run --filter=dtx-api auth:schema:generate`.
-- [ ] Review the generated schema; do not hand-maintain Better Auth columns.
+Run generation and review output; do not hand-maintain generated columns.
 
-### Step 5: Export reviewed SQL
+- [ ] **Step 5: Export flat Wrangler-compatible SQL.**
 
-- [ ] Configure `drizzle.auth.config.ts` for SQLite using `src/auth/schema.ts`.
-- [ ] Run the export into a temporary file.
-- [ ] Copy only the generated DDL into `0008_better_auth.sql`.
-- [ ] Ensure the migration is flat SQL compatible with `wrangler d1 migrations apply`.
-- [ ] Do not add a runtime Drizzle Kit migration runner.
+Configure `drizzle.auth.config.ts`, export SQL, review it, and commit it as `0008_better_auth.sql`. Do not add a runtime Drizzle migration runner.
 
-### Step 6: Add the environment contract
-
-- [ ] Add to `Env`:
+- [ ] **Step 6: Add environment fields.**
 
 ```ts
 BETTER_AUTH_URL: string;
@@ -152,13 +149,9 @@ GOOGLE_AUTH_CLIENT_ID: string;
 GOOGLE_AUTH_CLIENT_SECRET: string;
 ```
 
-- [ ] Add non-secret URL/domain/client-ID values to each Wrangler environment.
-- [ ] Keep `BETTER_AUTH_SECRET` and `GOOGLE_AUTH_CLIENT_SECRET` as Wrangler secrets.
-- [ ] Keep Supabase variables temporarily until the cutover tasks remove their consumers.
+`BETTER_AUTH_SECRET` and `GOOGLE_AUTH_CLIENT_SECRET` are Wrangler secrets. Keep Supabase vars temporarily until their consumers are removed.
 
-### Step 7: Verify schema generation
-
-- [ ] Run:
+- [ ] **Step 7: Verify schema/local D1.**
 
 ```bash
 bun run --filter=dtx-api auth:schema:check
@@ -167,11 +160,7 @@ bun run --filter=dtx-api check
 bun run packages/e2e-web/setup/prepare-stack.ts
 ```
 
-Expected: generated schema is clean and all D1 migrations apply to fresh local state.
-
-### Step 8: Commit
-
-- [ ] Commit:
+- [ ] **Step 8: Commit.**
 
 ```bash
 git add packages/dtx-api/package.json bun.lock \
@@ -183,7 +172,7 @@ git commit -m "feat(auth): add Better Auth D1 schema"
 
 ---
 
-## Task 2: Mount Better Auth and enable credentialed CORS
+## Task 2: Mount Better Auth and make CORS/cookies lossless
 
 **Files:**
 
@@ -194,19 +183,36 @@ git commit -m "feat(auth): add Better Auth D1 schema"
 - Modify: `packages/dtx-api/src/lib/cors.ts`
 - Modify: `packages/dtx-api/src/lib/cors.test.ts`
 
-### Step 1: Add failing handler tests
+**Interfaces:**
 
-- [ ] Add tests proving:
-  - GET and POST under `/api/auth/*` reach Better Auth;
-  - unrelated routes still reach GraphQL/REST;
-  - unsupported methods preserve existing behavior;
-  - session lookup without credentials returns null;
-  - D1 is request-scoped.
-- [ ] Run the focused tests and confirm failure.
+- Produces `createAuth(env)` for Task 3.
+- Exports `getAllowedOrigins(env)`/`isAllowedOrigin(env, origin)` from the existing CORS seam.
+- `withCors()` preserves multiple `Set-Cookie` values for Tasks 5/6.
 
-### Step 2: Create the runtime auth factory
+- [ ] **Step 1: Add failing auth-router/CORS tests.**
 
-- [ ] Implement:
+Cover:
+
+- GET/POST `/api/auth/*` routing;
+- unrelated GraphQL/REST routing;
+- exact allowed origin and credentials;
+- denied/missing origin behavior;
+- **two distinct Set-Cookie values survive `withCors()`**.
+
+- [ ] **Step 2: Export the existing origin parser.**
+
+Keep one parser/cache in `cors.ts`:
+
+```ts
+export const getAllowedOrigins = (env: Env): ReadonlySet<string> => { /* existing parse/cache */ };
+
+export const isAllowedOrigin = (env: Env, origin: string | null): boolean =>
+  origin !== null && getAllowedOrigins(env).has(origin);
+```
+
+Use this same set when creating Better Auth `trustedOrigins`.
+
+- [ ] **Step 3: Create the request-scoped auth factory.**
 
 ```ts
 export const createAuth = (env: Env) =>
@@ -218,48 +224,32 @@ export const createAuth = (env: Env) =>
       googleClientId: env.GOOGLE_AUTH_CLIENT_ID,
       googleClientSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
       secret: env.BETTER_AUTH_SECRET,
+      trustedOrigins: [...getAllowedOrigins(env)],
     }),
-    database: drizzleAdapter(drizzle(env.DB, { schema }), {
-      provider: "sqlite",
+    database: drizzleAdapter(drizzle(env.DB, { schema: authSchema }), {
+      provider: 'sqlite',
     }),
   });
 ```
 
-- [ ] Do not cache an auth instance across unrelated Worker environments.
+This mirrors `createDrizzleDb()` but does not move auth schema into common.
 
-### Step 3: Mount the handler before GraphQL/REST
+- [ ] **Step 4: Mount Better Auth before GraphQL/REST.**
 
-- [ ] In `src/index.ts`, handle CORS preflight first.
-- [ ] Route `/api/auth/*` GET/POST to `createAuth(env).handler(request)`.
-- [ ] Wrap the response with the existing `withCors(response, request, env)` helper.
-- [ ] Keep the current small hand-written router; do not add Hono solely for this route.
+Route GET/POST `/api/auth/*` through `createAuth(env).handler(request)` and wrap the response with `withCors()`.
 
-### Step 4: Make CORS credential-safe
+- [ ] **Step 5: Preserve multiple cookies explicitly.**
 
-- [ ] For configured origins, set:
+When `withCors()` reconstructs a response, preserve every Set-Cookie entry using the Workers multi-cookie API. Do not read a flattened `headers.get('set-cookie')` value.
 
-```text
-Access-Control-Allow-Origin: <exact origin>
-Access-Control-Allow-Credentials: true
-Vary: Origin
-```
+The focused test must assert both cookie strings remain individually retrievable.
 
-- [ ] Keep allowed methods/headers explicit.
-- [ ] Never combine credentials with `Access-Control-Allow-Origin: *`.
-- [ ] Add preflight and normal-response tests for allowed, denied, missing, and multiple configured origins.
-
-### Step 5: Verify and commit
-
-- [ ] Run:
+- [ ] **Step 6: Verify and commit.**
 
 ```bash
 bun run --filter=dtx-api test -- src/auth/auth.test.ts src/index.test.ts src/lib/cors.test.ts
 bun run --filter=dtx-api check
-```
 
-- [ ] Commit:
-
-```bash
 git add packages/dtx-api/src/auth/auth.ts packages/dtx-api/src/auth/auth.test.ts \
   packages/dtx-api/src/index.ts packages/dtx-api/src/index.test.ts \
   packages/dtx-api/src/lib/cors.ts packages/dtx-api/src/lib/cors.test.ts
@@ -268,12 +258,12 @@ git commit -m "feat(auth): mount Better Auth API"
 
 ---
 
-## Task 3: Replace Supabase token verification with one neutral session resolver
+## Task 3: Replace the Supabase verifier with one neutral session resolver
 
 **Files:**
 
-- Create: `packages/dtx-api/src/auth/session.ts`
-- Create: `packages/dtx-api/src/auth/session.test.ts`
+- Rename/rewrite: `packages/dtx-api/src/auth/verifyToken.ts` → `packages/dtx-api/src/auth/session.ts`
+- Rename/rewrite: `packages/dtx-api/src/auth/verifyToken.test.ts` → `packages/dtx-api/src/auth/session.test.ts`
 - Modify: `packages/dtx-api/src/context.ts`
 - Modify: `packages/dtx-api/src/schema/builder.ts`
 - Modify: `packages/dtx-api/src/schema/builder.test.ts`
@@ -283,47 +273,75 @@ git commit -m "feat(auth): mount Better Auth API"
 - Modify: `packages/dtx-api/src/rest/downloadSimfile.test.ts`
 - Modify: `packages/dtx-api/src/rest/downloadBulk.ts`
 - Modify: `packages/dtx-api/src/rest/downloadBulk.test.ts`
-- Delete later in this task: `packages/dtx-api/src/auth/verifyToken.ts`
-- Delete later in this task: `packages/dtx-api/src/auth/verifyToken.test.ts`
 
-### Step 1: Add resolver tests
+**Interfaces:**
 
-- [ ] Test cookie session, Bearer session, missing credentials, revoked/expired token, malformed header, and Better Auth failure.
-- [ ] Require the same normalized `{ user, session }` shape for cookie and Bearer callers.
-- [ ] Confirm invalid credentials normalize to null rather than leaking provider errors.
+- Produces `resolveAuthSession(request, env): Promise<ResolvedAuthSession | null>`.
+- Produces minimal `ApiAuthUser = { id: string }`.
+- Applies the unsafe-cookie Origin rule once for GraphQL and REST.
 
-### Step 2: Implement `resolveAuthSession`
+- [ ] **Step 1: Write resolver tests first.**
 
-- [ ] Call:
+Cover:
+
+1. valid cookie GET with no Origin;
+2. valid cookie POST with allowed Origin;
+3. cookie POST with missing Origin => null;
+4. cookie POST with disallowed Origin => null;
+5. valid Bearer POST with no Origin => valid;
+6. malformed Bearer => null;
+7. missing credentials => null;
+8. revoked/expired session => null;
+9. Better Auth exception => null.
+
+- [ ] **Step 2: Implement transport classification.**
+
+```ts
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+const hasBearer = (request: Request) =>
+  /^Bearer\s+\S+$/i.test(request.headers.get('authorization') ?? '');
+
+const cookieOriginAllowed = (request: Request, env: Env) =>
+  !UNSAFE_METHODS.has(request.method) ||
+  isAllowedOrigin(env, request.headers.get('origin'));
+```
+
+If there is no Bearer header and an unsafe request carries cookie authentication, reject the session before returning it unless Origin is allow-listed.
+
+- [ ] **Step 3: Normalize the Better Auth result.**
+
+```ts
+type ApiAuthUser = { id: string };
+type ResolvedAuthSession = {
+  user: ApiAuthUser;
+  session: { id: string };
+};
+```
+
+Call only:
 
 ```ts
 createAuth(env).api.getSession({ headers: request.headers })
 ```
 
-- [ ] Return neutral local types, not Better Auth internals throughout the codebase.
-- [ ] Do not decode or validate tokens independently.
+Do not decode bearer tokens or propagate Better Auth/Supabase user types through application code.
 
-### Step 3: Retarget GraphQL context and REST
+- [ ] **Step 4: Retarget context and REST.**
 
-- [ ] Replace `verifyToken()` in `context.ts` and protected REST routes.
-- [ ] Keep current Pothos scope behavior and existing unauthorized responses.
-- [ ] Cover both cookie and Bearer at the resolver boundary; route tests may mock the neutral helper.
+Replace every `verifyToken()` call with `resolveAuthSession()`. Keep current Pothos scope behavior and REST status semantics.
 
-### Step 4: Delete the Supabase verifier
+`uploadSimfileFile()` already accepts `{ id: string }`; do not widen it.
 
-- [ ] Delete `verifyToken.ts` and its tests after all imports are gone.
-- [ ] Run:
+- [ ] **Step 5: Verify no Supabase verifier use remains.**
 
 ```bash
 rg -n "verifyToken|SUPABASE_ANON_KEY" packages/dtx-api/src
+bun run --filter=dtx-api test
+bun run --filter=dtx-api check
 ```
 
-Expected: no live verifier use.
-
-### Step 5: Verify and commit
-
-- [ ] Run API tests and typecheck.
-- [ ] Commit:
+- [ ] **Step 6: Commit.**
 
 ```bash
 git add packages/dtx-api/src
@@ -345,32 +363,30 @@ git commit -m "refactor(auth): resolve Better Auth sessions"
 - Delete: `packages/dtx-web/src/lib/api/auth.ts`
 - Delete: `packages/dtx-web/src/lib/api/auth.test.ts`
 - Modify/regenerate: `packages/dtx-web/src/lib/api/generated/graphql.ts`
+- Modify: `packages/dtx-web/src/lib/api/index.ts`
 - Rewrite: `packages/dtx-web/src/routes/(app)/app/+page.svelte`
 - Modify: `packages/dtx-web/src/routes/(app)/app/app-page.test.ts`
 - Delete: `packages/dtx-web/src/routes/(app)/app/app-page-redirect.test.ts`
 - Modify: `packages/dtx-api/package.json`
 
-### Step 1: Change schema expectations first
+**Interfaces:**
 
-- [ ] Update schema tests to assert `generateMagicLink` no longer exists.
-- [ ] Remove `./auth` registration from `schema/index.ts`.
-- [ ] Regenerate API schema and web GraphQL output.
+- Removes the only API consumer that needs auth-user email.
+- Leaves normal `/app` dashboard and web auth guard intact for Task 5.
 
-### Step 2: Remove server magic-link code
+- [ ] **Step 1: Change schema expectations first.**
 
-- [ ] Delete the service, mutation, tests, service-role key use, callback allowlist, and magic-link-specific KV keys.
-- [ ] Remove the inline `MAGIC_LINK_HOURLY_LIMIT` local-dev override.
-- [ ] Keep `RATE_LIMIT_API` because non-auth API paths still use it.
+Assert `generateMagicLink` no longer exists, remove `./auth` schema registration, regenerate API schema/web GraphQL output.
 
-### Step 3: Remove the web handoff
+- [ ] **Step 2: Delete magic-link service/mutation/rate-limit config.**
 
-- [ ] Remove `/app?redirect=desktop`, `desktop_callback`, magic-link generation, and callback forwarding.
-- [ ] Keep the normal dashboard page.
-- [ ] Do not add Device Authorization here; Task 8 adds the dedicated approval page.
+Remove service-role key use and `MAGIC_LINK_HOURLY_LIMIT`. Keep `RATE_LIMIT_API`.
 
-### Step 4: Verify and commit
+- [ ] **Step 3: Remove `/app?redirect=desktop` page behavior.**
 
-- [ ] Run:
+Delete magic-link generation and callback handoff from the dashboard. Do not add Device Authorization here; Task 8 owns `/app/desktop-auth`.
+
+- [ ] **Step 4: Verify and commit.**
 
 ```bash
 bun run --filter=dtx-api gen-schema
@@ -381,18 +397,19 @@ bun run --filter=dtx-api check
 bun run --filter=dtx-web check
 ```
 
-- [ ] Commit all server and generated-client removals together so the branch compiles.
+Commit all removals/generated updates together.
 
 ---
 
-## Task 5: Replace SvelteKit Supabase session plumbing
+## Task 5: Replace SvelteKit Supabase session plumbing and delete desktop web exceptions
 
 **Files:**
 
 - Create: `packages/dtx-web/src/lib/auth/client.ts`
 - Create: `packages/dtx-web/src/lib/auth/session.ts`
-- Create: `packages/dtx-web/src/lib/auth/redirect.ts`
-- Create matching tests under `packages/dtx-web/src/lib/auth/`
+- Create matching tests
+- Modify: `packages/dtx-web/src/lib/auth/google.ts`
+- Modify: `packages/dtx-web/src/lib/auth/google.test.ts`
 - Rewrite: `packages/dtx-web/src/hooks.server.ts`
 - Modify: `packages/dtx-web/src/app.d.ts`
 - Rewrite: `packages/dtx-web/src/routes/+layout.server.ts`
@@ -402,37 +419,69 @@ bun run --filter=dtx-web check
 - Modify: `packages/dtx-web/src/routes/layout.test.ts`
 - Modify: `packages/dtx-web/src/routes/layout.svelte.test.ts`
 
-### Step 1: Test session loading and guards
+**Interfaces:**
 
-- [ ] Add tests for anonymous/authenticated API session responses, forwarded cookies, propagated `Set-Cookie`, protected `/app` redirects, safe `next`, login-page redirect, and API failure.
-- [ ] Preserve the current allowlist semantics: return only to `/app` paths.
+- Reuses `safeAppRedirectPath()` and auth error strings in existing `google.ts`.
+- Produces `authClient` for Tasks 6/8.
+- Produces neutral `event.locals.user/session` and raw multi-cookie propagation.
 
-### Step 2: Add a neutral web auth client
+- [ ] **Step 1: Extend existing redirect/helper tests.**
 
-- [ ] Create the Better Auth Svelte client pointed at `PUBLIC_DTX_API_URL`.
-- [ ] Set `credentials: "include"`.
-- [ ] Register `deviceAuthorizationClient()` for Task 8.
+Keep `safeAppRedirectPath()` semantics and current sanitized Google/linking messages. Do **not** create `$lib/auth/redirect.ts`.
 
-### Step 3: Rewrite the server hook
+Delete only Supabase-specific callback URL builders/desktop redirect intent once no callers remain.
 
-- [ ] Remove `createServerClient`, `safeGetSession`, and Supabase locals.
-- [ ] Forward the incoming `Cookie` header to `/api/auth/get-session`.
-- [ ] Propagate all Better Auth `Set-Cookie` headers.
-- [ ] Populate neutral `event.locals.user` and `event.locals.session`.
-- [ ] Keep CSRF protection for SvelteKit form endpoints and the existing `/app` guard.
+- [ ] **Step 2: Add failing hook/session tests.**
 
-### Step 4: Simplify root layout data
+Cover:
 
-- [ ] Stop constructing browser/server Supabase clients.
-- [ ] Return only neutral session/user data plus existing locale data.
-- [ ] Remove `supabase:auth` invalidation and auth-state subscription.
+- anonymous/authenticated get-session;
+- incoming Cookie forwarding;
+- two returned Set-Cookie headers propagated separately;
+- protected `/app` redirect with safe `next`;
+- authenticated `/login` redirect;
+- API failure;
+- no `redirect=desktop`/`desktop_callback` branch;
+- no `DTXDesktopApp` CSRF bypass.
 
-### Step 5: Verify and commit
+- [ ] **Step 3: Create Better Auth Svelte client.**
 
-- [ ] Run focused layout/hook tests and `bun run --filter=dtx-web check`.
-- [ ] Commit:
+Point it at `PUBLIC_DTX_API_URL`, set `credentials: 'include'`, and register `deviceAuthorizationClient()`.
+
+- [ ] **Step 4: Rewrite the server hook.**
+
+The hook:
+
+1. forwards `Cookie` to `/api/auth/get-session`;
+2. reads all returned Set-Cookie values with the Workers multi-cookie API;
+3. sets neutral locals from the response body;
+4. calls `resolve(event)`;
+5. appends each raw Set-Cookie value to the outgoing SvelteKit response.
+
+Do not parse/rebuild Better Auth cookies.
+
+- [ ] **Step 5: Delete desktop-specific hook logic.**
+
+Remove:
+
+```text
+redirect=desktop
+desktop_callback
+DTXDesktopApp form-CSRF bypass
+```
+
+Keep normal same-origin SvelteKit form-CSRF protection and the `/app` guard.
+
+- [ ] **Step 6: Simplify root layout.**
+
+Stop constructing Supabase browser/server clients and remove `supabase:auth` invalidation/subscriptions. Return only neutral user/session plus existing locale data.
+
+- [ ] **Step 7: Verify and commit.**
 
 ```bash
+bun run --filter=dtx-web test -- src/lib/auth src/routes/layout.server.test.ts src/routes/layout.test.ts src/routes/layout.svelte.test.ts
+bun run --filter=dtx-web check
+
 git add packages/dtx-web/src/hooks.server.ts packages/dtx-web/src/app.d.ts \
   packages/dtx-web/src/lib/auth packages/dtx-web/src/routes/+layout*
 git commit -m "refactor(auth): load Better Auth web sessions"
@@ -444,75 +493,151 @@ git commit -m "refactor(auth): load Better Auth web sessions"
 
 **Files:**
 
+- Modify: `packages/dtx-web/src/lib/auth/google.ts`
+- Modify: `packages/dtx-web/src/lib/auth/google.test.ts`
 - Rewrite: `packages/dtx-web/src/routes/(login)/login/+page.svelte`
 - Delete/replace: `packages/dtx-web/src/routes/(login)/login/+page.server.ts`
-- Modify: `packages/dtx-web/src/routes/(login)/login/page.server.test.ts`
+- Retarget: `packages/dtx-web/src/routes/(login)/login/page.server.test.ts`
 - Delete: `packages/dtx-web/src/routes/auth/callback/+server.ts`
-- Delete: `packages/dtx-web/src/routes/auth/callback/server.test.ts`
+- Retarget/delete after migration: `packages/dtx-web/src/routes/auth/callback/server.test.ts`
 - Modify: `packages/dtx-web/src/routes/(app)/+layout.svelte`
 - Modify: `packages/dtx-web/src/routes/(app)/layout.svelte.test.ts`
 - Rewrite: `packages/dtx-web/src/routes/(app)/app/account/+page.svelte`
 - Modify: `packages/dtx-web/src/routes/(app)/app/account/account-page.test.ts`
 
-### Step 1: Add failing login/account tests
+**Interfaces:**
 
-- [ ] Cover password success/failure, safe `next`, Google redirect, `account_not_linked`, logout, linked-method listing, explicit Google linking, and no signup UI.
+- Consumes `authClient` and retained `safeAppRedirectPath()`/sanitized messages.
+- Removes the custom SvelteKit OAuth callback route without losing its reusable test cases.
 
-### Step 2: Implement password sign-in
+- [ ] **Step 1: Move existing callback assertions before deletion.**
 
-- [ ] Use `authClient.signIn.email({ email, password })`.
-- [ ] Perform a full browser navigation to the validated `/app` destination after success.
-- [ ] Keep provider errors sanitized.
+Retarget cases from `auth/callback/server.test.ts` and `login/page.server.test.ts` into `google.test.ts`, login tests, and account tests as appropriate:
 
-### Step 3: Implement Google sign-in and explicit linking
+- safe return paths;
+- external/protocol-relative rejection;
+- provider cancel/failure sanitization;
+- existing-account-only Google copy;
+- explicit-link conflict copy.
 
-- [ ] Use `authClient.signIn.social` for login and `authClient.linkSocial` from the authenticated account page.
-- [ ] Set callback URLs to validated application routes.
-- [ ] Delete the SvelteKit OAuth callback route; Better Auth's API callback is authoritative.
-- [ ] Do not permit implicit same-email linking.
+- [ ] **Step 2: Implement password sign-in.**
 
-### Step 4: Implement logout
+Use:
 
-- [ ] Call `authClient.signOut()` and navigate to `/login`.
-- [ ] Remove Supabase identity/session assumptions from layout and account UI.
+```ts
+await authClient.signIn.email({ email, password });
+window.location.assign(safeAppRedirectPath(next));
+```
 
-### Step 5: Verify and commit
+Preserve `/app` as the missing-`next` default in the login flow.
 
-- [ ] Run web unit tests and typecheck.
-- [ ] Commit the complete web auth action migration.
+- [ ] **Step 3: Implement Google sign-in/linking.**
+
+Use `authClient.signIn.social({ provider: 'google', callbackURL })` for login and `authClient.linkSocial({ provider: 'google', callbackURL })` from the account page.
+
+Keep `account_not_linked` mapped to the existing existing-account-only message. Do not permit implicit same-email linking.
+
+- [ ] **Step 4: Delete SvelteKit OAuth callback.**
+
+Better Auth `/api/auth/callback/google` is authoritative. Delete old URL builders from `google.ts` only after caller/test migration.
+
+- [ ] **Step 5: Implement logout.**
+
+Call `authClient.signOut()` then full-navigate to `/login`. Remove Supabase identity/session assumptions from app/account UI.
+
+- [ ] **Step 6: Verify and commit.**
+
+Run focused web auth tests, full web unit suite, and typecheck. Commit the complete web auth action migration.
 
 ---
 
-## Task 7: Authenticate browser API traffic with cookies
+## Task 7: Convert **every** web API call from Bearer to cookies
 
 **Files:**
 
 - Modify: `packages/dtx-web/src/lib/api/transport.ts`
+- Modify: `packages/dtx-web/src/lib/api/transport.test.ts`
 - Modify: `packages/dtx-web/src/lib/api/client.ts`
-- Modify matching tests
-- Delete: `packages/dtx-web/src/lib/api/token.ts`
-- Delete: `packages/dtx-web/src/lib/api/token.test.ts`
+- Modify: `packages/dtx-web/src/lib/api/client.test.ts`
+- Modify: `packages/dtx-web/src/lib/api/download.ts`
+- Modify: `packages/dtx-web/src/lib/api/download.test.ts`
+- Modify: `packages/dtx-web/src/lib/api/index.test.ts`
+- Modify token-mocking tests including:
+  - `packages/dtx-web/src/lib/api/chart.test.ts`
+  - `packages/dtx-web/src/lib/api/score.test.ts`
+  - `packages/dtx-web/src/lib/api/user.test.ts`
+- Modify affected component tests consuming `bulkDownloadHeaders`
+- Delete only at the end: `packages/dtx-web/src/lib/api/token.ts`
+- Delete only at the end: `packages/dtx-web/src/lib/api/token.test.ts`
 
-### Step 1: Add transport tests
+**Interfaces:**
 
-- [ ] Browser GraphQL sets `credentials: "include"` and no Authorization header.
-- [ ] Service-binding GraphQL forwards the incoming Cookie header.
-- [ ] Anonymous requests remain anonymous.
-- [ ] Existing GraphQL error mapping remains unchanged.
+- Browser fetches use `credentials: 'include'` and no Authorization.
+- Service-binding SSR uses `{ cookieHeader, origin }`, not `accessToken`.
+- Desktop remains Bearer and is not part of this web transport task.
 
-### Step 2: Rewrite only the transport seam
+- [ ] **Step 1: Add failing browser GraphQL tests.**
 
-- [ ] Keep generated GraphQL operations and feature wrappers unchanged.
-- [ ] Remove token lookup/injection.
-- [ ] Do not introduce a proxy route solely to make auth same-origin.
+Assert GraphQL client uses credentials and no Authorization header.
 
-### Step 3: Verify and commit
+- [ ] **Step 2: Replace token-shaped `ClientCtx`.**
 
-- [ ] Run API client tests, web tests, and typecheck.
-- [ ] Commit:
+Use:
+
+```ts
+export type ClientCtx = {
+  fetch?: typeof fetch;
+  platform?: App.Platform;
+  cookieHeader?: string | null;
+  origin?: string | null;
+};
+```
+
+Delete `accessToken` from web client context.
+
+- [ ] **Step 3: Rewrite service-binding GraphQL.**
+
+Forward:
+
+```text
+content-type: application/json
+cookie: <incoming cookie>
+origin: <trusted SvelteKit event.url.origin>
+```
+
+The explicit Origin is required because GraphQL POST is an unsafe cookie-authenticated method and Task 3 enforces the same origin policy on service-binding requests.
+
+- [ ] **Step 4: Rewrite download helpers.**
+
+`downloadSimfile()` fetches with:
+
+```ts
+{ credentials: 'include' }
+```
+
+`bulkDownloadHeaders()` returns only the content-type header; the actual bulk fetch also sets `credentials: 'include'`.
+
+Update the component/helper call site that performs the bulk fetch, not just the header builder.
+
+- [ ] **Step 5: Remove every token mock/import.**
 
 ```bash
-git add packages/dtx-web/src/lib/api
+rg -n "getAccessTokenOrNull|getAccessToken|tokenFromSession|from './token'|mock.*token" packages/dtx-web/src
+```
+
+Expected before deletion: zero live call sites outside `token.ts`/its test.
+
+- [ ] **Step 6: Delete `token.ts` only after Step 5 is clean.**
+
+This ordering keeps the commit compiling.
+
+- [ ] **Step 7: Verify and commit.**
+
+```bash
+bun run --filter=dtx-web test
+bun run --filter=dtx-web check
+
+git add packages/dtx-web/src/lib/api packages/dtx-web/src/lib/components packages/dtx-web/src/routes
 git commit -m "refactor(auth): use cookie-authenticated web API"
 ```
 
@@ -527,37 +652,30 @@ git commit -m "refactor(auth): use cookie-authenticated web API"
 - Modify: `packages/dtx-web/src/lib/auth/client.ts`
 - Modify: `packages/dtx-web/src/routes/layout.test.ts`
 
-### Step 1: Add failing UI tests
+**Interfaces:**
 
-- [ ] Cover prefilled/manual code, formatting, claim success, invalid/expired code, approve, deny, double-submit prevention, and unauthenticated return-through-login.
+- Consumes authenticated Better Auth web session and `deviceAuthorizationClient()`.
+- Produces browser claim/approve/deny path for native Task 9.
 
-### Step 2: Implement the claim step
+- [ ] **Step 1: Add failing approval-page tests.**
 
-- [ ] Normalize the user code by trimming, removing dashes, and uppercasing.
-- [ ] Call Better Auth's Device Authorization verification method before showing approval controls.
-- [ ] Rely on the `/app` guard to require an authenticated browser session and preserve the page URL as `next`.
+Cover prefilled/manual code, normalization, claim success, invalid/expired code, approve, deny, double-submit prevention, and unauthenticated return-through-login.
 
-### Step 3: Implement explicit approve/deny
+- [ ] **Step 2: Implement code claim.**
 
-- [ ] Display the code and fixed `dtx-desktop` client identity.
-- [ ] Require an explicit button action.
-- [ ] Disable both actions while one is in flight.
-- [ ] Show terminal success/denial text instead of redirecting to a desktop callback.
+Normalize with trim/remove dashes/uppercase, then call Better Auth's device verification method. Rely on `/app` guard and its validated `next` return.
 
-### Step 4: Verify and commit
+- [ ] **Step 3: Implement explicit Approve/Deny.**
 
-- [ ] Run the page and layout tests plus web typecheck.
-- [ ] Commit:
+Show user code and fixed `dtx-desktop` client identity. Disable actions while one request is in flight. Show terminal success/denial text; never redirect to a desktop callback.
 
-```bash
-git add "packages/dtx-web/src/routes/(app)/app/desktop-auth" \
-  packages/dtx-web/src/lib/auth/client.ts
-git commit -m "feat(auth): add desktop device approval"
-```
+- [ ] **Step 4: Verify and commit.**
+
+Run page/layout tests plus web typecheck and commit the new route.
 
 ---
 
-## Task 9: Replace native refresh/deep-link auth with Device Authorization
+## Task 9: Replace native Supabase auth with Device Authorization
 
 **Files:**
 
@@ -572,31 +690,36 @@ git commit -m "feat(auth): add desktop device approval"
 - Modify: `packages/dtx-desktop/src-tauri/Cargo.toml`
 - Regenerate: `packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts`
 
-### Step 1: Add protocol tests with WireMock
+**Interfaces:**
 
-- [ ] Cover code request, display-safe response, pending, slow-down, approval, denial, expiry, invalid grant, malformed responses, timeout, and network failure.
-- [ ] Use paused Tokio time where practical.
-- [ ] Confirm `device_code` never crosses the Tauri command boundary.
+- `device_auth.rs` is HTTP protocol only and WireMock-testable.
+- `auth.rs` retains `AuthState`, session generation/epoch, and existing command names.
+- `validate_session` retains `SessionValidationStatus`.
 
-### Step 2: Implement a protocol-only module
+- [ ] **Step 1: Add WireMock protocol tests.**
 
-- [ ] Keep `device_auth.rs` independent of Tauri UI APIs.
-- [ ] Use Better Auth 1.6.25's exact wire field names.
-- [ ] Centralize API base URL construction.
-- [ ] Never log device codes or session tokens.
+Cover code request, display-safe response, pending, slow-down, approval, denial, expiry, invalid grant, malformed body, timeout, and network failure. Confirm `device_code` never crosses Tauri IPC.
 
-### Step 3: Replace `AuthState` with typed state
+- [ ] **Step 2: Implement protocol-only `device_auth.rs`.**
 
-- [ ] Define renderer-facing `DesktopAuthUser`, `DesktopAuthSession`, and `DeviceAuthorizationAttempt` in `api_contracts.rs` and derive `TS`.
-- [ ] Reuse the existing export target `../../src/renderer/src/lib/generated/native-api-contracts.ts`.
-- [ ] Include `userCode`, `verificationUri`, `verificationUriComplete`, and `expiresAt` in the attempt.
-- [ ] Keep one pending opaque device code in native memory.
-- [ ] Preserve authenticated user ID, session generation, and session epoch used by Google Drive reconciliation.
-- [ ] Prevent stale polls from committing after cancel/restart.
+Use Better Auth 1.6.25 wire names exactly, centralize API-base construction, and never log device/session tokens.
 
-### Step 4: Implement native commands
+- [ ] **Step 3: Define native DTOs in `api_contracts.rs`.**
 
-- [ ] Add:
+Add `DesktopAuthUser`, `DesktopAuthSession`, and `DeviceAuthorizationAttempt` with `TS` export. Attempt exposes only:
+
+```text
+userCode
+verificationUri
+verificationUriComplete
+expiresAt
+```
+
+- [ ] **Step 4: Preserve `AuthState` identity/epoch semantics.**
+
+Keep authenticated user ID, generation counter, and `AuthSessionEpoch` so Google Drive reconciliation does not regress. Replace Supabase JSON/refresh state with typed opaque session state and one pending native device code.
+
+- [ ] **Step 5: Add Device Authorization commands.**
 
 ```text
 begin_device_authorization
@@ -604,7 +727,7 @@ poll_device_authorization
 cancel_device_authorization
 ```
 
-- [ ] Preserve and retarget existing names:
+Retarget without renaming:
 
 ```text
 validate_session
@@ -613,27 +736,34 @@ logout_session
 open_external_url
 ```
 
-- [ ] `begin_device_authorization` requests/stores codes and returns display-safe data only.
-- [ ] The renderer, not the protocol module, calls `open_external_url(verificationUriComplete)`.
-- [ ] `poll_device_authorization` owns polling, handles pending/slow-down, fetches `/api/auth/get-session` after approval, and returns `DesktopAuthSession`.
-- [ ] `validate_session` calls `/api/auth/get-session` with Bearer auth and never decodes JWTs.
-- [ ] `logout_session` posts to `/api/auth/sign-out`, always clears native state, and reports whether revocation succeeded.
+- [ ] **Step 6: Preserve `SessionValidationStatus`.**
 
-### Step 5: Replace API token access
+Keep:
 
-- [ ] Rename `ensure_valid_access_token` to `current_session_token`.
-- [ ] Remove expiry parsing, refresh calls, and refresh locks.
-- [ ] Keep existing `Authorization: Bearer` request code, now with the opaque Better Auth session token.
+```rust
+Valid
+Invalid
+NotConfigured
+```
 
-### Step 6: Remove auth callback machinery
+Behavior:
 
-- [ ] Delete magic-link parsing, auth deep-link handlers/queues, loopback TCP server, callback parser, JWT parsing, Supabase refresh/logout endpoints, and auth events.
-- [ ] Remove `tauri-plugin-deep-link` only after no non-test use remains.
-- [ ] Keep `tauri-plugin-single-instance` for window focusing but remove auth URL extraction.
+- missing/blank desktop API config => `NotConfigured`;
+- `/api/auth/get-session` returns authenticated user => `Valid`;
+- 401/no session => `Invalid`;
+- network/5xx remains fail-closed and is **not** mislabeled as local configuration absence.
 
-### Step 7: Verify generated bindings and Rust
+Do not introduce Better Auth server secret into desktop config.
 
-- [ ] Run:
+- [ ] **Step 7: Replace API token access.**
+
+Rename `ensure_valid_access_token` to `current_session_token`. Remove JWT expiry parsing, refresh calls, refresh lock, and refresh events. Existing API code continues sending `Authorization: Bearer <opaque-session-token>`.
+
+- [ ] **Step 8: Remove callback machinery.**
+
+Delete auth deep-link handlers/queues, loopback TCP server, magic-link parsing, callback validation, Supabase verify/refresh/logout code, JWT decoder, and auth events. Preserve `tauri-plugin-single-instance` for normal window behavior. Remove deep-link plugin only after repository search proves no non-auth use.
+
+- [ ] **Step 9: Verify and commit.**
 
 ```bash
 cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
@@ -643,11 +773,11 @@ cargo clippy --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml \
 bun run gen:native-types
 ```
 
-- [ ] Commit native changes and generated TypeScript together.
+Commit Rust and generated TypeScript together.
 
 ---
 
-## Task 10: Rewire the desktop renderer and remove callback configuration
+## Task 10: Rewire desktop renderer persistence/lifecycle
 
 **Files:**
 
@@ -666,28 +796,40 @@ bun run gen:native-types
 - Modify: root `package.json`
 - Modify: `packages/dtx-desktop/src/devTopology.test.ts`
 
-### Step 1: Add renderer lifecycle tests
+**Interfaces:**
 
-- [ ] Cover start, displayed code, browser open, poll success, one-token persistence, restore, invalid restore cleanup, logout cleanup, cancellation, retry, and browser-open failure fallback.
-- [ ] Remove assumptions about refresh tokens, JWT expiry, magic links, or session-refresh events.
+- Consumes generated Task 9 DTOs/commands.
+- Persists one `{ sessionToken, user }` value.
+- Keeps renderer restore behavior aware of `not-configured`.
 
-### Step 2: Replace Supabase-shaped persistence
+- [ ] **Step 1: Add lifecycle tests.**
 
-- [ ] Store only `{ sessionToken, user }` under one neutral key.
-- [ ] Validate stored shape and clear malformed values.
-- [ ] Do not migrate old Supabase local-storage values; delete them when encountered.
+Cover start, displayed code, browser open, poll success, persistence, restore valid, restore invalid cleanup, restore not-configured preserving storage, logout cleanup, cancel/retry, and browser-open fallback.
 
-### Step 3: Rewrite the renderer service
+- [ ] **Step 2: Replace Supabase-shaped persistence.**
 
-- [ ] Use generated native commands/types.
-- [ ] After `beginDeviceAuthorization`, call the existing `openExternalUrl(attempt.verificationUriComplete)` and then poll.
-- [ ] Show `verificationUri` and `userCode` when browser opening fails.
-- [ ] Keep one `idle | waiting | authenticated | error` state model.
-- [ ] Remove `magic-link-result` and `session-refreshed` listeners.
+Store one neutral object:
 
-### Step 4: Remove callback/deep-link configuration
+```ts
+{
+  sessionToken: string;
+  user: DesktopAuthUser;
+}
+```
 
-- [ ] Remove:
+Delete old Supabase access/refresh local-storage keys when encountered; do not migrate them.
+
+- [ ] **Step 3: Rewrite renderer auth service.**
+
+After `beginDeviceAuthorization`, open `verificationUriComplete`, show manual URI/code fallback, and poll. Remove magic-link/session-refreshed listeners.
+
+- [ ] **Step 4: Keep tri-state restore behavior.**
+
+If native returns `not-configured`, show the build/configuration error and **do not wipe the stored Better Auth session**. If `invalid`, clear it.
+
+- [ ] **Step 5: Remove callback/deep-link configuration.**
+
+Remove:
 
 ```text
 DTX_DESKTOP_AUTH_CALLBACK_PORT
@@ -695,23 +837,15 @@ VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT
 PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL
 ```
 
-- [ ] Remove auth URI scheme registration only after repository search confirms no non-auth use.
-- [ ] Simplify `dev`, `dev:local-web`, and root dev scripts.
-- [ ] Update topology tests to assert API/web URLs only.
+Simplify dev scripts/topology tests. Remove auth URI schemes only after no non-auth use remains.
 
-### Step 5: Verify and commit
+- [ ] **Step 6: Verify and commit.**
 
-- [ ] Run desktop renderer tests, Svelte typecheck, Rust tests, and `bun run gen:native-types`.
-- [ ] Commit:
-
-```bash
-git add packages/dtx-desktop package.json
-git commit -m "refactor(auth): rewire desktop session lifecycle"
-```
+Run renderer tests, typecheck, Rust tests, and native type generation; commit desktop renderer/config changes together.
 
 ---
 
-## Task 11: Add a one-shot identity import and local Better Auth E2E user
+## Task 11: Add ID-preserving identity import and Better Auth E2E seed
 
 **Files:**
 
@@ -728,42 +862,43 @@ git commit -m "refactor(auth): rewire desktop session lifecycle"
 - Modify: `packages/e2e-web/package.json`
 - Modify: `.gitignore`
 
-### Step 1: Specify import invariants in tests
+**Interfaces:**
 
-- [ ] Preserve user UUIDs exactly.
-- [ ] Map email/name/verified/timestamps and Google identity.
-- [ ] Reject duplicate email/ID and unsupported providers.
-- [ ] Import no session/access/refresh token.
-- [ ] Emit deterministic account IDs and safely escaped SQL.
-- [ ] Fail when any application owner ID lacks an imported Better Auth user.
+- Produces reviewed SQL only under ignored `tmp/auth-migration/`.
+- Seeds the fixed E2E UUID into the same D1 that `prepare-stack.ts` already migrates.
 
-### Step 2: Implement local-only import tooling
+- [ ] **Step 1: Specify import invariants in tests.**
 
-- [ ] Consume a sanitized Supabase Admin export JSON file.
-- [ ] Write only to `tmp/auth-migration/`.
-- [ ] Produce reviewed SQL for D1; do not write directly to production.
-- [ ] Do not import or depend on `@supabase/supabase-js`.
-- [ ] Hash replacement credential passwords with Better Auth's password helper.
-- [ ] Require explicit replacement password input for credential users; do not add bcrypt compatibility.
+Assert exact UUID preservation, email/name/verification/timestamps, Google identity mapping, no sessions/tokens, deterministic account IDs, SQL escaping, duplicate rejection, unsupported-provider rejection, and owner-ID reconciliation.
 
-### Step 3: Seed local E2E auth in D1
+- [ ] **Step 2: Implement local-only import tool.**
 
-- [ ] Replace Supabase E2E variables with Better Auth secret, fixed test user ID/email/password, API URL, and web URL.
-- [ ] Seed Better Auth user/account rows into the same local D1 state prepared by `prepare-stack.ts`.
-- [ ] Preserve the fixed test UUID used by application seed rows.
-- [ ] Keep CI fail-loud behavior when auth E2E inputs are incomplete.
+Consume sanitized Supabase Admin export JSON and emit D1 SQL; do not import `@supabase/supabase-js` and do not write directly to remote D1.
 
-### Step 4: Verify and commit
+- [ ] **Step 3: Handle credential users without bcrypt compatibility.**
 
-- [ ] Run import tests, local stack preparation, Playwright setup, API tests, and E2E typecheck.
-- [ ] Commit migration tooling without generated real-user SQL or secrets.
+Require explicit replacement password input and hash it with Better Auth's password helper. No replacement password means no credential account is generated.
+
+- [ ] **Step 4: Seed local Better Auth auth rows.**
+
+Replace `create-local-supabase-user.ts` with D1 seeding after `prepare-stack.ts` applies all `d1-migrations/*.sql`. Preserve the existing fixed test UUID used by application seed rows.
+
+- [ ] **Step 5: Retarget Playwright env/setup.**
+
+Remove Supabase E2E URL/anon/service-role inputs. Keep fail-loud CI behavior for incomplete Better Auth test credentials/config.
+
+- [ ] **Step 6: Verify and commit.**
+
+Run import tests, local stack preparation, Playwright setup, and E2E typecheck. Commit no real-user export/SQL/secrets.
 
 ---
 
-## Task 12: Remove all remaining Supabase runtime and configuration residue
+## Task 12: Remove all Supabase residue and obsolete typegen
 
 **Files:**
 
+- Modify: root `package.json`
+- Modify: `turbo.json`
 - Modify: `packages/dtx-api/package.json`
 - Modify: `packages/dtx-web/package.json`
 - Modify: `packages/dtx-desktop/package.json`
@@ -775,112 +910,138 @@ git commit -m "refactor(auth): rewire desktop session lifecycle"
 - Modify: `packages/dtx-web/vitest.config.ts`
 - Modify: `packages/dtx-desktop/vitest.config.ts`
 - Modify: `.env.example`
-- Modify: `turbo.json`
-- Modify affected mocks and tests
+- Modify affected mocks/tests/workflows
 - Modify: `CLAUDE.md`
 
-### Step 1: Add a residue gate
+**Interfaces:**
 
-- [ ] Search active code/config for:
+- Deletes the root/turbo Supabase `gen-types` task so Task 14 does not call it.
+- Leaves GraphQL codegen and `gen:native-types` intact.
+
+- [ ] **Step 1: Add/run a residue gate.**
 
 ```bash
 rg -n -i "@supabase|supabase|PUBLIC_SUPABASE|SUPABASE_" \
-  packages package.json turbo.json .env.example CLAUDE.md __mocks__
+  packages package.json turbo.json .env.example CLAUDE.md __mocks__ .github
 ```
 
-- [ ] Exclude only historical migration documents and the named one-shot import tool/tests.
-- [ ] The import tool may mention Supabase as an input format but must not import a Supabase package.
+Exclude only historical docs and the named one-shot import tool/tests where “Supabase” describes the input format.
 
-### Step 2: Remove packages and types
+- [ ] **Step 2: Remove packages/types/mocks.**
 
-- [ ] Remove `@supabase/ssr` and `@supabase/supabase-js` from all packages.
-- [ ] Remove the common peer dependency.
-- [ ] Delete generated Supabase database types and exports.
-- [ ] Replace Supabase mocks with neutral auth fixtures.
+Remove `@supabase/ssr`, `@supabase/supabase-js`, the common peer dependency, generated Supabase types/exports, and Supabase-specific mocks.
 
-### Step 3: Remove environment/config residue
+- [ ] **Step 3: Remove environment/workflow residue.**
 
-- [ ] Remove Supabase URL, anon key, service-role key, callback allowlist, and magic-link-limit variables from env types, Wrangler config, Vite/Vitest setup, Turbo env lists, docs, and workflows.
-- [ ] Keep unrelated D1/R2/KV/Google Drive settings.
+Delete Supabase URL/anon/service-role variables, magic-link limit, callback variables, Turbo env entries, and old E2E secret requirements.
 
-### Step 4: Verify and commit
+- [ ] **Step 4: Delete obsolete root typegen.**
 
-- [ ] Run the residue gate, install lockfile check, all package typechecks, and unit tests.
-- [ ] Commit:
+Remove:
 
-```bash
-git add .
-git commit -m "chore(auth): remove Supabase dependencies"
+```text
+package.json scripts.gen-types
+turbo.json tasks.gen-types
 ```
+
+because that task exists only to generate `packages/common/src/lib/types/supabase.types.ts`, which this task deletes.
+
+Keep:
+
+```text
+packages/dtx-api gen-schema
+dtx-web codegen
+root gen:native-types
+```
+
+- [ ] **Step 5: Verify and commit.**
+
+Run residue gate, lockfile/install check, package typechecks, and unit tests, then commit the cleanup.
 
 ---
 
-## Task 13: Cover cutover flows and reconcile Zero Trust documentation
+## Task 13: Add E2E coverage and write the production cutover runbook
 
 **Files:**
 
 - Modify/create authenticated specs under `packages/e2e-web/`
 - Modify/create desktop auth specs under `packages/e2e-desktop/`
 - Create: `docs/superpowers/runbooks/2026-08-18-better-auth-d1-cutover.md`
-- After PR #221 merges, modify:
+- After PR #221 lands, modify:
   - `docs/superpowers/specs/2026-08-17-cloudflare-zero-trust-web-access-design.md`
   - `docs/superpowers/plans/2026-08-17-cloudflare-zero-trust-web-access.md`
   - `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
 
-### Step 1: Update web E2E
+**Interfaces:**
 
-- [ ] Remove Supabase setup/secrets.
-- [ ] Cover password login, protected navigation, authenticated GraphQL/score flow, logout, and invalid-session redirect.
-- [ ] Keep Google provider behavior in integration/unit tests unless a controlled Google test identity is configured.
+- Produces automated end-to-end proof for Task 14.
+- Production runbook owns production import/deploy/rollback; Task 14 does not execute them.
 
-### Step 2: Add Device Authorization integration coverage
+- [ ] **Step 1: Update web E2E.**
 
-- [ ] Against local API/D1, request a device code, claim it with an authenticated browser session, approve it, poll for the token, validate the user, and revoke it.
-- [ ] Cover deny and expiry.
-- [ ] Do not reproduce Better Auth internals in test-only endpoints.
+Cover password login, `/app` guard, authenticated GraphQL/score flow, authenticated download, logout, and invalid-session redirect without Supabase credentials.
 
-### Step 3: Update desktop E2E
+- [ ] **Step 2: Add Device Authorization integration E2E.**
 
-- [ ] Cover renderer state and authenticated desktop behavior using a Better Auth session seeded through supported auth/D1 setup.
-- [ ] Keep one manual bundled desktop browser-handoff check in the runbook because OS browser launch is outside stable WDIO coverage.
-- [ ] Do not restore loopback/deep-link test hooks.
+Against local API/D1: request code, authenticate browser, claim, approve, poll, validate user, revoke. Cover deny and expiry. Do not add test-only auth endpoints.
 
-### Step 4: Write the cutover runbook
+- [ ] **Step 3: Update desktop E2E.**
 
-- [ ] Include exact sections for prerequisites, pinned versions, Google callbacks, Wrangler secrets, Supabase Admin export, import/reconciliation, D1 migration, deployment order, web matrix, desktop matrix, ownership queries, go/no-go, production cutover, Supabase-disable proof, and rollback.
-- [ ] Rollback redeploys previous API/web/desktop versions and leaves additive Better Auth tables in place.
+Cover renderer state and authenticated desktop behavior using supported Better Auth/D1 setup. Keep one manual real-browser-open handoff check in the runbook because OS browser launching is outside stable WDIO coverage.
 
-### Step 5: Reconcile PR #221
+- [ ] **Step 4: Write the runbook.**
 
-- [ ] Rebase onto current `main` after PR #221 lands.
-- [ ] Replace Supabase as the inner gate with Better Auth.
-- [ ] Replace `/login?redirect=desktop` and callback verification with `/app/desktop-auth` and Device Authorization.
-- [ ] Preserve production `/app` operator-only policy, pre-production web Access protection, and public API hostnames.
+Include exact sections for:
 
-### Step 6: Verify and commit
+1. backup/export prerequisites;
+2. pinned versions;
+3. Google callbacks;
+4. Wrangler secrets;
+5. Supabase Admin export;
+6. generated import SQL review;
+7. D1 migration/import order;
+8. owner-ID reconciliation queries;
+9. deployment order;
+10. web matrix;
+11. desktop matrix;
+12. Cloudflare Access matrix;
+13. go/no-go;
+14. production cutover;
+15. Supabase-disable proof;
+16. rollback.
 
-- [ ] Run both E2E suites, formatting, and `git diff --check`.
-- [ ] Commit tests and runbook together.
+Production actions are instructions for an operator, not automated steps in this implementation plan.
+
+- [ ] **Step 5: Reconcile PR #221 documentation.**
+
+Replace Supabase as the inner gate, replace `/login?redirect=desktop`/callbacks with `/app/desktop-auth`/Device Authorization, keep production `/app` operator-only, keep pre-prod Access behavior, keep API hostnames outside Access.
+
+- [ ] **Step 6: Verify and commit.**
+
+Run both E2E suites, formatting, and `git diff --check`; commit tests/runbook/docs together.
 
 ---
 
-## Task 14: Run full verification and execute the atomic cutover
+## Task 14: Full verification and pre-production proof
 
 **Files:**
 
 - Modify only files required by failed verification.
-- Update the cutover runbook with corrected non-secret assumptions/results.
+- Update the runbook with corrected **non-secret** assumptions/results.
 
-### Step 1: Run static and unit verification
+**Interfaces:**
 
-- [ ] Run:
+- Final code-PR gate.
+- Stops after pre-production proof and a production-ready runbook.
+- Does **not** execute production D1 import/deploy or remove production Supabase credentials.
+
+- [ ] **Step 1: Run static/unit/Rust verification.**
 
 ```bash
 bun run format
 bun run lint
 bun run check
 bun run test
-bun run gen-types
 git diff --check
 cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml --check
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
@@ -888,9 +1049,9 @@ cargo clippy --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml \
   --all-targets --all-features -- -D warnings
 ```
 
-### Step 2: Run generated-artifact and residue gates
+Do **not** run the deleted root `gen-types` Supabase task.
 
-- [ ] Run:
+- [ ] **Step 2: Run generated-artifact gates.**
 
 ```bash
 bun run --filter=dtx-api auth:schema:check
@@ -900,11 +1061,19 @@ bun run gen:native-types
 git diff --exit-code
 ```
 
-- [ ] Confirm no live Supabase or desktop callback protocol remains.
+- [ ] **Step 3: Run residue gates.**
 
-### Step 3: Run E2E
+Confirm:
 
-- [ ] Run:
+```text
+no runtime Supabase imports/config
+no getAccessTokenOrNull/token.ts seam
+no desktop auth callback variables
+no auth deep-link/loopback/JWT/refresh code
+no root/turbo Supabase gen-types task
+```
+
+- [ ] **Step 4: Run E2E.**
 
 ```bash
 bun run e2e:web
@@ -913,55 +1082,54 @@ bun run e2e:desktop
 
 Expected: PASS without Supabase credentials.
 
-### Step 4: Prepare pre-production
+- [ ] **Step 5: Prepare and prove pre-production only.**
 
-- [ ] Set `BETTER_AUTH_SECRET` and `GOOGLE_AUTH_CLIENT_SECRET` with Wrangler secrets.
-- [ ] Configure the exact pre-production Google callback from the runbook.
-- [ ] Apply D1 migrations.
-- [ ] Generate/review/apply sanitized identity-import SQL.
-- [ ] Fail rollout if any distinct application owner ID lacks a Better Auth user.
+Using the runbook:
 
-### Step 5: Deploy and prove pre-production
+- configure pre-prod Better Auth/Google secrets and callback;
+- apply D1 migrations;
+- generate/review/apply sanitized identity-import SQL to pre-prod;
+- reconcile every application owner ID;
+- deploy API then web;
+- build desktop candidate pointed at pre-prod;
+- execute password, Google, linking, GraphQL, upload/download, Device Authorization approve/deny/expiry, restore/logout, and Access checks;
+- confirm API auth endpoints remain outside Access and `/app/desktop-auth` remains protected;
+- confirm the candidate no longer needs Supabase at runtime.
 
-- [ ] Deploy API first, then web.
-- [ ] Build a desktop candidate pointed at pre-production.
-- [ ] Execute password, Google, explicit linking, GraphQL, upload/download, device approve/deny/expiry, restore/logout, and Access-gate checks.
-- [ ] Confirm API auth endpoints are outside Access and `/app/desktop-auth` is protected.
-- [ ] Confirm Supabase can be unreachable without breaking the candidate.
+- [ ] **Step 6: Record pre-prod evidence and production go/no-go criteria.**
 
-### Step 6: Production go/no-go
+Record only non-secret outcomes in the runbook. Production go/no-go requires all automated/pre-prod checks, exact owner reconciliation, configured callbacks/secrets, and rollback artifacts.
 
-- [ ] Proceed only when automated checks pass, identity reconciliation is exact, pre-production web/desktop flows pass, rollback artifacts exist, callbacks/secrets are configured, and PR #221 policies are verified or scheduled in the same window.
+- [ ] **Step 7: Stop before production execution.**
 
-### Step 7: Execute the production cutover
+Do not run production `0008`, production identity import, production deploy, desktop publication, or credential removal from this task. Those remain explicit operator actions in the runbook after review/approval.
 
-- [ ] Apply `0008_better_auth.sql`.
-- [ ] Apply reviewed identity-import SQL.
-- [ ] Deploy API, then web.
-- [ ] Publish/install the new desktop build.
-- [ ] Run production smoke checks.
-- [ ] Revoke/remove Supabase application credentials only after proof succeeds.
-- [ ] Do not immediately delete the Supabase project; retain rollback ability for the cutover window.
+- [ ] **Step 8: Final repository verification.**
 
-### Step 8: Final verification
+```bash
+git status --short
+git diff --check
+```
 
-- [ ] Record only non-secret results/corrections in the runbook.
-- [ ] Confirm `tmp/auth-migration/` is not tracked.
-- [ ] Re-run `git status --short` and `git diff --check`.
-- [ ] Commit verification-only fixes when needed; do not create an empty commit.
+Commit only verification-driven code/doc corrections; do not create an empty commit.
 
 ## Completion Definition
 
-The migration is complete only when:
+The implementation PR is ready when:
 
-- [ ] D1 holds Better Auth core, Device Authorization, and rate-limit tables.
-- [ ] Existing application owner UUIDs are preserved.
+- [ ] D1 schema/migration includes Better Auth core, Device Authorization, and rate-limit tables.
+- [ ] Existing application owner UUIDs are preserved by the import tooling.
 - [ ] Password and Google web sign-in use Better Auth.
-- [ ] Explicit Google linking works and implicit linking is disabled.
-- [ ] Browser GraphQL/REST use cookie sessions.
-- [ ] Desktop uses Device Authorization and Bearer sessions.
+- [ ] Explicit Google linking works; implicit linking/signup are disabled.
+- [ ] `CORS_ALLOWED_ORIGINS` is the one browser-origin trust list for CORS, Better Auth, and unsafe cookie auth.
+- [ ] Multi-value Set-Cookie survives API CORS wrapping and SvelteKit session forwarding.
+- [ ] Browser GraphQL and REST/download paths use cookies and no Supabase bearer helper remains.
+- [ ] Service-binding SSR forwards Cookie plus trusted Origin.
+- [ ] Desktop uses Device Authorization plus opaque Bearer sessions.
+- [ ] Desktop preserves `valid | invalid | not-configured` restore semantics and session epoch/Drive reconciliation.
 - [ ] Desktop contains no magic-link, auth deep-link, loopback callback, JWT decoder, or refresh-token rotation.
-- [ ] No active package, test, config, or environment contract depends on Supabase.
+- [ ] No active package/test/config/environment contract depends on Supabase.
+- [ ] Obsolete root/turbo Supabase `gen-types` is deleted.
 - [ ] Unit, integration, Rust, web E2E, and desktop E2E checks pass.
-- [ ] Pre-production and production runbook matrices pass.
-- [ ] Disabling Supabase causes no DTXWeb runtime failure.
+- [ ] Pre-production acceptance passes.
+- [ ] Production runbook is complete and ready for separate operator execution.

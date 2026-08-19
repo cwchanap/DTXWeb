@@ -884,6 +884,7 @@ Commit native/generated changes together.
 - Modify: `packages/e2e-desktop/support/standalone-session.test.mjs`
 - Modify: `packages/e2e-desktop/specs/google-drive-upload.e2e.ts`
 - Modify: `packages/e2e-desktop/scripts/google-drive-crash-recovery.ts`
+- Modify: `packages/e2e-desktop/scripts/google-drive-crash-recovery.test.mjs`
 
 - [ ] **Step 1: Add renderer lifecycle tests.**
 
@@ -916,7 +917,7 @@ Keep `DTX_E2E_DRUMERY_USER_ID`; it still identifies the debug-only seeded user.
 
 Update renderer/localStorage setup in `google-drive-upload.e2e.ts` and `google-drive-crash-recovery.ts` to write the new neutral session object instead of Supabase access/refresh keys.
 
-Update standalone-session tests if they assert the old auth storage/env shape.
+Update `standalone-session.test.mjs` and `google-drive-crash-recovery.test.mjs` where they assert the old auth storage/env shape.
 
 Do not add an API test-auth endpoint; reuse the native e2e/debug seed path from Task 10.
 
@@ -937,12 +938,12 @@ Simplify dev scripts/topology tests. Remove auth URI schemes only after no non-a
 ```bash
 bun run --filter=dtx-desktop test
 bun run --filter=dtx-desktop check
-bun run --filter=dtx-e2e-desktop test
+bun run --filter=dtx-e2e-desktop check
+bun test packages/e2e-desktop/support/standalone-session.test.mjs \
+  packages/e2e-desktop/scripts/google-drive-crash-recovery.test.mjs
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml --all-features
 bun run gen:native-types
 ```
-
-Use the actual E2E package unit-test script name if different; do not silently skip its support tests.
 
 ---
 
@@ -1050,6 +1051,7 @@ Run residue gate, lockfile/install check, all package typechecks, and unit tests
 - Revisit: `packages/e2e-desktop/support/standalone-session.test.mjs`
 - Revisit: `packages/e2e-desktop/specs/google-drive-upload.e2e.ts`
 - Revisit: `packages/e2e-desktop/scripts/google-drive-crash-recovery.ts`
+- Revisit: `packages/e2e-desktop/scripts/google-drive-crash-recovery.test.mjs`
 - Create: `docs/superpowers/runbooks/2026-08-18-better-auth-d1-cutover.md`
 - After PR #221 lands, modify its Zero Trust spec/plan/runbook documents
 

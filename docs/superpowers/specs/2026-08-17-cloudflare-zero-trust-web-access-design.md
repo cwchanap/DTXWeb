@@ -6,7 +6,7 @@ DTXWeb will manage its Cloudflare Zero Trust Access applications with Pulumi, us
 
 Production protects only `/app` and its descendants. This is intentionally an operator-only surface: the configured Access identity must match the intended operator and the request must satisfy the existing Perseus trusted-device posture rule. Other Supabase users may still reach public `/login`, but they cannot enter production `/app` or complete desktop login against production.
 
-Pre-production protects the entire `pre-prod.dtx.hapadona.com` web hostname. It is deployed and verified first. Production is not applied until the pre-production Access stack passes the documented identity, posture, browser-auth, desktop, and route-boundary checks.
+Pre-production protects the entire `pre-prod.dtx.hapadona.com` web hostname. It is deployed and verified first. Production is not applied until the pre-production Access stack passes the documented identity, posture, browser-auth, and route-boundary checks.
 
 DTXWeb gets a small `packages/infrastructure` workspace that owns only the two Access applications. Existing Worker/API deployment remains on Wrangler. This slice does not migrate Workers, D1, R2, service bindings, secrets, or runtime deployment into Pulumi.
 
@@ -87,6 +87,7 @@ Add a dedicated workspace:
 
 ```text
 packages/infrastructure/
+├── .gitignore
 ├── Pulumi.yaml
 ├── package.json
 ├── README.md
@@ -102,18 +103,17 @@ The package is intentionally Access-only. It has no Worker build/deployment logi
 
 The root workspace list adds `packages/infrastructure` so Bun installs and repository checks include the package naturally.
 
-Use the same dependency family as Perseus for the initial implementation:
+Use the same dependency versions currently working in Perseus for the initial implementation unless DTXWeb dependency resolution requires a compatible update:
 
-- `@pulumi/pulumi`
-- `@pulumi/cloudflare`
-- TypeScript
-- Vitest
-
-The exact dependency versions should match the currently working Perseus infrastructure package unless repository compatibility requires a newer version during implementation.
+- `@pulumi/pulumi` `^3.144.0`
+- `@pulumi/cloudflare` `^6.13.0`
+- `typescript` `^5.9.0`
+- `vitest` `^4.0.18`
+- `@types/node` `^22.10.0`
 
 ### Pulumi project
 
-`Pulumi.yaml` defines one DTXWeb infrastructure project, for example:
+`Pulumi.yaml` defines one DTXWeb infrastructure project:
 
 ```yaml
 name: dtxweb-infrastructure
@@ -130,6 +130,25 @@ One program serves exactly two supported stacks:
 Any other `pulumi.getStack()` value fails loudly before creating resources.
 
 This is intentional. Stack-specific hostname/path scope is code-owned rather than freely configurable.
+
+### State and local stack configuration
+
+Match the current Perseus operational model for this slice: local Pulumi usage with stack configuration excluded from git.
+
+`packages/infrastructure/.gitignore` includes at least:
+
+```text
+Pulumi.*.yaml
+.pulumi/
+node_modules/
+dist/
+.env
+.env.local
+```
+
+The operator configures both stacks locally with `pulumi config set` commands. No stack config file, encrypted secret value, or local state directory is committed.
+
+This slice does not add CI deployment, so reproducing the stack on another machine requires re-establishing the local Pulumi backend/login plus the documented config values.
 
 ## Stack Model
 
@@ -211,21 +230,21 @@ Both stacks use one inline policy:
 
 The policy mirrors the proven Perseus browser-admin policy shape but references the pre-existing posture rule directly.
 
-### Application builder
+### Stack definition and application builder
 
-The builder accepts:
+Keep stack selection testable as pure data. A helper such as `getAccessStackDefinition(stackName)` returns the immutable application name, domain, and destinations for `pre-prod` or `production` and throws for any other stack.
+
+The application builder accepts:
 
 - account ID;
-- application name;
-- primary domain;
-- fixed destination list;
+- stack definition;
 - operator email;
 - existing posture-rule ID;
 - optional session duration.
 
 It returns `cloudflare.ZeroTrustAccessApplicationArgs`.
 
-Stack-specific code supplies the destination list. No caller may supply arbitrary production paths from Pulumi config.
+No destination or hostname comes from Pulumi config.
 
 ### Resource ownership
 
@@ -270,9 +289,18 @@ Pulumi manages only Access. Wrangler remains the runtime deployment tool.
 
 ### Initial setup
 
-Configure both DTXWeb stacks with the Cloudflare account ID, secret Access email, reused Perseus posture-rule ID, and optional session duration.
+Use the same local-backend pattern as Perseus:
 
-No secret value or device serial is committed.
+```bash
+cd packages/infrastructure
+pulumi login --local
+pulumi stack init pre-prod
+pulumi stack init production
+```
+
+If either stack already exists locally, select it rather than recreating it.
+
+Configure both stacks with the Cloudflare account ID, secret Access email, reused Perseus posture-rule ID, and optional session duration. The implementation runbook will contain the exact commands without real values.
 
 ### Pre-production first
 
@@ -281,7 +309,7 @@ No secret value or device serial is committed.
 3. Review the preview and confirm it creates only the hostname-wide `DTXWeb Pre-prod` Access application.
 4. Run `pulumi up -s pre-prod`.
 5. Execute the complete pre-production verification section from the runbook.
-6. If any required check fails, run the environment-specific rollback before proceeding.
+6. If any required check fails, run the pre-production rollback immediately.
 
 Production must not be applied before pre-production is green.
 
@@ -310,9 +338,9 @@ At minimum, test:
 - default session duration is `12h`;
 - hardened application flags match the intended values;
 - unsupported stack names fail loudly;
-- invalid/empty email or posture-rule config fails before deployment if validation helpers are introduced.
+- empty/invalid email and empty posture-rule ID fail before deployment.
 
-The tests should follow the Perseus pattern of separating pure builders from Pulumi resource creation so most security-sensitive behavior is deterministic and unit-testable.
+Follow the Perseus pattern of separating pure builders from Pulumi resource creation so the security-sensitive shape is deterministic and unit-testable.
 
 ### Static verification
 
@@ -359,13 +387,29 @@ The browser checks cover:
 
 Rollback is stack-specific and does not touch Worker/API deployment.
 
-If pre-production fails required acceptance, remove/disable only the pre-production Access application through Pulumi. Production remains untouched.
+Because each stack owns exactly one Cloudflare resource in this slice, the rollback procedure is explicit:
 
-If production fails required acceptance, remove/disable only the production Access application through Pulumi. Pre-production remains available for further diagnosis.
+```bash
+pulumi preview --destroy -s pre-prod
+pulumi destroy -s pre-prod --yes
+```
 
-The implementation plan must choose one explicit Pulumi rollback procedure and document it safely. Do not use a broad infrastructure destroy command that could affect unrelated resources if the package later grows.
+for pre-production, or:
 
-Because this package owns only Access applications in this slice, rollback requires no Worker redeploy and no application-code rollback.
+```bash
+pulumi preview --destroy -s production
+pulumi destroy -s production --yes
+```
+
+for production.
+
+Before running `destroy`, the operator must review the destroy preview and confirm the only deletion is the corresponding DTXWeb Access application. If the infrastructure package later owns additional resources, this rollback procedure must be redesigned before those resources ship.
+
+If pre-production fails required acceptance, destroy only the `pre-prod` stack's Access application. Production remains untouched.
+
+If production fails required acceptance, destroy only the `production` stack's Access application. Pre-production remains available for further diagnosis.
+
+Rollback requires no Worker redeploy and no application-code rollback.
 
 Do not add a service token, API Access application, bypass policy, or widened destination as an emergency workaround.
 
@@ -377,14 +421,15 @@ Never commit:
 - device serial numbers;
 - Access cookies or JWTs;
 - Cloudflare API tokens;
-- Pulumi secret ciphertext files if the chosen backend/config workflow does not intend them for source control;
+- `Pulumi.<stack>.yaml` files for this local-stack workflow;
+- `.pulumi/` local state;
 - screenshots containing security identifiers.
 
-`accessEmail` is Pulumi secret configuration.
+`accessEmail` is set with Pulumi secret configuration.
 
 `devicePostureRuleId` is plain configuration, but it must refer to the existing Perseus-managed rule and must never be replaced with a freshly created DTXWeb rule as part of this slice.
 
-The Cloudflare API token used for Pulumi must have only the permissions needed to manage the intended Access application resources and read/reference the relevant account-level Access resources. Permission setup belongs in the implementation/runbook, not application source.
+The Cloudflare API token used for Pulumi should be scoped to the least privilege needed to manage the intended Access application resources. The exact token permission checklist must be verified against the provider/Cloudflare API during implementation and recorded in the runbook rather than guessed in application source.
 
 ## Operational Consequences
 
@@ -408,15 +453,16 @@ The existing production Supabase/UI behavior is unchanged. Signed-in non-operato
 
 ## Repository Changes
 
-The implementation is expected to modify only infrastructure/workspace/documentation files, approximately:
+The implementation is expected to modify only infrastructure/workspace/documentation files:
 
 - `package.json` — add `packages/infrastructure` workspace and optional convenience scripts if justified by the implementation plan.
 - `bun.lock` — dependency resolution.
+- `packages/infrastructure/.gitignore` — ignore local stack config/state, dependencies, build output, and env files.
 - `packages/infrastructure/Pulumi.yaml` — Pulumi project metadata.
 - `packages/infrastructure/package.json` — Pulumi/Cloudflare/TypeScript/Vitest package definition.
 - `packages/infrastructure/tsconfig.json`.
 - `packages/infrastructure/vitest.config.ts`.
-- `packages/infrastructure/src/access.ts` — Access builders/resource factory.
+- `packages/infrastructure/src/access.ts` — stack definitions, Access builders, and resource factory.
 - `packages/infrastructure/src/access.test.ts` — unit tests.
 - `packages/infrastructure/src/index.ts` — stack selection and resource creation.
 - `packages/infrastructure/README.md` — local config/preview/apply instructions.
@@ -443,8 +489,10 @@ Repository precedent:
 - Perseus `packages/infrastructure/src/admin-access.ts`
 - Perseus `packages/infrastructure/src/admin-access.test.ts`
 - Perseus `packages/infrastructure/src/index.ts`
+- Perseus `packages/infrastructure/src/config.ts`
 - Perseus `packages/infrastructure/Pulumi.yaml`
 - Perseus `packages/infrastructure/package.json`
+- Perseus `packages/infrastructure/.gitignore`
 - Perseus `packages/infrastructure/README.md`
 
 Cloudflare/Pulumi behavior should be verified against current provider and Cloudflare documentation during implementation if the working Perseus resource shape no longer typechecks against the selected provider version.

@@ -3,6 +3,8 @@ import { deviceAuthorizationClient } from 'better-auth/client/plugins';
 
 import { PUBLIC_DTX_API_URL } from '$env/static/public';
 
+export const DESKTOP_DEVICE_CLIENT_ID = 'dtx-desktop';
+
 export const authClient = createAuthClient({
 	baseURL: PUBLIC_DTX_API_URL,
 	fetchOptions: {

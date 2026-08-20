@@ -2,49 +2,43 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
 	import { replaceState } from '$app/navigation';
-	import type { UserIdentity } from '@supabase/supabase-js';
 	import { AlertCircle, CheckCircle2, Loader } from '@lucide/svelte';
-	import {
-		GOOGLE_AUTH_ERROR_MESSAGES,
-		GOOGLE_OAUTH_SCOPES,
-		buildAccountCallbackUrl,
-		sanitizeGoogleAuthError
-	} from '$lib/auth/google';
+	import { authClient } from '$lib/auth/client';
+	import { GOOGLE_AUTH_ERROR_MESSAGES, sanitizeGoogleAuthError } from '$lib/auth/google';
+
+	type LinkedAccount = {
+		providerId: string;
+		accountId: string;
+	};
 
 	let { data } = $props();
-	let { supabase, user } = $derived(data);
+	let { user } = $derived(data);
 
-	let identities = $state<UserIdentity[]>([]);
+	let accounts = $state<LinkedAccount[]>([]);
 	let isLoading = $state(true);
 	let isConnecting = $state(false);
 	let error = $state('');
 	let message = $state('');
 
-	let googleIdentity = $derived(
-		identities.find((identity) => identity.provider === 'google') ?? null
-	);
-	let googleEmail = $derived(
-		(typeof googleIdentity?.identity_data?.email === 'string'
-			? googleIdentity.identity_data.email
-			: null) ?? ''
+	let googleAccount = $derived(
+		accounts.find((account) => account.providerId === 'google') ?? null
 	);
 
-	const loadIdentities = async () => {
+	const loadAccounts = async () => {
 		isLoading = true;
 		try {
-			const { data: identityData, error: identityError } =
-				await supabase.auth.getUserIdentities();
+			const { data: accountData, error: accountError } = await authClient.listAccounts();
 
-			if (identityError) {
+			if (accountError) {
 				error = 'Unable to load linked account providers.';
-				identities = [];
+				accounts = [];
 			} else {
-				identities = identityData?.identities ?? [];
+				accounts = accountData ?? [];
 			}
 		} catch (caughtError) {
-			console.error('Failed to load account identities:', caughtError);
+			console.error('Failed to load account providers:', caughtError);
 			error = 'Unable to load linked account providers.';
-			identities = [];
+			accounts = [];
 		} finally {
 			isLoading = false;
 		}
@@ -56,23 +50,17 @@
 		message = '';
 
 		try {
-			const { data: linkData, error: linkError } = await supabase.auth.linkIdentity({
+			const { error: linkError } = await authClient.linkSocial({
 				provider: 'google',
-				options: {
-					redirectTo: buildAccountCallbackUrl(window.location.origin),
-					scopes: GOOGLE_OAUTH_SCOPES,
-					skipBrowserRedirect: true
-				}
+				callbackURL: '/app/account?linked=google',
+				errorCallbackURL: '/app/account'
 			});
 
-			if (linkError || !linkData?.url) {
-				error = sanitizeGoogleAuthError(linkError?.message);
-				return;
+			if (linkError) {
+				error = sanitizeGoogleAuthError(linkError.message);
 			}
-
-			window.location.href = linkData.url;
 		} catch (caughtError) {
-			console.error('Google link identity failed:', caughtError);
+			console.error('Google account linking failed:', caughtError);
 			error = sanitizeGoogleAuthError(
 				caughtError instanceof Error ? caughtError.message : undefined
 			);
@@ -86,23 +74,24 @@
 		if (params.get('linked') === 'google') {
 			message = 'Google account connected.';
 		} else {
-			// Only display trusted, allow-listed messages from the auth_error
-			// query param; discard attacker-crafted values.
-			const callbackError = params.get('auth_error');
+			const callbackError = params.get('error_description') ?? params.get('error');
 			if (callbackError) {
-				error = GOOGLE_AUTH_ERROR_MESSAGES.find((m) => m === callbackError) || '';
+				error =
+					GOOGLE_AUTH_ERROR_MESSAGES.find(
+						(knownMessage) => knownMessage === callbackError
+					) || sanitizeGoogleAuthError(callbackError);
 			}
 		}
 
-		// Clear callback params so the banner does not persist on refresh.
-		if (params.has('linked') || params.has('auth_error')) {
+		if (params.has('linked') || params.has('error') || params.has('error_description')) {
 			const cleanUrl = new URL($page.url);
 			cleanUrl.searchParams.delete('linked');
-			cleanUrl.searchParams.delete('auth_error');
+			cleanUrl.searchParams.delete('error');
+			cleanUrl.searchParams.delete('error_description');
 			replaceState(cleanUrl, {});
 		}
 
-		loadIdentities();
+		loadAccounts();
 	});
 </script>
 
@@ -153,17 +142,14 @@
 					<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<div>
 							<p class="font-medium">Google</p>
-							{#if googleIdentity}
+							{#if googleAccount}
 								<p class="text-sm text-emerald-300">Google is connected</p>
-								{#if googleEmail}
-									<p class="mt-1 text-sm text-slate-400">{googleEmail}</p>
-								{/if}
 							{:else}
 								<p class="text-sm text-slate-400">Google is not connected</p>
 							{/if}
 						</div>
 
-						{#if !googleIdentity}
+						{#if !googleAccount}
 							<button
 								type="button"
 								onclick={handleConnectGoogle}

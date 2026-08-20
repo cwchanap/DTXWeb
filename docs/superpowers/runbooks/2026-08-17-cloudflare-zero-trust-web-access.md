@@ -13,15 +13,13 @@ Wrangler continues to own Worker/API/runtime infrastructure. Both API hostnames 
 
 DTXWeb reuses the Perseus-managed device-posture rule by Cloudflare resource ID. Do not create another serial list/posture rule, service token, Service Auth policy, API Access app, bypass policy, or wider production destination.
 
-## Production Hold — Better Auth/D1 Cutover
+## Production State — Live, Local Pulumi Backend
 
-**Do not run `pulumi up --stack production` yet.**
+Both DTXWeb Access applications are already live. Their state remains managed by the local Pulumi backend until the remote-state migration gate; no Pulumi Cloud or GitHub Actions deployment automation is enabled in PR A.
 
-The queued Better Auth/D1 migration removes the current desktop callback/magic-link flow, adds Device Authorization approval at `/app/desktop-auth`, and explicitly schedules reconciliation of PR #221's Zero Trust documents.
+Until that migration gate is complete, use only the manual, operator-reviewed Pulumi apply path in this runbook. Do not use an automatic workflow before remote state migration.
 
-Pre-production Access may be applied and verified now. Production preview may be used as a non-mutating scope check. Production live apply remains blocked until the Better Auth cutover has landed and this runbook has been reconciled with the final Device Authorization/browser acceptance flow.
-
-Removing this hold requires a later reviewed update to this runbook; do not treat the absence of technical errors from `pulumi preview --stack production` as permission to apply.
+The queued Better Auth/D1 migration removes the current desktop callback/magic-link flow, adds Device Authorization approval at `/app/desktop-auth`, and explicitly schedules reconciliation of PR #221's Zero Trust documents. Re-run the relevant identity, posture, browser, session, and desktop acceptance checks after that migration.
 
 ## Pulumi Backend And Secrets
 
@@ -128,73 +126,16 @@ All commands must pass. `build` is mandatory because `Pulumi.yaml` executes `dis
 
 If any infrastructure source changes after this block, rebuild before the next preview.
 
-## Header Verification Helpers
+## Committed Boundary Verifier
 
-Use unauthenticated requests with no Access cookies. DNS, connection, TLS, and timeout failures must fail loudly rather than count as public/unprotected success.
+Use unauthenticated requests with no Access cookies. Run the version-controlled verifier from the repository root:
 
 ```bash
-http_headers() {
-  url="$1"
-  raw="$(curl -sS --max-time 15 -o /dev/null -D - "$url")" || {
-    echo "FAIL: no HTTP response from $url" >&2
-    return 1
-  }
-
-  headers="$(printf '%s\n' "$raw" | tr -d '\r')"
-  printf '%s\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ [0-9]{3}' || {
-    echo "FAIL: no HTTP status line from $url" >&2
-    return 1
-  }
-
-  printf '%s\n' "$headers"
-}
-
-has_access_interception() {
-  headers="$1"
-
-  if [ -n "${ACCESS_REDIRECT_RE:-}" ] &&
-    printf '%s\n' "$headers" | grep -Eiq "$ACCESS_REDIRECT_RE"; then
-    return 0
-  fi
-
-  if printf '%s\n' "$headers" | grep -Eq '^HTTP/[0-9.]+ 403' &&
-    printf '%s\n' "$headers" | grep -Eiq '^cf-access-aud:' &&
-    printf '%s\n' "$headers" | grep -Eiq '^cf-access-domain:'; then
-    return 0
-  fi
-
-  return 1
-}
-
-assert_access_intercepted() {
-  url="$1"
-  headers="$(http_headers "$url")" || return 1
-  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\(aud\|domain\):/Ip'
-  has_access_interception "$headers" || {
-    echo "FAIL: Access did not intercept $url" >&2
-    return 1
-  }
-}
-
-assert_no_access_interception() {
-  url="$1"
-  headers="$(http_headers "$url")" || return 1
-  printf '%s\n' "$headers" | sed -n '1p;/^location:/Ip;/^cf-access-\(aud\|domain\):/Ip'
-  if has_access_interception "$headers"; then
-    echo "FAIL: Access unexpectedly intercepted $url" >&2
-    return 1
-  fi
-}
+packages/infrastructure/scripts/verify-access.sh pre-prod
+packages/infrastructure/scripts/verify-access.sh production
 ```
 
-Before applying DTXWeb Access:
-
-- if the tenant uses redirect-based Access interception, set an uncommitted `ACCESS_REDIRECT_RE` matching the known Perseus flow;
-- prove `assert_access_intercepted` passes against a known protected Perseus URL;
-- prove `assert_no_access_interception https://dtx.hapadona.com/` passes before production Access exists;
-- prove `http_headers https://this-host-does-not-exist-zzz.hapadona.com/` exits non-zero.
-
-Do not continue if the invalid-host check succeeds.
+The script accepts only the two supported environments, requests each environment's exact protected and public route matrix, recognizes only an HTTPS `3xx` redirect whose host has at least one tenant label and ends in `.cloudflareaccess.com` or HTTP `403` with both `cf-access-aud` and `cf-access-domain`, and fails closed on DNS, TLS, connection, timeout, malformed-response, and unsupported-environment errors. It prints status and header/redirect presence with values redacted; never record header values.
 
 # Phase 1 — Pre-production
 
@@ -219,33 +160,23 @@ Any extra resource or different scope is a hard stop.
 
 ## 2. Apply Pre-production — Operator Only
 
+Pre-production Access is already applied. For a reviewed operator-only change while the state remains local, use:
+
 ```bash
 pulumi up --stack pre-prod
 ```
 
 Review the interactive Pulumi confirmation. Approve only the expected `DTXWeb Pre-prod` Access application change.
 
-## 3. Pre-production Header Matrix
+## 3. Pre-production Boundary Verification
 
-With no Access session:
+With no Access session, run the committed verifier from the repository root:
 
 ```bash
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/login
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/auth/callback
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/blog
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/preview/1
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/editor
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/tool/dtx-to-midi
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/game
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/app
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/score
-assert_access_intercepted https://pre-prod.dtx.hapadona.com/app/__data.json
-assert_no_access_interception https://api.pre-prod.dtx.hapadona.com/
+packages/infrastructure/scripts/verify-access.sh pre-prod
 ```
 
-Every command must exit `0`.
+It checks the complete pre-production protected-route matrix and confirms that `https://api.pre-prod.dtx.hapadona.com/` is outside Access. The command must exit `0`.
 
 ## 4. Pre-production Human Checks
 
@@ -261,9 +192,9 @@ The application auth mechanism will change during the queued Better Auth cutover
 
 If required Access/header/device checks fail, use the rollback section below.
 
-# Phase 2 — Production (BLOCKED)
+# Phase 2 — Production (Live, Local Backend)
 
-Production Access is intentionally not applied in this version of the runbook.
+Production Access is already applied and managed from the local Pulumi backend. Its live scope is exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`; public production routes and the API hostname remain outside Access.
 
 A non-mutating preview is allowed after the normal build/preflight:
 
@@ -280,9 +211,19 @@ dtx.hapadona.com/app/*
 
 Hard stops include hostname-wide production Access, API/public destinations, posture/list/token resources, or runtime infrastructure.
 
-**Do not run `pulumi up --stack production`.**
+For a reviewed operator-only change while the state remains local, use the manual apply command:
 
-Before production apply is allowed, the Better Auth/D1 cutover must land and Task 14 must reconcile this runbook with the final `/app/desktop-auth` Device Authorization flow. That reconciliation must restore the production route matrix plus independent identity/posture, browser, session-expiry, and desktop acceptance checks for the new auth system.
+```bash
+pulumi up --stack production
+```
+
+Do not use an automatic workflow before remote state migration. The Better Auth/D1 cutover must still be reconciled with this runbook's final `/app/desktop-auth` Device Authorization flow before its browser and desktop acceptance checks are considered current.
+
+Verify the live production boundary with the committed script:
+
+```bash
+packages/infrastructure/scripts/verify-access.sh production
+```
 
 # Rollback — Pre-production
 
@@ -309,7 +250,7 @@ pulumi destroy --stack pre-prod --yes
 If immediate Access removal is required but the local Pulumi backend/state cannot be accessed:
 
 1. open **Zero Trust > Access controls > Applications**;
-2. locate exactly `DTXWeb Pre-prod` (or, after the future production hold is removed, `DTXWeb Production App`);
+2. locate exactly `DTXWeb Pre-prod` or `DTXWeb Production App`;
 3. disable/delete only that DTXWeb application;
 4. do not alter Perseus posture resources or unrelated Access applications;
 5. do not create a bypass/service token/wider application.
@@ -328,7 +269,8 @@ Perseus posture-rule ID matches both DTXWeb stack configs: PASS
 Pre-prod Pulumi preview: PASS
 Pre-prod Access apply + verification: PASS
 Production Pulumi preview: PASS or NOT RUN
-Production Access apply: BLOCKED pending Better Auth reconciliation
+Production Access live boundary: PASS (already applied; local Pulumi backend)
+Production Access changes: manual operator apply only until remote state migration
 ```
 
 Never paste secrets, identities, device serials, Access tokens/cookies/JWTs, or sensitive screenshots.

@@ -112,14 +112,29 @@ const runMigrationsThrough = async (lastFileName: string) => {
 	throw new Error(`Migration not reached: ${lastFileName}`);
 };
 
+const resetSchema = async () => {
+	// Drop child tables before their referenced parents so this remains valid
+	// if the test database enforces foreign keys.
+	for (const table of [
+		'account',
+		'session',
+		'scores',
+		'chart_scores',
+		'dtx_files',
+		'user_profiles',
+		'simfiles',
+		'device_code',
+		'rate_limit',
+		'user',
+		'verification'
+	]) {
+		await db.prepare(`DROP TABLE IF EXISTS \`${table}\``).run();
+	}
+};
+
 beforeEach(async () => {
 	// Drop tables so each test starts clean.
-	await db.prepare('DROP TABLE IF EXISTS scores').run();
-	await db.prepare('DROP TABLE IF EXISTS chart_scores').run();
-	await db.prepare('DROP TABLE IF EXISTS dtx_files').run();
-	await db.prepare('DROP TABLE IF EXISTS user_profiles').run();
-	await db.prepare('DROP TABLE IF EXISTS simfiles').run();
-
+	await resetSchema();
 	await runMigrations();
 
 	await db
@@ -172,7 +187,7 @@ const defaultChartScoreFields = {
 };
 
 describe('Google Drive file migration and owner-constrained update (real D1)', () => {
-	it('applies every numbered migration through 0007 once and starts the Drive ID as NULL', async () => {
+	it('applies every numbered migration through 0008 once and starts the Drive ID as NULL', async () => {
 		expect(MIGRATIONS.map((migration) => migration.fileName)).toEqual([
 			'0001_initial_schema.sql',
 			'0002_scores.sql',
@@ -180,7 +195,8 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 			'0004_normalize_legacy_dtx_file_levels.sql',
 			'0005_fix_level_decoding_formula.sql',
 			'0006_google_drive_file_id.sql',
-			'0007_score_semantics.sql'
+			'0007_score_semantics.sql',
+			'0008_better_auth.sql'
 		]);
 
 		const row = await db
@@ -318,11 +334,7 @@ describe('Google Drive file migration and owner-constrained update (real D1)', (
 
 describe('0007 score semantics migration (real D1)', () => {
 	it('0007 relocates chart records and canonicalizes the best row', async () => {
-		await db.prepare('DROP TABLE IF EXISTS scores').run();
-		await db.prepare('DROP TABLE IF EXISTS chart_scores').run();
-		await db.prepare('DROP TABLE IF EXISTS dtx_files').run();
-		await db.prepare('DROP TABLE IF EXISTS user_profiles').run();
-		await db.prepare('DROP TABLE IF EXISTS simfiles').run();
+		await resetSchema();
 
 		await runMigrationsThrough('0006_google_drive_file_id.sql');
 

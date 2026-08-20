@@ -47,13 +47,33 @@ Use `accessEmail` as Pulumi secret config. `devicePostureRuleId` is a non-secret
 
 Set `CLOUDFLARE_API_TOKEN` in the operator shell with the least privilege needed for the Access application lifecycle. Use the Cloudflare Access apps/policies write permission required by the selected provider/API; do not use a Global API Key.
 
-## Initialize Or Select Stacks
+## Select Existing Stacks And Verify Live IDs
 
 ```bash
 cd packages/infrastructure
-pulumi stack select pre-prod || pulumi stack init pre-prod
-pulumi stack select production || pulumi stack init production
+pulumi stack select pre-prod || {
+  echo 'FAIL: expected the existing local pre-prod stack; refusing to initialize a new stack' >&2
+  exit 1
+}
+pulumi stack select production || {
+  echo 'FAIL: expected the existing local production stack; refusing to initialize a new stack' >&2
+  exit 1
+}
+
+for stack in pre-prod production; do
+  access_application_id="$(pulumi stack output accessApplicationId --stack "$stack")" || exit 1
+  if [ -z "$access_application_id" ]; then
+    echo "FAIL: $stack has no accessApplicationId output; refusing preview/apply" >&2
+    exit 1
+  fi
+done
+unset access_application_id stack
 ```
+
+Both stack selections must succeed because these applications already exist. The output check
+proves each existing local stack exposes a non-empty `accessApplicationId` before any preview or
+apply; the identifier is captured for the check and is not printed in evidence. Never replace a
+failed selection with `pulumi stack init`.
 
 Configure both stacks from local shell variables:
 
@@ -135,7 +155,7 @@ packages/infrastructure/scripts/verify-access.sh pre-prod
 packages/infrastructure/scripts/verify-access.sh production
 ```
 
-The script accepts only the two supported environments, requests each environment's exact protected and public route matrix, recognizes only an HTTPS `3xx` redirect whose host has at least one tenant label and ends in `.cloudflareaccess.com` or HTTP `403` with both `cf-access-aud` and `cf-access-domain`, and fails closed on DNS, TLS, connection, timeout, malformed-response, and unsupported-environment errors. It prints status and header/redirect presence with values redacted; never record header values.
+The script accepts only the two supported environments, requests each environment's exact protected and public route matrix, recognizes only an HTTPS `3xx` redirect matching `^https://([[:alnum:]-]+\.)+cloudflareaccess\.com(:[0-9]+)?([/?#]|$)` or HTTP `403` with both `cf-access-aud` and `cf-access-domain`, and fails closed on DNS, TLS, connection, timeout, malformed-response, and unsupported-environment errors. It prints status and header/redirect presence with values redacted; never record header values.
 
 # Phase 1 — Pre-production
 
@@ -233,9 +253,18 @@ Before destroy, determine which Wrangler environment currently serves the pre-pr
 
 If public exposure is not acceptable, keep Access in place while repairing the rollout or first move the pre-production deployment away from production-backed data. Do not treat Access destroy as a neutral cleanup.
 
-When public rollback is explicitly acceptable:
+There is no automatic rollback. Because the Access application resource is registered with
+`{ protect: true }`, a normal destroy path fails closed rather than deleting it:
 
 ```bash
+pulumi preview --destroy --stack pre-prod
+```
+
+If that separately reviewed rollback is explicitly approved, unprotect only the exact pre-production
+Access resource immediately before rerunning the preview:
+
+```bash
+pulumi state unprotect 'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' --stack pre-prod
 pulumi preview --destroy --stack pre-prod
 ```
 
@@ -244,6 +273,11 @@ Confirm the only deletion is `DTXWeb Pre-prod`, then:
 ```bash
 pulumi destroy --stack pre-prod --yes
 ```
+
+Unprotecting and destroying is a separately reviewed, one-time exception to the normal deletion
+guard. The source program still declares this application, so a later `pulumi up` will recreate it
+unless the desired source and Pulumi state are deliberately reconciled first. Do not turn this
+exception into an automated rollback.
 
 # Emergency Fallback — Pulumi Backend/State Unavailable
 

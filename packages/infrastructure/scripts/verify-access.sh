@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CLOUDFLARE_LOCATION_RE='^https://([[:alnum:]-]+\.)+cloudflareaccess\.com([/:?#]|$)'
+CLOUDFLARE_LOCATION_RE='^https://([[:alnum:]-]+\.)+cloudflareaccess\.com(:[0-9]+)?([/?#]|$)'
 
 HTTP_HEADERS=''
 HTTP_FINAL_HEADERS=''

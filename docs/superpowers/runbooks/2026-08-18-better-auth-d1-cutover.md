@@ -1,7 +1,7 @@
 # Better Auth and D1 production cutover runbook
 
 This runbook is for the production operator executing the Better Auth + D1
-cutover after the Task 14 repository gates and the separate pre-production
+cutover after the Task 15 repository gates and the separate pre-production
 acceptance gate pass. It is an operator procedure, not an automated test or a
 request to perform production actions from this task. Do not put credentials,
 tokens, exports, or generated SQL containing user data in Git.
@@ -137,7 +137,7 @@ CLOUDFLARE_API_TOKEN
 
 Confirm secret names and presence with a metadata-only check. The desktop never
 receives `BETTER_AUTH_SECRET`. `BETTER_AUTH_DEVICE_CODE_EXPIRES_IN` is an
-optional local-E2E test override; do not set the 1-second test value in
+optional local-E2E test override; do not set the 5-second test value in
 production or pre-production. Production uses the Better Auth default device
 code lifetime unless a separately reviewed operator change says otherwise.
 

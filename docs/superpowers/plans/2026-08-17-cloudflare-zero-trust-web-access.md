@@ -334,9 +334,9 @@ export function normalizeDevicePostureRuleId(rawValue: string): string {
 }
 ```
 
-Hostnames/destinations must remain internal constants, not function parameters.
+Hostnames/destinations must remain internal constants, not parameters.
 
-- [ ] **Step 9: Run the package and CI contract checks**
+- [ ] **Step 9: Run package and CI contract checks**
 
 ```bash
 bun run --filter=@dtx/infrastructure test:coverage
@@ -346,7 +346,7 @@ bun run --filter=@dtx/infrastructure check
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit the independently testable workspace/CI slice**
+- [ ] **Step 10: Commit the workspace/CI slice**
 
 ```bash
 git add package.json bun.lock .github/scripts packages/infrastructure
@@ -371,7 +371,7 @@ git commit -m "feat: scaffold DTXWeb Access infrastructure"
 
 - [ ] **Step 1: Write failing tests for the policy and application shape**
 
-Extend the import in `access.test.ts`:
+Extend the existing import:
 
 ```ts
 import {
@@ -440,7 +440,7 @@ it('rejects a blank Cloudflare account ID', () => {
 bun run --filter=@dtx/infrastructure test
 ```
 
-Expected: FAIL because the Access builders/constants do not exist.
+Expected: FAIL because the builders/constants do not exist.
 
 - [ ] **Step 3: Implement the policy/application builders**
 
@@ -551,9 +551,9 @@ const accessApplication = createAccessApplication({
 export const accessApplicationId = accessApplication.id;
 ```
 
-Stack validation must happen before `createAccessApplication`.
+Stack validation must happen before resource creation.
 
-- [ ] **Step 5: Run focused and package-wide verification**
+- [ ] **Step 5: Run focused/package verification**
 
 ```bash
 bun run --filter=@dtx/infrastructure test:coverage
@@ -563,21 +563,20 @@ bun run --filter=@dtx/infrastructure build
 
 Expected: PASS.
 
-If the selected Cloudflare provider typings differ from the working Perseus shape, verify the current provider API before adapting names; do not redesign the policy semantics.
+If provider typings differ from the working Perseus shape, verify the current provider API before adapting names; do not redesign policy semantics.
 
-- [ ] **Step 6: Run the existing root unit-coverage command**
+- [ ] **Step 6: Prove root coverage includes the new workspace**
 
 ```bash
 bun run test:coverage
 ```
 
-Expected: the existing workspace coverage suite runs and includes `@dtx/infrastructure` rather than silently skipping it.
+Expected: the existing workspace coverage suite runs `@dtx/infrastructure`'s `test:coverage` task rather than silently skipping it.
 
 - [ ] **Step 7: Commit the Access resource slice**
 
 ```bash
 git add packages/infrastructure
-
 git commit -m "feat: define DTXWeb Cloudflare Access apps"
 ```
 
@@ -592,7 +591,7 @@ git commit -m "feat: define DTXWeb Cloudflare Access apps"
 
 **Interfaces:**
 
-- Consumes the implemented `@dtx/infrastructure` package and the already rewritten operator runbook.
+- Consumes the implemented infrastructure package and the already Pulumi-native operator runbook.
 - Produces repository-local setup documentation plus pre-prod/production preview evidence.
 - Produces **no live Cloudflare mutation**.
 
@@ -600,22 +599,22 @@ git commit -m "feat: define DTXWeb Cloudflare Access apps"
 
 Document:
 
-- this package owns only DTXWeb Access applications;
+- package owns only DTXWeb Access applications;
 - Workers/API/storage remain on Wrangler;
 - supported stacks are exactly `pre-prod` and `production`;
 - DTXWeb consumes the Perseus `adminAccessDevicePostureRuleId` as config;
 - `pulumi login --local` defaults to state under `~/.pulumi`;
 - stack config files are local/ignored;
-- Cloudflare token requires `Access: Apps and Policies Write` for application lifecycle;
+- Cloudflare token needs `Access: Apps and Policies Write` for application lifecycle;
 - package scripts are test/build/check only;
-- live commands are taken from the operator runbook and always specify `--stack`;
+- live commands live in the operator runbook and always specify `--stack`;
 - emergency provider-side deletion is documented only in the runbook.
 
-Do not duplicate the full route matrices from the runbook.
+Do not duplicate the route matrices.
 
-- [ ] **Step 2: Validate the runbook against the implemented package**
+- [ ] **Step 2: Validate the runbook against implemented config keys**
 
-Review `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md` and confirm its config keys exactly match code:
+Confirm the runbook uses exactly:
 
 ```text
 cloudflareAccountId
@@ -624,11 +623,11 @@ devicePostureRuleId
 accessSessionDuration
 ```
 
-Confirm it remains marked operator-executed and owns every `pulumi up`, `pulumi destroy`, browser/device check, and dashboard emergency fallback.
+Confirm it remains marked operator-executed and owns every `pulumi up`, `pulumi destroy`, browser/device check, and emergency dashboard fallback.
 
-If the implementation changed no interface, make no gratuitous runbook edit.
+If implementation changed no interface, make no gratuitous runbook edit.
 
-- [ ] **Step 3: Run the complete non-live repository verification**
+- [ ] **Step 3: Run complete non-live repository verification**
 
 ```bash
 bun install --frozen-lockfile
@@ -641,9 +640,9 @@ bun run test:coverage
 
 Expected: PASS.
 
-- [ ] **Step 4: Run Pulumi previews only when authenticated local config is available**
+- [ ] **Step 4: Run Pulumi previews only when authenticated config already exists**
 
-If the operator/development environment already has the Cloudflare API token plus DTXWeb stack config, run:
+If the environment already has the Cloudflare API token and DTXWeb stack config:
 
 ```bash
 cd packages/infrastructure
@@ -665,7 +664,7 @@ Expected production preview:
 - no hostname-wide production destination;
 - no API/list/posture/token/Worker/storage resource.
 
-If authenticated config is unavailable, record the previews as `NOT RUN — operator credentials/config required`; do not manufacture config values or ask for secrets in PR comments.
+If authenticated config is unavailable, record `NOT RUN — operator credentials/config required`; do not invent config or request secrets in PR comments.
 
 **Do not run `pulumi up` or `pulumi destroy`.**
 
@@ -682,7 +681,7 @@ If the runbook did not change, commit only the README.
 
 ## Operator Handoff — Not Agent Plan Tasks
 
-After Tasks 1–3 are complete, stop implementation and hand the operator to:
+After Tasks 1–3, stop implementation and hand the operator to:
 
 `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
 
@@ -697,11 +696,11 @@ The operator performs, in order:
 7. stack-specific rollback if required;
 8. dashboard disable/delete only if Pulumi state/backend is unavailable during an emergency.
 
-These are deliberately outside the `For agentic workers` task list.
+These operations are deliberately outside the `For agentic workers` task list.
 
 ## Final Implementation Verification
 
-Before claiming the implementation branch complete, verify:
+Before claiming the implementation branch complete:
 
 ```bash
 git diff --check
@@ -718,6 +717,6 @@ packages/dtx-api/
 packages/dtx-desktop/
 ```
 
-Confirm no committed file contains real operator email, API token, device serial, Access cookie/JWT, Pulumi stack config, or Pulumi state export.
+Confirm no committed file contains a real operator email, API token, device serial, Access cookie/JWT, Pulumi stack config, or state export.
 
-Confirm the Access code contains no `ZeroTrustList`, `ZeroTrustDevicePostureRule`, `ZeroTrustAccessServiceToken`, Service Auth policy, or hostname-configurable production destination.
+Confirm Access code contains no `ZeroTrustList`, `ZeroTrustDevicePostureRule`, `ZeroTrustAccessServiceToken`, Service Auth policy, or hostname-configurable production destination.

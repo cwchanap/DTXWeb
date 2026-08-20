@@ -7,7 +7,7 @@ vi.mock('@supabase/supabase-js', () => ({
 	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
 }));
 
-vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
+vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
 vi.mock('../services/uploads', () => ({
 	uploadSimfileFile: vi.fn(
@@ -16,9 +16,9 @@ vi.mock('../services/uploads', () => ({
 	purgeCacheForFile: vi.fn(async () => true)
 }));
 
-const { verifyToken } = await import('../auth/verifyToken');
+const { resolveAuthSession } = await import('../auth/session');
 const { uploadSimfileFile, purgeCacheForFile } = await import('../services/uploads');
-const mockedVerify = vi.mocked(verifyToken);
+const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
 const mockedUpload = vi.mocked(uploadSimfileFile);
 const mockedPurge = vi.mocked(purgeCacheForFile);
 
@@ -48,40 +48,82 @@ const makeCtx = (): ExecutionContext =>
 		passThroughOnException: vi.fn()
 	}) as unknown as ExecutionContext;
 
-const multipartReq = () => {
+const multipartReq = (headers: Record<string, string> = {}) => {
 	const form = new FormData();
 	form.set('file', new File([new Uint8Array(10)], 'a.dtx', { type: 'application/octet-stream' }));
 	form.set('simFileId', '42');
-	return new Request('http://api/upload', { method: 'POST', body: form });
+	return new Request('http://api/upload', { method: 'POST', headers, body: form });
 };
 
+const validAuthSession = (): NonNullable<Awaited<ReturnType<typeof resolveAuthSession>>> => ({
+	user: { id: 'u1' },
+	session: {
+		id: 'session-1',
+		userId: 'u1',
+		expiresAt: new Date('2030-01-01T00:00:00.000Z')
+	}
+});
+
 beforeEach(() => {
-	mockedVerify.mockReset().mockResolvedValue(null);
+	mockedResolveAuthSession.mockReset().mockResolvedValue(null);
 	mockedUpload.mockClear();
 	mockedPurge.mockClear();
 });
 
 describe('POST /upload', () => {
-	it('401 when no bearer', async () => {
+	it('401 when anonymous or the session is invalid', async () => {
 		const response = await routeUpload(multipartReq(), makeEnv(), makeCtx());
 		expect(response.status).toBe(401);
 	});
 
-	it('delegates to uploadSimfileFile when authed', async () => {
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
-		const response = await routeUpload(multipartReq(), makeEnv(), makeCtx());
+	it('accepts a valid Better Auth cookie session', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const request = multipartReq({
+			Cookie: 'dtx-local-session=session',
+			Origin: 'http://localhost:5173'
+		});
+		const response = await routeUpload(request, makeEnv(), makeCtx());
 		expect(response.status).toBe(200);
-		expect(mockedUpload).toHaveBeenCalled();
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+		expect(mockedUpload).toHaveBeenCalledWith(
+			expect.anything(),
+			{ id: 'u1' },
+			'42',
+			expect.any(File),
+			expect.anything()
+		);
+	});
+
+	it('accepts a valid desktop Bearer session without Origin', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const request = multipartReq({ Authorization: 'Bearer opaque-session-token' });
+		const response = await routeUpload(request, makeEnv(), makeCtx());
+
+		expect(response.status).toBe(200);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('rejects a cookie session when unsafe Origin is missing', async () => {
+		const request = multipartReq({ Cookie: 'dtx-local-session=session' });
+		const response = await routeUpload(request, makeEnv(), makeCtx());
+
+		expect(response.status).toBe(401);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('rejects a cookie session from the wrong Origin', async () => {
+		const request = multipartReq({
+			Cookie: 'dtx-local-session=session',
+			Origin: 'https://evil.example.com'
+		});
+		const response = await routeUpload(request, makeEnv(), makeCtx());
+
+		expect(response.status).toBe(401);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
 	});
 
 	it('schedules cache purge via ctx.waitUntil', async () => {
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
 		mockedUpload.mockResolvedValue(
 			new Response(JSON.stringify({ file: { key: '42/a.dtx' } }), {
 				status: 200,
@@ -94,10 +136,7 @@ describe('POST /upload', () => {
 	});
 
 	it('URL-encodes R2 key segments for cache purge', async () => {
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
 		mockedUpload.mockResolvedValue(
 			new Response(JSON.stringify({ file: { key: '42/my song file.dtx' } }), {
 				status: 200,
@@ -116,10 +155,7 @@ describe('POST /upload', () => {
 	});
 
 	it('400 when form is missing required parts', async () => {
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
 		const emptyReq = new Request('http://api/upload', {
 			method: 'POST',
 			body: new FormData()

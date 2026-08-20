@@ -21,15 +21,15 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
+vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
 const { getSimfileOwner, tryConsumeRateLimit, createZipSources } =
 	await import('@dtx/common/server');
-const { verifyToken } = await import('../auth/verifyToken');
+const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedCreateZipSources = vi.mocked(createZipSources);
-const mockedVerify = vi.mocked(verifyToken);
+const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
 
 const { validateZipSources } = await import('@dtx/common/server');
 const mockedValidateZipSources = vi.mocked(validateZipSources);
@@ -61,13 +61,22 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 const makeCtx = (): ExecutionContext =>
 	({ waitUntil: vi.fn(), passThroughOnException: vi.fn() }) as unknown as ExecutionContext;
 
+const validAuthSession = (): NonNullable<Awaited<ReturnType<typeof resolveAuthSession>>> => ({
+	user: { id: 'u1' },
+	session: {
+		id: 'session-1',
+		userId: 'u1',
+		expiresAt: new Date('2030-01-01T00:00:00.000Z')
+	}
+});
+
 beforeEach(() => {
 	mockedGetOwner.mockReset();
 	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
 	mockedCreateZipSources
 		.mockReset()
 		.mockReturnValue([{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]);
-	mockedVerify.mockReset().mockResolvedValue(null);
+	mockedResolveAuthSession.mockReset().mockResolvedValue(null);
 	mockedValidateZipSources.mockReset();
 });
 
@@ -102,14 +111,35 @@ describe('GET /downloads/:id', () => {
 		expect(response.status).toBe(401);
 	});
 
+	it('accepts a valid Better Auth cookie session', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const request = req({ Cookie: 'dtx-local-session=session' });
+
+		const response = await routeDownloadSimfile(request, makeEnv(), makeCtx(), '42');
+
+		expect(response.status).toBe(200);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('accepts a valid desktop Bearer session without Origin', async () => {
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 0 });
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const request = req({ Authorization: 'Bearer opaque-session-token' });
+
+		const response = await routeDownloadSimfile(request, makeEnv(), makeCtx(), '42');
+
+		expect(response.status).toBe(200);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
 	it('403 when authed but non-owner of unpublished', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'someone', is_published: 0 });
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
-		const response = await routeDownloadSimfile(req(), makeEnv(), makeCtx(), '42');
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const request = req({ Authorization: 'Bearer opaque-session-token' });
+		const response = await routeDownloadSimfile(request, makeEnv(), makeCtx(), '42');
 		expect(response.status).toBe(403);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
 	});
 
 	it('401 when anonymous and PUBLIC_ENABLE_BLOG_DOWNLOAD is false', async () => {

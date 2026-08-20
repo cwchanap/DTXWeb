@@ -20,7 +20,11 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-vi.mock('./auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
+const authSessionMocks = vi.hoisted(() => ({
+	resolveAuthSession: vi.fn()
+}));
+
+vi.mock('./auth/session', () => authSessionMocks);
 
 const authMocks = vi.hoisted(() => ({
 	createAuth: vi.fn(),
@@ -66,6 +70,7 @@ const makeExecutionCtx = (): ExecutionContext =>
 beforeEach(() => {
 	vi.clearAllMocks();
 	authMocks.createAuth.mockReturnValue({ handler: authMocks.handler });
+	authSessionMocks.resolveAuthSession.mockResolvedValue(null);
 });
 
 describe('worker fetch router', () => {
@@ -389,8 +394,7 @@ describe('Phase 2 routes', () => {
 	});
 
 	it('CORS-wraps 500 when upload handler throws unexpectedly', async () => {
-		const { verifyToken } = await import('./auth/verifyToken');
-		vi.mocked(verifyToken).mockResolvedValueOnce({
+		authSessionMocks.resolveAuthSession.mockResolvedValueOnce({
 			user: { id: 'u1', email: 't@t.com' } as never,
 			session: {} as never
 		});

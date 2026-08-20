@@ -217,11 +217,11 @@ TDD and GREEN evidence:
 
 ## Final desktop E2E native-clearance review fix
 
-The remaining desktop E2E Minor was corrected narrowly: the logout lifecycle
-test now invokes native `get_current_session` and asserts `null` immediately
-after the UI reaches the signed-out shell. The `afterEach` hook no longer makes
-that assertion; it only performs cleanup and reseeds the deterministic native
-session, so a failed UI logout cannot be hidden by teardown. Desktop E2E
-typecheck and Prettier passed. The existing target-e2e executable ran
-`auth-session.e2e.ts` successfully with 2/2 scenarios passing in 30.9s; no
-rebuild or remote operation was run.
+The remaining desktop E2E Minor was corrected narrowly: after the UI reaches
+the signed-out shell, the logout lifecycle test uses a bounded `browser.waitUntil`
+poll (5-second timeout, 100ms interval) until native `get_current_session`
+returns `null`. The `afterEach` hook only performs cleanup and reseeds the
+deterministic native session, so a failed UI logout cannot be hidden by teardown
+or race native IPC completion. Desktop E2E typecheck and Prettier passed. The
+existing target-e2e executable ran `auth-session.e2e.ts` successfully with 2/2
+scenarios passing in 663ms; no rebuild or remote operation was run.

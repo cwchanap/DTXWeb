@@ -4,6 +4,13 @@ export type Env = {
 	DB: D1Database;
 	DTXFILE_BUCKET: R2Bucket;
 	RATE_LIMIT_API: KVNamespace;
+	BETTER_AUTH_URL: string;
+	BETTER_AUTH_SECRET: string;
+	DTX_WEB_URL: string;
+	AUTH_COOKIE_DOMAIN?: string;
+	AUTH_COOKIE_PREFIX: string;
+	GOOGLE_AUTH_CLIENT_ID: string;
+	GOOGLE_AUTH_CLIENT_SECRET: string;
 	SUPABASE_URL: string;
 	SUPABASE_ANON_KEY: string;
 	RATE_LIMIT_ENV: 'prod' | 'pre-prod' | 'pre-prod-prod-data';

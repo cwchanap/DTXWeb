@@ -1,11 +1,7 @@
 use super::*;
-use crate::google_drive::{ApiDriveMetadataClient, DriveMetadataClient};
 use crate::workspace::{test_support::managed_workspace_state, WorkspaceRootState};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use std::fs;
-use std::sync::{mpsc, Mutex, OnceLock};
-use std::time::Duration as StdDuration;
-use tauri::Listener;
+use std::sync::{Mutex, OnceLock};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -17,35 +13,6 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 fn bucket_env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
-}
-
-struct EnvVarGuard {
-    name: &'static str,
-    previous: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn replace(name: &'static str, value: &str) -> Self {
-        let previous = std::env::var_os(name);
-        std::env::set_var(name, value);
-        Self { name, previous }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.previous.take() {
-            Some(value) => std::env::set_var(self.name, value),
-            None => std::env::remove_var(self.name),
-        }
-    }
-}
-
-fn jwt_with_exp(exp: i64) -> String {
-    format!(
-        "header.{}.signature",
-        URL_SAFE_NO_PAD.encode(json!({ "exp": exp }).to_string())
-    )
 }
 
 fn owner_drive_simfile() -> Value {
@@ -332,80 +299,6 @@ async fn google_drive_owner_metadata_classifies_ambiguous_failures_without_claim
             .expect_err("connection refusal"),
         crate::google_drive::DriveMetadataError::Network
     );
-}
-
-#[tokio::test]
-#[allow(clippy::await_holding_lock)]
-async fn google_drive_api_client_persists_a_refreshed_session_through_the_app_context() {
-    // The production adapter resolves tokens through its AppHandle. A refresh
-    // must emit the existing session-refreshed event, otherwise the renderer
-    // persists the revoked refresh token and the next launch loses the session.
-    // This is the crate-wide auth-config lock. It is also held by the auth
-    // test that asserts the runtime variables are absent, so neither test can
-    // observe the other's temporary configuration.
-    let _guard = crate::auth::auth_config_env_lock()
-        .lock()
-        .expect("auth config env lock");
-    let api_server = MockServer::start().await;
-    let auth_server = MockServer::start().await;
-    let stale_token = jwt_with_exp(1);
-    let fresh_token = jwt_with_exp(4_102_444_800);
-
-    Mock::given(method("POST"))
-        .and(path("/auth/v1/token"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "access_token": fresh_token,
-            "refresh_token": "refresh-new",
-            "user": { "id": "user-1" }
-        })))
-        .mount(&auth_server)
-        .await;
-    Mock::given(method("POST"))
-        .and(path("/graphql"))
-        .and(header("authorization", format!("Bearer {fresh_token}")))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "data": { "simfile": owner_drive_simfile() }
-        })))
-        .mount(&api_server)
-        .await;
-
-    let _api_url = EnvVarGuard::replace("VITE_DTX_API_URL", &api_server.uri());
-    let _supabase_url = EnvVarGuard::replace("PUBLIC_SUPABASE_URL", &auth_server.uri());
-    let _anon_key = EnvVarGuard::replace("PUBLIC_SUPABASE_ANON_KEY", "anon-key");
-
-    let state = AuthState::default();
-    state
-        .set_current_session(Some(json!({
-            "access_token": stale_token,
-            "refresh_token": "refresh-old",
-            "user": { "id": "user-1" }
-        })))
-        .await;
-    let app = tauri::test::mock_app();
-    assert!(app.manage(state.clone()));
-    let app_handle = app.handle().clone();
-    let (event_sender, event_receiver) = mpsc::channel();
-    app_handle.listen("session-refreshed", move |event| {
-        event_sender
-            .send(event.payload().to_string())
-            .expect("event receiver remains available");
-    });
-
-    let client = ApiDriveMetadataClient::new(app_handle);
-    let result = client
-        .fetch_owner_simfile(&state, "42")
-        .await
-        .expect("owner metadata after refresh");
-
-    assert_eq!(result.id, "42");
-    let persisted_session: Value = serde_json::from_str(
-        &event_receiver
-            .recv_timeout(StdDuration::from_secs(1))
-            .expect("session-refreshed event"),
-    )
-    .expect("session event JSON");
-    assert_eq!(persisted_session["access_token"], fresh_token);
-    assert_eq!(persisted_session["refresh_token"], "refresh-new");
 }
 
 #[tokio::test]
@@ -956,24 +849,22 @@ async fn get_preview_urls_build_paths_from_bucket_env() {
 }
 
 #[tokio::test]
-async fn access_token_from_auth_state_errors_without_session() {
+async fn current_session_token_errors_without_session() {
     let state = AuthState::default();
 
-    assert!(access_token_from_auth_state(&state, None::<&AppHandle>)
-        .await
-        .is_err());
+    assert!(current_session_token(&state).await.is_err());
 }
 
 #[tokio::test]
-async fn access_token_from_auth_state_returns_token_from_session() {
+async fn current_session_token_returns_opaque_token_from_session() {
     let state = AuthState::default();
     state
-        .set_current_session(Some(json!({ "access_token": "tok-1" })))
+        .set_current_session(Some(
+            json!({ "sessionToken": "tok-1", "user": { "id": "user-1" } }),
+        ))
         .await;
 
-    let token = access_token_from_auth_state(&state, None::<&AppHandle>)
-        .await
-        .expect("token");
+    let token = current_session_token(&state).await.expect("token");
 
     assert_eq!(token, "tok-1");
 }
@@ -2385,7 +2276,7 @@ async fn authenticated_user_id_errors_when_session_is_absent() {
 async fn authenticated_user_id_errors_when_session_lacks_user_id() {
     let state = AuthState::default();
     state
-        .set_current_session(Some(json!({ "access_token": "tok-1" })))
+        .set_current_session(Some(json!({ "sessionToken": "tok-1" })))
         .await;
 
     let error = authenticated_user_id(&state)
@@ -2403,7 +2294,7 @@ async fn authenticated_user_id_errors_when_user_id_is_empty() {
     let state = AuthState::default();
     state
         .set_current_session(Some(json!({
-            "access_token": "tok-1",
+            "sessionToken": "tok-1",
             "user": { "id": "" }
         })))
         .await;

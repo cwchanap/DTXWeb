@@ -54,8 +54,7 @@ async fn e2e_auth_state_is_seeded_only_for_the_configured_user() {
     );
     let session = state.current_session().await.expect("seeded session");
     assert_eq!(session["user"]["id"], "fixed-e2e-user");
-    assert_eq!(session["access_token"], "e2e-supabase-access-token");
-    assert_eq!(session["refresh_token"], "e2e-supabase-refresh-token");
+    assert_eq!(session["sessionToken"], "e2e-better-auth-session-token");
 
     assert!(crate::auth::AuthState::for_e2e_user("").is_err());
     assert!(crate::auth::AuthState::for_e2e_user(" other-user ").is_err());
@@ -64,9 +63,11 @@ async fn e2e_auth_state_is_seeded_only_for_the_configured_user() {
 #[test]
 fn e2e_session_validation_accepts_only_the_seeded_user() {
     let matching = crate::auth::SessionData {
-        access_token: Some("renderer-e2e-access".to_string()),
-        refresh_token: Some("renderer-e2e-refresh".to_string()),
-        user: Some(serde_json::json!({ "id": "fixed-e2e-user" })),
+        session_token: Some("renderer-e2e-session".to_string()),
+        user: Some(crate::api_contracts::DesktopAuthUser {
+            id: "fixed-e2e-user".to_string(),
+            ..Default::default()
+        }),
     };
     assert!(crate::auth::e2e_session_matches_user(
         &matching,
@@ -74,9 +75,11 @@ fn e2e_session_validation_accepts_only_the_seeded_user() {
     ));
 
     let different = crate::auth::SessionData {
-        access_token: matching.access_token.clone(),
-        refresh_token: matching.refresh_token.clone(),
-        user: Some(serde_json::json!({ "id": "different-user" })),
+        session_token: matching.session_token.clone(),
+        user: Some(crate::api_contracts::DesktopAuthUser {
+            id: "different-user".to_string(),
+            ..Default::default()
+        }),
     };
     assert!(!crate::auth::e2e_session_matches_user(
         &different,

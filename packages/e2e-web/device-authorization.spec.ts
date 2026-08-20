@@ -151,7 +151,7 @@ test.describe('local Better Auth Device Authorization', () => {
 			storageState: { cookies: [], origins: [] }
 		});
 		try {
-			await new Promise((resolve) => setTimeout(resolve, 1_500));
+			await new Promise((resolve) => setTimeout(resolve, device.expires_in * 1_000 + 500));
 			const { response, body } = await pollDeviceCode(
 				anonymousContext.request,
 				device.device_code

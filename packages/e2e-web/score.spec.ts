@@ -26,7 +26,8 @@ const graphqlRequest = async <T>(
 ): Promise<T> => {
 	const res = await page.request.post(API_URL, {
 		headers: {
-			'content-type': 'application/json'
+			'content-type': 'application/json',
+			Origin: 'http://localhost:5173'
 		},
 		data: { query, variables }
 	});

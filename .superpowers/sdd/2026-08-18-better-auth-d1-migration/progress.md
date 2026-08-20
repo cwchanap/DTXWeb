@@ -653,3 +653,39 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   Important findings.
 - Task 14 is complete. The deferred desktop native-clearance assertion is a
   non-blocking test-quality Minor and remains recorded in the Task 14 report.
+
+## Task 15
+
+- Implementer: `/root/d1_task15_verification`.
+- Verification-driven RED findings were limited to the bare web check's
+  missing static public env values, the Rust all-feature Google Drive/E2E build
+  guard, one existing Clippy `result.ok()` warning in `auth.rs`, and three
+  local Playwright harness races/request seams. The web check passed with
+  inert local public values; supported default/e2e Clippy passed; `auth.rs`
+  now matches the result directly; and the E2E config/request/expiry seams
+  were corrected without changing remote auth defaults.
+- GREEN: `bun run lint`, the inert-env full check, `bun run test` (7/7 Turbo
+  tasks; common 1,325, API 385, desktop 1,010, web 876), Rust format, the
+  full Rust suite (922 passed, 2 ignored), generated schema/client/native
+  gates (42 native export tests), residue checks, and `git diff --check` pass.
+  The mandated `cargo clippy --all-targets --all-features -- -D warnings`
+  remains structurally blocked by the existing feature guard; both supported
+  feature modes pass with `-D warnings`.
+- Full local E2E is green: web Playwright 36/36; desktop WDIO/Tauri all seven
+  spec files pass, with nine native-filesystem cases passing and one
+  Windows-only skip. The manual OS-browser handoff remains separate evidence.
+- Existing pre-production proof remains valid: D1 migrations through 0008,
+  API version `44d96dc8-51a2-47c3-bcad-adecdd794efa`, web version
+  `c1c31ef1-45e6-4014-a4dc-484a9741c15e`, secret presence without values, and
+  non-secret web/auth/CORS/device/Google-start smoke passed. The exact Google
+  callback registration is externally unverified, and no real sanitized
+  identity export plus complete owner-ID inventory was available; no import
+  SQL was fabricated or applied.
+- Updated the runbook to describe the corrected five-second local E2E device
+  expiry override and to prohibit it in remote environments. Production was
+  untouched: no migration, identity import, secret operation, deploy,
+  desktop publication, or credential removal.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
+- Task 15 local verification is complete; pre-production/production go-no-go
+  remains blocked on external Google callback registration, exact owner
+  reconciliation/import inputs, and manual OS-browser handoff evidence.

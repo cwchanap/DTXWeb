@@ -26,7 +26,9 @@ const localAuthEnv = {
 	BETTER_AUTH_URL: apiURL,
 	BETTER_AUTH_SECRET:
 		process.env.BETTER_AUTH_SECRET ?? 'e2e-local-better-auth-secret-0123456789abcdef',
-	BETTER_AUTH_DEVICE_CODE_EXPIRES_IN: '1s',
+	// Leave enough time for the browser claim flow when the full suite is
+	// running in parallel; the expiry test waits from the returned value.
+	BETTER_AUTH_DEVICE_CODE_EXPIRES_IN: '5s',
 	DTX_WEB_URL: baseURL,
 	AUTH_COOKIE_DOMAIN: '',
 	AUTH_COOKIE_PREFIX: 'dtx-local',
@@ -88,7 +90,12 @@ export default defineConfig({
 		{
 			name: 'chromium',
 			use: { ...devices['Desktop Chrome'] },
-			testIgnore: [/global\.setup\.ts/, /auth-lifecycle\.spec\.ts/, /score\.spec\.ts/]
+			testIgnore: [
+				/global\.setup\.ts/,
+				/auth-lifecycle\.spec\.ts/,
+				/device-authorization\.spec\.ts/,
+				/score\.spec\.ts/
+			]
 		},
 		// Auth-dependent projects are included only when credentials are configured.
 		...(isAuthConfigured

@@ -328,7 +328,7 @@ pub async fn logout_session(app: AppHandle) -> Result<bool> {
 
 pub(crate) async fn logout_session_impl<R: Runtime>(app: AppHandle<R>) -> Result<bool> {
     let state = app.state::<AuthState>();
-    if let Some(session_token) = state.current_session_token().await.ok() {
+    if let Ok(session_token) = state.current_session_token().await {
         if let Some(base_url) = config_env!("VITE_DTX_API_URL")
             .and_then(|url| api_base_url_from_values(Some(&url)).ok())
         {

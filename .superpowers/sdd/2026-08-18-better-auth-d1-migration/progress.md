@@ -449,3 +449,9 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - GREEN: review-focused storage/auth/UI coverage is 88 tests across six files.
   The bounded Svelte autofixer was silent for 10 seconds and stopped; use
   `svelte-check` as the available diagnostics gate.
+- Scoped re-review of `88ff0011..383f9b3d` resolved all three Important
+  findings with no new Critical or Important issues; Task 11 is compliant and
+  approved.
+- Deferred Minor: make the `desktopHost.test.ts` seeded `DesktopAuthUser`
+  fixture use the full generated contract instead of a partial user object.
+- Task 11 is complete and ready for Task 12.

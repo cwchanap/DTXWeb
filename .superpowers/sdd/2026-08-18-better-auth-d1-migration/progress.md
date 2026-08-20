@@ -569,3 +569,45 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   replacement residue.
 - No Critical, Important, or new Minor findings; Task 13 is approved.
 - Task 13 is complete and ready for Task 14.
+
+## Task 14
+
+- Implementer: `/root/d1_task14_e2e_runbook_retry`.
+- CodeGraph was queried before source inspection. The TDD, Playwright,
+  Cloudflare, and Supabase skills were read. No Svelte source was changed.
+- RED: the first local expiry assertion returned `authorization_pending`
+  instead of `expired_token`; the focused request helper also exposed Better
+  Auth's required Origin header, and the first revoke request lacked JSON
+  `Content-Type`. A web logout click before hydration produced no sign-out
+  request. These were corrected at the local test/config seam: optional
+  1-second E2E expiry override (production default remains 30 minutes), web
+  Origin headers, JSON revoke body, and the existing hydration marker wait.
+- Implementation: added web password/guard/download/invalid-session/logout
+  lifecycle coverage; real local Device Authorization browser claim/approve,
+  poll/session validation/revoke, deny, and expiry coverage; optional API
+  expiry configuration; and a desktop WDIO Better Auth `{ sessionToken, user }`
+  restore/logout session-shape audit using the existing debug-only native seed.
+  No production or API-wide test-auth endpoint was added.
+- Desktop residue audit matches are intentional: legacy key names are cleanup
+  or safe-rejection assertions, `DTX_E2E_DRUMERY_USER_ID` is the compile-time
+  gated native seed, and `refresh_token` belongs to Google Drive credentials.
+  No Supabase-shaped renderer seed or application-auth fake refresh token
+  remains.
+- PR #221 reconciliation: no local Zero Trust spec/plan/runbook document was
+  found; only Task 14 plan references and an unrelated `#221E3A` color literal
+  exist. The required future reconciliation is recorded in the runbook and
+  report; no absent document was created.
+- GREEN: focused Device Authorization Playwright — 4 passed (setup plus
+  browser-UI approve/validate/revoke, browser-UI deny, expiry) in 35.6s;
+  focused logout — 2 passed
+  (setup plus lifecycle) in 26.0s; API auth tests — 3 passed; API check,
+  web-E2E check, desktop-E2E check, Prettier, and diff checks passed.
+- Full web/desktop E2E was not rerun. No desktop `target-e2e` binary was
+  present, so a potentially long Tauri build was not allowed to block the
+  task. The manual real-OS-browser Device Authorization handoff remains a
+  separate operator evidence item in the runbook. No remote operation or Task
+  15 work was performed.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-14-report.md`.
+- Runbook: `docs/superpowers/runbooks/2026-08-18-better-auth-d1-cutover.md`.
+- Task 14: source, tests, report, ledger, and operator runbook are ready for
+  the scoped conventional commit.

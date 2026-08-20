@@ -1,10 +1,11 @@
 import type { BetterAuthOptions } from 'better-auth';
 import { bearer } from 'better-auth/plugins/bearer';
-import { deviceAuthorization } from 'better-auth/plugins/device-authorization';
+import { deviceAuthorization, type TimeString } from 'better-auth/plugins/device-authorization';
 
 export type AuthConfig = {
 	baseURL: string;
 	secret: string;
+	deviceAuthorizationExpiresIn?: string;
 	webURL: string;
 	cookieDomain?: string;
 	cookiePrefix: string;
@@ -53,6 +54,7 @@ export const createAuthOptions = (config: AuthConfig): BetterAuthOptions => {
 		},
 		plugins: [
 			deviceAuthorization({
+				expiresIn: (config.deviceAuthorizationExpiresIn ?? '30m') as TimeString,
 				verificationUri: `${config.webURL}/app/desktop-auth`,
 				validateClient: (clientId) => clientId === 'dtx-desktop'
 			}),

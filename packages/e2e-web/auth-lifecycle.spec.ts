@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { CHART_A_ID, CHART_A_TITLE } from './test-config';
+import {
+	CHART_A_ID,
+	CHART_A_TITLE,
+	CHART_B_TITLE,
+	DTX_API_LOCAL_PORT,
+	TEST_USER_EMAIL,
+	TEST_USER_PASSWORD
+} from './test-config';
 
 test.use({ storageState: '.auth/user.json' });
 
@@ -65,5 +72,81 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		// ChartList.svelte:162-165: toastStore.success({ title: 'Chart deleted', ... })
 		await expect(page.getByText('Chart deleted')).toBeVisible();
 		await expect(page.locator('.music-card', { hasText: CHART_A_TITLE })).toHaveCount(0);
+	});
+});
+
+test.describe('Better Auth web lifecycle', () => {
+	test.describe.configure({ retries: 0 });
+
+	test.describe('anonymous browser lifecycle', () => {
+		test.use({ storageState: { cookies: [], origins: [] } });
+
+		test('logs in with the seeded password and reaches the app', async ({ page }) => {
+			await page.goto('/login');
+			await page.locator('#email').fill(TEST_USER_EMAIL);
+			await page.locator('#password').fill(TEST_USER_PASSWORD);
+			await page.getByRole('button', { name: 'Login' }).click();
+			await page.waitForURL('**/app');
+			await expect(page).toHaveURL(/\/app$/);
+		});
+
+		test('redirects an anonymous request for /app to login with its safe next path', async ({
+			page
+		}) => {
+			await page.goto('/app/score?from=guard');
+			await page.waitForURL('**/login?next=*');
+			const redirectedUrl = new URL(page.url());
+			expect(redirectedUrl.pathname).toBe('/login');
+			expect(redirectedUrl.searchParams.get('next')).toBe('/app/score?from=guard');
+		});
+	});
+
+	test('redirects an invalid Better Auth session to login', async ({ page }) => {
+		const sessionCookies = (await page.context().cookies()).filter((cookie) =>
+			cookie.name.includes('session')
+		);
+		expect(sessionCookies.length).toBeGreaterThan(0);
+		await page.context().clearCookies();
+		await page
+			.context()
+			.addCookies(
+				sessionCookies.map((cookie) => ({ ...cookie, value: 'invalid-session-token' }))
+			);
+
+		await page.goto('/app?from=invalid-session');
+		await page.waitForURL('**/login?next=*');
+		const redirectedUrl = new URL(page.url());
+		expect(redirectedUrl.searchParams.get('next')).toBe('/app?from=invalid-session');
+	});
+
+	test('downloads a published chart while authenticated', async ({ page }) => {
+		await page.goto('/blog');
+		await page.waitForSelector('html[data-e2e-hydrated="true"]');
+		const card = page.locator('.music-card', { hasText: CHART_B_TITLE });
+		await expect(card).toBeVisible();
+
+		const downloadPromise = page.waitForEvent('download');
+		await card.getByRole('button', { name: /download/i }).click();
+		const download = await downloadPromise;
+		expect(download.suggestedFilename()).toMatch(/\.zip$/);
+	});
+
+	test('logs out and revokes the Better Auth session', async ({ page }) => {
+		await page.goto('/app');
+		await page.waitForSelector('html[data-e2e-hydrated="true"]');
+		const signOutResponse = page.waitForResponse((response) =>
+			response.url().includes('/api/auth/sign-out')
+		);
+		await page.getByRole('button', { name: 'Logout' }).click();
+		expect((await signOutResponse).ok()).toBe(true);
+		await page.waitForURL('**/login*');
+		expect(new URL(page.url()).pathname).toBe('/login');
+
+		const sessionResponse = await page.request.get(
+			`http://localhost:${DTX_API_LOCAL_PORT}/api/auth/get-session`,
+			{ headers: { Origin: 'http://localhost:5173' } }
+		);
+		expect(sessionResponse.ok()).toBe(true);
+		expect(await sessionResponse.json()).toBeNull();
 	});
 });

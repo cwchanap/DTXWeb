@@ -674,18 +674,27 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Full local E2E is green: web Playwright 36/36; desktop WDIO/Tauri all seven
   spec files pass, with nine native-filesystem cases passing and one
   Windows-only skip. The manual OS-browser handoff remains separate evidence.
-- Existing pre-production proof remains valid: D1 migrations through 0008,
-  API version `44d96dc8-51a2-47c3-bcad-adecdd794efa`, web version
+- Earlier pre-production facts are Foundation rehearsal artifacts, not current
+  Tasks 4–15 cutover proof: D1 migrations through 0008, API version
+  `44d96dc8-51a2-47c3-bcad-adecdd794efa`, web version
   `c1c31ef1-45e6-4014-a4dc-484a9741c15e`, secret presence without values, and
-  non-secret web/auth/CORS/device/Google-start smoke passed. The exact Google
-  callback registration is externally unverified, and no real sanitized
-  identity export plus complete owner-ID inventory was available; no import
-  SQL was fabricated or applied.
+  non-secret web/auth/CORS/device/Google-start smoke were recorded before the
+  final migration work. The earlier web build used Foundation-era Supabase
+  public variables, so those artifacts do not prove the final Better-Auth-only
+  API/web cutover.
+- The final reviewed API and web artifacts have not been deployed or proven in
+  pre-production. A fresh API deployment followed by the matching web
+  deployment, service-binding verification, and the complete current
+  pre-production acceptance matrix are explicit remaining gates. The exact
+  Google callback registration is externally unverified, no real sanitized
+  identity export plus complete owner-ID inventory was available, and no
+  import SQL was fabricated or applied.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
   desktop publication, or credential removal.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
-- Task 15 local verification is complete; pre-production/production go-no-go
-  remains blocked on external Google callback registration, exact owner
+- Task 15 local verification is complete; current pre-production acceptance and
+  production go/no-go remain blocked on final API/web deployment, the complete
+  acceptance matrix, external Google callback registration, exact owner
   reconciliation/import inputs, and manual OS-browser handoff evidence.

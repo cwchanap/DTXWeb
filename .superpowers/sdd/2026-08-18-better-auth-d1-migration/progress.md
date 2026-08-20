@@ -240,3 +240,6 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   the ignored-SDD lint-staged restaging limitation after those explicit gates.
 - Task 6 fix round: complete in the conventional fix commit; no Task 7 source,
   build, deployment, or later migration work was performed.
+- Task 6: fix round 1/5 (3 addressed, 0 open — redirect cookies preserved; root types-only env loaded; SDD artifacts relocated; commits `5e1b6224..bfdfe86f`).
+- Scoped re-review: all original findings ADDRESSED; no new Critical or Important breakage.
+- Task 6: complete (commits `d9aa3b2..bfdfe86f`, review clean).

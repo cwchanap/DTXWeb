@@ -314,3 +314,6 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Focused Prettier/ESLint and `git diff --check` passed. The token search is
   clean. No `.svelte` files, build, deployment, or Task 9+ work were touched.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-8-report.md`.
+- Task 8: minor (deferred): no-session service-binding test asserts Authorization absence but not explicit Cookie and Origin absence; production code already omits both. Final review must triage.
+- Review: spec compliant; task quality acceptable; no Critical or Important findings.
+- Task 8: complete (commits `cac6e39..ec70b4b`, review clean with 1 deferred minor).

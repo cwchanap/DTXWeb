@@ -341,3 +341,6 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - No build, deployment, native desktop cutover, or Task 10+ work was performed.
 - Task 9: source, tests, report, and ledger are ready for the scoped
   conventional commit.
+- Task 9: minor (deferred): invalid/expired tests mock `{ code, message }` rather than Better Auth's installed `{ error, error_description, status, statusText }` wire error shape; implementation uses the pinned API correctly. Final review must triage.
+- Review: spec compliant; task quality acceptable; no Critical or Important findings.
+- Task 9: complete (commits `576dacc..db495673`, review clean with 1 deferred minor).

@@ -184,6 +184,14 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Ruling: the temporary ID-only `ctx.user` cannot satisfy the legacy magic-link mutation's email access, but Task 5 immediately removes that mutation and the plan prohibits intermediate deployment. Cost if wrong: invoking the mutation between commits would fail; no such deployment is authorized.
 - Task 4: complete (commits `bb941c3..69c2b878`, review clean).
 
+## Task 5
+
+- Implementer: `/root/d1_task5_remove_magic_link`.
+- Commit: `dcad71d` (`refactor(auth): remove magic-link handoff`).
+- Evidence: API schema 4/4, app page 2/2, desktop topology 2/2, full API 379 tests, and full web 937 tests passed; schema regeneration preceded web codegen; API typecheck, focused Prettier/ESLint, and diff checks passed. Web check retains only the recorded Task 6 baseline error and four CSS warnings.
+- Review: approved by Terra integration reviewer with no Critical, Important, or Minor findings. Magic-link service/mutation/client/handoff symbols, callback allowlist, KV key/limit, and generated contracts are clean; `RATE_LIMIT_API` remains for uploads/downloads; no Task 6/9 work leaked into the slice.
+- Task 5: complete (commits `c1ccb8f..dcad71d`, review clean).
+
 ## Task 4
 
 - RED: after retargeting the first GraphQL test but before production edits, `bun run --filter=dtx-api test -- src/schema/builder.test.ts -t "GraphQL accepts a valid Better Auth cookie session"` failed with `expected undefined to be 'ok'`; the old context still called `verifyToken()` and did not call the resolver mock.

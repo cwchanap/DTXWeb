@@ -7,6 +7,7 @@ packages/dtx-api/dist/*
 .env
 .env.*
 !.env.example
+!.env.types-only
 !packages/dtx-web/.env.types-only
 .temp
 .superpowers/

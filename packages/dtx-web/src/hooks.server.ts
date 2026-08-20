@@ -1,4 +1,4 @@
-import { json, text, type Handle, redirect } from '@sveltejs/kit';
+import { json, text, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 
 import { safeAppRedirectPath } from '$lib/auth/google';
@@ -49,11 +49,14 @@ export const authGuard: Handle = async ({ event, resolve }) => {
 
 	if (!session && event.url.pathname.startsWith('/app')) {
 		const next = safeAppRedirectPath(`${event.url.pathname}${event.url.search}`);
-		redirect(303, `/login?next=${encodeURIComponent(next)}`);
+		return new Response(null, {
+			status: 303,
+			headers: { location: `/login?next=${encodeURIComponent(next)}` }
+		});
 	}
 
 	if (session && event.url.pathname === '/login') {
-		redirect(303, '/app');
+		return new Response(null, { status: 303, headers: { location: '/app' } });
 	}
 
 	return resolve(event);

@@ -212,3 +212,31 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Generated artifacts: `packages/dtx-api/dist/schema.graphql`, `packages/dtx-web/src/lib/api/generated/graphql.ts`.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-5-report.md`.
 - Task 5: complete (source, tests, generated artifacts, report, and ledger changes are ready for the scoped conventional commit).
+
+## Task 6
+
+- Implementer: `/root/d1_task6_finish`.
+- Initial commit: `5e1b6224` (`feat(web): replace Supabase session plumbing`).
+- Initial evidence: focused auth/session/hook/layout tests passed 6 files/17
+  tests; full `dtx-web` passed 66 files/932 tests; pre-commit Prettier and
+  ESLint passed.
+- Initial review: spec NEEDS FIXES; quality NEEDS FIXES. Important finding:
+  `authSession` appended session cookies only after downstream `authGuard`
+  returned, so thrown protected/authenticated redirects lost both raw cookies.
+  Important environment finding: package-local `.env.types-only` was outside
+  the configured repository-root `kit.env.dir`. Minor finding: handoff files
+  were at the worktree root instead of this SDD ledger.
+- Fix round 1/5: added a RED composed session/guard redirect test, changed
+  `authGuard` to return equivalent 303 `Response` redirects, and verified both
+  raw cookies survive the protected `/app` redirect. Hook tests pass 6/6.
+- Fix round 1/5: added root `.env.types-only` with the existing public defaults
+  and `PUBLIC_DTX_API_URL`; explicit `bunx svelte-kit sync --mode types-only`
+  passes, and `bunx svelte-check --tsconfig ./tsconfig.json` has only the 9
+  known Task 7 Supabase errors plus 4 existing CSS warnings.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-6-report.md`.
+- Fix-round GREEN: the focused auth/session/hook/layout matrix passed 6 files/
+  18 tests and the full `dtx-web` suite passed 66 files/933 tests. Prettier,
+  ESLint, and `git diff --check` passed; the commit used `--no-verify` only for
+  the ignored-SDD lint-staged restaging limitation after those explicit gates.
+- Task 6 fix round: complete in the conventional fix commit; no Task 7 source,
+  build, deployment, or later migration work was performed.

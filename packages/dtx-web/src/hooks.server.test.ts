@@ -41,13 +41,9 @@ describe('auth hooks', () => {
 		location: string,
 		status = 303
 	) => {
-		try {
-			await response;
-			expect.unreachable('Expected redirect to be thrown');
-		} catch (err: unknown) {
-			expect((err as { status?: number }).status).toBe(status);
-			expect((err as { location?: string }).location).toBe(location);
-		}
+		const result = await response;
+		expect(result.status).toBe(status);
+		expect(result.headers.get('location')).toBe(location);
 	};
 
 	it('loads neutral session data into locals and preserves every Set-Cookie value', async () => {
@@ -77,6 +73,30 @@ describe('auth hooks', () => {
 			authGuard({ event, resolve }),
 			'/login?next=' + encodeURIComponent('/app/score?page=3')
 		);
+		expect(resolve).not.toHaveBeenCalled();
+	});
+
+	it('preserves every session cookie through a protected redirect', async () => {
+		mockFetchAuthSession.mockResolvedValue({
+			session: null,
+			user: null,
+			setCookies: ['first=one; Path=/', 'second=two; Path=/']
+		});
+		const event = makeEvent({ url: new URL('https://example.com/app/score?page=3') });
+
+		const response = await authSession({
+			event,
+			resolve: (nestedEvent) => authGuard({ event: nestedEvent, resolve })
+		});
+
+		expect(response.status).toBe(303);
+		expect(response.headers.get('location')).toBe(
+			'/login?next=' + encodeURIComponent('/app/score?page=3')
+		);
+		expect(response.headers.getSetCookie()).toEqual([
+			'first=one; Path=/',
+			'second=two; Path=/'
+		]);
 		expect(resolve).not.toHaveBeenCalled();
 	});
 

@@ -79,10 +79,20 @@ describe('Desktop Better Auth session lifecycle', () => {
 		await waitForUiDisplayed('button[aria-label="Login to access cloud features"]', {
 			timeoutMsg: 'Expected logout to return the desktop shell to its unauthenticated state'
 		});
-		const nativeSession = await browser.tauri.execute<NativeAuthSession | null, []>(
-			({ core }) => core.invoke('get_current_session') as unknown as NativeAuthSession | null
+		await browser.waitUntil(
+			async () => {
+				const nativeSession = await browser.tauri.execute<NativeAuthSession | null, []>(
+					({ core }) =>
+						core.invoke('get_current_session') as unknown as NativeAuthSession | null
+				);
+				return nativeSession === null;
+			},
+			{
+				timeout: 5000,
+				interval: 100,
+				timeoutMsg: 'Expected native logout to clear the current session'
+			}
 		);
-		expect(nativeSession).toBeNull();
 		expect(await readAuthStorage()).toEqual({
 			authSession: null,
 			legacyValues: [null, null, null]

@@ -373,3 +373,19 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-10-report.md`.
 - Task 10: source, tests, generated contract, report, and ledger are ready for
   the scoped conventional commit.
+
+## Task 10 review fix
+
+- Review finding: native `logout_session` cleared local state but did not
+  revoke the Better Auth D1 session, leaving the opaque session replayable.
+- RED: the focused WireMock logout tests were added first; after isolating the
+  MockRuntime helper seam, the command failed because `logout_session_impl`
+  was not yet present.
+- Fix: preserved the public `logout_session` command, added the generic
+  internal helper and protocol-only `POST /api/auth/sign-out` bearer request,
+  ignored remote failures as best effort, and kept unconditional local auth
+  plus pending-device cleanup.
+- GREEN: logout success/failure WireMock matrix 2 passed; existing auth slice
+  79 passed; device protocol slice 9 passed; fmt and diff checks passed.
+- The review-fix source, tests, report, and ledger are included in the
+  follow-up conventional commit.

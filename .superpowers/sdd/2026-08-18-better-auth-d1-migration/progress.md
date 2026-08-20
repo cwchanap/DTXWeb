@@ -289,3 +289,6 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   Svelte files produced no output and were interrupted.
 - Fix-round source/test/report/ledger changes are ready for a conventional
   fix commit.
+- Task 7: fix round 1/5 (1 addressed, 0 open — OAuth callbacks use the browser origin; commits `3bbea063..775e8d63`).
+- Scoped re-review: original Important finding ADDRESSED; no new Critical or Important breakage.
+- Task 7: complete (commits `6b6612b..775e8d63`, review clean).

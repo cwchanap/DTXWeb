@@ -611,3 +611,23 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Runbook: `docs/superpowers/runbooks/2026-08-18-better-auth-d1-cutover.md`.
 - Task 14: source, tests, report, ledger, and operator runbook are ready for
   the scoped conventional commit.
+
+## Task 14 review fixes
+
+- Review RED: cloning the authenticated storage-state cookie and logging out
+  the page revoked the supposed baseline session; the focused owner-only chart
+  download also failed because chart A had no D1/R2 file fixture; the new Rust
+  restore test initially failed to compile because no native seed restoration
+  seam existed.
+- Fixes: sign the logout test into an independent session before revocation;
+  seed chart A's minimal `dtx_file` row and R2 object while retaining public
+  chart-B coverage; add the `e2e + debug_assertions`-only native restore helper
+  and IPC command and restore it from WDIO `afterEach`; correct importer and
+  pre-production secret/migration/deploy commands and safety warnings in the
+  runbook.
+- GREEN: the auth lifecycle file passed 7/7 Playwright tests (including setup)
+  in 27.6s; the Device Authorization file passed 4/4 (including setup) in
+  28.1s; the Rust E2E-feature tests passed 40/40; desktop E2E and renderer
+  typechecks, 29 desktop support tests, lint, Prettier, Rust format, and diff
+  checks passed. The full desktop executable remains unavailable because its
+  target-e2e binary is absent.

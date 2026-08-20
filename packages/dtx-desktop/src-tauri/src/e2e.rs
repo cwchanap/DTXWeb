@@ -26,6 +26,33 @@ pub(crate) fn seeded_auth_session(user_id: &str) -> DesktopAuthSession {
     }
 }
 
+/// Restore the deterministic native session after a renderer logout. This
+/// helper and its IPC wrapper are debug-only E2E seams; release builds cannot
+/// call or register them.
+#[cfg(all(feature = "e2e", debug_assertions))]
+pub(crate) async fn restore_seeded_auth_session(
+    state: &crate::auth::AuthState,
+    user_id: &str,
+) -> Result<DesktopAuthSession> {
+    // Reuse the startup validation so the restoration cannot seed an arbitrary
+    // identifier or accidentally create a different class of test account.
+    crate::auth::AuthState::for_e2e_user(user_id)?;
+    let session = seeded_auth_session(user_id);
+    state.set_current_auth_session(Some(session.clone())).await;
+    Ok(session)
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[tauri::command]
+pub async fn restore_e2e_auth_session(app: AppHandle) -> Result<DesktopAuthSession> {
+    let user_id = std::env::var("DTX_E2E_DRUMERY_USER_ID").map_err(|_| {
+        DesktopError::Message(
+            "DTX_E2E_DRUMERY_USER_ID is required for a desktop E2E build".to_string(),
+        )
+    })?;
+    restore_seeded_auth_session(&app.state::<crate::auth::AuthState>(), &user_id).await
+}
+
 /// Proves that the WebDriver session belongs to the e2e process that received
 /// this launch's nonce. This module is compiled only with the e2e Cargo feature.
 #[tauri::command]

@@ -177,7 +177,9 @@ pub fn run() {
             #[cfg(all(feature = "e2e", debug_assertions))]
             e2e::configure_google_drive_e2e,
             #[cfg(all(feature = "e2e", debug_assertions))]
-            e2e::snapshot_google_drive_e2e
+            e2e::snapshot_google_drive_e2e,
+            #[cfg(all(feature = "e2e", debug_assertions))]
+            e2e::restore_e2e_auth_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running Drumery desktop");

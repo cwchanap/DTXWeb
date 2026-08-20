@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 import {
 	CHART_A_ID,
 	CHART_A_TITLE,
-	CHART_B_TITLE,
 	DTX_API_LOCAL_PORT,
+	TEST_USER_ID,
 	TEST_USER_EMAIL,
 	TEST_USER_PASSWORD
 } from './test-config';
@@ -22,6 +22,30 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 	// That is why the Edit/Delete menu items are selected page-level (NOT scoped to the card):
 	// scoping to the card would miss the portaled content, and page-level still matches exactly
 	// one element because closed popovers render nothing.
+
+	test('downloads an owner-only unpublished chart only while authenticated', async ({
+		page,
+		browser
+	}) => {
+		const downloadUrl = `http://localhost:${DTX_API_LOCAL_PORT}/downloads/${CHART_A_ID}`;
+		const authenticatedDownload = await page.request.get(downloadUrl, {
+			headers: { 'x-forwarded-for': '127.0.0.1' }
+		});
+		expect(authenticatedDownload.ok()).toBe(true);
+		expect(authenticatedDownload.headers()['content-disposition']).toMatch(/\.zip/);
+
+		const anonymousContext = await browser.newContext({
+			storageState: { cookies: [], origins: [] }
+		});
+		try {
+			const anonymousDownload = await anonymousContext.request.get(downloadUrl, {
+				headers: { 'x-forwarded-for': '127.0.0.1' }
+			});
+			expect(anonymousDownload.status()).toBe(401);
+		} finally {
+			await anonymousContext.close();
+		}
+	});
 
 	test('list → open detail → edit/save → delete', async ({ page }) => {
 		// listSimfiles(MINE)
@@ -119,28 +143,54 @@ test.describe('Better Auth web lifecycle', () => {
 		expect(redirectedUrl.searchParams.get('next')).toBe('/app?from=invalid-session');
 	});
 
-	test('downloads a published chart while authenticated', async ({ page }) => {
-		await page.goto('/blog');
-		await page.waitForSelector('html[data-e2e-hydrated="true"]');
-		const card = page.locator('.music-card', { hasText: CHART_B_TITLE });
-		await expect(card).toBeVisible();
+	test('logs out without revoking the baseline authenticated session', async ({
+		browser,
+		page
+	}) => {
+		const baselineContext = await browser.newContext({
+			storageState: { cookies: await page.context().cookies(), origins: [] }
+		});
+		const baselinePage = await baselineContext.newPage();
+		try {
+			const baselineCookie = (await baselineContext.cookies()).find((cookie) =>
+				cookie.name.includes('session')
+			);
+			expect(baselineCookie).toBeDefined();
+			const baselineSession = await baselinePage.request.get(
+				`http://localhost:${DTX_API_LOCAL_PORT}/api/auth/get-session`,
+				{ headers: { Origin: 'http://localhost:5173' } }
+			);
+			expect((await baselineSession.json()).user.id).toBe(TEST_USER_ID);
 
-		const downloadPromise = page.waitForEvent('download');
-		await card.getByRole('button', { name: /download/i }).click();
-		const download = await downloadPromise;
-		expect(download.suggestedFilename()).toMatch(/\.zip$/);
-	});
+			await page.context().clearCookies();
+			await page.goto('/login');
+			await page.locator('#email').fill(TEST_USER_EMAIL);
+			await page.locator('#password').fill(TEST_USER_PASSWORD);
+			await page.getByRole('button', { name: 'Login' }).click();
+			await page.waitForURL('**/app');
+			await page.waitForSelector('html[data-e2e-hydrated="true"]');
+			const logoutCookie = (await page.context().cookies()).find((cookie) =>
+				cookie.name.includes('session')
+			);
+			expect(logoutCookie).toBeDefined();
+			expect(logoutCookie?.value).not.toBe(baselineCookie?.value);
 
-	test('logs out and revokes the Better Auth session', async ({ page }) => {
-		await page.goto('/app');
-		await page.waitForSelector('html[data-e2e-hydrated="true"]');
-		const signOutResponse = page.waitForResponse((response) =>
-			response.url().includes('/api/auth/sign-out')
-		);
-		await page.getByRole('button', { name: 'Logout' }).click();
-		expect((await signOutResponse).ok()).toBe(true);
-		await page.waitForURL('**/login*');
-		expect(new URL(page.url()).pathname).toBe('/login');
+			const signOutResponse = page.waitForResponse((response) =>
+				response.url().includes('/api/auth/sign-out')
+			);
+			await page.getByRole('button', { name: 'Logout' }).click();
+			expect((await signOutResponse).ok()).toBe(true);
+			await page.waitForURL('**/login*');
+			expect(new URL(page.url()).pathname).toBe('/login');
+
+			const baselineAfterLogout = await baselinePage.request.get(
+				`http://localhost:${DTX_API_LOCAL_PORT}/api/auth/get-session`,
+				{ headers: { Origin: 'http://localhost:5173' } }
+			);
+			expect((await baselineAfterLogout.json()).user.id).toBe(TEST_USER_ID);
+		} finally {
+			await baselineContext.close();
+		}
 
 		const sessionResponse = await page.request.get(
 			`http://localhost:${DTX_API_LOCAL_PORT}/api/auth/get-session`,

@@ -117,10 +117,10 @@ and credentials separate from these application callbacks.
 
 ## Wrangler secrets
 
-Set and verify the following API Worker secrets independently in production and
-pre-production. Use `wrangler secret put` interactively or the approved secret
-manager; never place values in `wrangler.jsonc`, shell history, logs, or this
-runbook:
+Set and verify the following API Worker secrets independently in pre-production
+and production. Values are always entered interactively (or through the
+approved secret manager); never place values in `wrangler.jsonc`, shell
+history, logs, or this runbook:
 
 ```text
 BETTER_AUTH_SECRET
@@ -140,6 +140,68 @@ receives `BETTER_AUTH_SECRET`. `BETTER_AUTH_DEVICE_CODE_EXPIRES_IN` is an
 optional local-E2E test override; do not set the 1-second test value in
 production or pre-production. Production uses the Better Auth default device
 code lifetime unless a separately reviewed operator change says otherwise.
+
+### Pre-production secret and deploy rehearsal
+
+Run these commands from the repository root, after confirming that the selected
+Wrangler account and API config are the pre-production ones. `versions secret
+put` stages an interactively entered secret on a Worker version; it does not
+document or echo the value:
+
+```bash
+bunx wrangler versions secret put BETTER_AUTH_SECRET \
+  --config packages/dtx-api/wrangler.jsonc --env pre-prod
+bunx wrangler versions secret put GOOGLE_AUTH_CLIENT_SECRET \
+  --config packages/dtx-api/wrangler.jsonc --env pre-prod
+```
+
+The legacy `wrangler secret put` command immediately creates and deploys a
+Worker version. Do not use it during a rehearsal without an explicit `--env
+pre-prod`; an accidental production invocation is an immediate partial
+deployment. If the legacy command is required by the approved change
+procedure, use the explicit pre-production form and treat the resulting
+version as deployed:
+
+```bash
+bunx wrangler secret put BETTER_AUTH_SECRET \
+  --config packages/dtx-api/wrangler.jsonc --env pre-prod
+bunx wrangler secret put GOOGLE_AUTH_CLIENT_SECRET \
+  --config packages/dtx-api/wrangler.jsonc --env pre-prod
+```
+
+After migration review and pre-production acceptance, use only the isolated
+pre-production scripts:
+
+```bash
+bun run --filter=dtx-api migrate:preprod
+bun run --filter=dtx-api deploy:preprod
+bun run --filter=dtx-web deploy:preprod
+```
+
+The scripts above target the isolated pre-production API/web Workers,
+`dtx-web-preprod`, and `--env pre-prod`; inspect the script output and verify
+the environment before each remote operation. Do not run a production script
+as part of this rehearsal.
+
+### Production-only secret and deploy actions
+
+After the separate production go/no-go gate, and never during pre-production
+rehearsal, the production operator may use the production-only commands below:
+
+```bash
+bunx wrangler secret put BETTER_AUTH_SECRET \
+  --config packages/dtx-api/wrangler.jsonc
+bunx wrangler secret put GOOGLE_AUTH_CLIENT_SECRET \
+  --config packages/dtx-api/wrangler.jsonc
+bun run --filter=dtx-api migrate:prod
+bun run --filter=dtx-api deploy:prod
+bun run --filter=dtx-web deploy:prod
+```
+
+Because `wrangler secret put` immediately creates and deploys a Worker
+version, the production operator must schedule those two secret updates as
+part of the approved production change window and verify the deployed version
+before continuing. Secret values remain interactive and are never recorded.
 
 ## Supabase Admin export
 
@@ -161,14 +223,23 @@ a production runtime dependency after cutover. The operator must:
 ## Generated import SQL review
 
 Run the pinned local importer from the reviewed commit, supplying an explicit
-owner-ID file. Generate SQL into a protected path outside the repository:
+owner-ID file. The CLI takes the sanitized export as a positional argument,
+requires `--owner-ids`, and only permits generated SQL beneath the repository's
+ignored `tmp/auth-migration` directory. Run this from the repository root; the
+input and replacement-password files remain in the protected operator
+workspace:
 
 ```bash
 bun run --filter=dtx-api auth:migrate \
-  --input <sanitized-supabase-export.json> \
-  --owner-ids <application-owner-ids.json> \
-  --output <reviewed-auth-import.sql>
+  <protected-operator-workspace>/sanitized-supabase-export.json \
+  --owner-ids <protected-operator-workspace>/application-owner-ids.json \
+  --replacement-passwords <protected-operator-workspace>/replacement-passwords.json \
+  --output tmp/auth-migration/better-auth-import.sql
 ```
+
+The default output is also under `tmp/auth-migration`; keep the explicit
+`--output` so the review record names the exact artifact. Do not place the
+source export, replacement passwords, or generated SQL in Git.
 
 Before applying anything, a second operator reviews the generated SQL and
 records that:
@@ -182,6 +253,28 @@ records that:
 - every application owner ID is present and exactly reconciled; and
 - the SQL target is the selected environment, with no production SQL applied
   during a pre-production rehearsal.
+
+For the pre-production rehearsal, apply the reviewed artifact only after
+`0008_better_auth.sql` has been applied to the isolated pre-production D1 and
+the second operator has checked the target name:
+
+```bash
+bunx wrangler d1 execute dtx-web-preprod \
+  --remote --env pre-prod \
+  --config packages/dtx-api/wrangler.jsonc \
+  --file tmp/auth-migration/better-auth-import.sql
+```
+
+Record the output and a checksum in the protected change record. The
+production apply is a separate, gated operator action and must not be run
+during rehearsal:
+
+```bash
+# PRODUCTION ONLY — run only after the production go/no-go gate.
+bunx wrangler d1 execute dtx-web --remote \
+  --config packages/dtx-api/wrangler.jsonc \
+  --file tmp/auth-migration/better-auth-import.sql
+```
 
 The output is reviewed input to the D1 operation, not a migration replacement.
 Do not edit generated SQL to bypass an invariant; fix the sanitized input and
@@ -209,6 +302,17 @@ gate may the operator apply the same forward-only sequence to production. Do
 not run a local/runtime migration runner, skip `0008`, or apply the identity
 import before `0008_better_auth.sql` exists.
 
+Use the repository's explicitly separated scripts for the remote migration
+step:
+
+```bash
+# PRE-PRODUCTION REHEARSAL
+bun run --filter=dtx-api migrate:preprod
+
+# PRODUCTION ONLY — gated separately; never use during rehearsal.
+bun run --filter=dtx-api migrate:prod
+```
+
 ## Owner reconciliation
 
 There is no application ownership foreign key that can repair an identity
@@ -221,6 +325,25 @@ extra, or changed owner ID is a hard stop. Do not deploy the cutover or delete
 Supabase access while reconciliation is incomplete.
 
 ## Deployment order
+
+Before any remote command, verify the target account, the Wrangler config, and
+the literal environment flag. During rehearsal every API and web deploy must
+use the pre-production scripts below; never substitute a production script or
+a production D1/R2 name:
+
+```bash
+# PRE-PRODUCTION ONLY
+bun run --filter=dtx-api deploy:preprod
+bun run --filter=dtx-web deploy:preprod
+```
+
+The production commands are intentionally separated and are operator-only:
+
+```bash
+# PRODUCTION ONLY — do not run during pre-production rehearsal.
+bun run --filter=dtx-api deploy:prod
+bun run --filter=dtx-web deploy:prod
+```
 
 For each environment, use this order:
 

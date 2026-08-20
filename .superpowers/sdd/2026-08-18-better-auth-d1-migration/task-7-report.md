@@ -102,3 +102,32 @@ Deleted:
 - `packages/dtx-web/src/routes/(login)/login/+page.server.ts`
 - `packages/dtx-web/src/routes/auth/callback/+server.ts`
 - `packages/dtx-web/src/routes/auth/callback/server.test.ts`
+
+## Review fix round 1/5
+
+### RED
+
+The review assertions were changed first to require absolute browser-origin
+URLs for Google success and cancellation/error flows. Against `3bbea063`, the
+focused matrix failed 4 tests: login social callbacks and account-linking
+callbacks were still relative paths, which would resolve against the separate
+Better Auth API origin.
+
+### Fix
+
+- Login now keeps the password `window.location.assign` destination unchanged
+  and resolves only the social success callback and error callback against
+  `window.location.origin` after `safeAppRedirectPath` validation.
+- Account linking validates its `/app/account` success/error paths with
+  `safeAppRedirectPath` and constructs absolute URLs from the browser origin.
+- Focused tests assert absolute origins for both successful and cancelled
+  Google sign-in/linking calls.
+
+### Fix-round GREEN and validation
+
+- Focused login/account/helper matrix: 3 files, 27 tests passed.
+- `bunx svelte-kit sync --mode types-only` and `bunx svelte-check`: 0 errors,
+  4 existing CSS warnings.
+- Focused Prettier, ESLint, and `git diff --check`: passed.
+- Svelte autofixer remains unavailable; bounded `npx --no-install` attempts on
+  both modified Svelte files produced no output and were interrupted.

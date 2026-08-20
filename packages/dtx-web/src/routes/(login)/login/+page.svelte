@@ -23,6 +23,8 @@
 	const callbackPath = () =>
 		redirectToDesktop ? '/app?redirect=desktop' : safeAppRedirectPath(nextPath || '/app');
 
+	const socialCallbackPath = () => new URL(callbackPath(), window.location.origin).toString();
+
 	const errorCallbackPath = () => {
 		const callback = new URL('/login', window.location.origin);
 		if (redirectToDesktop) {
@@ -30,7 +32,7 @@
 		} else if (nextPath) {
 			callback.searchParams.set('next', nextPath);
 		}
-		return `${callback.pathname}${callback.search}`;
+		return callback.toString();
 	};
 
 	const handleLogin = async (event: SubmitEvent) => {
@@ -63,7 +65,7 @@
 		try {
 			const { error: socialError } = await authClient.signIn.social({
 				provider: 'google',
-				callbackURL: callbackPath(),
+				callbackURL: socialCallbackPath(),
 				errorCallbackURL: errorCallbackPath()
 			});
 

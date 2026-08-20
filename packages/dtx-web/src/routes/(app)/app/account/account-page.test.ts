@@ -36,15 +36,27 @@ const makeData = (user = { email: 'owner@example.com' }) => ({
 });
 
 describe('/app/account page', () => {
+	const originalLocation = window.location;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		pageMock.url = new URL('http://localhost/app/account');
 		authClientMock.listAccounts.mockResolvedValue({ data: [], error: null });
 		authClientMock.linkSocial.mockResolvedValue({ data: {}, error: null });
+		Object.defineProperty(window, 'location', {
+			value: { origin: 'http://localhost' },
+			writable: true,
+			configurable: true
+		});
 	});
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		Object.defineProperty(window, 'location', {
+			value: originalLocation,
+			writable: true,
+			configurable: true
+		});
 	});
 
 	it('loads and displays account email plus unconnected Google state', async () => {
@@ -81,8 +93,8 @@ describe('/app/account page', () => {
 		await vi.waitFor(() => {
 			expect(authClientMock.linkSocial).toHaveBeenCalledWith({
 				provider: 'google',
-				callbackURL: '/app/account?linked=google',
-				errorCallbackURL: '/app/account'
+				callbackURL: 'http://localhost/app/account?linked=google',
+				errorCallbackURL: 'http://localhost/app/account'
 			});
 		});
 	});
@@ -131,6 +143,11 @@ describe('/app/account page', () => {
 		await fireEvent.click(button);
 
 		await vi.waitFor(() => {
+			expect(authClientMock.linkSocial).toHaveBeenCalledWith({
+				provider: 'google',
+				callbackURL: 'http://localhost/app/account?linked=google',
+				errorCallbackURL: 'http://localhost/app/account'
+			});
 			expect(
 				screen.getByText('Google authentication failed. Please try again.')
 			).toBeInTheDocument();

@@ -173,8 +173,8 @@ describe('Login Page', () => {
 		await waitFor(() => {
 			expect(authClientMock.signIn.social).toHaveBeenCalledWith({
 				provider: 'google',
-				callbackURL: '/app/score',
-				errorCallbackURL: '/login?next=%2Fapp%2Fscore'
+				callbackURL: 'http://localhost/app/score',
+				errorCallbackURL: 'http://localhost/login?next=%2Fapp%2Fscore'
 			});
 		});
 	});
@@ -190,6 +190,11 @@ describe('Login Page', () => {
 		await fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
 
 		await waitFor(() => {
+			expect(authClientMock.signIn.social).toHaveBeenCalledWith({
+				provider: 'google',
+				callbackURL: 'http://localhost/app',
+				errorCallbackURL: 'http://localhost/login'
+			});
 			expect(
 				screen.getByText('Google authentication failed. Please try again.')
 			).toBeInTheDocument();

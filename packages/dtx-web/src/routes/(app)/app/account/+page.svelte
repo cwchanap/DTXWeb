@@ -4,7 +4,11 @@
 	import { replaceState } from '$app/navigation';
 	import { AlertCircle, CheckCircle2, Loader } from '@lucide/svelte';
 	import { authClient } from '$lib/auth/client';
-	import { GOOGLE_AUTH_ERROR_MESSAGES, sanitizeGoogleAuthError } from '$lib/auth/google';
+	import {
+		GOOGLE_AUTH_ERROR_MESSAGES,
+		safeAppRedirectPath,
+		sanitizeGoogleAuthError
+	} from '$lib/auth/google';
 
 	type LinkedAccount = {
 		providerId: string;
@@ -23,6 +27,9 @@
 	let googleAccount = $derived(
 		accounts.find((account) => account.providerId === 'google') ?? null
 	);
+
+	const accountCallbackUrl = (path: string) =>
+		new URL(safeAppRedirectPath(path), window.location.origin).toString();
 
 	const loadAccounts = async () => {
 		isLoading = true;
@@ -52,8 +59,8 @@
 		try {
 			const { error: linkError } = await authClient.linkSocial({
 				provider: 'google',
-				callbackURL: '/app/account?linked=google',
-				errorCallbackURL: '/app/account'
+				callbackURL: accountCallbackUrl('/app/account?linked=google'),
+				errorCallbackURL: accountCallbackUrl('/app/account')
 			});
 
 			if (linkError) {

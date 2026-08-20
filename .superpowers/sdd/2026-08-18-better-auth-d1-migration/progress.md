@@ -270,3 +270,22 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - No build, deployment, native desktop cutover, or Task 8+ work was performed.
 - Task 7: source, tests, report, and ledger are ready for the scoped
   conventional commit.
+
+## Task 7 review fix round 1/5
+
+- Review finding: relative Google callback URLs were sent to Better Auth while
+  the client targets the separate API origin, so social/link redirects could
+  land on `api.*`.
+- RED: after changing the focused expectations first, the baseline failed 4
+  callback-origin assertions; login and account linking still sent relative
+  `callbackURL`/`errorCallbackURL` values.
+- Fix: resolve login social success/error callbacks and account-link success/
+  error callbacks from `window.location.origin` after `/app` path validation;
+  password login redirect behavior remains unchanged.
+- GREEN: focused login/account/helper matrix — 3 files, 27 tests; types-only
+  sync and `svelte-check` — 0 errors, 4 existing CSS warnings; focused
+  Prettier/ESLint and `git diff --check` passed.
+- Svelte autofixer remains unavailable; bounded attempts on both modified
+  Svelte files produced no output and were interrupted.
+- Fix-round source/test/report/ledger changes are ready for a conventional
+  fix commit.

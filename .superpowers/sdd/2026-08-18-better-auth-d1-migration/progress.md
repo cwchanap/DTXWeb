@@ -730,3 +730,13 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Rust format, default/e2e supported Clippy, desktop typecheck, desktop E2E
   typecheck, Prettier, and diff checks pass. No real-handler Worker/D1 fixture
   was started and no remote/pre-production/production operation was run.
+
+## Final desktop E2E native-clearance review fix
+
+- Moved the native `get_current_session === null` assertion into the UI logout
+  test immediately after the signed-out shell appears; `afterEach` now only
+  performs cleanup and deterministic reseeding, so it cannot mask a renderer
+  logout failure.
+- Focused desktop E2E typecheck and Prettier pass. The existing target-e2e
+  executable ran `auth-session.e2e.ts` successfully: 2/2 scenarios passed in
+  30.9s; no rebuild or remote operation was performed.

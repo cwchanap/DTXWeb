@@ -1,0 +1,7 @@
+{
+	"packageManager": "bun",
+	"packages": {
+		"count": 1,
+		"items": [{ "name": "@dtx/infrastructure", "path": "packages/infrastructure" }]
+	}
+}

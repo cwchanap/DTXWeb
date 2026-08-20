@@ -1,0 +1,23 @@
+{
+	"name": "@dtx/infrastructure",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "tsc",
+		"check": "tsc --noEmit",
+		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage",
+		"test:watch": "vitest"
+	},
+	"dependencies": {
+		"@pulumi/cloudflare": "^6.13.0",
+		"@pulumi/pulumi": "^3.144.0"
+	},
+	"devDependencies": {
+		"@types/node": "^20.11.25",
+		"@vitest/coverage-v8": "^3.0.0",
+		"typescript": "^5.8.3",
+		"vitest": "^3.1.4"
+	}
+}

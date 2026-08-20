@@ -78,6 +78,7 @@ jobs:
         run: |
           bun run --filter=dtx-e2e-web check
           bun run --filter=dtx-e2e-desktop check
+          bun run --filter=@dtx/infrastructure check
 
       - name: Run linting
         run: bun run lint

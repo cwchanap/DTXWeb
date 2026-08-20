@@ -208,6 +208,7 @@ run_expected() {
 }
 
 run_expected web-unit unit turbo-web.json true packages/dtx-web/src/change.ts web
+run_expected infrastructure-unit unit turbo-infrastructure.json true packages/infrastructure/src/access.ts infrastructure
 
 run_expected empty-unit unit turbo-empty.json false docs/change.md docs
 run_expected empty-lint lint turbo-empty.json false docs/change.md docs

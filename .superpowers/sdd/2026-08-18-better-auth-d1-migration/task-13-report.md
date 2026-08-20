@@ -106,3 +106,27 @@ passes completely. The ordinary web `check` script also requires the
 repository's explicit `types-only` sync mode in this checkout; without that
 mode it reports missing static env exports before typechecking. No build,
 development server, deployment, or remote operation was run.
+
+## Review fix
+
+The scoped review confirmed that the only tracked file under `supabase/` was
+`supabase/config.toml`. It enabled a local Supabase API, Postgres, Inbucket,
+and Auth stack, despite having no current references outside the explicit
+historical/importer documentation allowlists. The stale `supabase.types.ts`
+line in `.eslintignore` also targeted the deleted common file.
+
+Review RED was therefore one obsolete tracked local-stack config and one stale
+ignore entry. The fix deletes `supabase/config.toml`, removes the now-empty
+`supabase/` directory, and removes only that `.eslintignore` line.
+
+Review GREEN:
+
+- `test ! -e supabase/config.toml` and `test ! -e supabase`: the config and
+  empty directory are gone from the working tree; the staged diff records the
+  tracked deletion;
+- the current-reference scan found no `supabase/` or Supabase local-stack/env
+  references outside the documented allowlists;
+- the focused residue gate still reports only the intentional Task 12
+  importer command;
+- `bun run lint`, `bun run --filter=dtx-api check`, the config check, and
+  `git diff --check` all pass.

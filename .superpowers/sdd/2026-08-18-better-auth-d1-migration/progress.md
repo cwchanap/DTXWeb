@@ -545,3 +545,19 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-13-report.md`.
 - Task 13 source, tests, report, and ledger are ready for the scoped
   conventional commit.
+
+## Task 13 review fix
+
+- Review RED: the tracked `supabase/` tree contained exactly one obsolete
+  file, `supabase/config.toml`, enabling a local Supabase API/DB/Auth stack;
+  `.eslintignore` also retained one `supabase.types.ts` entry for the deleted
+  generated common type. No current references to the local stack were found
+  outside the documented importer/docs allowlists.
+- Fix: deleted the config and empty directory, and removed only the stale
+  `.eslintignore` entry.
+- Review GREEN: the focused residue gate still has only the intentional Task
+  12 importer command; no tracked `supabase/**` files remain; the current
+  reference/config scan, `bun run lint`, `bun run --filter=dtx-api check`,
+  config check, and `git diff --check` pass.
+- Task 13 review fix is ready for a scoped conventional commit. No Task 14
+  work was performed.

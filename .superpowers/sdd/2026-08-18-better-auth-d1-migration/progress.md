@@ -646,3 +646,10 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   reached input-file validation (`ENOENT`) using protected nonexistent paths;
   Wrangler help confirmed the documented secret flags. The desktop
   native-clearance assertion Minor is deferred and recorded in the report.
+
+## Task 14 review decision
+
+- Final scoped re-review approved `5d4a97d0..1c733063` with no Critical or
+  Important findings.
+- Task 14 is complete. The deferred desktop native-clearance assertion is a
+  non-blocking test-quality Minor and remains recorded in the Task 14 report.

@@ -49,8 +49,8 @@ export const handlePreflight = (request: Request, env: Env): Response | null => 
 
 	if (origin && getAllowedOrigins(env).has(origin)) {
 		headers['Access-Control-Allow-Origin'] = origin;
+		headers['Access-Control-Allow-Credentials'] = 'true';
 		headers['Vary'] = 'Origin';
-		headers['Access-Control-Allow-Credentials'] = 'false';
 	}
 
 	return new Response(null, { status: 204, headers });
@@ -63,6 +63,7 @@ export const withCors = (response: Response, request: Request, env: Env): Respon
 
 	const headers = new Headers(response.headers);
 	headers.set('Access-Control-Allow-Origin', origin);
+	headers.set('Access-Control-Allow-Credentials', 'true');
 	appendVary(headers, 'Origin');
 
 	return new Response(response.body, {

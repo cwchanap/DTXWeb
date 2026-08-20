@@ -5,6 +5,7 @@ import { routeDownloadBulk } from './rest/downloadBulk';
 import { routeUpload } from './rest/upload';
 import { routeSetDef } from './rest/setDef';
 import { handlePreflight, withCors } from './lib/cors';
+import { createAuth } from './auth/auth';
 import type { Env } from './env';
 
 const downloadSimfilePattern = /^\/downloads\/([^/]+)$/;
@@ -34,6 +35,11 @@ export default {
 		if (preflight) return preflight;
 
 		const url = new URL(request.url);
+
+		if (url.pathname.startsWith('/api/auth/') && ['GET', 'POST'].includes(request.method)) {
+			const response = await createAuth(env).handler(request);
+			return withCors(response, request, env);
+		}
 
 		if (url.pathname === '/healthz') {
 			return request.method === 'GET'

@@ -42,6 +42,7 @@ describe('handlePreflight', () => {
 		)!;
 		expect(result.status).toBe(204);
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBe('true');
 		expect(result.headers.get('Vary')).toBe('Origin');
 		expect(result.headers.get('Access-Control-Allow-Methods')).toBe('GET, POST, OPTIONS');
 		expect(result.headers.get('Access-Control-Allow-Headers')).toBe(
@@ -61,6 +62,7 @@ describe('handlePreflight', () => {
 		)!;
 		expect(result.status).toBe(204);
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBeNull();
 	});
 
 	it('returns 204 without ACAO when Origin header is missing', () => {
@@ -71,6 +73,7 @@ describe('handlePreflight', () => {
 		)!;
 		expect(result.status).toBe(204);
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBeNull();
 	});
 
 	it('parses CORS_ALLOWED_ORIGINS with whitespace and empty entries', () => {
@@ -92,6 +95,7 @@ describe('withCors', () => {
 		const response = new Response('hi', { status: 200 });
 		const result = withCors(response, new Request('https://api.test/'), env);
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBeNull();
 	});
 
 	it('returns response unchanged when Origin is foreign', () => {
@@ -103,6 +107,7 @@ describe('withCors', () => {
 			env
 		);
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBeNull();
 	});
 
 	it('attaches ACAO+Vary when Origin is allow-listed and preserves status + headers', async () => {
@@ -118,6 +123,7 @@ describe('withCors', () => {
 		expect(result.headers.get('Access-Control-Allow-Origin')).toBe(
 			'https://pre-prod.dtx.hapadona.com'
 		);
+		expect(result.headers.get('Access-Control-Allow-Credentials')).toBe('true');
 		expect(result.headers.get('Vary')).toBe('Origin');
 		expect(result.headers.get('X-Test')).toBe('1');
 		expect(result.status).toBe(201);
@@ -136,5 +142,27 @@ describe('withCors', () => {
 		);
 
 		expect(result.headers.get('Vary')).toBe('Accept-Encoding, Origin');
+	});
+
+	it('preserves distinct Set-Cookie values when adding CORS headers', () => {
+		const env = makeEnv('https://pre-prod.dtx.hapadona.com');
+		const response = new Response('hi', {
+			headers: [
+				['Set-Cookie', 'session=one; Path=/'],
+				['Set-Cookie', 'session=two; Path=/']
+			]
+		});
+		const result = withCors(
+			response,
+			new Request('https://api.test/', {
+				headers: { Origin: 'https://pre-prod.dtx.hapadona.com' }
+			}),
+			env
+		);
+
+		const cookies = (
+			result.headers as Headers & { getSetCookie?: () => string[] }
+		).getSetCookie?.();
+		expect(cookies).toEqual(['session=one; Path=/', 'session=two; Path=/']);
 	});
 });

@@ -389,3 +389,16 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   79 passed; device protocol slice 9 passed; fmt and diff checks passed.
 - The review-fix source, tests, report, and ledger are included in the
   follow-up conventional commit.
+
+## Task 10 review completion
+
+- Integration review found one Important logout-revocation defect; commit
+  `779f5baa` restored best-effort Better Auth server sign-out while preserving
+  unconditional local auth and pending-flow cleanup.
+- Scoped re-review of `89d28929..779f5baa` resolved the finding with no new
+  Critical or Important issues.
+- Deferred Minor: remove the legacy `session_token` deserialization alias so
+  `SessionData` accepts only the exact `sessionToken` IPC field.
+- Deferred Minor: split the device-auth timeout test so a delayed mock proves
+  `Timeout` independently from a refused connection proving `Network`.
+- Task 10 is complete and ready for Task 11.

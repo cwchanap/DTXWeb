@@ -29,15 +29,15 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-vi.mock('../auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
+vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
 const { getSimfileOwner, tryConsumeRateLimit, listAllR2Objects } =
 	await import('@dtx/common/server');
-const { verifyToken } = await import('../auth/verifyToken');
+const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedListAllR2Objects = vi.mocked(listAllR2Objects);
-const mockedVerify = vi.mocked(verifyToken);
+const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
 
 const { validateZipSources } = await import('@dtx/common/server');
 const mockedValidateZipSources = vi.mocked(validateZipSources);
@@ -63,10 +63,19 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	...overrides
 });
 
-const jsonReq = (body: unknown, search = '') =>
+const validAuthSession = (): NonNullable<Awaited<ReturnType<typeof resolveAuthSession>>> => ({
+	user: { id: 'u1' },
+	session: {
+		id: 'session-1',
+		userId: 'u1',
+		expiresAt: new Date('2030-01-01T00:00:00.000Z')
+	}
+});
+
+const jsonReq = (body: unknown, search = '', headers: Record<string, string> = {}) =>
 	new Request(`http://api/downloads/bulk${search}`, {
 		method: 'POST',
-		headers: { 'content-type': 'application/json' },
+		headers: { 'content-type': 'application/json', ...headers },
 		body: JSON.stringify(body)
 	});
 
@@ -88,7 +97,7 @@ beforeEach(() => {
 	mockedListAllR2Objects
 		.mockReset()
 		.mockResolvedValue([{ key: '1/song.dtx', size: 100, uploaded: new Date() }]);
-	mockedVerify.mockReset().mockResolvedValue(null);
+	mockedResolveAuthSession.mockReset().mockResolvedValue(null);
 	mockedValidateZipSources.mockReset();
 });
 
@@ -195,21 +204,77 @@ describe('POST /downloads/bulk', () => {
 		expect(mockedGetOwner).not.toHaveBeenCalled();
 	});
 
-	it('calls verifyToken only once when early auth succeeds (no blog download)', async () => {
-		mockedVerify.mockResolvedValue({
-			user: { id: 'u1', email: 'a@b.com' },
-			session: {}
-		} as Awaited<ReturnType<typeof verifyToken>>);
+	it('accepts a valid Better Auth cookie session', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const request = jsonReq({ ids: [1] }, '?validate=1', {
+			Cookie: 'dtx-local-session=session',
+			Origin: 'http://localhost:5173'
+		});
 
 		const response = await routeDownloadBulk(
-			jsonReq({ ids: [1] }, '?validate=1'),
+			request,
 			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
 		);
 		expect(response.status).toBe(200);
-		// verifyToken should be called exactly once — the early auth result
-		// is reused rather than making a second round trip.
-		expect(mockedVerify).toHaveBeenCalledTimes(1);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('accepts a valid desktop Bearer session without Origin', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+		const request = jsonReq({ ids: [1] }, '?validate=1', {
+			Authorization: 'Bearer opaque-session-token'
+		});
+
+		const response = await routeDownloadBulk(
+			request,
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+		expect(response.status).toBe(200);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('rejects a cookie session when unsafe Origin is missing', async () => {
+		const request = jsonReq({ ids: [1] }, '', { Cookie: 'dtx-local-session=session' });
+
+		const response = await routeDownloadBulk(
+			request,
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+		expect(response.status).toBe(401);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('rejects a cookie session from the wrong Origin', async () => {
+		const request = jsonReq({ ids: [1] }, '', {
+			Cookie: 'dtx-local-session=session',
+			Origin: 'https://evil.example.com'
+		});
+
+		const response = await routeDownloadBulk(
+			request,
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+		expect(response.status).toBe(401);
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, expect.anything());
+	});
+
+	it('reuses the early Better Auth session for private bulk downloads', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
+
+		const request = jsonReq({ ids: [1] }, '?validate=1', {
+			Authorization: 'Bearer opaque-session-token'
+		});
+		const response = await routeDownloadBulk(
+			request,
+			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false' })
+		);
+
+		expect(response.status).toBe(200);
+		// The early auth result is reused rather than making a second round trip.
+		expect(mockedResolveAuthSession).toHaveBeenCalledTimes(1);
 	});
 
 	it('200 streams ZIP for accessible ids', async () => {

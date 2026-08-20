@@ -1,4 +1,3 @@
-import type { Session, User } from '@supabase/supabase-js';
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
 import {
 	workerLogger,
@@ -6,7 +5,7 @@ import {
 	type ChartScoreRow,
 	type ScoreRow
 } from '@dtx/common/server';
-import { verifyToken } from './auth/verifyToken';
+import { resolveAuthSession, type ApiAuthSession, type ApiAuthUser } from './auth/session';
 import type { Env } from './env';
 import type { CatalogFileDiscovery, R2FileEntry } from './services/r2Enrichment';
 
@@ -16,8 +15,9 @@ export type OwnerCacheEntry = {
 };
 
 export type Ctx = {
-	user: User | null;
-	session: Session | null;
+	// `email` remains optional only for the legacy magic-link schema until Task 5 removes it.
+	user: (ApiAuthUser & { email?: string }) | null;
+	session: ApiAuthSession['session'] | null;
 	env: Env;
 	db: D1Database;
 	r2: R2Bucket;
@@ -35,7 +35,7 @@ export type Ctx = {
 };
 
 export const createContext = async (request: Request, env: Env): Promise<Ctx> => {
-	const auth = await verifyToken(request, env);
+	const auth = await resolveAuthSession(request, env);
 	return {
 		user: auth?.user ?? null,
 		session: auth?.session ?? null,

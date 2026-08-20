@@ -1,6 +1,6 @@
 import { workerLogger } from '@dtx/common/server';
 import type { ExecutionContext } from '@cloudflare/workers-types';
-import { verifyToken } from '../auth/verifyToken';
+import { resolveAuthSession } from '../auth/session';
 import { uploadSimfileFile, purgeCacheForFile } from '../services/uploads';
 import type { Env } from '../env';
 
@@ -15,7 +15,7 @@ export const routeUpload = async (
 	env: Env,
 	ctx: ExecutionContext
 ): Promise<Response> => {
-	const auth = await verifyToken(request, env);
+	const auth = await resolveAuthSession(request, env);
 	if (!auth?.user) return jsonError(401, 'Unauthorized');
 
 	let formData: FormData;

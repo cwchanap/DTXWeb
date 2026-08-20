@@ -5,6 +5,12 @@ import { workerLogger } from '@dtx/common/server';
 import type { Ctx, OwnerCacheEntry } from '../context';
 import type { Env } from '../env';
 
+vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn() }));
+
+const { resolveAuthSession } = await import('../auth/session');
+const { createContext } = await import('../context');
+const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
+
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return { ...actual, getSimfileOwner: vi.fn() };
@@ -46,6 +52,15 @@ const baseCtx = (overrides: Partial<Ctx> = {}): Ctx => ({
 	hasUploadedFilesCache: new Map(),
 	filesCache: new Map(),
 	...overrides
+});
+
+const validAuthSession = (): NonNullable<Awaited<ReturnType<typeof resolveAuthSession>>> => ({
+	user: { id: 'u1' },
+	session: {
+		id: 'session-1',
+		userId: 'u1',
+		expiresAt: new Date('2030-01-01T00:00:00.000Z')
+	}
 });
 
 // Probe field: throws GraphQLError if the named scope fails.
@@ -93,7 +108,83 @@ const runQuery = async (ctx: Ctx, query: string) => {
 };
 
 describe('auth scopes', () => {
-	beforeEach(() => mockedGetOwner.mockReset());
+	beforeEach(() => {
+		mockedGetOwner.mockReset();
+		mockedResolveAuthSession.mockReset().mockResolvedValue(null);
+	});
+
+	it('GraphQL accepts a valid Better Auth cookie session', async () => {
+		const request = new Request('https://api.test/graphql', {
+			method: 'POST',
+			headers: {
+				cookie: 'dtx-local-session=session',
+				Origin: 'http://localhost:5173'
+			}
+		});
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+
+		const ctx = await createContext(request, makeEnv());
+		const result = await runQuery(ctx, '{ probeUser }');
+
+		expect(result.data?.probeUser).toBe('ok');
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, ctx.env);
+	});
+
+	it('GraphQL accepts a valid desktop Bearer session without Origin', async () => {
+		const request = new Request('https://api.test/graphql', {
+			method: 'POST',
+			headers: { Authorization: 'Bearer opaque-session-token' }
+		});
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+
+		const ctx = await createContext(request, makeEnv());
+		const result = await runQuery(ctx, '{ probeUser }');
+
+		expect(result.data?.probeUser).toBe('ok');
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, ctx.env);
+	});
+
+	it('GraphQL rejects a cookie session when unsafe Origin is missing', async () => {
+		const request = new Request('https://api.test/graphql', {
+			method: 'POST',
+			headers: { cookie: 'dtx-local-session=session' }
+		});
+
+		const ctx = await createContext(request, makeEnv());
+		const result = await runQuery(ctx, '{ probeUser }');
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, ctx.env);
+	});
+
+	it('GraphQL rejects a cookie session from the wrong Origin', async () => {
+		const request = new Request('https://api.test/graphql', {
+			method: 'POST',
+			headers: {
+				cookie: 'dtx-local-session=session',
+				Origin: 'https://evil.example.com'
+			}
+		});
+
+		const ctx = await createContext(request, makeEnv());
+		const result = await runQuery(ctx, '{ probeUser }');
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, ctx.env);
+	});
+
+	it('GraphQL keeps anonymous and invalid sessions unauthorized', async () => {
+		const request = new Request('https://api.test/graphql', {
+			method: 'POST',
+			headers: { Authorization: 'Bearer invalid-session-token' }
+		});
+
+		const ctx = await createContext(request, makeEnv());
+		const result = await runQuery(ctx, '{ probeUser }');
+
+		expect(result.errors?.[0]?.extensions?.code).toBe('FORBIDDEN');
+		expect(mockedResolveAuthSession).toHaveBeenCalledWith(request, ctx.env);
+	});
 
 	it('user scope: passes when ctx.user is set', async () => {
 		const result = await runQuery(

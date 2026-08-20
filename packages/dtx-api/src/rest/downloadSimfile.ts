@@ -1,6 +1,6 @@
 import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
 import type { ExecutionContext } from '@cloudflare/workers-types';
-import { verifyToken } from '../auth/verifyToken';
+import { resolveAuthSession } from '../auth/session';
 import {
 	resolveAccessibleSimfiles,
 	collectZipSources,
@@ -28,7 +28,7 @@ export const routeDownloadSimfile = async (
 		return jsonError(400, 'Invalid SimFile ID');
 	}
 
-	const auth = await verifyToken(request, env);
+	const auth = await resolveAuthSession(request, env);
 	const user = auth?.user ?? null;
 
 	if (!user && env.PUBLIC_ENABLE_BLOG_DOWNLOAD !== 'true') {

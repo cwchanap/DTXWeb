@@ -6,9 +6,6 @@ const { mockEnv } = vi.hoisted(() => {
 });
 
 vi.mock('$env/dynamic/public', () => ({ env: mockEnv }));
-vi.mock('./token', () => ({
-	getAccessTokenOrNull: vi.fn().mockResolvedValue('test-token')
-}));
 
 import {
 	bulkDownloadBaseUrl,
@@ -17,9 +14,6 @@ import {
 	parseContentDispositionFilename,
 	downloadSimfile
 } from './download';
-import { getAccessTokenOrNull } from './token';
-
-const mockedGetAccessTokenOrNull = vi.mocked(getAccessTokenOrNull);
 
 beforeEach(() => {
 	mockEnv.PUBLIC_DTX_API_URL = 'https://api.test';
@@ -75,13 +69,14 @@ describe('parseContentDispositionFilename', () => {
 });
 
 describe('downloadSimfile', () => {
-	it('hits the dtx-api URL with a bearer header when token available', async () => {
+	it('hits the dtx-api URL with browser credentials and no bearer header', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
 		const triggerSpy = vi.fn();
 		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
 		expect(fetchMock).toHaveBeenCalledWith('https://api.test/downloads/3', expect.any(Object));
 		const init = fetchMock.mock.calls[0][1] as RequestInit;
-		expect((init.headers as Record<string, string>).Authorization).toBe('Bearer test-token');
+		expect(init.credentials).toBe('include');
+		expect(init.headers).toBeUndefined();
 	});
 
 	it('throws on non-ok response', async () => {
@@ -91,13 +86,12 @@ describe('downloadSimfile', () => {
 		);
 	});
 
-	it('omits Authorization header when token is null', async () => {
-		mockedGetAccessTokenOrNull.mockResolvedValueOnce(null);
+	it('does not add an Authorization header to browser downloads', async () => {
 		const fetchMock = vi.fn().mockResolvedValue(new Response('x'));
 		const triggerSpy = vi.fn();
 		await downloadSimfile('3', { fetchFn: fetchMock, triggerBrowserDownload: triggerSpy });
 		const init = fetchMock.mock.calls[0][1] as RequestInit;
-		expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+		expect(init.headers).toBeUndefined();
 	});
 
 	it('uses chart-{simfileId}.zip fallback when content-disposition is null', async () => {
@@ -110,16 +104,7 @@ describe('downloadSimfile', () => {
 });
 
 describe('bulkDownloadHeaders', () => {
-	it('returns Content-Type and Authorization when token available', async () => {
-		const headers = await bulkDownloadHeaders();
-		expect(headers).toEqual({
-			'Content-Type': 'application/json',
-			Authorization: 'Bearer test-token'
-		});
-	});
-
-	it('returns Content-Type only when no token', async () => {
-		mockedGetAccessTokenOrNull.mockResolvedValueOnce(null);
+	it('returns Content-Type without Authorization', async () => {
 		const headers = await bulkDownloadHeaders();
 		expect(headers).toEqual({ 'Content-Type': 'application/json' });
 	});

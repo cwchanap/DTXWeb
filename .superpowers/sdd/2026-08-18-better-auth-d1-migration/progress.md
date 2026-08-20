@@ -292,3 +292,25 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Task 7: fix round 1/5 (1 addressed, 0 open — OAuth callbacks use the browser origin; commits `3bbea063..775e8d63`).
 - Scoped re-review: original Important finding ADDRESSED; no new Critical or Important breakage.
 - Task 7: complete (commits `6b6612b..775e8d63`, review clean).
+
+## Task 8
+
+- Implementer: `/root/d1_task8_cookie_transport`.
+- CodeGraph traced the web API transport, `ClientCtx`, single-download, and
+  bulk-download call paths before edits.
+- RED: browser GraphQL and service-binding assertions failed against the old
+  Bearer transport; dependent download and bulk assertions then failed on the
+  token helper and missing `credentials: 'include'`.
+- Implementation: browser GraphQL and single/bulk downloads now use cookies;
+  service-binding GraphQL forwards incoming Cookie plus canonical external
+  Origin; `ClientCtx` no longer has `accessToken`; all token mocks/imports were
+  removed and `token.ts`/`token.test.ts` were deleted after the search gate.
+- GREEN: focused transport/client/download/API-wrapper/bulk matrix — 8 files,
+  91 tests; post-fix ChartList bulk test — 1 file, 44 tests; full web suite —
+  64 files, 866 tests.
+- Types-only `svelte-kit sync` plus `svelte-check` passed with 0 errors and 4
+  existing CSS warnings. The plain package `check` command still reports the
+  known mode-less static-env export diagnostics; no Task 8 diagnostic remains.
+- Focused Prettier/ESLint and `git diff --check` passed. The token search is
+  clean. No `.svelte` files, build, deployment, or Task 9+ work were touched.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-8-report.md`.

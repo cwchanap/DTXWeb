@@ -8,10 +8,6 @@ const { mockEnv, requestMock } = vi.hoisted(() => {
 
 vi.mock('$env/dynamic/public', () => ({ env: mockEnv }));
 vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('./token', () => ({
-	getAccessTokenOrNull: vi.fn().mockResolvedValue('test-token'),
-	getAccessToken: vi.fn().mockResolvedValue('test-token')
-}));
 
 vi.mock('./transport', () => ({
 	makeBrowserClient: () => ({ request: requestMock, url: 'x', requestConfig: { headers: {} } }),

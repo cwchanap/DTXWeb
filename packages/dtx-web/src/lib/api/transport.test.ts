@@ -16,10 +16,10 @@ describe('makeBrowserClient', () => {
 		expect((client as any).url).toBe('https://api.test/graphql');
 	});
 
-	it('includes Authorization header when token provided', () => {
-		const client = makeBrowserClient('my-token');
-		const headers = client.requestConfig.headers as Record<string, string>;
-		expect(headers.Authorization).toBe('Bearer my-token');
+	it('uses browser cookies without an Authorization header', () => {
+		const client = makeBrowserClient();
+		expect(client.requestConfig.credentials).toBe('include');
+		expect(client.requestConfig.headers).toBeUndefined();
 	});
 });
 
@@ -30,13 +30,17 @@ describe('makeServiceBindingClient', () => {
 		binding = { fetch: vi.fn() };
 	});
 
-	it('posts JSON-encoded query to the binding with bearer when token provided', async () => {
+	it('posts JSON-encoded query with the incoming cookie and external origin', async () => {
 		binding.fetch.mockResolvedValue(
 			new Response(JSON.stringify({ data: { ok: true } }), {
 				headers: { 'content-type': 'application/json' }
 			})
 		);
-		const client = makeServiceBindingClient(binding as unknown as Fetcher, 'tok');
+		const client = makeServiceBindingClient(
+			binding as unknown as Fetcher,
+			'dtx-session=session-value',
+			'https://web.test'
+		);
 		const doc = { kind: 'Document', definitions: [] } as unknown as TypedDocumentNode<
 			{ ok: boolean },
 			Record<string, never>
@@ -46,7 +50,9 @@ describe('makeServiceBindingClient', () => {
 		expect(binding.fetch).toHaveBeenCalledOnce();
 		const req = binding.fetch.mock.calls[0][0] as Request;
 		expect(req.method).toBe('POST');
-		expect(req.headers.get('authorization')).toBe('Bearer tok');
+		expect(req.headers.get('authorization')).toBeNull();
+		expect(req.headers.get('cookie')).toBe('dtx-session=session-value');
+		expect(req.headers.get('origin')).toBe('https://web.test');
 		expect(req.headers.get('content-type')).toBe('application/json');
 	});
 
@@ -79,7 +85,7 @@ describe('makeServiceBindingClient', () => {
 		await expect(client.request(doc, {})).rejects.toThrow('GraphQL request failed: 500');
 	});
 
-	it('does not set authorization header when no token is provided', async () => {
+	it('does not set auth headers when no session context is provided', async () => {
 		binding.fetch.mockResolvedValue(
 			new Response(JSON.stringify({ data: { ok: true } }), {
 				headers: { 'content-type': 'application/json' }

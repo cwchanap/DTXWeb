@@ -698,3 +698,10 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   production go/no-go remain blocked on final API/web deployment, the complete
   acceptance matrix, external Google callback registration, exact owner
   reconciliation/import inputs, and manual OS-browser handoff evidence.
+
+## Task 15 review decision
+
+- Scoped Task 15 re-review approved the verification changes and corrected
+  evidence with no remaining Critical, Important, or Minor findings.
+- Final-cutover pre-production deployment and acceptance remain blocked on the
+  explicit gates above; production remains out of scope until those gates pass.

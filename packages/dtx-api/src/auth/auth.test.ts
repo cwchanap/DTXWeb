@@ -14,7 +14,7 @@ vi.mock('better-auth/adapters/drizzle', () => ({ drizzleAdapter: authMocks.drizz
 
 import { createAuth } from './auth';
 
-const makeEnv = (): Env => ({
+const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: { name: 'd1' } as unknown as Env['DB'],
 	DTXFILE_BUCKET: {} as Env['DTXFILE_BUCKET'],
 	RATE_LIMIT_API: {} as Env['RATE_LIMIT_API'],
@@ -32,7 +32,8 @@ const makeEnv = (): Env => ({
 	CORS_ALLOWED_ORIGINS: 'https://web.example.com',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
 	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: ''
+	SUPABASE_SERVICE_ROLE_KEY: '',
+	...overrides
 });
 
 describe('createAuth', () => {
@@ -68,5 +69,37 @@ describe('createAuth', () => {
 			})
 		);
 		expect(auth.handler).toBeDefined();
+	});
+
+	it('disables cross-subdomain cookies when the local domain is omitted', () => {
+		const env = makeEnv();
+		delete env.AUTH_COOKIE_DOMAIN;
+
+		createAuth(env);
+
+		expect(authMocks.betterAuth).toHaveBeenCalledWith(
+			expect.objectContaining({
+				advanced: expect.objectContaining({
+					crossSubDomainCookies: { enabled: false }
+				})
+			})
+		);
+	});
+
+	it('retains the pre-production cross-subdomain cookie domain', () => {
+		const env = makeEnv({ AUTH_COOKIE_DOMAIN: 'pre-prod.dtx.hapadona.com' });
+
+		createAuth(env);
+
+		expect(authMocks.betterAuth).toHaveBeenCalledWith(
+			expect.objectContaining({
+				advanced: expect.objectContaining({
+					crossSubDomainCookies: {
+						enabled: true,
+						domain: 'pre-prod.dtx.hapadona.com'
+					}
+				})
+			})
+		);
 	});
 });

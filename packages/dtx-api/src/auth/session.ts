@@ -38,9 +38,16 @@ export const resolveAuthSession = async (
 		return null;
 	}
 
+	let authHeaders = request.headers;
+	if (hasBearer && hasCookie) {
+		// An invalid Bearer token must not fall back to a valid browser cookie.
+		authHeaders = new Headers(request.headers);
+		authHeaders.delete('cookie');
+	}
+
 	let authSession: Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>;
 	try {
-		authSession = await createAuth(env).api.getSession({ headers: request.headers });
+		authSession = await createAuth(env).api.getSession({ headers: authHeaders });
 	} catch {
 		return null;
 	}

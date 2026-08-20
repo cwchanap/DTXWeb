@@ -152,6 +152,22 @@ describe('resolveAuthSession', () => {
 		expect(result).toBeNull();
 	});
 
+	it('does not fall back to a cookie when an invalid Bearer token is present', async () => {
+		authMocks.getSession.mockImplementation(({ headers }: { headers: Headers }) =>
+			Promise.resolve(headers.has('cookie') ? sessionResult : null)
+		);
+		const request = makeRequest('POST', {
+			Authorization: 'Bearer malformed-token',
+			cookie: 'dtx-local-session=session'
+		});
+
+		const result = await resolveAuthSession(request, makeEnv());
+
+		expect(result).toBeNull();
+		expect(authMocks.getSession).toHaveBeenCalledTimes(1);
+		expect(authMocks.getSession.mock.calls[0][0].headers.get('cookie')).toBeNull();
+	});
+
 	it('returns null when credentials are missing', async () => {
 		authMocks.getSession.mockResolvedValue(null);
 		const result = await resolveAuthSession(makeRequest('GET'), makeEnv());

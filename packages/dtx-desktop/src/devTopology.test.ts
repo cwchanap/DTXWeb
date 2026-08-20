@@ -63,7 +63,7 @@ describe('desktop local dev topology', () => {
 			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
 		);
 		expect(apiPackage.scripts['dev:local']).toBe(
-			'wrangler dev --env pre-prod --env-file ../../.env --var MAGIC_LINK_HOURLY_LIMIT:1000 --port 8787'
+			'wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --var MAGIC_LINK_HOURLY_LIMIT:1000 --port 8787'
 		);
 		expect(desktopPackage.scripts.dev).toBe(
 			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
@@ -78,6 +78,9 @@ describe('desktop local dev topology', () => {
 		expect(turboConfig.tasks).toHaveProperty('dtx-web#dev:local-api');
 		expect(apiWrangler.env?.['pre-prod']?.vars?.CORS_ALLOWED_ORIGINS).toContain(
 			'http://localhost:5173'
+		);
+		expect(apiWrangler.env?.['pre-prod']?.vars?.AUTH_COOKIE_DOMAIN).toBe(
+			'pre-prod.dtx.hapadona.com'
 		);
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
 			binding: 'DB',

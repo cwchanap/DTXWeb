@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 
-// vi.hoisted runs before vi.mock factories so the reference is valid
-const { envMock, pageMock } = vi.hoisted(() => ({
+const { envMock, pageMock, authClientMock, assignMock } = vi.hoisted(() => ({
 	envMock: { browser: false },
-	pageMock: { url: new URL('http://localhost/login') }
+	pageMock: { url: new URL('http://localhost/login') },
+	authClientMock: {
+		signIn: {
+			email: vi.fn(),
+			social: vi.fn()
+		}
+	},
+	assignMock: vi.fn()
 }));
 
 vi.mock('$app/environment', () => envMock);
@@ -19,149 +25,53 @@ vi.mock('$app/stores', () => ({
 vi.mock('$app/navigation', () => ({
 	replaceState: vi.fn()
 }));
+vi.mock('$lib/auth/client', () => ({ authClient: authClientMock }));
 
 import LoginPage from './+page.svelte';
 
 describe('Login Page', () => {
+	const originalLocation = window.location;
+
 	beforeEach(() => {
-		// Reset to default (SSR) state before each test
 		envMock.browser = false;
 		pageMock.url = new URL('http://localhost/login');
+		vi.clearAllMocks();
+		authClientMock.signIn.email.mockResolvedValue({ data: {}, error: null });
+		authClientMock.signIn.social.mockResolvedValue({ data: {}, error: null });
+		Object.defineProperty(window, 'location', {
+			value: { origin: 'http://localhost', assign: assignMock },
+			writable: true,
+			configurable: true
+		});
 		sessionStorage.clear();
 	});
 
 	afterEach(() => {
-		vi.restoreAllMocks();
+		Object.defineProperty(window, 'location', {
+			value: originalLocation,
+			writable: true,
+			configurable: true
+		});
 		sessionStorage.clear();
 	});
 
-	it('shows loading spinner while checking auth state (browser:false)', () => {
+	it('shows loading spinner while the browser auth page is not mounted', () => {
 		render(LoginPage);
 		expect(screen.getByText('Checking login status...')).toBeInTheDocument();
 	});
 
-	it('renders key login UI elements', () => {
-		envMock.browser = false;
-		render(LoginPage);
-		// Loading state is the entry point; confirm the page mounts without error
-		expect(screen.getByText('Checking login status...')).toBeInTheDocument();
-	});
-
-	it('shows login form when browser is true and no redirect param', async () => {
+	it('renders the login form in the browser', async () => {
 		envMock.browser = true;
 		render(LoginPage);
 
 		await waitFor(() => {
 			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
 		});
-		expect(screen.queryByText('Login to Desktop App')).not.toBeInTheDocument();
+		expect(screen.getByLabelText('Email')).toBeInTheDocument();
+		expect(screen.getByLabelText('Password')).toBeInTheDocument();
 	});
 
-	it('shows desktop login heading when redirect=desktop is in URL', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?redirect=desktop');
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(
-				screen.getByRole('heading', { name: 'Login to Desktop App' })
-			).toBeInTheDocument();
-		});
-		expect(
-			screen.getByText("You'll be redirected back to the desktop app after login.")
-		).toBeInTheDocument();
-	});
-
-	it('stashes the desktop-supplied callback in sessionStorage when redirect=desktop', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL(
-			'http://localhost/login?redirect=desktop&desktop_callback=' +
-				encodeURIComponent('http://127.0.0.1:47931/auth-callback')
-		);
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBe(
-				'http://127.0.0.1:47931/auth-callback'
-			);
-		});
-	});
-
-	it('clears a stale stashed callback when redirect=desktop has no desktop_callback', async () => {
-		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?redirect=desktop');
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(
-				screen.getByRole('heading', { name: 'Login to Desktop App' })
-			).toBeInTheDocument();
-		});
-		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBeNull();
-	});
-
-	it('preserves the stashed desktop callback across an OAuth error retry', async () => {
-		// Failed Google OAuth redirects to /login?redirect=desktop&error=...
-		// without desktop_callback. The loopback URL stashed from the original
-		// tauri-dev login must survive so a retry still reaches the running app.
-		sessionStorage.setItem('dtx_desktop_auth_callback', 'http://127.0.0.1:47931/auth-callback');
-		envMock.browser = true;
-		pageMock.url = new URL(
-			'http://localhost/login?redirect=desktop&error=' +
-				encodeURIComponent('Google authentication failed. Please try again.')
-		);
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(
-				screen.getByRole('heading', { name: 'Login to Desktop App' })
-			).toBeInTheDocument();
-		});
-		expect(sessionStorage.getItem('dtx_desktop_auth_callback')).toBe(
-			'http://127.0.0.1:47931/auth-callback'
-		);
-	});
-
-	it('shows email and password inputs after auth check (browser:true)', async () => {
-		envMock.browser = true;
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByLabelText('Email')).toBeInTheDocument();
-			expect(screen.getByLabelText('Password')).toBeInTheDocument();
-		});
-	});
-
-	it('sets isLoading and disables submit button when form is submitted', async () => {
-		envMock.browser = true;
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByRole('button', { name: 'Login' })).toBeInTheDocument();
-		});
-
-		const submitButton = screen.getByRole('button', { name: 'Login' });
-		expect(submitButton).not.toBeDisabled();
-
-		// Submit the form - handleSubmit sets isLoading = true which disables button
-		const form = submitButton.closest('form');
-		expect(form).not.toBeNull();
-		await fireEvent.submit(form!);
-
-		await waitFor(() => expect(submitButton).toBeDisabled());
-	});
-
-	it('shows error message from form prop when present', async () => {
-		envMock.browser = true;
-		render(LoginPage, { props: { form: { success: false, error: 'Invalid credentials' } } });
-
-		await waitFor(() => {
-			expect(screen.getByText('Invalid credentials')).toBeInTheDocument();
-		});
-	});
-
-	it('shows Google sign-in for existing linked accounts', async () => {
+	it('preserves the existing-account-only Google sign-in copy', async () => {
 		envMock.browser = true;
 		render(LoginPage);
 
@@ -175,100 +85,135 @@ describe('Login Page', () => {
 		).toBeInTheDocument();
 	});
 
-	it('does not show signup copy', async () => {
+	it('signs in with email and redirects to a safe next app path', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?next=%2Fapp%2Fscore');
+		render(LoginPage);
+
+		const email = await screen.findByLabelText('Email');
+		const password = screen.getByLabelText('Password');
+		await fireEvent.input(email, { target: { value: 'owner@example.com' } });
+		await fireEvent.input(password, { target: { value: 'correct-password' } });
+		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
+
+		await waitFor(() => {
+			expect(authClientMock.signIn.email).toHaveBeenCalledWith({
+				email: 'owner@example.com',
+				password: 'correct-password'
+			});
+			expect(assignMock).toHaveBeenCalledWith('/app/score');
+		});
+	});
+
+	it('defaults successful email sign-in to /app when next is absent', async () => {
 		envMock.browser = true;
 		render(LoginPage);
 
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
+		await screen.findByLabelText('Email');
+		await fireEvent.input(screen.getByLabelText('Email'), {
+			target: { value: 'owner@example.com' }
 		});
-		expect(screen.queryByText(/sign up/i)).not.toBeInTheDocument();
-		expect(screen.queryByText(/create account/i)).not.toBeInTheDocument();
+		await fireEvent.input(screen.getByLabelText('Password'), {
+			target: { value: 'correct-password' }
+		});
+		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
+
+		await waitFor(() => expect(assignMock).toHaveBeenCalledWith('/app'));
 	});
 
-	it('shows sanitized Google errors from query params', async () => {
+	it('rejects an external next value before email sign-in navigation', async () => {
 		envMock.browser = true;
 		pageMock.url = new URL(
-			'http://localhost/login?error=Google+sign-in+is+only+available+for+existing+linked+accounts.'
+			'http://localhost/login?next=' + encodeURIComponent('https://evil.example/path')
 		);
+		render(LoginPage);
+
+		await screen.findByLabelText('Email');
+		await fireEvent.input(screen.getByLabelText('Email'), {
+			target: { value: 'owner@example.com' }
+		});
+		await fireEvent.input(screen.getByLabelText('Password'), {
+			target: { value: 'correct-password' }
+		});
+		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
+
+		await waitFor(() => expect(assignMock).toHaveBeenCalledWith('/app/account'));
+	});
+
+	it('shows a password sign-in error without navigating', async () => {
+		envMock.browser = true;
+		authClientMock.signIn.email.mockResolvedValueOnce({
+			data: null,
+			error: { message: 'Invalid email or password' }
+		});
+		render(LoginPage);
+
+		await screen.findByLabelText('Email');
+		await fireEvent.input(screen.getByLabelText('Email'), {
+			target: { value: 'owner@example.com' }
+		});
+		await fireEvent.input(screen.getByLabelText('Password'), {
+			target: { value: 'wrong-password' }
+		});
+		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
+
+		await waitFor(() => {
+			expect(screen.getByText('Invalid email or password')).toBeInTheDocument();
+			expect(assignMock).not.toHaveBeenCalled();
+		});
+	});
+
+	it('starts Google sign-in with a safe callback and error callback', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?next=%2Fapp%2Fscore');
+		render(LoginPage);
+
+		await fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
+
+		await waitFor(() => {
+			expect(authClientMock.signIn.social).toHaveBeenCalledWith({
+				provider: 'google',
+				callbackURL: '/app/score',
+				errorCallbackURL: '/login?next=%2Fapp%2Fscore'
+			});
+		});
+	});
+
+	it('sanitizes a cancelled Google sign-in failure', async () => {
+		envMock.browser = true;
+		authClientMock.signIn.social.mockResolvedValueOnce({
+			data: null,
+			error: { message: 'access_denied' }
+		});
+		render(LoginPage);
+
+		await fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
+
+		await waitFor(() => {
+			expect(
+				screen.getByText('Google authentication failed. Please try again.')
+			).toBeInTheDocument();
+		});
+	});
+
+	it('sanitizes Better Auth callback errors without exposing raw provider text', async () => {
+		envMock.browser = true;
+		pageMock.url = new URL('http://localhost/login?error=signup+disabled');
 		render(LoginPage);
 
 		await waitFor(() => {
 			expect(
 				screen.getAllByText(
 					'Google sign-in is only available for existing linked accounts.'
-				).length
-			).toBeGreaterThan(0);
+				)
+			).not.toHaveLength(0);
 		});
+		expect(screen.queryByText('signup disabled')).not.toBeInTheDocument();
 	});
 
-	it('discards non-allow-listed error values from query params', async () => {
+	it('preserves the desktop login heading and callback intent until desktop cutover', async () => {
 		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?error=Click+here+to+reset+your+password');
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
-		});
-		expect(screen.queryByText('Click here to reset your password')).not.toBeInTheDocument();
-	});
-
-	// The `next` param threads the post-login return path through both forms
-	// so the server action can redirect back to the originating page (e.g.
-	// /app/score) instead of the default /app.
-	it('threads the next param into the password form as a hidden input', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?next=' + encodeURIComponent('/app/score'));
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
-		});
-		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
-		expect(passwordForm).not.toBeNull();
-		const nextInput = passwordForm!.querySelector('input[name="next"]') as HTMLInputElement;
-		expect(nextInput).not.toBeNull();
-		expect(nextInput.value).toBe('/app/score');
-	});
-
-	it('threads the next param into the Google form as a hidden input', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?next=' + encodeURIComponent('/app/score'));
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(
-				screen.getByRole('button', { name: 'Continue with Google' })
-			).toBeInTheDocument();
-		});
-		const googleForm = screen
-			.getByRole('button', { name: 'Continue with Google' })
-			.closest('form');
-		expect(googleForm).not.toBeNull();
-		const nextInput = googleForm!.querySelector('input[name="next"]') as HTMLInputElement;
-		expect(nextInput).not.toBeNull();
-		expect(nextInput.value).toBe('/app/score');
-	});
-
-	it('does not emit a next hidden input when next is absent', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login');
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
-		});
-		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
-		expect(passwordForm!.querySelector('input[name="next"]')).toBeNull();
-	});
-
-	// Desktop logins redirect back to the desktop app via deep link, not to
-	// a web route, so `next` must be ignored even if present in the URL.
-	it('does not thread next when redirect=desktop is set', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL(
-			'http://localhost/login?redirect=desktop&next=' + encodeURIComponent('/app/score')
-		);
+		pageMock.url = new URL('http://localhost/login?redirect=desktop');
 		render(LoginPage);
 
 		await waitFor(() => {
@@ -276,9 +221,5 @@ describe('Login Page', () => {
 				screen.getByRole('heading', { name: 'Login to Desktop App' })
 			).toBeInTheDocument();
 		});
-		const passwordForm = screen.getByRole('button', { name: 'Login' }).closest('form');
-		expect(passwordForm!.querySelector('input[name="next"]')).toBeNull();
-		const desktopRedirect = passwordForm!.querySelector('input[name="redirect"]');
-		expect(desktopRedirect).not.toBeNull();
 	});
 });

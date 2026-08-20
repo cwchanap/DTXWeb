@@ -243,3 +243,30 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Task 6: fix round 1/5 (3 addressed, 0 open — redirect cookies preserved; root types-only env loaded; SDD artifacts relocated; commits `5e1b6224..bfdfe86f`).
 - Scoped re-review: all original findings ADDRESSED; no new Critical or Important breakage.
 - Task 6: complete (commits `d9aa3b2..bfdfe86f`, review clean).
+
+## Task 7
+
+- Implementer: `/root/d1_task7_web_login`.
+- RED: after retargeting the focused helper/login/account/layout assertions and
+  before production edits, the baseline failed 5 focused files because the old
+  Supabase actions, identity calls, callback, and logout did not satisfy the
+  Better Auth contracts.
+- Implementation: moved email/social login, explicit Google linking, account
+  provider loading, and logout to the Task 6 `authClient`; preserved
+  `safeAppRedirectPath`, sanitized Better Auth provider errors, and deleted the
+  old SvelteKit login action and Supabase OAuth callback after callers/tests
+  moved.
+- GREEN: focused matrix — 5 files, 36 tests; full `bun run --filter=dtx-web
+  test` — 65 files, 877 tests; types-only sync and `svelte-check` — 0 errors,
+  4 existing CSS warnings; focused Prettier/ESLint and `git diff --check`
+  passed.
+- Search gate: targeted web login, callback, account-linking, and logout
+  routes contain no Supabase consumers. Remaining API token/config migration is
+  assigned to later tasks.
+- Svelte autofixer: `@sveltejs/mcp` is unavailable; bounded per-file attempts
+  produced no output and were stopped, with `svelte-check` used as the
+  available Svelte validation.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-7-report.md`.
+- No build, deployment, native desktop cutover, or Task 8+ work was performed.
+- Task 7: source, tests, report, and ledger are ready for the scoped
+  conventional commit.

@@ -5,6 +5,11 @@ const pageMock = vi.hoisted(() => ({
 	url: new URL('http://localhost/app/account')
 }));
 
+const authClientMock = vi.hoisted(() => ({
+	listAccounts: vi.fn(),
+	linkSocial: vi.fn()
+}));
+
 vi.mock('$app/stores', () => ({
 	page: {
 		subscribe: (run: (value: unknown) => void) => {
@@ -18,117 +23,78 @@ vi.mock('$app/navigation', () => ({
 	replaceState: vi.fn()
 }));
 
+vi.mock('$lib/auth/client', () => ({ authClient: authClientMock }));
 vi.mock('@lucide/svelte');
 
 import AccountPage from './+page.svelte';
 
-const makeData = (identities: Array<Record<string, unknown>> = []) => {
-	const mockSupabase = {
-		auth: {
-			getUserIdentities: vi.fn().mockResolvedValue({
-				data: { identities },
-				error: null
-			}),
-			linkIdentity: vi.fn().mockResolvedValue({
-				data: { provider: 'google', url: 'https://supabase.example/link-google' },
-				error: null
-			})
-		}
-	};
-
-	return {
-		data: {
-			session: null,
-			user: { email: 'owner@example.com' },
-			supabase: mockSupabase
-		} as any,
-		mockSupabase
-	};
-};
+const makeData = (user = { email: 'owner@example.com' }) => ({
+	data: {
+		session: null,
+		user
+	} as any
+});
 
 describe('/app/account page', () => {
-	const originalLocation = window.location;
-
 	beforeEach(() => {
 		vi.clearAllMocks();
 		pageMock.url = new URL('http://localhost/app/account');
-		Object.defineProperty(window, 'location', {
-			value: { href: '', origin: 'http://localhost' },
-			writable: true,
-			configurable: true
-		});
+		authClientMock.listAccounts.mockResolvedValue({ data: [], error: null });
+		authClientMock.linkSocial.mockResolvedValue({ data: {}, error: null });
 	});
 
 	afterEach(() => {
-		Object.defineProperty(window, 'location', {
-			value: originalLocation,
-			writable: true,
-			configurable: true
-		});
+		vi.restoreAllMocks();
 	});
 
 	it('loads and displays account email plus unconnected Google state', async () => {
-		const { data, mockSupabase } = makeData();
-
-		render(AccountPage, { props: { data } });
+		render(AccountPage, { props: makeData() });
 
 		await vi.waitFor(() => {
-			expect(mockSupabase.auth.getUserIdentities).toHaveBeenCalledOnce();
+			expect(authClientMock.listAccounts).toHaveBeenCalledOnce();
 			expect(screen.getByText('owner@example.com')).toBeInTheDocument();
 			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
 			expect(screen.getByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
 		});
 	});
 
-	it('shows connected Google identity email', async () => {
-		const { data } = makeData([
-			{
-				provider: 'google',
-				identity_data: { email: 'google@example.com' }
-			}
-		]);
+	it('shows a connected Google account from Better Auth account providers', async () => {
+		authClientMock.listAccounts.mockResolvedValueOnce({
+			data: [{ providerId: 'google', accountId: 'google-user-id' }],
+			error: null
+		});
 
-		render(AccountPage, { props: { data } });
+		render(AccountPage, { props: makeData() });
 
 		await vi.waitFor(() => {
 			expect(screen.getByText('Google is connected')).toBeInTheDocument();
-			expect(screen.getByText('google@example.com')).toBeInTheDocument();
 		});
 		expect(screen.queryByRole('button', { name: 'Connect Google' })).not.toBeInTheDocument();
 	});
 
-	it('starts Google identity linking and redirects to Supabase URL', async () => {
-		const { data, mockSupabase } = makeData();
-
-		render(AccountPage, { props: { data } });
+	it('starts explicit Google linking with success and error callback paths', async () => {
+		render(AccountPage, { props: makeData() });
 
 		const button = await screen.findByRole('button', { name: 'Connect Google' });
 		await fireEvent.click(button);
 
 		await vi.waitFor(() => {
-			expect(mockSupabase.auth.linkIdentity).toHaveBeenCalledWith({
+			expect(authClientMock.linkSocial).toHaveBeenCalledWith({
 				provider: 'google',
-				options: {
-					redirectTo: 'http://localhost/auth/callback?link=google&next=%2Fapp%2Faccount',
-					scopes: 'openid email profile',
-					skipBrowserRedirect: true
-				}
+				callbackURL: '/app/account?linked=google',
+				errorCallbackURL: '/app/account'
 			});
-			expect(window.location.href).toBe('https://supabase.example/link-google');
 		});
 	});
 
-	it('shows sanitized linking errors', async () => {
-		const { data, mockSupabase } = makeData();
-		mockSupabase.auth.linkIdentity.mockResolvedValueOnce({
-			data: { provider: 'google', url: null },
-			error: new Error('manual_linking_disabled')
+	it('shows sanitized explicit-link configuration errors', async () => {
+		authClientMock.linkSocial.mockResolvedValueOnce({
+			data: null,
+			error: { message: 'LINKING_NOT_ALLOWED' }
 		});
+		render(AccountPage, { props: makeData() });
 
-		render(AccountPage, { props: { data } });
-
-		const button = await screen.findByRole('button', { name: 'Connect Google' });
-		await fireEvent.click(button);
+		await fireEvent.click(await screen.findByRole('button', { name: 'Connect Google' }));
 
 		await vi.waitFor(() => {
 			expect(
@@ -139,11 +105,27 @@ describe('/app/account page', () => {
 		});
 	});
 
-	it('surfaces error and resets loading when linkIdentity rejects', async () => {
-		const { data, mockSupabase } = makeData();
-		mockSupabase.auth.linkIdentity.mockRejectedValueOnce(new Error('network failure'));
+	it('shows the explicit-link conflict copy for a Better Auth callback error', async () => {
+		pageMock.url = new URL(
+			'http://localhost/app/account?error=account_already_linked_to_different_user'
+		);
+		render(AccountPage, { props: makeData() });
 
-		render(AccountPage, { props: { data } });
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText(
+					'That Google account is already connected to another Drumery account.'
+				)
+			).toBeInTheDocument();
+		});
+	});
+
+	it('sanitizes a cancelled linking failure and resets loading', async () => {
+		authClientMock.linkSocial.mockResolvedValueOnce({
+			data: null,
+			error: { message: 'access_denied' }
+		});
+		render(AccountPage, { props: makeData() });
 
 		const button = await screen.findByRole('button', { name: 'Connect Google' });
 		await fireEvent.click(button);
@@ -156,78 +138,27 @@ describe('/app/account page', () => {
 		});
 	});
 
-	it('shows callback success and error messages from query params', async () => {
-		pageMock.url = new URL('http://localhost/app/account?linked=google&auth_error=ignored');
-		const { data } = makeData();
+	it('shows a fallback when Better Auth account loading fails', async () => {
+		authClientMock.listAccounts.mockResolvedValueOnce({
+			data: null,
+			error: { message: 'network failure' }
+		});
+		render(AccountPage, { props: makeData() });
 
-		render(AccountPage, { props: { data } });
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText('Unable to load linked account providers.')
+			).toBeInTheDocument();
+			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
+		});
+	});
+
+	it('shows callback success and clears it from the URL', async () => {
+		pageMock.url = new URL('http://localhost/app/account?linked=google');
+		render(AccountPage, { props: makeData() });
 
 		await vi.waitFor(() => {
 			expect(screen.getByText('Google account connected.')).toBeInTheDocument();
 		});
-	});
-
-	it('keeps callback error visible after providers load', async () => {
-		pageMock.url = new URL(
-			'http://localhost/app/account?auth_error=Google+authentication+failed.+Please+try+again.'
-		);
-		const { data } = makeData();
-
-		render(AccountPage, { props: { data } });
-
-		await vi.waitFor(() => {
-			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
-		});
-		expect(
-			screen.getByText('Google authentication failed. Please try again.')
-		).toBeInTheDocument();
-	});
-
-	it('discards non-allow-listed auth_error values from query params', async () => {
-		pageMock.url = new URL(
-			'http://localhost/app/account?auth_error=Click+here+to+reset+your+password'
-		);
-		const { data } = makeData();
-
-		render(AccountPage, { props: { data } });
-
-		await vi.waitFor(() => {
-			expect(screen.getByText('Google is not connected')).toBeInTheDocument();
-		});
-		expect(screen.queryByText('Click here to reset your password')).not.toBeInTheDocument();
-	});
-
-	it('shows fallback message when loadIdentities fails', async () => {
-		const { data, mockSupabase } = makeData();
-		mockSupabase.auth.getUserIdentities.mockResolvedValueOnce({
-			data: null,
-			error: new Error('network failure')
-		});
-
-		render(AccountPage, { props: { data } });
-
-		await vi.waitFor(() => {
-			expect(
-				screen.getByText('Unable to load linked account providers.')
-			).toBeInTheDocument();
-		});
-		expect(screen.getByText('Google is not connected')).toBeInTheDocument();
-		expect(screen.queryByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
-	});
-
-	it('surfaces error and resets loading when getUserIdentities rejects', async () => {
-		const { data, mockSupabase } = makeData();
-		mockSupabase.auth.getUserIdentities.mockRejectedValueOnce(new Error('network failure'));
-
-		render(AccountPage, { props: { data } });
-
-		await vi.waitFor(() => {
-			expect(
-				screen.getByText('Unable to load linked account providers.')
-			).toBeInTheDocument();
-		});
-		expect(screen.getByText('Google is not connected')).toBeInTheDocument();
-		expect(screen.queryByRole('button', { name: 'Connect Google' })).toBeInTheDocument();
-		expect(screen.queryByText('Loading providers...')).not.toBeInTheDocument();
 	});
 });

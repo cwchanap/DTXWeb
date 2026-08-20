@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { authClient } from '$lib/auth/client';
 
-	let { data, children } = $props();
-	let { supabase } = $derived(data);
+	let { children } = $props();
 
 	let isSidebarCollapsed = $state(false);
 
@@ -11,8 +11,8 @@
 	};
 
 	const logout = async () => {
-		await supabase.auth.signOut();
-		goto('/login');
+		await authClient.signOut();
+		window.location.assign('/login');
 	};
 
 	const navigateToProfile = () => {

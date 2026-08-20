@@ -1,6 +1,3 @@
-export const GOOGLE_PROVIDER = 'google' as const;
-export const GOOGLE_OAUTH_SCOPES = 'openid email profile';
-
 export const GOOGLE_AUTH_UNAVAILABLE_MESSAGE =
 	'Google sign-in is only available for existing linked accounts.';
 export const GOOGLE_AUTH_GENERIC_MESSAGE = 'Google authentication failed. Please try again.';
@@ -16,33 +13,6 @@ export const GOOGLE_AUTH_ERROR_MESSAGES = [
 	GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
 ] as const;
 
-export type GoogleRedirectIntent = 'web' | 'desktop';
-
-export const buildAuthCallbackUrl = (
-	origin: string,
-	intent: GoogleRedirectIntent = 'web',
-	next?: string | null
-): string => {
-	const callbackUrl = new URL('/auth/callback', origin);
-	if (intent === 'desktop') {
-		callbackUrl.searchParams.set('redirect', 'desktop');
-	}
-	// `next` is only meaningful for web logins (desktop redirects back to
-	// the desktop app, not a web route). Callers validate via
-	// safeAppRedirectPath before passing; the callback re-validates too.
-	if (intent === 'web' && next) {
-		callbackUrl.searchParams.set('next', next);
-	}
-	return callbackUrl.toString();
-};
-
-export const buildAccountCallbackUrl = (origin: string): string => {
-	const callbackUrl = new URL('/auth/callback', origin);
-	callbackUrl.searchParams.set('link', GOOGLE_PROVIDER);
-	callbackUrl.searchParams.set('next', '/app/account');
-	return callbackUrl.toString();
-};
-
 export const safeAppRedirectPath = (value: string | null | undefined): string => {
 	if (!value || value.startsWith('//')) return '/app/account';
 	let resolved: URL;
@@ -57,74 +27,43 @@ export const safeAppRedirectPath = (value: string | null | undefined): string =>
 	return `${resolved.pathname}${resolved.search}`;
 };
 
-export const appendSearchParam = (path: string, key: string, value: string): string => {
-	const [pathname, search = ''] = path.split('?');
-	const params = new URLSearchParams(search);
-	params.set(key, value);
-	const query = params.toString();
-	return query ? `${pathname}?${query}` : pathname;
-};
-
-export const buildLoginErrorRedirect = (
-	message: string,
-	intent: GoogleRedirectIntent = 'web',
-	nextPath?: string
-): string => {
-	const params = new URLSearchParams();
-	if (intent === 'desktop') {
-		params.set('redirect', 'desktop');
-	}
-	params.set('error', message);
-	// Preserve the validated return path for web logins so error retries
-	// (provider error, exchange failure, identity check failure) return the
-	// user to their original /app* destination after re-authentication. The
-	// login page reads `next` from the URL and threads it back into the
-	// login/google actions. `nextPath` must already be safeAppRedirectPath-
-	// validated by the caller; desktop intent ignores it (no web `next`).
-	if (intent === 'web' && nextPath) {
-		params.set('next', nextPath);
-	}
-	return `/login?${params.toString()}`;
-};
-
-export const buildLinkedAccountRedirect = (
-	nextPath: string,
-	result: 'connected' | 'error',
-	message?: string
-): string => {
-	const safeNext = safeAppRedirectPath(nextPath);
-	if (result === 'connected') {
-		return appendSearchParam(safeNext, 'linked', GOOGLE_PROVIDER);
-	}
-	return appendSearchParam(safeNext, 'auth_error', message || GOOGLE_AUTH_GENERIC_MESSAGE);
-};
-
 export const sanitizeGoogleAuthError = (message: string | null | undefined): string => {
+	if (GOOGLE_AUTH_ERROR_MESSAGES.some((knownMessage) => knownMessage === message)) {
+		return message ?? GOOGLE_AUTH_GENERIC_MESSAGE;
+	}
+
 	const lower = (message ?? '').toLowerCase();
 
 	if (
 		lower.includes('signup') ||
 		lower.includes('sign up') ||
-		lower.includes('user not allowed')
+		lower.includes('user not allowed') ||
+		lower.includes('user_not_allowed') ||
+		lower.includes('account not linked') ||
+		lower.includes('account_not_linked') ||
+		lower.includes('unable_to_create_user') ||
+		lower.includes('unable to create user')
 	) {
 		return GOOGLE_AUTH_UNAVAILABLE_MESSAGE;
 	}
 
-	if (lower.includes('manual_linking_disabled') || lower.includes('manual linking')) {
+	if (
+		lower.includes('manual_linking_disabled') ||
+		lower.includes('manual linking') ||
+		lower.includes('linking_not_allowed') ||
+		lower.includes('account linking is not enabled')
+	) {
 		return GOOGLE_AUTH_LINKING_CONFIG_MESSAGE;
 	}
 
 	if (
 		lower.includes('already linked') ||
+		lower.includes('already_linked') ||
 		lower.includes('already connected') ||
 		lower.includes('identity is already linked') ||
 		lower.includes('identity already linked')
 	) {
 		return GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE;
-	}
-
-	if (lower.includes('cancelled') || lower.includes('canceled') || lower.includes('denied')) {
-		return GOOGLE_AUTH_GENERIC_MESSAGE;
 	}
 
 	return GOOGLE_AUTH_GENERIC_MESSAGE;

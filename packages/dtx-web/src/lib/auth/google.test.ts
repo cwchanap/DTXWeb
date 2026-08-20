@@ -4,34 +4,11 @@ import {
 	GOOGLE_AUTH_LINKING_CONFIG_MESSAGE,
 	GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE,
 	GOOGLE_AUTH_UNAVAILABLE_MESSAGE,
-	appendSearchParam,
-	buildAccountCallbackUrl,
-	buildAuthCallbackUrl,
-	buildLoginErrorRedirect,
-	buildLinkedAccountRedirect,
 	safeAppRedirectPath,
 	sanitizeGoogleAuthError
 } from './google';
 
 describe('google auth helpers', () => {
-	it('builds a standard auth callback URL', () => {
-		expect(buildAuthCallbackUrl('https://dtx.example')).toBe(
-			'https://dtx.example/auth/callback'
-		);
-	});
-
-	it('builds a desktop auth callback URL', () => {
-		expect(buildAuthCallbackUrl('https://dtx.example/', 'desktop')).toBe(
-			'https://dtx.example/auth/callback?redirect=desktop'
-		);
-	});
-
-	it('builds an account-linking callback URL', () => {
-		expect(buildAccountCallbackUrl('https://dtx.example')).toBe(
-			'https://dtx.example/auth/callback?link=google&next=%2Fapp%2Faccount'
-		);
-	});
-
 	it('rejects open redirects outside the app', () => {
 		expect(safeAppRedirectPath('https://evil.example')).toBe('/app/account');
 		expect(safeAppRedirectPath('//evil.example')).toBe('/app/account');
@@ -52,56 +29,32 @@ describe('google auth helpers', () => {
 		expect(safeAppRedirectPath('/app?redirect=desktop')).toBe('/app?redirect=desktop');
 	});
 
-	it('builds login error redirects while preserving desktop intent', () => {
-		expect(buildLoginErrorRedirect('Sign-in failed')).toBe('/login?error=Sign-in+failed');
-		expect(buildLoginErrorRedirect('Sign-in failed', 'desktop')).toBe(
-			'/login?redirect=desktop&error=Sign-in+failed'
-		);
-	});
-
-	it('builds login error redirects with a preserved web return path', () => {
-		expect(buildLoginErrorRedirect('Sign-in failed', 'web', '/app/score')).toBe(
-			'/login?error=Sign-in+failed&next=%2Fapp%2Fscore'
-		);
-		// Desktop intent ignores nextPath (no web `next` for desktop).
-		expect(buildLoginErrorRedirect('Sign-in failed', 'desktop', '/app/score')).toBe(
-			'/login?redirect=desktop&error=Sign-in+failed'
-		);
-		// Omitting nextPath keeps the pre-existing URL shape.
-		expect(buildLoginErrorRedirect('Sign-in failed', 'web')).toBe(
-			'/login?error=Sign-in+failed'
-		);
-	});
-
-	it('builds linked account redirects with success and error messages', () => {
-		expect(buildLinkedAccountRedirect('/app/account', 'connected')).toBe(
-			'/app/account?linked=google'
-		);
-		expect(buildLinkedAccountRedirect('/app/account', 'error', 'Denied')).toBe(
-			'/app/account?auth_error=Denied'
-		);
-	});
-
-	it('appends search params to paths with existing params', () => {
-		expect(appendSearchParam('/app/account?tab=security', 'linked', 'google')).toBe(
-			'/app/account?tab=security&linked=google'
-		);
-	});
-
-	it('sanitizes signup-disabled style errors for login', () => {
+	it('sanitizes Better Auth signup-disabled errors for existing-account-only login', () => {
 		expect(sanitizeGoogleAuthError('Signups not allowed for this instance')).toBe(
+			GOOGLE_AUTH_UNAVAILABLE_MESSAGE
+		);
+		expect(sanitizeGoogleAuthError('signup disabled')).toBe(GOOGLE_AUTH_UNAVAILABLE_MESSAGE);
+		expect(sanitizeGoogleAuthError('account not linked')).toBe(GOOGLE_AUTH_UNAVAILABLE_MESSAGE);
+		expect(sanitizeGoogleAuthError('account_not_linked')).toBe(GOOGLE_AUTH_UNAVAILABLE_MESSAGE);
+		expect(sanitizeGoogleAuthError('unable_to_create_user')).toBe(
 			GOOGLE_AUTH_UNAVAILABLE_MESSAGE
 		);
 	});
 
-	it('sanitizes manual-linking-disabled errors for account linking', () => {
+	it('sanitizes explicit-link configuration errors', () => {
 		expect(sanitizeGoogleAuthError('manual_linking_disabled')).toBe(
+			GOOGLE_AUTH_LINKING_CONFIG_MESSAGE
+		);
+		expect(sanitizeGoogleAuthError('LINKING_NOT_ALLOWED')).toBe(
 			GOOGLE_AUTH_LINKING_CONFIG_MESSAGE
 		);
 	});
 
-	it('sanitizes provider conflict errors for account linking', () => {
+	it('sanitizes Better Auth provider conflict errors for explicit linking', () => {
 		expect(sanitizeGoogleAuthError('identity already linked to another user')).toBe(
+			GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
+		);
+		expect(sanitizeGoogleAuthError('account_already_linked_to_different_user')).toBe(
 			GOOGLE_AUTH_PROVIDER_CONFLICT_MESSAGE
 		);
 	});

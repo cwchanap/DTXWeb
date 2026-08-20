@@ -12,9 +12,10 @@ const graphqlEndpoint = () => {
 	return `${base}/graphql`;
 };
 
-export const makeBrowserClient = (token?: string | null) =>
+export const makeBrowserClient = (fetchFn?: typeof fetch) =>
 	new GraphQLClient(graphqlEndpoint(), {
-		headers: token ? { Authorization: `Bearer ${token}` } : {}
+		credentials: 'include',
+		...(fetchFn ? { fetch: fetchFn } : {})
 	});
 
 export type GraphQLLikeClient = {
@@ -23,11 +24,13 @@ export type GraphQLLikeClient = {
 
 export const makeServiceBindingClient = (
 	binding: Fetcher,
-	token?: string | null
+	cookieHeader?: string | null,
+	origin?: string | null
 ): GraphQLLikeClient => ({
 	request: async <T, V extends object>(doc: TypedDocumentNode<T, V>, vars: V): Promise<T> => {
 		const headers: Record<string, string> = { 'content-type': 'application/json' };
-		if (token) headers.authorization = `Bearer ${token}`;
+		if (cookieHeader) headers.cookie = cookieHeader;
+		if (origin) headers.origin = new URL(origin).origin;
 		const req = new Request('https://api.internal/graphql', {
 			method: 'POST',
 			headers,

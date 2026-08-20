@@ -26,6 +26,7 @@ export const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
 
 const createBulkDownloadRequestInit = async (ids: number[]): Promise<RequestInit> => ({
 	method: 'POST',
+	credentials: 'include',
 	headers: await bulkDownloadHeaders(),
 	body: JSON.stringify({ ids })
 });

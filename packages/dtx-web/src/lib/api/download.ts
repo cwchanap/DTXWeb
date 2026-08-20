@@ -1,5 +1,4 @@
 import { env } from '$env/dynamic/public';
-import { getAccessTokenOrNull } from './token';
 
 const apiBase = () => {
 	const base = (env.PUBLIC_DTX_API_URL ?? '').replace(/\/$/, '');
@@ -49,10 +48,7 @@ export type DownloadOpts = {
 export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}) => {
 	const fetchFn = opts.fetchFn ?? fetch;
 	const trigger = opts.triggerBrowserDownload ?? defaultTriggerBrowserDownload;
-	const headers: Record<string, string> = {};
-	const token = await getAccessTokenOrNull();
-	if (token) headers.Authorization = `Bearer ${token}`;
-	const res = await fetchFn(downloadBaseUrl(simfileId), { headers });
+	const res = await fetchFn(downloadBaseUrl(simfileId), { credentials: 'include' });
 	if (!res.ok) throw new Error(`Download failed: ${res.status}`);
 	const blob = await res.blob();
 	const filename =
@@ -61,10 +57,7 @@ export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}
 	trigger(blob, filename);
 };
 
-/** Build headers for bulk download requests against dtx-api (Content-Type + Bearer). */
+/** Build headers for bulk download requests against dtx-api. */
 export const bulkDownloadHeaders = async (): Promise<Record<string, string>> => {
-	const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-	const token = await getAccessTokenOrNull();
-	if (token) headers.Authorization = `Bearer ${token}`;
-	return headers;
+	return { 'Content-Type': 'application/json' };
 };

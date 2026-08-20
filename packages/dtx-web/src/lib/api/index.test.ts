@@ -4,9 +4,8 @@ vi.mock('$env/dynamic/public', () => ({
 	env: { PUBLIC_DTX_API_URL: 'https://api.test' }
 }));
 vi.mock('$app/environment', () => ({ browser: true }));
-vi.mock('./token', () => ({ getAccessTokenOrNull: vi.fn().mockResolvedValue(null) }));
 vi.mock('./transport', () => ({
-	makeBrowserClient: vi.fn(() => ({ type: 'browser', token: null }))
+	makeBrowserClient: vi.fn(() => ({ type: 'browser' }))
 }));
 
 describe('api barrel re-exports', () => {

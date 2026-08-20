@@ -145,7 +145,7 @@ describe('ChartList helpers', () => {
 				return handle;
 			})
 		};
-		const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+		const fetchFn = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
 			const url = String(input);
 			callOrder.push(url);
 			if (url.endsWith('?validate=1')) {
@@ -167,6 +167,9 @@ describe('ChartList helpers', () => {
 			'createWritable',
 			'pipeTo'
 		]);
+		for (const call of fetchFn.mock.calls) {
+			expect(call[1]?.credentials).toBe('include');
+		}
 	});
 
 	it('does not issue validation or download requests when the save picker is cancelled', async () => {

@@ -4,11 +4,20 @@ import { getVersion, getTauriVersion } from '@tauri-apps/api/app';
 import type {
 	CreateSimfileRecordInput,
 	CreateSimfileRecordResult,
+	DesktopAuthSession,
+	DeviceAuthorizationAttempt,
 	FetchCloudSongResult,
 	FetchUserSimfilesResult,
 	UpdateSimfileRecordInput,
 	UpdateSimfileRecordResult
 } from '$lib/lib/generated/native-api-contracts';
+
+export type DeviceAuthorizationPoll =
+	| { status: 'pending'; retryAfterMs: number }
+	| { status: 'approved'; session: DesktopAuthSession }
+	| { status: 'denied' }
+	| { status: 'expired' }
+	| { status: 'invalidGrant' };
 
 export type DesktopHostVersions = {
 	app: string | null;
@@ -342,16 +351,22 @@ export const desktopHost = {
 	parseDtxFiles: async <T = unknown>(folderPath: string): Promise<T> =>
 		await invokeHost<T>('parse_dtx_files', { folderPath }),
 
-	validateSession: async <T = unknown>(sessionData: unknown): Promise<T> =>
+	beginDeviceAuthorization: async (): Promise<DeviceAuthorizationAttempt> =>
+		await invokeHost<DeviceAuthorizationAttempt>('begin_device_authorization'),
+
+	pollDeviceAuthorization: async (): Promise<DeviceAuthorizationPoll> =>
+		await invokeHost<DeviceAuthorizationPoll>('poll_device_authorization'),
+
+	cancelDeviceAuthorization: async (): Promise<boolean> =>
+		await invokeHost<boolean>('cancel_device_authorization'),
+
+	validateSession: async <T = unknown>(sessionData: DesktopAuthSession): Promise<T> =>
 		await invokeHost<T>('validate_session', { sessionData }),
 
-	getCurrentSession: async <T = unknown>(): Promise<T> =>
+	getCurrentSession: async <T = DesktopAuthSession | null>(): Promise<T> =>
 		await invokeHost<T>('get_current_session'),
 
 	logoutSession: async <T = unknown>(): Promise<T> => await invokeHost<T>('logout_session'),
-
-	drainPendingAuthEvents: async (): Promise<number> =>
-		await invokeHost<number>('drain_pending_auth_events'),
 
 	fetchUserSimfiles: async (): Promise<FetchUserSimfilesResult> =>
 		await invokeHost<FetchUserSimfilesResult>('fetch_user_simfiles'),
@@ -462,18 +477,6 @@ export const desktopHost = {
 			'google-drive-upload-progress',
 			callback
 		),
-
-	onMagicLinkResult: async <T = unknown>(callback: (result: T) => void): Promise<HostUnlisten> =>
-		await getRuntime().listen<T>('magic-link-result', callback),
-
-	// Emitted by the Rust backend whenever a token refresh rotates the session
-	// (proactive near-expiry refresh during a long-running session, or the
-	// startup validation refresh). The payload is the new Supabase session
-	// value; the renderer must persist the rotated access/refresh tokens so the
-	// next launch doesn't try the now-revoked refresh token and log the user out.
-	onSessionRefreshed: async <T = unknown>(
-		callback: (session: T) => void
-	): Promise<HostUnlisten> => await getRuntime().listen<T>('session-refreshed', callback),
 
 	removeAllListeners: (event?: string): void | Promise<void> =>
 		getRuntime().removeAllListeners(event)

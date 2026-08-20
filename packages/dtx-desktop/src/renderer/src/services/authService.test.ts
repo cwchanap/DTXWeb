@@ -1,25 +1,27 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { authService, getDesktopLoginUrl, getDesktopAuthCallbackUrl } from './authService';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { authService } from './authService';
 import { authStore } from '../stores/authStore';
 import {
 	storeSessionData,
 	getStoredSessionData,
 	clearStoredSessionData,
 	validateSession
-} from './supabaseService';
+} from './sessionStorage';
 import { workspaceStore } from '../stores/workspaceStore';
 import { desktopHost } from './desktopHost';
 
 vi.mock('./desktopHost', () => ({
 	desktopHost: {
+		beginDeviceAuthorization: vi.fn(),
 		openExternalUrl: vi.fn(),
+		pollDeviceAuthorization: vi.fn(),
+		cancelDeviceAuthorization: vi.fn(),
 		logoutSession: vi.fn()
 	}
 }));
 
 const host = vi.mocked(desktopHost);
 
-// Mock the authStore
 vi.mock('../stores/authStore', () => ({
 	authStore: {
 		setLoading: vi.fn(),
@@ -29,13 +31,11 @@ vi.mock('../stores/authStore', () => ({
 	}
 }));
 
-// Mock the supabaseService
-vi.mock('./supabaseService', () => ({
+vi.mock('./sessionStorage', () => ({
 	storeSessionData: vi.fn(),
 	getStoredSessionData: vi.fn(),
 	clearStoredSessionData: vi.fn(),
-	validateSession: vi.fn(),
-	getCurrentSession: vi.fn()
+	validateSession: vi.fn()
 }));
 
 const mockWorkspaceSubscribeFn = vi.hoisted(() => vi.fn());
@@ -66,343 +66,209 @@ vi.mock('../stores/simFileStore', () => ({
 	simFileStore: { reset: vi.fn() }
 }));
 
-describe('AuthService', () => {
+const user = {
+	id: 'user-1',
+	name: 'Desktop User',
+	email: 'desktop@example.com',
+	emailVerified: true,
+	image: null,
+	createdAt: '2026-08-20T00:00:00.000Z',
+	updatedAt: '2026-08-20T00:00:00.000Z'
+};
+
+const session = { sessionToken: 'opaque-session-token', user };
+const attempt = {
+	userCode: 'ABCD-EFGH',
+	verificationUri: 'https://dtx.example.com/app/desktop-auth',
+	verificationUriComplete: 'https://dtx.example.com/app/desktop-auth?user_code=ABCD-EFGH',
+	expiresAt: '2026-08-20T00:15:00.000Z'
+};
+
+describe('authService', () => {
 	beforeEach(() => {
-		// Clear all mocks before each test
 		vi.clearAllMocks();
+		host.beginDeviceAuthorization.mockReset();
 		host.openExternalUrl.mockReset();
+		host.pollDeviceAuthorization.mockReset();
+		host.cancelDeviceAuthorization.mockReset();
 		host.logoutSession.mockReset();
+		host.openExternalUrl.mockResolvedValue(undefined);
+		host.cancelDeviceAuthorization.mockResolvedValue(true);
+		host.logoutSession.mockResolvedValue(true);
 		mockGoogleDriveStore.reset.mockReset();
 		mockGoogleDriveService.refreshConnection.mockReset();
 		mockGoogleDriveService.refreshConnection.mockResolvedValue(null);
-
-		// Reset localStorage mock
-		(window.localStorage.getItem as any).mockReturnValue(null);
-		(window.localStorage.setItem as any).mockClear();
-		(window.localStorage.removeItem as any).mockClear();
-
-		// Reset console mocks
-		(console.error as any).mockClear();
-	});
-
-	describe('getDesktopAuthCallbackUrl', () => {
-		afterEach(() => {
-			vi.unstubAllEnvs();
+		mockWorkspaceSubscribeFn.mockImplementation((callback: (state: any) => void) => {
+			callback({ treeStructure: [], path: null });
+			return vi.fn();
 		});
-
-		it('returns the loopback HTTP callback with the default port under tauri dev', () => {
-			// Vitest runs in dev mode (import.meta.env.DEV === true).
-			expect(getDesktopAuthCallbackUrl()).toBe('http://127.0.0.1:47931/auth-callback');
-		});
-
-		it('honors VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT for the loopback callback', () => {
-			vi.stubEnv('VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT', '5599');
-			expect(getDesktopAuthCallbackUrl()).toBe('http://127.0.0.1:5599/auth-callback');
-		});
-
-		it('returns the dtx:// deep link when bundled (not dev)', () => {
-			vi.stubEnv('DEV', false);
-			expect(getDesktopAuthCallbackUrl()).toBe('dtx://auth-callback');
-		});
+		(window.localStorage.getItem as ReturnType<typeof vi.fn>).mockReturnValue(null);
+		(window.localStorage.setItem as ReturnType<typeof vi.fn>).mockClear();
+		(window.localStorage.removeItem as ReturnType<typeof vi.fn>).mockClear();
+		(console.error as ReturnType<typeof vi.fn>).mockClear();
 	});
 
 	describe('login', () => {
-		const expectedCallbackParam = () => encodeURIComponent(getDesktopAuthCallbackUrl());
+		it('starts device authorization, opens the complete verification URL, polls, persists, and displays the user', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
 
-		it('builds the desktop login URL from a local web server URL', () => {
-			expect(getDesktopLoginUrl('http://localhost:5173')).toBe(
-				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
-			);
-		});
-
-		it('builds the desktop login URL from a production server URL without duplicating slashes', () => {
-			expect(getDesktopLoginUrl('https://dtx.hapadona.com/')).toBe(
-				`https://dtx.hapadona.com/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
-			);
-		});
-
-		it('should set loading state and open login URL through desktop host', async () => {
-			// Act
 			await authService.login();
 
-			// Assert
-			expect(authStore.setLoading).toHaveBeenCalledWith(true);
-			expect(host.openExternalUrl).toHaveBeenCalledWith(
-				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
-			);
-			expect(authStore.setLoading).toHaveBeenCalledWith(false);
+			expect(host.beginDeviceAuthorization).toHaveBeenCalledOnce();
+			expect(host.openExternalUrl).toHaveBeenCalledWith(attempt.verificationUriComplete);
+			expect(host.pollDeviceAuthorization).toHaveBeenCalledOnce();
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+			expect(authStore.setUser).toHaveBeenCalledWith({
+				id: user.id,
+				email: user.email,
+				name: user.name
+			});
+			expect(authStore.setLoading).toHaveBeenNthCalledWith(1, true);
+			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
 		});
 
-		it('should handle host open errors gracefully', async () => {
-			// Arrange
-			const error = new Error('IPC failed');
-			host.openExternalUrl.mockRejectedValue(error);
+		it('surfaces a manual URI and code fallback when opening the browser fails', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.openExternalUrl.mockRejectedValue(new Error('browser unavailable'));
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
 
-			// Act
 			await authService.login();
 
-			// Assert
-			expect(authStore.setLoading).toHaveBeenCalledWith(true);
-			expect(console.error).toHaveBeenCalledWith('Login failed:', error);
-			expect(authStore.setError).toHaveBeenCalledWith('Failed to open login page');
-			expect(authStore.setLoading).toHaveBeenCalledWith(false);
+			expect(authStore.setError).toHaveBeenCalledWith(
+				expect.stringContaining(attempt.userCode)
+			);
+			expect(authStore.setError).toHaveBeenCalledWith(
+				expect.stringContaining(attempt.verificationUri)
+			);
+			expect(console.error).toHaveBeenCalledWith(
+				'Failed to open device authorization URL:',
+				expect.any(Error)
+			);
+			expect(storeSessionData).toHaveBeenCalledWith(session);
 		});
 
-		it('should use default server URL when environment variable is not set', async () => {
-			// Act
+		it('retries polling after a pending response and handles the approved session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization
+				.mockResolvedValueOnce({ status: 'pending', retryAfterMs: 0 })
+				.mockResolvedValueOnce({ status: 'approved', session });
+
 			await authService.login();
 
-			// Assert
-			expect(host.openExternalUrl).toHaveBeenCalledWith(
-				`http://localhost:5173/login?redirect=desktop&desktop_callback=${expectedCallbackParam()}`
+			expect(host.pollDeviceAuthorization).toHaveBeenCalledTimes(2);
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+		});
+
+		it('reports terminal denial and does not persist a session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'denied' });
+
+			await authService.login();
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication was denied.');
+			expect(storeSessionData).not.toHaveBeenCalled();
+		});
+
+		it('cancels a pending flow and allows a later retry', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			let resolvePoll!: (value: unknown) => void;
+			host.pollDeviceAuthorization.mockReturnValue(
+				new Promise((resolve) => {
+					resolvePoll = resolve;
+				})
 			);
+
+			const pendingLogin = authService.login();
+			await vi.waitFor(() => expect(host.pollDeviceAuthorization).toHaveBeenCalledOnce());
+			await authService.cancelLogin();
+			resolvePoll({ status: 'pending', retryAfterMs: 0 });
+			await pendingLogin;
+
+			expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce();
+			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
+
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
+			await authService.login();
+			expect(storeSessionData).toHaveBeenCalledWith(session);
 		});
 	});
 
 	describe('restoreSession', () => {
-		const mockAccessToken = 'header.mocked-access-token.signature';
-		const mockRefreshToken = 'header.mocked-refresh-token.signature';
-		const mockUserData = {
-			id: '123',
-			email: 'test@example.com',
-			name: 'Test User'
-		};
+		it('restores a valid neutral Better Auth session', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue(session);
+			(validateSession as ReturnType<typeof vi.fn>).mockResolvedValue('valid');
 
-		it('should restore session from valid stored tokens', async () => {
-			// Arrange
-			(getStoredSessionData as any).mockReturnValue({
-				accessToken: mockAccessToken,
-				refreshToken: mockRefreshToken,
-				userData: mockUserData
-			});
-			(validateSession as any).mockResolvedValue('valid');
-
-			// Act
-			const result = await authService.restoreSession();
-
-			// Assert
-			expect(getStoredSessionData).toHaveBeenCalled();
-			expect(validateSession).toHaveBeenCalled();
+			expect(await authService.restoreSession()).toBe(true);
+			expect(validateSession).toHaveBeenCalledOnce();
 			expect(authStore.setUser).toHaveBeenCalledWith({
-				id: '123',
-				email: 'test@example.com',
-				name: 'test@example.com' // Falls back to email since user_metadata.name is not set
+				id: user.id,
+				email: user.email,
+				name: user.name
 			});
-			expect(result).toBe(true);
-		});
-
-		it('refreshes the sanitized Drive connection after restoring a valid session', async () => {
-			(getStoredSessionData as any).mockReturnValue({
-				accessToken: mockAccessToken,
-				refreshToken: mockRefreshToken,
-				userData: mockUserData
-			});
-			(validateSession as any).mockResolvedValue('valid');
-
-			await expect(authService.restoreSession()).resolves.toBe(true);
-
 			expect(mockGoogleDriveService.refreshConnection).toHaveBeenCalledOnce();
-			expect(authStore.setUser.mock.invocationCallOrder[0]).toBeLessThan(
-				mockGoogleDriveService.refreshConnection.mock.invocationCallOrder[0]
-			);
 		});
 
-		it('should return false when no session data is stored', async () => {
-			// Arrange
-			(getStoredSessionData as any).mockReturnValue(null);
+		it('clears invalid sessions and leaves the auth store signed out', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue(session);
+			(validateSession as ReturnType<typeof vi.fn>).mockResolvedValue('invalid');
 
-			// Act
-			const result = await authService.restoreSession();
-
-			// Assert
-			expect(getStoredSessionData).toHaveBeenCalled();
+			expect(await authService.restoreSession()).toBe(false);
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
 			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
 		});
 
-		it('should return false when session validation fails', async () => {
-			// Arrange
-			(getStoredSessionData as any).mockReturnValue({
-				accessToken: mockAccessToken,
-				refreshToken: mockRefreshToken,
-				userData: mockUserData
-			});
-			(validateSession as any).mockResolvedValue('invalid');
+		it('preserves stored session data and reports configuration errors', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue(session);
+			(validateSession as ReturnType<typeof vi.fn>).mockResolvedValue('not-configured');
 
-			// Act
-			const result = await authService.restoreSession();
-
-			// Assert
-			expect(getStoredSessionData).toHaveBeenCalled();
-			expect(validateSession).toHaveBeenCalled();
-			expect(clearStoredSessionData).toHaveBeenCalled();
-			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
-		});
-
-		it('should surface a not-configured error without wiping the stored session', async () => {
-			// Arrange: a misconfigured build cannot validate, but the stored
-			// session may still be good — it must not be cleared.
-			(getStoredSessionData as any).mockReturnValue({
-				accessToken: mockAccessToken,
-				refreshToken: mockRefreshToken,
-				userData: mockUserData
-			});
-			(validateSession as any).mockResolvedValue('not-configured');
-
-			// Act
-			const result = await authService.restoreSession();
-
-			// Assert
-			expect(validateSession).toHaveBeenCalled();
+			expect(await authService.restoreSession()).toBe(false);
 			expect(clearStoredSessionData).not.toHaveBeenCalled();
 			expect(authStore.setError).toHaveBeenCalledWith(
-				expect.stringContaining('not configured')
+				'Authentication is not configured on this build.'
 			);
-			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
 		});
 
-		it('should handle errors during session restoration', async () => {
-			// Arrange
-			(getStoredSessionData as any).mockImplementation(() => {
-				throw new Error('Storage error');
+		it('clears malformed stored session data before validation', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue({
+				sessionToken: '',
+				user: { email: user.email }
 			});
 
-			// Act
-			const result = await authService.restoreSession();
+			expect(await authService.restoreSession()).toBe(false);
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
+			expect(validateSession).not.toHaveBeenCalled();
+		});
 
-			// Assert
-			expect(console.error).toHaveBeenCalledWith(
-				'Failed to restore session:',
-				expect.any(Error)
-			);
+		it('returns false when there is no stored session', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue(null);
+
+			expect(await authService.restoreSession()).toBe(false);
 			expect(authStore.setUser).not.toHaveBeenCalled();
-			expect(result).toBe(false);
-		});
-	});
-
-	describe('handleMagicLinkResult', () => {
-		it('should store session and set user when magic link succeeds', async () => {
-			const mockSession = { access_token: 'abc', refresh_token: 'xyz' };
-			const result = {
-				success: true,
-				session: mockSession,
-				user: {
-					id: 'user-1',
-					email: 'test@example.com',
-					user_metadata: { name: 'Test User' }
-				}
-			};
-
-			await authService.handleMagicLinkResult(result as any);
-
-			expect(storeSessionData).toHaveBeenCalledWith(mockSession);
-			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
-			expect(mockGoogleDriveService.refreshConnection).toHaveBeenCalledOnce();
-			expect(authStore.setUser).toHaveBeenCalledWith({
-				id: 'user-1',
-				email: 'test@example.com',
-				name: 'Test User'
-			});
-		});
-
-		it('should fall back to email as name when user_metadata has no name', async () => {
-			const result = {
-				success: true,
-				session: { access_token: 'abc', refresh_token: 'xyz' },
-				user: { id: 'user-1', email: 'foo@bar.com', user_metadata: {} }
-			};
-
-			await authService.handleMagicLinkResult(result as any);
-
-			expect(authStore.setUser).toHaveBeenCalledWith(
-				expect.objectContaining({ name: 'foo@bar.com' })
-			);
-		});
-
-		it('should set error when result.success is false', async () => {
-			const result = {
-				success: false,
-				error: 'Token expired',
-				user: { id: '', email: null }
-			};
-
-			await authService.handleMagicLinkResult(result as any);
-
-			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
-			expect(authStore.setUser).not.toHaveBeenCalled();
-		});
-
-		it('should set error when session is missing from successful result', async () => {
-			const result = {
-				success: true,
-				session: null,
-				user: { id: 'user-1', email: 'test@example.com' }
-			};
-
-			await authService.handleMagicLinkResult(result as any);
-
-			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
-		});
-
-		it('should set error when user is missing from successful result', async () => {
-			// The Rust backend serializes `user` with skip_serializing_if, so a
-			// successful response may omit it — the handler must guard rather
-			// than crash reading `.id` on undefined.
-			const result = {
-				success: true,
-				session: { access_token: 'abc', refresh_token: 'xyz' }
-			};
-
-			await authService.handleMagicLinkResult(result as any);
-
-			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
 		});
 	});
 
 	describe('logout', () => {
-		it('hides Drive state before a slow native logout completes', async () => {
-			let resolveLogout: (value: boolean) => void;
-			host.logoutSession.mockReturnValue(
-				new Promise<boolean>((resolve) => {
-					resolveLogout = resolve;
-				})
-			);
-
-			const logout = authService.logout();
-
-			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
-			expect(authStore.logout).toHaveBeenCalledOnce();
-			resolveLogout!(true);
-			await logout;
-		});
-
-		it('should clear session and call store logout', async () => {
-			// Arrange
-			host.logoutSession.mockResolvedValue(true);
-
-			// Act
+		it('clears the native session, neutral storage, cache, and Drive state', async () => {
 			await authService.logout();
 
-			// Assert
-			expect(host.logoutSession).toHaveBeenCalledWith();
-			expect(clearStoredSessionData).toHaveBeenCalled();
-			expect(authStore.logout).toHaveBeenCalled();
+			expect(authStore.logout).toHaveBeenCalledOnce();
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
+			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
 		});
 
-		it('should still clear local state when host logout throws', async () => {
+		it('clears renderer state even when native logout fails', async () => {
 			host.logoutSession.mockRejectedValue(new Error('IPC error'));
 
 			await authService.logout();
 
-			expect(clearStoredSessionData).toHaveBeenCalled();
-			expect(authStore.logout).toHaveBeenCalled();
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
+			expect(authStore.logout).toHaveBeenCalledOnce();
 		});
 
-		it('should clear linkages from tree nodes when treeStructure is non-empty', async () => {
-			host.logoutSession.mockResolvedValue(true);
-
+		it('removes cloud linkages from the workspace tree', async () => {
 			const treeNode = {
 				name: 'song-folder',
 				path: '/workspace/song',
@@ -413,7 +279,6 @@ describe('AuthService', () => {
 				linkedSimFileId: 'sim-123',
 				linkedSimFile: { id: 'sim-123' }
 			};
-
 			mockWorkspaceSubscribeFn.mockImplementationOnce((callback: (state: any) => void) => {
 				callback({ treeStructure: [treeNode], path: '/workspace' });
 				return vi.fn();
@@ -426,21 +291,6 @@ describe('AuthService', () => {
 					expect.objectContaining({ linkedSimFileId: null, linkedSimFile: null })
 				])
 			);
-		});
-	});
-
-	describe('restoreSession - invalid userData', () => {
-		it('should clear stored data and return false when userData has no id field', async () => {
-			(getStoredSessionData as any).mockReturnValue({
-				accessToken: 'tok',
-				refreshToken: 'ref',
-				userData: { email: 'no-id@test.com' } // missing `id` field
-			});
-
-			const result = await authService.restoreSession();
-
-			expect(clearStoredSessionData).toHaveBeenCalled();
-			expect(result).toBe(false);
 		});
 	});
 });

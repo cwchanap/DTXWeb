@@ -3,7 +3,6 @@
 
 declare global {
 	interface ImportMetaEnv {
-		readonly VITE_DTX_SERVER_URL: string;
 		readonly VITE_DTX_API_URL: string;
 		readonly PUBLIC_SUPABASE_URL: string;
 		readonly PUBLIC_SUPABASE_ANON_KEY: string;

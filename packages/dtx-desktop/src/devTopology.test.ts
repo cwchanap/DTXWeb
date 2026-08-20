@@ -67,13 +67,13 @@ describe('desktop local dev topology', () => {
 			'wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787'
 		);
 		expect(desktopPackage.scripts.dev).toBe(
-			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
+			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
 		);
 		expect(webPackage.scripts['dev:local-api']).toBe(
-			'PUBLIC_DTX_API_URL=http://localhost:8787 PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL=http://127.0.0.1:47931/auth-callback vite dev --port 5173'
+			'PUBLIC_DTX_API_URL=http://localhost:8787 vite dev --port 5173'
 		);
 		expect(desktopPackage.scripts['dev:local-web']).toBe(
-			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local VITE_DTX_SERVER_URL=http://localhost:5173 VITE_DTX_API_URL=http://localhost:8787 DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT=47931 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
+			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local VITE_DTX_API_URL=http://localhost:8787 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
 		);
 		expect(turboConfig.tasks).toHaveProperty('dtx-api#dev:local');
 		expect(turboConfig.tasks).toHaveProperty('dtx-web#dev:local-api');

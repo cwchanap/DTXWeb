@@ -3,8 +3,6 @@ import { cleanup, render, waitFor } from '@testing-library/svelte';
 import { get } from 'svelte/store';
 
 const mockDesktopHost = vi.hoisted(() => ({
-	onMagicLinkResult: vi.fn(),
-	drainPendingAuthEvents: vi.fn(),
 	getWorkspaceRoot: vi.fn(),
 	getCurrentWorkspaceRootId: vi.fn()
 }));
@@ -26,7 +24,6 @@ const mockAppShell = vi.hoisted(() => vi.fn());
 const mockDesktopEditor = vi.hoisted(() => vi.fn());
 
 const mockAuthService = vi.hoisted(() => ({
-	handleMagicLinkResult: vi.fn(),
 	restoreSession: vi.fn()
 }));
 
@@ -91,7 +88,6 @@ describe('App lifecycle', () => {
 		workspaceStore.reset();
 		window.location.hash = '';
 		mockAuthService.restoreSession.mockResolvedValue(undefined);
-		mockDesktopHost.drainPendingAuthEvents.mockResolvedValue(undefined);
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
 		mockDesktopHost.getCurrentWorkspaceRootId.mockResolvedValue(null);
 		mockWorkspaceService.getTransitionGeneration.mockReturnValue(0);
@@ -103,29 +99,16 @@ describe('App lifecycle', () => {
 		cleanup();
 	});
 
-	it('cleans up listener registrations that resolve after unmount', async () => {
-		const magicLinkUnlisten = vi.fn();
-		const magicLinkRegistration = createDeferred<() => void>();
-
-		mockDesktopHost.onMagicLinkResult.mockReturnValue(magicLinkRegistration.promise);
-
+	it('restores the session after workspace hydration without legacy auth listeners', async () => {
 		const { unmount } = render(App);
 
 		await waitFor(() => {
-			expect(mockDesktopHost.onMagicLinkResult).toHaveBeenCalledOnce();
+			expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
 		});
 		unmount();
-
-		magicLinkRegistration.resolve(magicLinkUnlisten);
-		await flushPromises();
-
-		expect(magicLinkUnlisten).toHaveBeenCalledOnce();
-		expect(mockDesktopHost.drainPendingAuthEvents).not.toHaveBeenCalled();
-		expect(mockAuthService.restoreSession).not.toHaveBeenCalled();
 	});
 
 	it('hydrates the workspace display path from the native managed root before loading it', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
 
 		render(App);
@@ -239,7 +222,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('leaves workspace selection empty when the native managed root is absent', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue(null);
 
 		render(App);
@@ -252,7 +234,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('leaves workspace selection empty when native hydration rejects', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockRejectedValue(new Error('IPC unavailable'));
 		workspaceStore.setPath('/stale/renderer/path');
 
@@ -268,7 +249,6 @@ describe('App lifecycle', () => {
 	it('continues loading the workspace when root-id hydration rejects', async () => {
 		// rootId is display-only metadata; its lookup failure must not abort
 		// workspace hydration (the outer catch would clear the valid path).
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
 		mockDesktopHost.getCurrentWorkspaceRootId.mockRejectedValue(
 			new Error('root-id IPC failed')
@@ -284,27 +264,13 @@ describe('App lifecycle', () => {
 		expect(get(workspaceStore).rootId).toBeNull();
 	});
 
-	it('drains pending auth events before restoring the session', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-
+	it('restores the session after workspace hydration without auth event draining', async () => {
 		render(App);
 
-		await waitFor(() => {
-			expect(mockDesktopHost.drainPendingAuthEvents).toHaveBeenCalledOnce();
-		});
-		expect(mockAuthService.restoreSession).toHaveBeenCalledOnce();
-		expect(mockDesktopHost.onMagicLinkResult.mock.invocationCallOrder[0]).toBeLessThan(
-			mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]
-		);
-		expect(mockDesktopHost.drainPendingAuthEvents.mock.invocationCallOrder[0]).toBeLessThan(
-			mockAuthService.restoreSession.mock.invocationCallOrder[0]
-		);
+		await waitFor(() => expect(mockAuthService.restoreSession).toHaveBeenCalledOnce());
 	});
 
 	it('still restores the session when a bootstrap call fails', async () => {
-		// A failing host registration must not abort onMount before restoreSession runs.
-		mockDesktopHost.onMagicLinkResult.mockRejectedValue(new Error('IPC unavailable'));
-
 		render(App);
 
 		await waitFor(() => {
@@ -312,10 +278,7 @@ describe('App lifecycle', () => {
 		});
 	});
 
-	it('still restores the session when draining pending auth events fails', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
-		mockDesktopHost.drainPendingAuthEvents.mockRejectedValue(new Error('IPC unavailable'));
-
+	it('still restores the session when the native bootstrap is unavailable', async () => {
 		render(App);
 
 		await waitFor(() => {
@@ -324,7 +287,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('fetches simfile data and triggers auto-linking when user becomes authenticated', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');
 		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
 			data: [],
@@ -346,7 +308,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('sets simfile store error when fetchUserSimFiles returns an error result', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');
 		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
 			data: [],
@@ -371,7 +332,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('redirects from login route to workspace when user becomes authenticated', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');
 		vi.mocked(simFileService.fetchUserSimFiles).mockResolvedValue({
 			data: [],
@@ -394,7 +354,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('triggers auto-linking when simfiles and tree structure both have data', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');
 		const { linkingService } = await import('./services/linkingService');
 		const simfileData = [{ id: 1, title: 'Song A', artist: 'Artist', bpm: 120 }];
@@ -436,7 +395,6 @@ describe('App lifecycle', () => {
 	});
 
 	it('sets simfile store error when fetchUserSimFiles rejects', async () => {
-		mockDesktopHost.onMagicLinkResult.mockResolvedValue(vi.fn());
 		const { simFileService } = await import('./services/simFileService');
 		vi.mocked(simFileService.fetchUserSimFiles).mockRejectedValue(new Error('Network error'));
 

@@ -177,6 +177,15 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 
 ## Task 4
 
+- Implementer: `/root/d1_task4_cutover`.
+- Commit: `69c2b878` (`refactor(auth): use Better Auth application sessions`).
+- Evidence: observed RED GraphQL cookie-session failure; 98 focused authorization tests passed in controller/reviewer verification, full API suite passed 395 tests, API typecheck/Prettier/ESLint/diff checks passed, and `verifyToken` search is clean.
+- Review: approved by Terra integration reviewer with no Critical, Important, or Minor findings. GraphQL and all protected REST routes use the centralized resolver; cookie/unsafe-Origin and Bearer isolation are preserved; Pothos `FORBIDDEN` and REST 401/403 semantics remain unchanged.
+- Ruling: the temporary ID-only `ctx.user` cannot satisfy the legacy magic-link mutation's email access, but Task 5 immediately removes that mutation and the plan prohibits intermediate deployment. Cost if wrong: invoking the mutation between commits would fail; no such deployment is authorized.
+- Task 4: complete (commits `bb941c3..69c2b878`, review clean).
+
+## Task 4
+
 - RED: after retargeting the first GraphQL test but before production edits, `bun run --filter=dtx-api test -- src/schema/builder.test.ts -t "GraphQL accepts a valid Better Auth cookie session"` failed with `expected undefined to be 'ok'`; the old context still called `verifyToken()` and did not call the resolver mock.
 - Implementation: switched `createContext`, upload, single-download, and bulk-download authorization to Foundation `resolveAuthSession()`; kept Pothos scopes and existing REST status/resource semantics; narrowed context auth data to the neutral Foundation types with a temporary optional email compatibility field for the Task 5 magic-link removal seam; deleted `verifyToken.ts` and `verifyToken.test` after the caller search was clean.
 - Tests: GraphQL and all protected REST route tests now cover valid cookie, valid Bearer without Origin, missing/wrong unsafe-cookie Origin, and anonymous/invalid unauthorized behavior. `index.test.ts` was updated only as the necessary existing router test helper for the deleted verifier.

@@ -252,6 +252,23 @@ describe('authService', () => {
 	});
 
 	describe('logout', () => {
+		it('clears renderer persistence before awaiting remote native revocation', async () => {
+			let resolveLogout!: (value: boolean) => void;
+			host.logoutSession.mockReturnValue(
+				new Promise<boolean>((resolve) => {
+					resolveLogout = resolve;
+				})
+			);
+
+			const logout = authService.logout();
+			await vi.waitFor(() => expect(host.logoutSession).toHaveBeenCalledOnce());
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
+			expect(mockGoogleDriveStore.reset).toHaveBeenCalledOnce();
+
+			resolveLogout(true);
+			await logout;
+		});
+
 		it('clears the native session, neutral storage, cache, and Drive state', async () => {
 			await authService.logout();
 
@@ -282,8 +299,8 @@ describe('authService', () => {
 			expect(host.logoutSession.mock.invocationCallOrder[0]).toBeGreaterThan(
 				host.cancelDeviceAuthorization.mock.invocationCallOrder[0]
 			);
-			expect(clearStoredSessionData.mock.invocationCallOrder[0]).toBeGreaterThan(
-				host.logoutSession.mock.invocationCallOrder[0]
+			expect(clearStoredSessionData.mock.invocationCallOrder[0]).toBeLessThan(
+				host.cancelDeviceAuthorization.mock.invocationCallOrder[0]
 			);
 		});
 

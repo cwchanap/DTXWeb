@@ -1,7 +1,7 @@
 use crate::api_contracts::{DesktopAuthSession, DesktopAuthUser, DeviceAuthorizationAttempt};
 use crate::device_auth::{
-    api_base_url_from_values, DeviceAuthClient, DeviceAuthError, DeviceAuthorizationFlow,
-    DevicePollResult,
+    api_base_url_from_values, infer_web_origin_from_api_url, web_origin_from_values,
+    DeviceAuthClient, DeviceAuthError, DeviceAuthorizationFlow, DevicePollResult,
 };
 use crate::error::{DesktopError, Result};
 use serde::{Deserialize, Serialize};
@@ -21,11 +21,17 @@ struct PendingDeviceAuthorization {
     next_poll_at: Instant,
 }
 
+#[derive(Debug, Default)]
+struct PendingDeviceState {
+    generation: u64,
+    pending: Option<PendingDeviceAuthorization>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct AuthState {
     current_session: Arc<AsyncMutex<Option<DesktopAuthSession>>>,
     session_generation: Arc<AtomicU64>,
-    pending_device: Arc<AsyncMutex<Option<PendingDeviceAuthorization>>>,
+    pending_device: Arc<AsyncMutex<PendingDeviceState>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,7 +66,7 @@ impl AuthState {
                 user_id,
             )))),
             session_generation: Arc::new(AtomicU64::new(1)),
-            pending_device: Arc::new(AsyncMutex::new(None)),
+            pending_device: Arc::new(AsyncMutex::new(PendingDeviceState::default())),
         })
     }
 
@@ -110,6 +116,44 @@ impl AuthState {
     pub(crate) async fn set_current_auth_session(&self, session: Option<DesktopAuthSession>) {
         *self.current_session.lock().await = session;
         self.session_generation.fetch_add(1, Ordering::SeqCst);
+    }
+
+    async fn reserve_device_attempt(&self) -> u64 {
+        let mut pending = self.pending_device.lock().await;
+        pending.generation = pending.generation.saturating_add(1);
+        pending.pending.take();
+        pending.generation
+    }
+
+    async fn take_device_attempt(&self) -> Result<(u64, PendingDeviceAuthorization)> {
+        let mut pending = self.pending_device.lock().await;
+        let attempt = pending.pending.take().ok_or_else(|| {
+            DesktopError::Message("No device authorization is pending".to_string())
+        })?;
+        Ok((pending.generation, attempt))
+    }
+
+    async fn replace_device_attempt_if_current(
+        &self,
+        generation: u64,
+        pending_attempt: PendingDeviceAuthorization,
+    ) -> bool {
+        let mut pending = self.pending_device.lock().await;
+        if pending.generation != generation {
+            return false;
+        }
+        pending.pending = Some(pending_attempt);
+        true
+    }
+
+    async fn is_current_device_attempt(&self, generation: u64) -> bool {
+        self.pending_device.lock().await.generation == generation
+    }
+
+    async fn cancel_device_attempt(&self) -> bool {
+        let mut pending = self.pending_device.lock().await;
+        pending.generation = pending.generation.saturating_add(1);
+        pending.pending.take().is_some()
     }
 
     pub(crate) async fn current_session_epoch(&self) -> Option<AuthSessionEpoch> {
@@ -171,65 +215,106 @@ pub enum DeviceAuthorizationPoll {
     InvalidGrant,
 }
 
-#[tauri::command]
-pub async fn begin_device_authorization(app: AppHandle) -> Result<DeviceAuthorizationAttempt> {
+fn configured_device_auth_client() -> Result<DeviceAuthClient> {
     let base_url = api_base_url_from_values(config_env!("VITE_DTX_API_URL").as_deref())
         .map_err(|_| DesktopError::Message("Device authorization is not configured".to_string()))?;
-    let client = DeviceAuthClient::new(base_url)?;
-    let flow = client.begin().await.map_err(device_auth_error)?;
+    let trusted_origin = match config_env!("VITE_DTX_WEB_URL") {
+        Some(web_url) => web_origin_from_values(Some(&web_url))?,
+        None => infer_web_origin_from_api_url(&base_url)?,
+    };
+    DeviceAuthClient::new_with_origin(base_url, trusted_origin)
+}
+
+fn superseded_device_attempt() -> DesktopError {
+    DesktopError::Message("Device authorization attempt was superseded".to_string())
+}
+
+#[tauri::command]
+pub async fn begin_device_authorization(app: AppHandle) -> Result<DeviceAuthorizationAttempt> {
+    begin_device_authorization_impl(app).await
+}
+
+pub(crate) async fn begin_device_authorization_impl<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<DeviceAuthorizationAttempt> {
+    let state = app.state::<AuthState>();
+    let generation = state.reserve_device_attempt().await;
+    let client = configured_device_auth_client()?;
+    let flow = client.begin().await;
+    let mut pending = state.pending_device.lock().await;
+    if pending.generation != generation {
+        return Err(superseded_device_attempt());
+    }
+    let flow = flow.map_err(device_auth_error)?;
     let attempt = flow.attempt().clone();
-    app.state::<AuthState>()
-        .pending_device
-        .lock()
-        .await
-        .replace(PendingDeviceAuthorization {
-            next_poll_at: Instant::now(),
-            client,
-            flow,
-        });
+    pending.pending = Some(PendingDeviceAuthorization {
+        next_poll_at: Instant::now(),
+        client,
+        flow,
+    });
     Ok(attempt)
 }
 
 #[tauri::command]
 pub async fn poll_device_authorization(app: AppHandle) -> Result<DeviceAuthorizationPoll> {
+    poll_device_authorization_impl(app).await
+}
+
+pub(crate) async fn poll_device_authorization_impl<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<DeviceAuthorizationPoll> {
     let state = app.state::<AuthState>();
-    let mut pending =
-        state.pending_device.lock().await.take().ok_or_else(|| {
-            DesktopError::Message("No device authorization is pending".to_string())
-        })?;
+    let (generation, mut pending) = state.take_device_attempt().await?;
 
     let now = Instant::now();
     if now < pending.next_poll_at {
         let retry_after = pending.next_poll_at.saturating_duration_since(now);
         let retry_after_ms = retry_after.as_millis().min(u128::from(u64::MAX)) as u64;
-        state.pending_device.lock().await.replace(pending);
+        if !state
+            .replace_device_attempt_if_current(generation, pending)
+            .await
+        {
+            return Err(superseded_device_attempt());
+        }
         return Ok(DeviceAuthorizationPoll::Pending { retry_after_ms });
     }
 
-    match pending.client.poll(&pending.flow).await {
+    let poll_result = pending.client.poll(&pending.flow).await;
+    let mut pending_state = state.pending_device.lock().await;
+    if pending_state.generation != generation {
+        return Err(superseded_device_attempt());
+    }
+
+    match poll_result {
         Ok(DevicePollResult::Approved(session)) => {
             state.set_current_auth_session(Some(session.clone())).await;
-            spawn_drive_reconciliation_if_available(&app);
+            if pending_state.generation != generation {
+                return Err(superseded_device_attempt());
+            }
+            drop(pending_state);
+            if state.is_current_device_attempt(generation).await {
+                spawn_drive_reconciliation_if_available(&app);
+            }
             Ok(DeviceAuthorizationPoll::Approved { session })
         }
         Err(DeviceAuthError::AuthorizationPending) => {
             pending.next_poll_at = Instant::now() + pending.flow.interval();
             let retry_after_ms = pending.flow.interval().as_millis() as u64;
-            state.pending_device.lock().await.replace(pending);
+            pending_state.pending = Some(pending);
             Ok(DeviceAuthorizationPoll::Pending { retry_after_ms })
         }
         Err(DeviceAuthError::SlowDown) => {
             pending.flow.increase_interval();
             pending.next_poll_at = Instant::now() + pending.flow.interval();
             let retry_after_ms = pending.flow.interval().as_millis() as u64;
-            state.pending_device.lock().await.replace(pending);
+            pending_state.pending = Some(pending);
             Ok(DeviceAuthorizationPoll::Pending { retry_after_ms })
         }
         Err(DeviceAuthError::AccessDenied) => Ok(DeviceAuthorizationPoll::Denied),
         Err(DeviceAuthError::ExpiredToken) => Ok(DeviceAuthorizationPoll::Expired),
         Err(DeviceAuthError::InvalidGrant) => Ok(DeviceAuthorizationPoll::InvalidGrant),
         Err(error) => {
-            state.pending_device.lock().await.replace(pending);
+            pending_state.pending = Some(pending);
             Err(device_auth_error(error))
         }
     }
@@ -237,13 +322,13 @@ pub async fn poll_device_authorization(app: AppHandle) -> Result<DeviceAuthoriza
 
 #[tauri::command]
 pub async fn cancel_device_authorization(app: AppHandle) -> Result<bool> {
-    Ok(app
-        .state::<AuthState>()
-        .pending_device
-        .lock()
-        .await
-        .take()
-        .is_some())
+    cancel_device_authorization_impl(app).await
+}
+
+pub(crate) async fn cancel_device_authorization_impl<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<bool> {
+    Ok(app.state::<AuthState>().cancel_device_attempt().await)
 }
 
 #[tauri::command]
@@ -328,23 +413,35 @@ pub async fn logout_session(app: AppHandle) -> Result<bool> {
 
 pub(crate) async fn logout_session_impl<R: Runtime>(app: AppHandle<R>) -> Result<bool> {
     let state = app.state::<AuthState>();
-    if let Ok(session_token) = state.current_session_token().await {
-        if let Some(base_url) = config_env!("VITE_DTX_API_URL")
-            .and_then(|url| api_base_url_from_values(Some(&url)).ok())
-        {
-            if let Ok(client) = DeviceAuthClient::new(base_url) {
-                let _ = client.sign_out(&session_token).await;
-            }
-        }
-    }
+    let session = state.current_session_typed().await;
+    let session_token = session
+        .as_ref()
+        .map(|session| session.session_token.clone());
+    let user_id = session
+        .as_ref()
+        .map(|session| session.user.id.clone())
+        .filter(|user_id| !user_id.trim().is_empty());
+
+    // Invalidate both native session consumers before any network await. A
+    // delayed device poll must observe the new attempt generation and cannot
+    // reinstall a session or start Drive reconciliation after logout.
+    state.cancel_device_attempt().await;
+    state.set_current_auth_session(None).await;
+
     if let (Some(user_id), Some(drive)) = (
-        state.current_user_id().await,
+        user_id.as_deref(),
         app.try_state::<crate::google_drive::GoogleDriveState>(),
     ) {
-        drive.clear_user_memory(&user_id).await;
+        drive.clear_user_memory(user_id).await;
     }
-    state.set_current_auth_session(None).await;
-    state.pending_device.lock().await.take();
+
+    // Remote revocation is deliberately best effort. The captured token is
+    // used so local invalidation never depends on the sign-out request.
+    if let Some(session_token) = session_token {
+        if let Ok(client) = configured_device_auth_client() {
+            let _ = client.sign_out(&session_token).await;
+        }
+    }
     Ok(true)
 }
 
@@ -370,7 +467,7 @@ fn ensure_allowed_external_url(raw_url: &str) -> Result<()> {
     ))
 }
 
-fn spawn_drive_reconciliation_if_available(app: &AppHandle) {
+fn spawn_drive_reconciliation_if_available<R: Runtime>(app: &AppHandle<R>) {
     if app
         .try_state::<crate::google_drive::GoogleDriveState>()
         .is_some()

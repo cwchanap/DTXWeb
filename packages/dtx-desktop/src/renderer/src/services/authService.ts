@@ -188,22 +188,22 @@ export const authService = {
 		authFlowGeneration++;
 		authStore.logout();
 		googleDriveStore.reset();
+		// Renderer state is invalidated before any native/network await. A
+		// delayed native revoke must not leave credentials or cloud-owned
+		// linkages visible while logout is in flight.
+		clearStoredSessionData();
+		simFileService.clearCache();
+		simFileStore.reset();
+		clearCloudLinkages();
 		try {
-			try {
-				await desktopHost.cancelDeviceAuthorization();
-			} catch (error) {
-				console.error('Failed to cancel authentication during logout:', error);
-			}
-			try {
-				await desktopHost.logoutSession();
-			} catch (error) {
-				console.error('Failed to logout:', error);
-			}
-		} finally {
-			clearStoredSessionData();
-			simFileService.clearCache();
-			simFileStore.reset();
-			clearCloudLinkages();
+			await desktopHost.cancelDeviceAuthorization();
+		} catch (error) {
+			console.error('Failed to cancel authentication during logout:', error);
+		}
+		try {
+			await desktopHost.logoutSession();
+		} catch (error) {
+			console.error('Failed to logout:', error);
 		}
 	}
 };

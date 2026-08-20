@@ -22,6 +22,13 @@ vi.mock('@dtx/common/server', async () => {
 
 vi.mock('./auth/verifyToken', () => ({ verifyToken: vi.fn(async () => null) }));
 
+const authMocks = vi.hoisted(() => ({
+	createAuth: vi.fn(),
+	handler: vi.fn()
+}));
+
+vi.mock('./auth/auth', () => ({ createAuth: authMocks.createAuth }));
+
 vi.mock('./services/uploads', () => ({
 	uploadSimfileFile: vi.fn(
 		async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
@@ -56,7 +63,63 @@ const makeExecutionCtx = (): ExecutionContext =>
 		passThroughOnException: vi.fn()
 	}) as unknown as ExecutionContext;
 
+beforeEach(() => {
+	vi.clearAllMocks();
+	authMocks.createAuth.mockReturnValue({ handler: authMocks.handler });
+});
+
 describe('worker fetch router', () => {
+	it('routes GET /api/auth/* through the request-scoped Better Auth handler', async () => {
+		const env = makeEnv();
+		authMocks.handler.mockResolvedValue(new Response('better-auth GET'));
+		const request = new Request('https://api.test/api/auth/get-session', {
+			method: 'GET',
+			headers: { Origin: 'http://localhost:5173' }
+		});
+
+		const response = await worker.fetch(request, env, makeExecutionCtx());
+
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe('better-auth GET');
+		expect(authMocks.createAuth).toHaveBeenCalledWith(env);
+		expect(authMocks.handler).toHaveBeenCalledWith(request);
+		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
+	});
+
+	it('routes POST /api/auth/* through the request-scoped Better Auth handler', async () => {
+		const env = makeEnv();
+		authMocks.handler.mockResolvedValue(new Response('better-auth POST', { status: 201 }));
+		const request = new Request('https://api.test/api/auth/sign-in/email', {
+			method: 'POST',
+			headers: {
+				Origin: 'http://localhost:5173',
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify({ email: 'user@example.com' })
+		});
+
+		const response = await worker.fetch(request, env, makeExecutionCtx());
+
+		expect(response.status).toBe(201);
+		expect(await response.text()).toBe('better-auth POST');
+		expect(authMocks.createAuth).toHaveBeenCalledWith(env);
+		expect(authMocks.handler).toHaveBeenCalledWith(request);
+	});
+
+	it('keeps unrelated GraphQL routing outside Better Auth', async () => {
+		const response = await worker.fetch(
+			new Request('https://api.test/graphql', {
+				method: 'GET',
+				headers: { accept: 'text/html', Origin: 'http://localhost:5173' }
+			}),
+			makeEnv({ GRAPHIQL: 'true' }),
+			makeExecutionCtx()
+		);
+
+		expect(response.status).toBe(200);
+		expect(authMocks.createAuth).not.toHaveBeenCalled();
+	});
+
 	it('returns a CORS preflight response for allow-listed origins', async () => {
 		const response = await worker.fetch(
 			new Request('https://api.test/graphql', {

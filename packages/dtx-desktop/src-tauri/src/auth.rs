@@ -9,7 +9,7 @@ use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex as AsyncMutex;
 use url::Url;
@@ -323,7 +323,20 @@ pub async fn get_current_session(app: AppHandle) -> Result<Option<DesktopAuthSes
 
 #[tauri::command]
 pub async fn logout_session(app: AppHandle) -> Result<bool> {
+    logout_session_impl(app).await
+}
+
+pub(crate) async fn logout_session_impl<R: Runtime>(app: AppHandle<R>) -> Result<bool> {
     let state = app.state::<AuthState>();
+    if let Some(session_token) = state.current_session_token().await.ok() {
+        if let Some(base_url) = config_env!("VITE_DTX_API_URL")
+            .and_then(|url| api_base_url_from_values(Some(&url)).ok())
+        {
+            if let Ok(client) = DeviceAuthClient::new(base_url) {
+                let _ = client.sign_out(&session_token).await;
+            }
+        }
+    }
     if let (Some(user_id), Some(drive)) = (
         state.current_user_id().await,
         app.try_state::<crate::google_drive::GoogleDriveState>(),

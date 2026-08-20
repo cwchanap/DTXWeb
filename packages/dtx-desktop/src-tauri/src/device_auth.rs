@@ -251,6 +251,32 @@ impl DeviceAuthClient {
             .filter(|user| !user.id.trim().is_empty()))
     }
 
+    pub(crate) async fn sign_out(
+        &self,
+        session_token: &str,
+    ) -> std::result::Result<(), DeviceAuthError> {
+        if session_token.trim().is_empty() {
+            return Ok(());
+        }
+        let response = self
+            .client
+            .post(self.endpoint("/api/auth/sign-out"))
+            .bearer_auth(session_token)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let status = response.status();
+        if status.is_success() {
+            Ok(())
+        } else if status == StatusCode::UNAUTHORIZED {
+            Err(DeviceAuthError::InvalidGrant)
+        } else if status.is_server_error() {
+            Err(DeviceAuthError::ServerStatus(status.as_u16()))
+        } else {
+            Err(DeviceAuthError::InvalidRequest)
+        }
+    }
+
     fn endpoint(&self, path: &str) -> String {
         format!("{}{}", self.base_url, path)
     }

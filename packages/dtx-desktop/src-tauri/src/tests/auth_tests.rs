@@ -1,5 +1,34 @@
 use super::*;
 use crate::api_contracts::DesktopAuthUser;
+use std::sync::{Mutex, OnceLock};
+use wiremock::matchers::{header, method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
+
+fn logout_env_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct LogoutApiUrlGuard {
+    previous: Option<std::ffi::OsString>,
+}
+
+impl LogoutApiUrlGuard {
+    fn replace(value: &str) -> Self {
+        let previous = std::env::var_os("VITE_DTX_API_URL");
+        std::env::set_var("VITE_DTX_API_URL", value);
+        Self { previous }
+    }
+}
+
+impl Drop for LogoutApiUrlGuard {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var("VITE_DTX_API_URL", value),
+            None => std::env::remove_var("VITE_DTX_API_URL"),
+        }
+    }
+}
 
 #[tokio::test]
 async fn auth_state_preserves_user_epoch_and_generation_across_session_changes() {
@@ -92,6 +121,72 @@ fn typed_auth_session_debug_redacts_opaque_token() {
         },
     };
     assert!(!format!("{session:?}").contains("opaque-token-must-not-print"));
+}
+
+#[tokio::test]
+async fn logout_session_signs_out_with_bearer_and_clears_local_state_on_success() {
+    let _lock = logout_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let server = MockServer::start().await;
+    let session_token = "opaque-logout-token";
+    let sign_out = Mock::given(method("POST"))
+        .and(path("/api/auth/sign-out"))
+        .and(header("authorization", format!("Bearer {session_token}")))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount_as_scoped(&server)
+        .await;
+    let _api_url = LogoutApiUrlGuard::replace(&server.uri());
+
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "sessionToken": session_token,
+            "user": { "id": "logout-user" }
+        })))
+        .await;
+    let app = tauri::test::mock_app();
+    app.manage(state.clone());
+
+    assert!(logout_session_impl(app.handle().clone())
+        .await
+        .expect("logout"));
+    assert!(state.current_session().await.is_none());
+    drop(sign_out);
+}
+
+#[tokio::test]
+async fn logout_session_clears_local_state_when_remote_sign_out_fails() {
+    let _lock = logout_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let server = MockServer::start().await;
+    let session_token = "opaque-logout-token";
+    let sign_out = Mock::given(method("POST"))
+        .and(path("/api/auth/sign-out"))
+        .and(header("authorization", format!("Bearer {session_token}")))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount_as_scoped(&server)
+        .await;
+    let _api_url = LogoutApiUrlGuard::replace(&server.uri());
+
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "sessionToken": session_token,
+            "user": { "id": "logout-user" }
+        })))
+        .await;
+    let app = tauri::test::mock_app();
+    app.manage(state.clone());
+
+    assert!(logout_session_impl(app.handle().clone())
+        .await
+        .expect("logout"));
+    assert!(state.current_session().await.is_none());
+    drop(sign_out);
 }
 
 #[cfg(all(feature = "e2e", debug_assertions))]

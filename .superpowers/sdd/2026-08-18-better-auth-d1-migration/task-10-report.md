@@ -86,3 +86,29 @@ both supported feature-mode clippy gates pass.
 
 No renderer Task 11, development server, build, or deployment work was
 performed.
+
+## Review fix: revoke the Better Auth session on native logout
+
+The review found that the initial cutover cleared only local native state, so
+the Better Auth D1 session remained replayable. Two WireMock tests were added
+before the fix. After the MockRuntime test seam was isolated behind the
+generic internal helper, the focused command failed because
+`logout_session_impl` did not exist in the production module.
+
+The fix keeps the public `logout_session` command unchanged, posts the opaque
+session token as `Authorization: Bearer <token>` to
+`POST /api/auth/sign-out` when configured, ignores remote sign-out failures as
+best effort, and always clears local auth state and the pending device flow.
+No token is logged or included in an error returned to the renderer.
+
+Review-fix GREEN:
+
+- Logout WireMock success/failure matrix: 2 passed. Both assert the exact
+  bearer sign-out request and local session cleanup; the failure case returns
+  success to the command while still clearing local state.
+- Existing auth slice: 79 passed (including the 2 new logout tests).
+- Existing device protocol slice: 9 passed.
+- `cargo fmt --check` and `git diff --check`: passed.
+
+The review-fix source, tests, report, and ledger are included in the
+follow-up conventional commit for this task.

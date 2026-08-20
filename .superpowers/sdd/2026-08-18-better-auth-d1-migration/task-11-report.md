@@ -52,7 +52,7 @@ VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT.
 ## GREEN and verification
 
 - Focused renderer/storage/host/App/topology matrix: 5 files, 91 tests passed.
-- Full `bun run --filter=dtx-desktop test`: 58 files, 998 tests passed.
+- Full `bun run --filter=dtx-desktop test`: 58 files, 1,010 tests passed.
 - `bun run --filter=dtx-desktop typecheck`: `svelte-check` 0 errors, 0 warnings.
 - `bun run --filter=dtx-e2e-desktop check`: passed.
 - Standalone session and Drive crash-recovery tests: 29 passed, 0 failed.
@@ -68,6 +68,32 @@ VITE_DTX_DESKTOP_AUTH_CALLBACK_PORT.
   the supported feature-mode Rust gates were already green in Task 10.
 - A targeted source/config search is clean for callback ports, callback URLs,
   auth deep-link schemes, and removed magic-link/session-refresh event symbols.
+
+## Task 11 review fixes
+
+The scoped re-review identified three Important gaps: malformed renderer
+storage needed live cleanup coverage, the device-auth handoff needed an
+explicitly named accessible verification link plus toolbar/command-palette
+reachability coverage, and logout needed ordering coverage when pending-flow
+cancellation rejects.
+
+- RED: the real-storage test failed for an empty malformed `auth_session`
+  value (`1 failed | 18 passed`); the Login component test failed because the
+  verification link exposed only the raw URL as its accessible name (`1 failed
+  | 7 passed`). The logout regression test now asserts cancellation,
+  `logoutSession`, and renderer cleanup order while both native calls may
+  fail.
+- Fix: distinguish absent storage (`null`) from an empty malformed value so the
+  live restore path removes the key, preserve valid storage on
+  `not-configured`, label the manual verification link for assistive
+  technology, and retain the independent best-effort native logout attempt
+  before unconditional renderer cleanup.
+- GREEN: the review-focused storage/auth/UI matrix passed with 88 tests across
+  six files; the command-palette and toolbar tests both reach the retryable
+  device-auth surface, and the logout failure test confirms call ordering.
+- The bounded `@sveltejs/mcp svelte-autofixer` invocation produced no output
+  for 10 seconds and was stopped with exit 130. `svelte-check` remains the
+  available Svelte diagnostics gate.
 
 ## Remaining limitations
 

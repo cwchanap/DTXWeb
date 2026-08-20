@@ -14,6 +14,49 @@ describe('authStore', () => {
 		expect(state.isLoading).toBe(false);
 		expect(state.user).toBeNull();
 		expect(state.error).toBeNull();
+		expect(state.isLoginVisible).toBe(false);
+		expect(state.deviceAuthorization).toBeNull();
+	});
+
+	describe('login surface', () => {
+		const authorization = {
+			verificationUri: 'https://dtx.example.com/device',
+			userCode: 'ABCD-EFGH'
+		};
+
+		it('opens a retryable login surface before device authorization starts', () => {
+			authStore.startLogin();
+			authStore.setError('Authentication failed');
+
+			const state = get(authStore);
+			expect(state.isLoginVisible).toBe(true);
+			expect(state.deviceAuthorization).toBeNull();
+			expect(state.error).toBe('Authentication failed');
+		});
+
+		it('publishes display-safe device authorization details', () => {
+			authStore.startLogin();
+			authStore.setDeviceAuthorization(authorization);
+
+			expect(get(authStore)).toMatchObject({
+				isLoginVisible: true,
+				deviceAuthorization: authorization
+			});
+		});
+
+		it('keeps the login surface open when device authorization is canceled', () => {
+			authStore.startLogin();
+			authStore.setDeviceAuthorization(authorization);
+			authStore.setLoading(false);
+			authStore.setError('Sign-in canceled.');
+
+			expect(get(authStore)).toMatchObject({
+				isLoginVisible: true,
+				deviceAuthorization: authorization,
+				isLoading: false,
+				error: 'Sign-in canceled.'
+			});
+		});
 	});
 
 	describe('setUser', () => {
@@ -34,6 +77,8 @@ describe('authStore', () => {
 			const state = get(authStore);
 			expect(state.error).toBeNull();
 			expect(state.isAuthenticated).toBe(true);
+			expect(state.isLoginVisible).toBe(false);
+			expect(state.deviceAuthorization).toBeNull();
 		});
 
 		it('should set user without name field', () => {
@@ -89,11 +134,14 @@ describe('authStore', () => {
 	describe('logout', () => {
 		it('should clear user and set isAuthenticated to false', () => {
 			authStore.setUser({ id: 'user-1', email: 'test@example.com' });
+			authStore.startLogin();
 			authStore.logout();
 
 			const state = get(authStore);
 			expect(state.user).toBeNull();
 			expect(state.isAuthenticated).toBe(false);
+			expect(state.isLoginVisible).toBe(false);
+			expect(state.deviceAuthorization).toBeNull();
 		});
 
 		it('should preserve other state fields on logout', () => {

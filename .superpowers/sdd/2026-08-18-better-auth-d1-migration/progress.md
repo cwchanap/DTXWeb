@@ -422,7 +422,7 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   the source search found it outside the desktop package; no API test-auth
   endpoint was added.
 - GREEN: focused renderer/storage/host/App/topology matrix — 5 files, 91 tests;
-  full desktop suite — 58 files, 998 tests; desktop svelte-check — 0 errors,
+  full desktop suite — 58 files, 1,010 tests; desktop svelte-check — 0 errors,
   0 warnings; E2E typecheck; standalone/crash tests — 29 passed; generated
   native exports — 42 passed; focused Prettier/ESLint, Rust fmt, and diff checks
   passed.
@@ -435,3 +435,17 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-11-report.md`.
 - Task 11: source, tests, report, and ledger are ready for the scoped
   conventional commit.
+
+## Task 11 review fixes
+
+- Scoped Important findings: live malformed `auth_session` cleanup and
+  `not-configured` retention, reachable/accessible Device Authorization UI
+  through toolbar and command palette, and logout ordering when cancellation
+  rejects.
+- RED: the empty malformed-storage case failed `1/19`, and the Login test
+  failed `1/8` until the production seams were corrected. The logout test now
+  locks cancellation -> native logout -> renderer cleanup ordering, including
+  native failure handling.
+- GREEN: review-focused storage/auth/UI coverage is 88 tests across six files.
+  The bounded Svelte autofixer was silent for 10 seconds and stopped; use
+  `svelte-check` as the available diagnostics gate.

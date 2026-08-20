@@ -24,6 +24,8 @@ const host = vi.mocked(desktopHost);
 
 vi.mock('../stores/authStore', () => ({
 	authStore: {
+		startLogin: vi.fn(),
+		setDeviceAuthorization: vi.fn(),
 		setLoading: vi.fn(),
 		setError: vi.fn(),
 		setUser: vi.fn(),
@@ -266,6 +268,23 @@ describe('authService', () => {
 
 			expect(clearStoredSessionData).toHaveBeenCalledOnce();
 			expect(authStore.logout).toHaveBeenCalledOnce();
+		});
+
+		it('runs native logout and renderer cleanup when canceling a pending flow fails', async () => {
+			host.cancelDeviceAuthorization.mockRejectedValue(new Error('no pending flow'));
+			host.logoutSession.mockRejectedValue(new Error('logout unavailable'));
+
+			await authService.logout();
+
+			expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce();
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+			expect(clearStoredSessionData).toHaveBeenCalledOnce();
+			expect(host.logoutSession.mock.invocationCallOrder[0]).toBeGreaterThan(
+				host.cancelDeviceAuthorization.mock.invocationCallOrder[0]
+			);
+			expect(clearStoredSessionData.mock.invocationCallOrder[0]).toBeGreaterThan(
+				host.logoutSession.mock.invocationCallOrder[0]
+			);
 		});
 
 		it('removes cloud linkages from the workspace tree', async () => {

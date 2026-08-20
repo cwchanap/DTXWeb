@@ -22,6 +22,7 @@ vi.mock('../../services/workspaceService', () => ({
 
 import CommandPalette from './CommandPalette.svelte';
 import { exportSelectedSong } from '../../services/exportService';
+import { authService } from '../../services/authService';
 
 const makeCloudSimFile = (overrides: Partial<SimfileModel> = {}): SimfileModel =>
 	({
@@ -57,6 +58,16 @@ describe('CommandPalette', () => {
 		render(CommandPalette, { open: true, onClose: vi.fn() });
 		expect(screen.getByText('New Song')).toBeInTheDocument();
 		expect(screen.getByText('Open Settings')).toBeInTheDocument();
+	});
+
+	it('runs the reachable Login command', async () => {
+		vi.mocked(authService.login).mockImplementation(() => authStore.startLogin());
+		render(CommandPalette, { open: true, onClose: vi.fn() });
+		await fireEvent.input(screen.getByRole('combobox'), { target: { value: 'login' } });
+		await fireEvent.click(screen.getByRole('option', { name: /^Login$/i }));
+
+		expect(authService.login).toHaveBeenCalledOnce();
+		expect(get(authStore).isLoginVisible).toBe(true);
 	});
 	it('filters by query', async () => {
 		render(CommandPalette, { open: true, onClose: vi.fn() });

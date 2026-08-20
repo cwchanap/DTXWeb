@@ -120,6 +120,63 @@ describe('sessionStorage', () => {
 		});
 	});
 
+	describe('real browser storage cleanup', () => {
+		const useRealLocalStorage = (): Storage => {
+			if (!originalLocalStorageDescriptor)
+				throw new Error('localStorage descriptor unavailable');
+			Object.defineProperty(window, 'localStorage', originalLocalStorageDescriptor);
+			return window.localStorage;
+		};
+
+		it('removes malformed neutral JSON from localStorage', () => {
+			const realLocalStorage = useRealLocalStorage();
+			realLocalStorage.clear();
+			realLocalStorage.setItem('auth_session', '{not-json');
+
+			expect(getStoredSessionData()).toBeNull();
+			expect(realLocalStorage.getItem('auth_session')).toBeNull();
+		});
+
+		it('removes an empty malformed neutral value from localStorage', () => {
+			const realLocalStorage = useRealLocalStorage();
+			realLocalStorage.clear();
+			realLocalStorage.setItem('auth_session', '');
+
+			expect(getStoredSessionData()).toBeNull();
+			expect(realLocalStorage.getItem('auth_session')).toBeNull();
+		});
+
+		it('removes structurally invalid neutral sessions from localStorage', () => {
+			const realLocalStorage = useRealLocalStorage();
+			realLocalStorage.clear();
+			realLocalStorage.setItem(
+				'auth_session',
+				JSON.stringify({ sessionToken: '', user: { id: 'user-1' } })
+			);
+
+			expect(getStoredSessionData()).toBeNull();
+			expect(realLocalStorage.getItem('auth_session')).toBeNull();
+		});
+
+		it('leaves truly absent neutral storage absent', () => {
+			const realLocalStorage = useRealLocalStorage();
+			realLocalStorage.clear();
+
+			expect(getStoredSessionData()).toBeNull();
+			expect(realLocalStorage.getItem('auth_session')).toBeNull();
+		});
+
+		it('keeps a valid session stored when native validation is not configured', async () => {
+			const realLocalStorage = useRealLocalStorage();
+			realLocalStorage.clear();
+			realLocalStorage.setItem('auth_session', JSON.stringify(session));
+			host.validateSession.mockResolvedValue('not-configured');
+
+			expect(await validateSession()).toBe('not-configured');
+			expect(realLocalStorage.getItem('auth_session')).toBe(JSON.stringify(session));
+		});
+	});
+
 	describe('clearStoredSessionData', () => {
 		it('removes the neutral session and all obsolete auth keys', () => {
 			clearStoredSessionData();

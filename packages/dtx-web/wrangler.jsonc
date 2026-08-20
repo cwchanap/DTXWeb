@@ -11,6 +11,7 @@
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
 	},
+	"services": [{ "binding": "API", "service": "dtx-api" }],
 	"vars": {
 		"PUBLIC_DTX_API_URL": "https://api.dtx.hapadona.com",
 		"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false"

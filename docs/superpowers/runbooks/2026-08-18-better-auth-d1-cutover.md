@@ -144,23 +144,11 @@ code lifetime unless a separately reviewed operator change says otherwise.
 ### Pre-production secret and deploy rehearsal
 
 Run these commands from the repository root, after confirming that the selected
-Wrangler account and API config are the pre-production ones. `versions secret
-put` stages an interactively entered secret on a Worker version; it does not
-document or echo the value:
-
-```bash
-bunx wrangler versions secret put BETTER_AUTH_SECRET \
-  --config packages/dtx-api/wrangler.jsonc --env pre-prod
-bunx wrangler versions secret put GOOGLE_AUTH_CLIENT_SECRET \
-  --config packages/dtx-api/wrangler.jsonc --env pre-prod
-```
-
-The legacy `wrangler secret put` command immediately creates and deploys a
-Worker version. Do not use it during a rehearsal without an explicit `--env
-pre-prod`; an accidental production invocation is an immediate partial
-deployment. If the legacy command is required by the approved change
-procedure, use the explicit pre-production form and treat the resulting
-version as deployed:
+Wrangler account and API config are the pre-production ones. This runbook uses
+the legacy `wrangler secret put` flow consistently: it accepts each value
+interactively and immediately creates and deploys a Worker version. Therefore,
+use the explicit `--env pre-prod` on every rehearsal secret update and treat
+each command as a deployment boundary:
 
 ```bash
 bunx wrangler secret put BETTER_AUTH_SECRET \
@@ -225,16 +213,18 @@ a production runtime dependency after cutover. The operator must:
 Run the pinned local importer from the reviewed commit, supplying an explicit
 owner-ID file. The CLI takes the sanitized export as a positional argument,
 requires `--owner-ids`, and only permits generated SQL beneath the repository's
-ignored `tmp/auth-migration` directory. Run this from the repository root; the
-input and replacement-password files remain in the protected operator
-workspace:
+ignored `tmp/auth-migration` directory. The filtered Bun script runs with
+`packages/dtx-api` as its working directory, so the explicit output path uses
+`../../` to reach the repository root. Run this command from the repository
+root; the input and replacement-password files remain in the protected
+operator workspace:
 
 ```bash
 bun run --filter=dtx-api auth:migrate \
   <protected-operator-workspace>/sanitized-supabase-export.json \
   --owner-ids <protected-operator-workspace>/application-owner-ids.json \
   --replacement-passwords <protected-operator-workspace>/replacement-passwords.json \
-  --output tmp/auth-migration/better-auth-import.sql
+  --output ../../tmp/auth-migration/better-auth-import.sql
 ```
 
 The default output is also under `tmp/auth-migration`; keep the explicit
@@ -256,7 +246,9 @@ records that:
 
 For the pre-production rehearsal, apply the reviewed artifact only after
 `0008_better_auth.sql` has been applied to the isolated pre-production D1 and
-the second operator has checked the target name:
+the second operator has checked the target name. These Wrangler commands run
+from the repository root, so they refer to the generated file as
+`tmp/auth-migration/better-auth-import.sql`:
 
 ```bash
 bunx wrangler d1 execute dtx-web-preprod \

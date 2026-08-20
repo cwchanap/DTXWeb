@@ -62,15 +62,9 @@ enum FileEncoding {
   UTF_8
 }
 
-type MagicLinkResult {
-  magicLinkUrl: String!
-  success: Boolean!
-}
-
 type Mutation {
   createSimfile(input: CreateSimfileInput!): Simfile!
   deleteSimfile(id: ID!): DeleteResult!
-  generateMagicLink: MagicLinkResult!
   updateSimfile(id: ID!, input: UpdateSimfileInput!): Simfile!
   updateSimfileDriveFile(downloadUrl: String!, googleDriveFileId: String!, id: ID!): Simfile!
   updateSimfileDriveFileGuarded(downloadUrl: String!, expectNoExistingDriveFile: Boolean, expectedPreviousDriveFileId: String, googleDriveFileId: String!, id: ID!): Simfile!

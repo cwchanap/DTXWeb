@@ -15,8 +15,7 @@ export type OwnerCacheEntry = {
 };
 
 export type Ctx = {
-	// `email` remains optional only for the legacy magic-link schema until Task 5 removes it.
-	user: (ApiAuthUser & { email?: string }) | null;
+	user: ApiAuthUser | null;
 	session: ApiAuthSession['session'] | null;
 	env: Env;
 	db: D1Database;

@@ -1,40 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-
-vi.mock('$app/environment', () => ({
-	browser: false
-}));
-
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe: (run: (value: unknown) => void) => {
-			run({
-				url: new URL('http://localhost/app'),
-				params: {}
-			});
-			return () => {};
-		}
-	}
-}));
-
-vi.mock('$env/dynamic/public', () => ({
-	env: {
-		PUBLIC_DTX_DESKTOP_AUTH_CALLBACK_URL: ''
-	}
-}));
-
-vi.mock('@lucide/svelte');
-
-vi.mock('$lib/api', () => ({
-	generateMagicLink: vi.fn()
-}));
 
 import AppPage from './+page.svelte';
 
 describe('App Home Page', () => {
-	it('renders the welcome dashboard when not redirecting', () => {
-		render(AppPage);
-		expect(screen.getByText('Welcome to Drumery')).toBeInTheDocument();
+	it('ignores the removed desktop redirect handoff', () => {
+		const originalUrl = window.location.href;
+		window.history.replaceState({}, '', '/app?redirect=desktop');
+
+		try {
+			render(AppPage);
+			expect(screen.getByText('Welcome to Drumery')).toBeInTheDocument();
+		} finally {
+			window.history.replaceState({}, '', originalUrl);
+		}
 	});
 
 	it('renders the dashboard content', () => {

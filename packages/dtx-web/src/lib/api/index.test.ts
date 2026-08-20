@@ -31,11 +31,6 @@ describe('api barrel re-exports', () => {
 		expect(mod.upsertUserProfile).toBeDefined();
 	});
 
-	it('exports auth functions from ./auth', async () => {
-		const mod = await import('./index');
-		expect(mod.generateMagicLink).toBeDefined();
-	});
-
 	it('exports client functions from ./client', async () => {
 		const mod = await import('./index');
 		expect(mod.getClient).toBeDefined();

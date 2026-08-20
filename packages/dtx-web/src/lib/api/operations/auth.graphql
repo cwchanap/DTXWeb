@@ -1,6 +1,0 @@
-mutation GenerateMagicLink {
-	generateMagicLink {
-		magicLinkUrl
-		success
-	}
-}

@@ -193,3 +193,14 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Search gate: `rg -n "verifyToken" packages/dtx-api/src` has no matches. `SUPABASE_ANON_KEY` remains only in Foundation-era env/test fixtures and retained magic-link code, deferred to Tasks 5/13.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-4-report.md`.
 - Task 4: complete (source, tests, report, and ledger changes are committed in the task's conventional commit).
+
+## Task 5
+
+- Implementer: `/root/d1_task5_remove_magic_link`.
+- RED: before production edits, the schema absence expectation failed because `generateMagicLink` was still registered (`expected { name: 'generateMagicLink', … } to be undefined`); the dashboard expectation failed because `/app?redirect=desktop` still rendered the redirect spinner instead of the dashboard.
+- Implementation: deleted the custom API magic-link service/mutation/tests; removed schema registration and the temporary context email compatibility field; deleted the web operation, wrapper, barrel export/tests, and redirect-specific tests; rewrote `/app` to render the dashboard only; removed the API `MAGIC_LINK_HOURLY_LIMIT` field/local override; updated the desktop topology assertion; regenerated API schema then web client.
+- GREEN: `bun run --filter=dtx-api test` — 21 files, 379 tests; `bun run --filter=dtx-web test` — 64 files, 937 tests; desktop topology — 2 tests; API check, focused Prettier/ESLint, and `git diff --check` passed.
+- Web check baseline remains unchanged with inert public env values: one pre-existing `hooks.server.ts` Supabase cookie `setAll` type mismatch plus four CSS warnings. No Task 6 fix was made.
+- Generated artifacts: `packages/dtx-api/dist/schema.graphql`, `packages/dtx-web/src/lib/api/generated/graphql.ts`.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-5-report.md`.
+- Task 5: complete (source, tests, generated artifacts, report, and ledger changes are ready for the scoped conventional commit).

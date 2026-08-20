@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "wrangler dev",
-		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --var MAGIC_LINK_HOURLY_LIMIT:1000 --port 8787",
+		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787",
 		"build": "wrangler deploy --dry-run --outdir=dist",
 		"migrate:prod": "wrangler d1 migrations apply dtx-web --remote",
 		"migrate:preprod": "wrangler d1 migrations apply dtx-web-preprod --remote --env pre-prod",

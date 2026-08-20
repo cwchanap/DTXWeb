@@ -18,7 +18,10 @@
 		"test:coverage": "vitest --run --coverage",
 		"check": "tsc --noEmit",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
-		"gen-schema": "bun run src/scripts/gen-schema.ts"
+		"gen-schema": "bun run src/scripts/gen-schema.ts",
+		"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
+		"auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",
+		"auth:schema:check": "bun run auth:schema:generate && git diff --exit-code -- src/auth/schema.ts"
 	},
 	"dependencies": {
 		"@dtx/common": "*",
@@ -26,6 +29,8 @@
 		"@pothos/plugin-errors": "^4.9.1",
 		"@pothos/plugin-scope-auth": "^4.1.7",
 		"@supabase/supabase-js": "^2.112.3",
+		"better-auth": "1.6.30",
+		"drizzle-orm": "^0.45.2",
 		"graphql": "^16.10.0",
 		"graphql-yoga": "^5.21.3",
 		"zod": "^4.4.3"
@@ -33,6 +38,8 @@
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250620.0",
 		"@vitest/coverage-v8": "^3.0.0",
+		"auth": "1.6.30",
+		"drizzle-kit": "^0.31.10",
 		"typescript": "^5.8.3",
 		"vitest": "^3.1.4",
 		"wrangler": "^4.123.0"

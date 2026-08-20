@@ -32,6 +32,10 @@
 		}
 	],
 	"vars": {
+		"BETTER_AUTH_URL": "https://api.dtx.hapadona.com",
+		"DTX_WEB_URL": "https://dtx.hapadona.com",
+		"AUTH_COOKIE_DOMAIN": "dtx.hapadona.com",
+		"AUTH_COOKIE_PREFIX": "dtx",
 		"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",
 		"SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhkbnd2cHVzbXhyZnJmamF5b2dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTY4NjMzOTgsImV4cCI6MjAzMjQzOTM5OH0.VKzh7pxkUjKd6s9zgIajXe0qMpKFSuKYfc8xvxgPuNo",
 		"RATE_LIMIT_ENV": "prod",
@@ -75,6 +79,10 @@
 				}
 			],
 			"vars": {
+				"BETTER_AUTH_URL": "https://api.pre-prod.dtx.hapadona.com",
+				"DTX_WEB_URL": "https://pre-prod.dtx.hapadona.com",
+				"AUTH_COOKIE_DOMAIN": "pre-prod.dtx.hapadona.com",
+				"AUTH_COOKIE_PREFIX": "dtx-preprod",
 				"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",
 				"SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhkbnd2cHVzbXhyZnJmamF5b2dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTY4NjMzOTgsImV4cCI6MjAzMjQzOTM5OH0.VKzh7pxkUjKd6s9zgIajXe0qMpKFSuKYfc8xvxgPuNo",
 				"RATE_LIMIT_ENV": "pre-prod",
@@ -110,6 +118,10 @@
 				}
 			],
 			"vars": {
+				"BETTER_AUTH_URL": "https://api.pre-prod.dtx.hapadona.com",
+				"DTX_WEB_URL": "https://pre-prod.dtx.hapadona.com",
+				"AUTH_COOKIE_DOMAIN": "pre-prod.dtx.hapadona.com",
+				"AUTH_COOKIE_PREFIX": "dtx-preprod",
 				"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",
 				"SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhkbnd2cHVzbXhyZnJmamF5b2dyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTY4NjMzOTgsImV4cCI6MjAzMjQzOTM5OH0.VKzh7pxkUjKd6s9zgIajXe0qMpKFSuKYfc8xvxgPuNo",
 				"RATE_LIMIT_ENV": "pre-prod-prod-data",

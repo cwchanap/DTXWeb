@@ -34,6 +34,7 @@
 	"vars": {
 		"BETTER_AUTH_URL": "https://api.dtx.hapadona.com",
 		"DTX_WEB_URL": "https://dtx.hapadona.com",
+		"GOOGLE_AUTH_CLIENT_ID": "333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com",
 		"AUTH_COOKIE_DOMAIN": "dtx.hapadona.com",
 		"AUTH_COOKIE_PREFIX": "dtx",
 		"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",
@@ -81,6 +82,7 @@
 			"vars": {
 				"BETTER_AUTH_URL": "https://api.pre-prod.dtx.hapadona.com",
 				"DTX_WEB_URL": "https://pre-prod.dtx.hapadona.com",
+				"GOOGLE_AUTH_CLIENT_ID": "333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com",
 				"AUTH_COOKIE_DOMAIN": "pre-prod.dtx.hapadona.com",
 				"AUTH_COOKIE_PREFIX": "dtx-preprod",
 				"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",
@@ -120,6 +122,7 @@
 			"vars": {
 				"BETTER_AUTH_URL": "https://api.pre-prod.dtx.hapadona.com",
 				"DTX_WEB_URL": "https://pre-prod.dtx.hapadona.com",
+				"GOOGLE_AUTH_CLIENT_ID": "333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com",
 				"AUTH_COOKIE_DOMAIN": "pre-prod.dtx.hapadona.com",
 				"AUTH_COOKIE_PREFIX": "dtx-preprod",
 				"SUPABASE_URL": "https://hdnwvpusmxrfrfjayogr.supabase.co",

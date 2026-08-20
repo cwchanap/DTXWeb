@@ -31,6 +31,7 @@ type TurboConfig = {
 };
 
 type WranglerConfig = {
+	vars?: Record<string, string>;
 	env?: Record<
 		string,
 		{
@@ -81,6 +82,15 @@ describe('desktop local dev topology', () => {
 		);
 		expect(apiWrangler.env?.['pre-prod']?.vars?.AUTH_COOKIE_DOMAIN).toBe(
 			'pre-prod.dtx.hapadona.com'
+		);
+		expect(apiWrangler.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
+			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
+		);
+		expect(apiWrangler.env?.['pre-prod']?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
+			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
+		);
+		expect(apiWrangler.env?.['pre-prod-prod-data']?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
+			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
 		);
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
 			binding: 'DB',

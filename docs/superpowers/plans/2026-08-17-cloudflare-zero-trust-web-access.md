@@ -2,43 +2,48 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Manage DTXWeb Cloudflare Zero Trust Access declaratively with a small Pulumi package that protects all pre-production web traffic and only production `/app`, while reusing the existing Perseus device-posture rule.
+**Goal:** Add a CI-covered, Access-only Pulumi package that declaratively defines DTXWeb pre-production and production Cloudflare Access applications while reusing the existing Perseus device-posture rule.
 
-**Architecture:** Add an Access-only `packages/infrastructure` workspace modeled on the proven Perseus Pulumi implementation. One program serves exactly two stacks (`pre-prod` and `production`); stack name owns the immutable hostname/path scope, while Pulumi config supplies only the Cloudflare account ID, secret operator email, existing Perseus posture-rule ID, and optional session duration. Apply and verify pre-production first; production is a separate stack and is not applied until pre-production acceptance is green.
+**Architecture:** Add `@dtx/infrastructure` as a normal Drumery workspace, wire it into the existing fail-closed affected-scope and coverage CI, and model the security-sensitive Access shape with pure TypeScript builders plus one Pulumi resource factory. Stack name owns immutable scope: `pre-prod` is hostname-wide and `production` is exactly `/app` plus `/app/*`. This implementation plan stops at tested code, rewritten operator docs, and Pulumi preview evidence; live `pulumi up`, browser/device acceptance, and `pulumi destroy` are operator-only runbook actions.
 
-**Tech Stack:** Bun workspaces/Turborepo, TypeScript, Pulumi `@pulumi/pulumi` `^3.144.0`, Pulumi Cloudflare provider `@pulumi/cloudflare` `^6.13.0`, Vitest `^4.0.18`, Cloudflare Zero Trust Access, Wrangler for existing Worker/API deployment.
+**Tech Stack:** Bun workspaces/Turborepo, TypeScript `^5.8.3`, Vitest `^3.1.4`, `@vitest/coverage-v8` `^3.0.0`, `@types/node` `^20.11.25`, Pulumi `@pulumi/pulumi` `^3.144.0`, Pulumi Cloudflare provider `@pulumi/cloudflare` `^6.13.0`, Cloudflare Zero Trust Access, Wrangler for existing Worker/API deployment.
 
 **Spec:** `docs/superpowers/specs/2026-08-17-cloudflare-zero-trust-web-access-design.md`
 
 ## Global Constraints
 
-- Pulumi owns only DTXWeb Cloudflare Access applications in this slice; Wrangler keeps ownership of Workers, API deployment, D1, R2, service bindings, runtime variables, and application secrets.
+- Pulumi owns only DTXWeb Cloudflare Access applications in this slice; Wrangler keeps ownership of Workers, API deployment, D1, R2, service bindings, routes, runtime variables, and application secrets.
 - Do not modify `packages/dtx-web`, `packages/dtx-api`, or `packages/dtx-desktop`.
-- Reuse the existing Perseus device-posture rule by Cloudflare resource ID; do not create a DTXWeb serial list or device-posture rule.
+- Reuse the existing Perseus device-posture rule by Cloudflare resource ID; do not create a DTXWeb serial list or posture rule.
 - Do not add a Pulumi `StackReference` to Perseus.
-- Supported stack names are exactly `pre-prod` and `production`; any other stack must fail before registering resources.
+- Supported stack names are exactly `pre-prod` and `production`; any other stack must fail before resource registration.
 - Pre-production scope is code-owned and hostname-wide: `pre-prod.dtx.hapadona.com`.
-- Production scope is code-owned and exactly `dtx.hapadona.com/app` plus `dtx.hapadona.com/app/*`; production hostname/path destinations are not Pulumi config.
-- Keep `api.dtx.hapadona.com`, `api.pre-prod.dtx.hapadona.com`, and all intended public production routes outside Access.
-- The Access policy has one `allow` decision with the configured email in `includes` and the existing posture-rule ID in `requires`; default session duration is `12h`.
-- Reuse the hardened browser-application flags already proven in Perseus: `appLauncherVisible: false`, `allowAuthenticateViaWarp: false`, `enableBindingCookie: true`, `httpOnlyCookieAttribute: true`, `pathCookieAttribute: false`.
-- Do not add service tokens, Service Auth, CLI Access applications, Managed OAuth, Worker-side `CF_Authorization` validation, or unattended pre-production E2E credentials.
-- `accessEmail` is Pulumi secret config. `devicePostureRuleId` is plain config and must point to the Perseus-managed rule.
-- `Pulumi.<stack>.yaml`, `.pulumi/`, API tokens, operator email, device serials, Access cookies/JWTs, and screenshots containing security identifiers must not be committed.
-- Keep deployment operator-executed and local-backend-based for this slice; do not add GitHub Actions deployment.
-- Every operational `preview`, `up`, and `destroy` command must name its stack explicitly.
-- Run and prove `pre-prod` before applying `production`.
-- The checked-in runbook owns live route matrices, browser/desktop acceptance, and rollback commands; do not duplicate those matrices in future operational docs.
-- If runtime verification requires application/API/desktop code changes, stop and create a separate follow-up instead of expanding this slice.
+- Production scope is code-owned and exactly `dtx.hapadona.com/app` plus `dtx.hapadona.com/app/*`; hostname/path destinations are not Pulumi config.
+- Keep both API hostnames and all intended public production routes outside Access.
+- The Access policy has one `allow` decision with configured email in `includes` and the existing posture-rule ID in `requires`; default session duration is `12h`.
+- Reuse the hardened browser-application flags proven in Perseus: `appLauncherVisible: false`, `allowAuthenticateViaWarp: false`, `enableBindingCookie: true`, `httpOnlyCookieAttribute: true`, `pathCookieAttribute: false`.
+- Do not add service tokens, Service Auth, CLI Access applications, Managed OAuth, Worker-side Access JWT validation, or unattended pre-production E2E credentials.
+- `accessEmail` is Pulumi secret config. `devicePostureRuleId` is plain config pointing to the Perseus-managed rule.
+- Do not commit Pulumi stack config, Pulumi state exports, API tokens, operator email, device serials, Access cookies/JWTs, or sensitive screenshots.
+- Keep deployment operator-executed and local-backend-based; do not add GitHub Actions deployment.
+- Do not add unscoped `pulumi:up`, `pulumi:destroy`, or `pulumi:preview` package scripts.
+- Every operational Pulumi command in docs names its stack explicitly.
+- Run/prove pre-production before production.
+- The checked-in runbook is the single live operator source of truth; do not duplicate its route matrices in this plan.
+- **Do not execute `pulumi up` or `pulumi destroy` from this implementation plan.**
+- If runtime verification requires application/API/desktop code changes, stop and create a separate follow-up.
 
 ---
 
-### Task 1: Add The Infrastructure Workspace And Immutable Stack Definitions
+### Task 1: Add The Infrastructure Workspace And Wire It Into Fail-Closed CI
 
 **Files:**
 
 - Modify: `package.json`
 - Modify: `bun.lock`
+- Modify: `.github/scripts/ci-affected-scope.sh`
+- Modify: `.github/scripts/ci-affected-scope.test.sh`
+- Create: `.github/scripts/fixtures/turbo-infrastructure.json`
 - Create: `packages/infrastructure/.gitignore`
 - Create: `packages/infrastructure/Pulumi.yaml`
 - Create: `packages/infrastructure/package.json`
@@ -49,14 +54,68 @@
 
 **Interfaces:**
 
-- Produces: `AccessStackDefinition`, `getAccessStackDefinition(stackName)`, `normalizeAccessEmail(rawValue)`, and `normalizeDevicePostureRuleId(rawValue)` in `src/access.ts`.
-- Later tasks consume those exact helpers to build Pulumi application args and select the current stack.
+- Produces workspace `@dtx/infrastructure` with `build`, `check`, `test`, `test:coverage`, and `test:watch` scripts.
+- Produces CI identity `@dtx/infrastructure:packages/infrastructure` and marks that package as unit-test-affecting.
+- Produces `AccessStackDefinition`, `getAccessStackDefinition(stackName)`, `normalizeAccessEmail(rawValue)`, and `normalizeDevicePostureRuleId(rawValue)` in `src/access.ts`.
 
-- [ ] **Step 1: Add the workspace/package scaffolding**
+- [ ] **Step 1: Add a failing affected-scope fixture/test for infrastructure-only changes**
 
-Add `packages/infrastructure` to the root `workspaces` array; do not add root deploy scripts yet.
+Create `.github/scripts/fixtures/turbo-infrastructure.json`:
 
-Create `packages/infrastructure/package.json` with the same dependency floors currently working in Perseus:
+```json
+{"packageManager":"bun","packages":{"count":1,"items":[{"name":"@dtx/infrastructure","path":"packages/infrastructure"}]}}
+```
+
+Add these cases beside the existing web/e2e cases in `.github/scripts/ci-affected-scope.test.sh`:
+
+```bash
+run_expected infrastructure-only-unit unit turbo-infrastructure.json true packages/infrastructure/src/change.ts infrastructure
+run_expected infrastructure-only-lint lint turbo-infrastructure.json true packages/infrastructure/src/change.ts infrastructure
+```
+
+- [ ] **Step 2: Run the affected-scope contract and verify it fails closed**
+
+Run:
+
+```bash
+.github/scripts/ci-affected-scope.test.sh
+```
+
+Expected: FAIL at the new infrastructure case with the detector reporting an unknown package.
+
+- [ ] **Step 3: Extend the detector allowlist and unit gate**
+
+In `.github/scripts/ci-affected-scope.sh`, extend the package allowlist with:
+
+```bash
+'@dtx/infrastructure:packages/infrastructure' | \
+```
+
+Add `@dtx/infrastructure` to the `unit_affected=true` package-name case:
+
+```bash
+case "$package_name" in
+  '@dtx/common' | '@dtx/ui-components' | '@dtx/infrastructure' | dtx-api | dtx-desktop | dtx-web)
+    unit_affected=true
+    ;;
+esac
+```
+
+Do not weaken the unknown-package fail-closed branch.
+
+- [ ] **Step 4: Re-run the detector tests**
+
+```bash
+.github/scripts/ci-affected-scope.test.sh
+```
+
+Expected: all affected-scope tests pass, including infrastructure `unit => true` and `lint => true`.
+
+- [ ] **Step 5: Add workspace/package scaffolding using Drumery's JS test toolchain**
+
+Add `packages/infrastructure` to root `workspaces`.
+
+Create `packages/infrastructure/package.json`:
 
 ```json
 {
@@ -66,29 +125,27 @@ Create `packages/infrastructure/package.json` with the same dependency floors cu
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "postinstall": "echo 'Skipping automatic pulumi install during dependency install'",
-    "pulumi:install": "command -v pulumi > /dev/null 2>&1 && pulumi install || echo 'Skipping pulumi install: Pulumi CLI not found'",
-    "pulumi:preview": "pulumi preview",
-    "pulumi:up": "pulumi up",
-    "pulumi:destroy": "pulumi destroy",
-    "pulumi:refresh": "pulumi refresh",
     "check": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest --run",
+    "test:coverage": "vitest --run --coverage",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@pulumi/pulumi": "^3.144.0",
-    "@pulumi/cloudflare": "^6.13.0"
+    "@pulumi/cloudflare": "^6.13.0",
+    "@pulumi/pulumi": "^3.144.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^5.9.0",
-    "vitest": "^4.0.18"
+    "@types/node": "^20.11.25",
+    "@vitest/coverage-v8": "^3.0.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.1.4"
   }
 }
 ```
 
-Create `Pulumi.yaml`:
+Do not copy Perseus's Vitest 4, TypeScript 5.9, Node types 22, or unscoped Pulumi scripts.
+
+Create `packages/infrastructure/Pulumi.yaml`:
 
 ```yaml
 name: dtxweb-infrastructure
@@ -97,7 +154,7 @@ description: DTXWeb Cloudflare Access infrastructure managed by Pulumi
 main: dist/index.js
 ```
 
-Create `.gitignore`:
+Create `packages/infrastructure/.gitignore`:
 
 ```text
 Pulumi.*.yaml
@@ -108,7 +165,7 @@ dist/
 .env.local
 ```
 
-Create `tsconfig.json` following Perseus:
+Create `packages/infrastructure/tsconfig.json`:
 
 ```json
 {
@@ -132,7 +189,7 @@ Create `tsconfig.json` following Perseus:
 }
 ```
 
-Create `vitest.config.ts`:
+Create `packages/infrastructure/vitest.config.ts`:
 
 ```ts
 import { defineConfig } from 'vitest/config';
@@ -152,11 +209,11 @@ Run:
 bun install
 ```
 
-Expected: `bun.lock` updates and `@dtx/infrastructure` is recognized as a workspace.
+Expected: `bun.lock` updates and Bun recognizes `@dtx/infrastructure` as a workspace.
 
-- [ ] **Step 2: Write failing tests for stack scope and input validation**
+- [ ] **Step 6: Write failing tests for immutable stack scope and config validation**
 
-Create the first `src/access.test.ts` tests:
+Create `packages/infrastructure/src/access.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -169,6 +226,7 @@ import {
 describe('getAccessStackDefinition', () => {
   it('makes pre-prod hostname-wide', () => {
     expect(getAccessStackDefinition('pre-prod')).toEqual({
+      stackName: 'pre-prod',
       applicationName: 'DTXWeb Pre-prod',
       domain: 'pre-prod.dtx.hapadona.com',
       destinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }]
@@ -177,6 +235,7 @@ describe('getAccessStackDefinition', () => {
 
   it('makes production exactly /app plus /app/*', () => {
     expect(getAccessStackDefinition('production')).toEqual({
+      stackName: 'production',
       applicationName: 'DTXWeb Production App',
       domain: 'dtx.hapadona.com/app',
       destinations: [
@@ -196,7 +255,7 @@ describe('Access config validation', () => {
     expect(normalizeAccessEmail(' operator@example.com ')).toBe('operator@example.com');
   });
 
-  it('rejects malformed or multiple emails', () => {
+  it('rejects malformed and multiple emails', () => {
     expect(() => normalizeAccessEmail('not-an-email')).toThrow(/single email address/);
     expect(() => normalizeAccessEmail('a@example.com,b@example.com')).toThrow(/single email address/);
   });
@@ -208,19 +267,17 @@ describe('Access config validation', () => {
 });
 ```
 
-- [ ] **Step 3: Run the focused tests and verify they fail**
-
-Run:
+- [ ] **Step 7: Run the focused unit tests and verify they fail**
 
 ```bash
 bun run --filter=@dtx/infrastructure test
 ```
 
-Expected: FAIL because `src/access.ts` or the named exports do not exist yet.
+Expected: FAIL because `src/access.ts` or its exports do not exist.
 
-- [ ] **Step 4: Implement only the immutable stack model and validators**
+- [ ] **Step 8: Implement the immutable stack model and validators**
 
-Create `src/access.ts` with these public interfaces and behavior:
+Create `packages/infrastructure/src/access.ts`:
 
 ```ts
 const ACCESS_EMAIL_PATTERN = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/;
@@ -231,18 +288,21 @@ export interface AccessDestination {
 }
 
 export interface AccessStackDefinition {
+  stackName: 'pre-prod' | 'production';
   applicationName: string;
   domain: string;
   destinations: AccessDestination[];
 }
 
-const ACCESS_STACKS: Record<'pre-prod' | 'production', AccessStackDefinition> = {
+const ACCESS_STACKS: Record<AccessStackDefinition['stackName'], AccessStackDefinition> = {
   'pre-prod': {
+    stackName: 'pre-prod',
     applicationName: 'DTXWeb Pre-prod',
     domain: 'pre-prod.dtx.hapadona.com',
     destinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }]
   },
   production: {
+    stackName: 'production',
     applicationName: 'DTXWeb Production App',
     domain: 'dtx.hapadona.com/app',
     destinations: [
@@ -274,29 +334,28 @@ export function normalizeDevicePostureRuleId(rawValue: string): string {
 }
 ```
 
-Do not make hostnames or destinations parameters.
+Hostnames/destinations must remain internal constants, not function parameters.
 
-- [ ] **Step 5: Run the focused test/check cycle**
-
-Run:
+- [ ] **Step 9: Run the package and CI contract checks**
 
 ```bash
-bun run --filter=@dtx/infrastructure test
+bun run --filter=@dtx/infrastructure test:coverage
 bun run --filter=@dtx/infrastructure check
+.github/scripts/ci-affected-scope.test.sh
 ```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the independently testable stack-model slice**
+- [ ] **Step 10: Commit the independently testable workspace/CI slice**
 
 ```bash
-git add package.json bun.lock packages/infrastructure
+git add package.json bun.lock .github/scripts packages/infrastructure
 git commit -m "feat: scaffold DTXWeb Access infrastructure"
 ```
 
 ---
 
-### Task 2: Build The Access Application Args And Pulumi Entrypoint
+### Task 2: Build The Perseus-shaped Access Application And Pulumi Entrypoint
 
 **Files:**
 
@@ -306,13 +365,13 @@ git commit -m "feat: scaffold DTXWeb Access infrastructure"
 
 **Interfaces:**
 
-- Consumes: `AccessStackDefinition`, `getAccessStackDefinition`, `normalizeAccessEmail`, and `normalizeDevicePostureRuleId` from Task 1.
-- Produces: `DEFAULT_ACCESS_SESSION_DURATION`, `ACCESS_APPLICATION_FLAGS`, `buildAccessPolicy(...)`, `buildAccessApplicationArgs(...)`, and `createAccessApplication(...)`.
-- `src/index.ts` is the only Pulumi program entrypoint and calls `getAccessStackDefinition(pulumi.getStack())` before creating resources.
+- Consumes: `AccessStackDefinition`, `getAccessStackDefinition`, `normalizeAccessEmail`, `normalizeDevicePostureRuleId`.
+- Produces: `DEFAULT_ACCESS_SESSION_DURATION`, `ACCESS_APPLICATION_FLAGS`, `buildAccessPolicy(...)`, `buildAccessApplicationArgs(...)`, `createAccessApplication(...)`.
+- `src/index.ts` is the only Pulumi entrypoint.
 
-- [ ] **Step 1: Add failing tests for the policy and application shape**
+- [ ] **Step 1: Write failing tests for the policy and application shape**
 
-Extend the existing import from `./access.js` with these names rather than adding a second import later in the file:
+Extend the import in `access.test.ts`:
 
 ```ts
 import {
@@ -326,7 +385,7 @@ import {
 } from './access.js';
 ```
 
-Add these focused tests:
+Add:
 
 ```ts
 it('builds one email + posture allow policy', () => {
@@ -339,7 +398,7 @@ it('builds one email + posture allow policy', () => {
   });
 });
 
-it('builds the production application with the hardened defaults', () => {
+it('builds production with exact destinations and hardened defaults', () => {
   const args = buildAccessApplicationArgs({
     accountId: 'account-id',
     stackDefinition: getAccessStackDefinition('production'),
@@ -359,20 +418,11 @@ it('builds the production application with the hardened defaults', () => {
     sessionDuration: DEFAULT_ACCESS_SESSION_DURATION,
     ...ACCESS_APPLICATION_FLAGS
   });
-});
-
-it('never builds hostname-wide production Access', () => {
-  const args = buildAccessApplicationArgs({
-    accountId: 'account-id',
-    stackDefinition: getAccessStackDefinition('production'),
-    accessEmail: 'operator@example.com',
-    devicePostureRuleId: 'posture-rule-id'
-  });
 
   expect(args.destinations).not.toContainEqual({ type: 'public', uri: 'dtx.hapadona.com' });
 });
 
-it('rejects an empty Cloudflare account ID before deployment', () => {
+it('rejects a blank Cloudflare account ID', () => {
   expect(() =>
     buildAccessApplicationArgs({
       accountId: '   ',
@@ -384,17 +434,17 @@ it('rejects an empty Cloudflare account ID before deployment', () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests and verify the new expectations fail**
+- [ ] **Step 2: Run tests and verify the new expectations fail**
 
 ```bash
 bun run --filter=@dtx/infrastructure test
 ```
 
-Expected: FAIL because the application/policy builders do not exist.
+Expected: FAIL because the Access builders/constants do not exist.
 
-- [ ] **Step 3: Implement the Pulumi-compatible builders and resource factory**
+- [ ] **Step 3: Implement the policy/application builders**
 
-Extend `src/access.ts` using the same provider shapes as Perseus:
+Extend `access.ts`:
 
 ```ts
 import * as cloudflare from '@pulumi/cloudflare';
@@ -413,6 +463,12 @@ export const ACCESS_APPLICATION_FLAGS = {
 type AccessPolicy = cloudflare.types.input.ZeroTrustAccessApplicationPolicy;
 type AccessApplicationArgs = cloudflare.ZeroTrustAccessApplicationArgs;
 
+function normalizeAccountId(rawValue: string): string {
+  const value = rawValue.trim();
+  if (!value) throw new Error('cloudflareAccountId must not be empty');
+  return value;
+}
+
 function normalizeAccessEmailInput(value: pulumi.Input<string>): pulumi.Input<string> {
   return typeof value === 'string'
     ? normalizeAccessEmail(value)
@@ -429,7 +485,11 @@ export function buildAccessPolicy(
     precedence: 1,
     includes: [{ email: { email: normalizeAccessEmailInput(accessEmail) } }],
     requires: [
-      { devicePosture: { integrationUid: normalizeDevicePostureRuleId(devicePostureRuleId) } }
+      {
+        devicePosture: {
+          integrationUid: normalizeDevicePostureRuleId(devicePostureRuleId)
+        }
+      }
     ]
   };
 }
@@ -442,34 +502,36 @@ export interface BuildAccessApplicationArgs {
   sessionDuration?: string;
 }
 
-export function buildAccessApplicationArgs(args: BuildAccessApplicationArgs): AccessApplicationArgs {
-  if (!args.accountId.trim()) throw new Error('cloudflareAccountId must not be empty');
-
+export function buildAccessApplicationArgs(
+  args: BuildAccessApplicationArgs
+): AccessApplicationArgs {
   return {
-    accountId: args.accountId.trim(),
+    accountId: normalizeAccountId(args.accountId),
     name: args.stackDefinition.applicationName,
     type: 'self_hosted',
     domain: args.stackDefinition.domain,
     destinations: args.stackDefinition.destinations,
-    sessionDuration: args.sessionDuration ?? DEFAULT_ACCESS_SESSION_DURATION,
+    sessionDuration: args.sessionDuration?.trim() || DEFAULT_ACCESS_SESSION_DURATION,
     ...ACCESS_APPLICATION_FLAGS,
     policies: [buildAccessPolicy(args.accessEmail, args.devicePostureRuleId)]
   };
 }
 
-export function createAccessApplication(args: BuildAccessApplicationArgs) {
+export function createAccessApplication(
+  args: BuildAccessApplicationArgs
+): cloudflare.ZeroTrustAccessApplication {
   return new cloudflare.ZeroTrustAccessApplication(
-    'dtxweb-access-application',
+    `dtxweb-${args.stackDefinition.stackName}-access`,
     buildAccessApplicationArgs(args)
   );
 }
 ```
 
-The current Pulumi Cloudflare v6 resource is `ZeroTrustAccessApplication` and supports `destinations`, `policies`, `domain`, and `sessionDuration`. If dependency resolution installs a later compatible v6 release, keep this non-deprecated resource and the external behavior above; do not switch to deprecated `AccessApplication` resources.
+Do not add list/posture/token resources.
 
-- [ ] **Step 4: Add the Pulumi program entrypoint**
+- [ ] **Step 4: Add the Pulumi entrypoint**
 
-Create `src/index.ts`:
+Create `packages/infrastructure/src/index.ts`:
 
 ```ts
 import * as pulumi from '@pulumi/pulumi';
@@ -478,430 +540,184 @@ import { createAccessApplication, getAccessStackDefinition } from './access.js';
 const config = new pulumi.Config();
 const stackDefinition = getAccessStackDefinition(pulumi.getStack());
 
-const application = createAccessApplication({
+const accessApplication = createAccessApplication({
   accountId: config.require('cloudflareAccountId'),
   stackDefinition,
   accessEmail: config.requireSecret('accessEmail'),
   devicePostureRuleId: config.require('devicePostureRuleId'),
-  sessionDuration: config.get('accessSessionDuration') ?? undefined
+  sessionDuration: config.get('accessSessionDuration')
 });
 
-export const accessApplicationId = application.id;
+export const accessApplicationId = accessApplication.id;
 ```
 
-Do not create or look up the posture resource in this program.
+Stack validation must happen before `createAccessApplication`.
 
-- [ ] **Step 5: Run the package and root static checks**
-
-```bash
-bun run --filter=@dtx/infrastructure test
-bun run --filter=@dtx/infrastructure check
-bun run --filter=@dtx/infrastructure build
-bun run check
-```
-
-Expected: all pass. The root `check` should discover the new workspace through the existing Turborepo `check` task without a `turbo.json` change.
-
-- [ ] **Step 6: Commit the Access resource implementation**
+- [ ] **Step 5: Run focused and package-wide verification**
 
 ```bash
-git add packages/infrastructure/src
-git commit -m "feat: manage DTXWeb Access with Pulumi"
-```
-
----
-
-### Task 3: Rewrite The Infrastructure README And Zero Trust Runbook For Pulumi
-
-**Files:**
-
-- Create: `packages/infrastructure/README.md`
-- Modify: `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
-
-**Interfaces:**
-
-- Consumes: the exact stack/config names from Tasks 1-2.
-- Produces: the single operator procedure for obtaining the Perseus posture-rule ID, configuring local stacks, previewing/applying Access, running acceptance, and rolling back one environment.
-
-- [ ] **Step 1: Write the infrastructure README with exact local setup commands**
-
-Document these prerequisites and commands without real identifiers:
-
-```bash
-cd packages/infrastructure
-pulumi login --local
-
-pulumi stack select pre-prod || pulumi stack init pre-prod
-pulumi stack select production || pulumi stack init production
-
-pulumi config set cloudflareAccountId "$CLOUDFLARE_ACCOUNT_ID" --stack pre-prod
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack pre-prod
-pulumi config set devicePostureRuleId "$PERSEUS_POSTURE_RULE_ID" --stack pre-prod
-
-pulumi config set cloudflareAccountId "$CLOUDFLARE_ACCOUNT_ID" --stack production
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack production
-pulumi config set devicePostureRuleId "$PERSEUS_POSTURE_RULE_ID" --stack production
-```
-
-Document that the optional duration override is:
-
-```bash
-pulumi config set accessSessionDuration 12h --stack pre-prod
-pulumi config set accessSessionDuration 12h --stack production
-```
-
-Document how to obtain the shared posture ID from the existing Perseus infrastructure stack:
-
-```bash
-pulumi stack output adminAccessDevicePostureRuleId
-```
-
-Run that command from the Perseus infrastructure project/stack that owns the current trusted-device posture rule; do not copy serial numbers into DTXWeb.
-
-Document the Cloudflare token requirement as an account-scoped token with `Access: Apps and Policies Write`, which Cloudflare currently accepts for Access application and application-policy writes. Do not add permissions for Workers, D1, R2, service tokens, or device-posture writes for this DTXWeb package.
-
-- [ ] **Step 2: Replace dashboard configuration in the runbook with Pulumi preview/apply**
-
-Keep the existing hardened HTTP helper, pre-production route matrix, production route matrix, independent identity/posture checks, browser checks, desktop checks, session-expiry check, and known non-operator lockout.
-
-Replace the configuration sections with these named operations:
-
-```bash
-bun run --filter=@dtx/infrastructure test
-bun run --filter=@dtx/infrastructure check
-bun run --filter=@dtx/infrastructure build
-
-cd packages/infrastructure
-pulumi preview --stack pre-prod
-pulumi up --stack pre-prod
-```
-
-Then, only after pre-production acceptance is green:
-
-```bash
-pulumi preview --stack production
-pulumi up --stack production
-```
-
-State the preview acceptance criteria explicitly:
-
-- pre-prod preview: one `cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication`, hostname-wide `pre-prod.dtx.hapadona.com`, no API hostname;
-- production preview: one Access application with exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*` destinations;
-- hard stop if preview creates a device list, posture rule, service token, Worker/storage resource, API Access application, or hostname-wide production destination.
-
-- [ ] **Step 3: Rewrite rollback around stack-specific destroy previews**
-
-Use exactly:
-
-```bash
-pulumi preview --destroy --stack pre-prod
-pulumi destroy --stack pre-prod --yes
-```
-
-or:
-
-```bash
-pulumi preview --destroy --stack production
-pulumi destroy --stack production --yes
-```
-
-Before `destroy`, require the operator to confirm the preview deletes only the corresponding DTXWeb Access application. Do not use `pulumi stack rm` as rollback; retain stack/config state for a later re-apply.
-
-- [ ] **Step 4: Add secret/state hygiene checks**
-
-Run:
-
-```bash
-bunx prettier --check packages/infrastructure/README.md docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-git status --short
-git check-ignore packages/infrastructure/Pulumi.pre-prod.yaml packages/infrastructure/Pulumi.production.yaml packages/infrastructure/.pulumi
-```
-
-Expected:
-
-- formatting check passes;
-- stack config/state paths are ignored;
-- no operator email, device serial, API token, Access cookie/JWT, or Pulumi local state is staged.
-
-- [ ] **Step 5: Commit the Pulumi operator documentation**
-
-```bash
-git add packages/infrastructure/README.md docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-git commit -m "docs: document Pulumi Access rollout"
-```
-
----
-
-### Task 4: Configure, Preview, Apply, And Prove Pre-production
-
-**Files:**
-
-- Reference: `packages/infrastructure/README.md`
-- Reference: `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
-- No tracked source files should change during stack configuration or apply.
-
-**Interfaces:**
-
-- Consumes: built infrastructure package plus local `pre-prod` Pulumi config containing `cloudflareAccountId`, secret `accessEmail`, and the existing Perseus `devicePostureRuleId`.
-- Produces: a verified hostname-wide `DTXWeb Pre-prod` Access application and a hard go/no-go for production.
-
-- [ ] **Step 1: Establish local backend/config without committing it**
-
-Follow the README to log into the local backend and select/init `pre-prod`. Set the three required values using shell/environment values; never paste them into tracked Markdown or source.
-
-Verify:
-
-```bash
-pulumi config --stack pre-prod
-```
-
-Expected: the three keys exist; `accessEmail` is displayed as a secret value.
-
-- [ ] **Step 2: Re-run the code gate immediately before preview**
-
-```bash
-bun run --filter=@dtx/infrastructure test
+bun run --filter=@dtx/infrastructure test:coverage
 bun run --filter=@dtx/infrastructure check
 bun run --filter=@dtx/infrastructure build
 ```
 
 Expected: PASS.
 
-- [ ] **Step 3: Preview pre-production and inspect resource scope**
+If the selected Cloudflare provider typings differ from the working Perseus shape, verify the current provider API before adapting names; do not redesign the policy semantics.
+
+- [ ] **Step 6: Run the existing root unit-coverage command**
+
+```bash
+bun run test:coverage
+```
+
+Expected: the existing workspace coverage suite runs and includes `@dtx/infrastructure` rather than silently skipping it.
+
+- [ ] **Step 7: Commit the Access resource slice**
+
+```bash
+git add packages/infrastructure
+
+git commit -m "feat: define DTXWeb Cloudflare Access apps"
+```
+
+---
+
+### Task 3: Finalize Operator Documentation And Produce Non-mutating Preview Evidence
+
+**Files:**
+
+- Create: `packages/infrastructure/README.md`
+- Review/modify if implementation details require it: `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
+
+**Interfaces:**
+
+- Consumes the implemented `@dtx/infrastructure` package and the already rewritten operator runbook.
+- Produces repository-local setup documentation plus pre-prod/production preview evidence.
+- Produces **no live Cloudflare mutation**.
+
+- [ ] **Step 1: Write the infrastructure README**
+
+Document:
+
+- this package owns only DTXWeb Access applications;
+- Workers/API/storage remain on Wrangler;
+- supported stacks are exactly `pre-prod` and `production`;
+- DTXWeb consumes the Perseus `adminAccessDevicePostureRuleId` as config;
+- `pulumi login --local` defaults to state under `~/.pulumi`;
+- stack config files are local/ignored;
+- Cloudflare token requires `Access: Apps and Policies Write` for application lifecycle;
+- package scripts are test/build/check only;
+- live commands are taken from the operator runbook and always specify `--stack`;
+- emergency provider-side deletion is documented only in the runbook.
+
+Do not duplicate the full route matrices from the runbook.
+
+- [ ] **Step 2: Validate the runbook against the implemented package**
+
+Review `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md` and confirm its config keys exactly match code:
+
+```text
+cloudflareAccountId
+accessEmail
+devicePostureRuleId
+accessSessionDuration
+```
+
+Confirm it remains marked operator-executed and owns every `pulumi up`, `pulumi destroy`, browser/device check, and dashboard emergency fallback.
+
+If the implementation changed no interface, make no gratuitous runbook edit.
+
+- [ ] **Step 3: Run the complete non-live repository verification**
+
+```bash
+bun install --frozen-lockfile
+bun run --filter=@dtx/infrastructure check
+bun run --filter=@dtx/infrastructure test:coverage
+bun run --filter=@dtx/infrastructure build
+.github/scripts/ci-affected-scope.test.sh
+bun run test:coverage
+```
+
+Expected: PASS.
+
+- [ ] **Step 4: Run Pulumi previews only when authenticated local config is available**
+
+If the operator/development environment already has the Cloudflare API token plus DTXWeb stack config, run:
 
 ```bash
 cd packages/infrastructure
 pulumi preview --stack pre-prod
-```
-
-Expected:
-
-- exactly one DTXWeb-managed resource is created;
-- it is a `ZeroTrustAccessApplication` named `DTXWeb Pre-prod`;
-- its destination is hostname-wide `pre-prod.dtx.hapadona.com`;
-- no API hostname, posture/list, service token, Worker, or storage resource appears.
-
-If the preview differs, stop before `up` and fix the code/config.
-
-- [ ] **Step 4: Apply pre-production**
-
-```bash
-pulumi up --stack pre-prod
-```
-
-Expected: one Access application created successfully.
-
-- [ ] **Step 5: Execute the runbook's complete pre-production acceptance**
-
-Run the runbook's pre-production HTTP matrix with no Access session, then perform:
-
-- allowed operator identity on trusted posture;
-- password login behind Access;
-- Google OAuth behind Access;
-- API-backed app behavior;
-- failed-posture denial;
-- pre-production API non-interception.
-
-Expected: every required check passes.
-
-- [ ] **Step 6: Enforce the go/no-go**
-
-If any required check fails:
-
-```bash
-pulumi preview --destroy --stack pre-prod
-pulumi destroy --stack pre-prod --yes
-```
-
-Confirm only `DTXWeb Pre-prod` is deleted, record the non-sensitive failure, and stop. Do not start Task 5.
-
-If all checks pass, record only `Pre-prod Access: PASS`-style outcomes in the PR/implementation notes; do not commit credentials or screenshots containing identifiers.
-
----
-
-### Task 5: Preview, Apply, And Prove Production `/app`
-
-**Files:**
-
-- Reference: `packages/infrastructure/README.md`
-- Reference: `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
-- No tracked source files should change during production stack configuration or apply.
-
-**Interfaces:**
-
-- Consumes: a fully green Task 4 and local `production` Pulumi config using the same operator identity semantics and Perseus posture-rule ID.
-- Produces: path-scoped production Access plus route, identity, posture, browser, session-expiry, and desktop evidence.
-
-- [ ] **Step 1: Configure/select production only after pre-production is green**
-
-Follow the README to select/init `production` and set the required config. Verify:
-
-```bash
-pulumi config --stack production
-```
-
-Expected: `cloudflareAccountId`, secret `accessEmail`, and `devicePostureRuleId` exist.
-
-- [ ] **Step 2: Preview production and reject any broadening**
-
-```bash
 pulumi preview --stack production
 ```
 
-Expected:
+Expected pre-prod preview:
 
-- exactly one DTXWeb-managed Access application;
-- name `DTXWeb Production App`;
+- one DTXWeb Access application;
+- hostname-wide `pre-prod.dtx.hapadona.com`;
+- existing posture-rule reference;
+- no API/list/posture/token/Worker/storage resource.
+
+Expected production preview:
+
+- one `DTXWeb Production App`;
 - destinations exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`;
-- no hostname-wide `dtx.hapadona.com` destination;
-- no API hostname or additional Cloudflare resource type.
+- no hostname-wide production destination;
+- no API/list/posture/token/Worker/storage resource.
 
-Any mismatch is a hard stop.
+If authenticated config is unavailable, record the previews as `NOT RUN — operator credentials/config required`; do not manufacture config values or ask for secrets in PR comments.
 
-- [ ] **Step 3: Apply production**
+**Do not run `pulumi up` or `pulumi destroy`.**
 
-```bash
-pulumi up --stack production
-```
-
-Expected: one production Access application created successfully.
-
-- [ ] **Step 4: Run the complete production route matrix**
-
-Execute the runbook's single production matrix.
-
-Expected protected/intercepted:
-
-- `/app`
-- `/app/`
-- `/app/score`
-- `/app/__data.json`
-
-Expected outside Access:
-
-- `/`
-- `/blog`
-- `/preview/1`
-- `/editor`
-- `/tool/dtx-to-midi`
-- `/game`
-- `/login`
-- `/auth/callback`
-- both API hostnames.
-
-Every assertion must prove a real HTTP response; DNS/connection/TLS/timeout failure is not a pass.
-
-- [ ] **Step 5: Prove the Access policy clauses independently**
-
-Follow the runbook exactly:
-
-1. configured operator identity + trusted device => allowed;
-2. non-allowed IdP identity on that same trusted device => denied by Access;
-3. configured operator identity on a device that fails the posture rule => denied by Access.
-
-Do not substitute a second Supabase identity for step 2.
-
-- [ ] **Step 6: Complete browser/session/non-operator acceptance**
-
-Verify:
-
-- operator `/app -> /login -> /app` works with Access as the outer gate and Supabase as the inner gate;
-- ending the Access session during SvelteKit client navigation into `/app` is characterized and direct `/app` navigation/reload provides a usable reauthentication path;
-- a signed-in non-operator reproduces the documented `/login -> /app` denial dead end and cookie clearing recovers the browser.
-
-If direct protected navigation cannot recover after Access reauthentication, rollback production and stop.
-
-- [ ] **Step 7: Complete bundled and standalone desktop authentication**
-
-On the trusted operator device verify both password and Google login for:
-
-- bundled desktop callback `dtx://auth-callback`;
-- standalone `bun run dev:desktop` loopback callback `http://127.0.0.1:<configured-port>/auth-callback` against the deployed production target used by the current local `.env`.
-
-The full-local-stack `bun run dev` / `dev:local-web` flow is not a substitute for this production Access test.
-
-- [ ] **Step 8: Roll back production on any required failure**
-
-```bash
-pulumi preview --destroy --stack production
-pulumi destroy --stack production --yes
-```
-
-Confirm the only deletion is `DTXWeb Production App`. Keep the verified pre-production stack intact for diagnosis.
-
----
-
-### Task 6: Run Final Repository Verification And Record Non-sensitive Acceptance
-
-**Files:**
-
-- Modify only if needed for factual documentation corrections found during execution: `packages/infrastructure/README.md`, `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
-- Do not modify application/API/desktop source.
-
-**Interfaces:**
-
-- Consumes: successful Tasks 1-5.
-- Produces: final evidence that the codebase contains only the approved Access IaC/docs and that live environment acceptance matches the spec.
-
-- [ ] **Step 1: Run fresh infrastructure and repository checks**
-
-```bash
-bun run --filter=@dtx/infrastructure test
-bun run --filter=@dtx/infrastructure check
-bun run --filter=@dtx/infrastructure build
-bun run check
-bun run test
-```
-
-Expected: PASS. If an unrelated pre-existing repository failure appears, record it precisely rather than claiming a green repository.
-
-- [ ] **Step 2: Prove scope stayed out of application code**
-
-Run:
-
-```bash
-git diff --exit-code main...HEAD -- packages/dtx-web packages/dtx-api packages/dtx-desktop
-git status --short
-```
-
-Expected: no changes under the three application packages; no local Pulumi config/state or secrets appear as tracked/staged files.
-
-- [ ] **Step 3: Re-run both durable route-boundary checks after all troubleshooting**
-
-Re-run the runbook's pre-production and production HTTP matrices.
-
-Expected: both still pass; production public/API boundaries did not drift during browser/desktop troubleshooting.
-
-- [ ] **Step 4: Record only non-sensitive outcomes**
-
-Use a checklist like:
-
-```text
-Infrastructure unit tests/typecheck/build: PASS
-Pre-prod preview scope: PASS
-Pre-prod Access acceptance: PASS
-Production preview exact /app scope: PASS
-Production public/API matrix: PASS
-Production Access identity selector: PASS
-Production posture selector: PASS
-Production operator browser auth: PASS
-Production expired-session recovery characterized: PASS
-Production non-operator lockout characterized: PASS
-Production bundled desktop auth: PASS
-Production tauri-dev loopback auth: PASS
-```
-
-Do not record operator email, posture-rule ID, account ID, cookies/JWTs, API tokens, or device serials.
-
-- [ ] **Step 5: Commit only factual doc corrections, if execution required them**
-
-If no documentation changed, do not create an empty commit.
-
-If the runbook/README needed factual corrections discovered during live execution:
+- [ ] **Step 5: Commit documentation/preview-ready state**
 
 ```bash
 git add packages/infrastructure/README.md docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md
-git commit -m "docs: refine Zero Trust rollout guidance"
+git commit -m "docs: document DTXWeb Access operations"
 ```
 
-The implementation is complete only when fresh verification evidence exists for the final tracked code and the final live Access state.
+If the runbook did not change, commit only the README.
+
+---
+
+## Operator Handoff — Not Agent Plan Tasks
+
+After Tasks 1–3 are complete, stop implementation and hand the operator to:
+
+`docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
+
+The operator performs, in order:
+
+1. pre-prod preview review;
+2. `pulumi up --stack pre-prod`;
+3. pre-prod route/browser/posture acceptance;
+4. only after pre-prod is green, production preview review;
+5. `pulumi up --stack production`;
+6. production route/identity/posture/browser/session-expiry/desktop acceptance;
+7. stack-specific rollback if required;
+8. dashboard disable/delete only if Pulumi state/backend is unavailable during an emergency.
+
+These are deliberately outside the `For agentic workers` task list.
+
+## Final Implementation Verification
+
+Before claiming the implementation branch complete, verify:
+
+```bash
+git diff --check
+bun run --filter=@dtx/infrastructure check
+bun run --filter=@dtx/infrastructure test:coverage
+.github/scripts/ci-affected-scope.test.sh
+```
+
+Confirm the diff contains no changes under:
+
+```text
+packages/dtx-web/
+packages/dtx-api/
+packages/dtx-desktop/
+```
+
+Confirm no committed file contains real operator email, API token, device serial, Access cookie/JWT, Pulumi stack config, or Pulumi state export.
+
+Confirm the Access code contains no `ZeroTrustList`, `ZeroTrustDevicePostureRule`, `ZeroTrustAccessServiceToken`, Service Auth policy, or hostname-configurable production destination.

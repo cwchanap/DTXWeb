@@ -15,9 +15,17 @@ updates:
       prefix: 'chore(deps)'
       include: 'scope'
     groups:
+      pulumi-minor-and-patch:
+        patterns:
+          - '@pulumi/*'
+        update-types:
+          - 'minor'
+          - 'patch'
       js-minor-and-patch:
         patterns:
           - '*'
+        exclude-patterns:
+          - '@pulumi/*'
         update-types:
           - 'minor'
           - 'patch'

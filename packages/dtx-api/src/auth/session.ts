@@ -22,7 +22,11 @@ export const resolveAuthSession = async (
 	env: Env
 ): Promise<ApiAuthSession | null> => {
 	const trustedWebOrigin = new URL(env.DTX_WEB_URL).origin;
-	const hasBearer = request.headers.get('authorization')?.startsWith('Bearer ') === true;
+	const authorization = request.headers.get('authorization');
+	const hasBearer =
+		authorization !== null &&
+		authorization.slice(0, 7).toLowerCase() === 'bearer ' &&
+		authorization.slice(7).trim().length > 0;
 	const hasCookie = request.headers.has('cookie');
 
 	if (

@@ -353,6 +353,22 @@ For each environment, use this order:
 6. Complete the Access matrix and go/no-go record. Keep the previous web/API
    versions and D1 backup available until the observation window closes.
 
+### Final pre-production evidence boundary
+
+Any earlier Foundation rehearsal deployment is historical evidence only. In
+particular, API version `44d96dc8-51a2-47c3-bcad-adecdd794efa` and web version
+`c1c31ef1-45e6-4014-a4dc-484a9741c15e` were deployed before the final Tasks
+4–15 migration work. The earlier web build also used Foundation-era Supabase
+public variables, so neither version proves the final Better-Auth-only
+cutover.
+
+The operator must deploy the final reviewed API and matching web artifacts to
+pre-production, verify the `API` service binding, and record the resulting
+Worker versions before calling the pre-production gate green. Then run the
+complete current web, API, desktop, callback, cookie/origin, CORS, and Access
+acceptance matrices below. A Foundation rehearsal smoke or local E2E pass does
+not substitute for current final pre-production evidence.
+
 ## Web matrix
 
 The operator records pass/fail evidence for both production and pre-production:

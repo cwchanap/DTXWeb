@@ -7,11 +7,11 @@ Base: `7d9a9cbd`
 ## Scope
 
 Task 15 ran the repository verification gates, generated-artifact checks,
-Better Auth residue audit, full local web and desktop E2E suites, and the
-non-secret pre-production proof already established on this branch. Production
-was deliberately out of scope: no production migration, identity import,
-secret update, deploy, desktop publication, or Supabase credential change was
-run.
+Better Auth residue audit, and full local web and desktop E2E suites. It also
+audited the historical, non-secret Foundation pre-production rehearsal, which
+is not current final cutover proof. Production was deliberately out of scope:
+no production migration, identity import, secret update, deploy, desktop
+publication, or Supabase credential change was run.
 
 ## RED evidence and verification-driven corrections
 
@@ -97,53 +97,63 @@ run.
   separate manual evidence item. The automated desktop suite does not claim
   that physical-browser handoff.
 
-## Pre-production proof
+## Pre-production evidence boundary
 
-The branch's authorized pre-production rehearsal is recorded in the ledger and
-was not repeated with a production target:
+The branch's earlier authorized pre-production rehearsal is recorded in the
+ledger, but it is not current Tasks 4–15 cutover proof:
 
-- Pre-production Better Auth and Google secret names are present without
-  exposing values; `DTX_WEB_URL` is
-  `https://pre-prod.dtx.hapadona.com`, and the cookie prefix is
-  `dtx-preprod`.
-- Remote pre-production D1 has migrations through `0008_better_auth.sql` and
-  no pending migrations. API version
-  `44d96dc8-51a2-47c3-bcad-adecdd794efa` and web version
-  `c1c31ef1-45e6-4014-a4dc-484a9741c15e` are deployed at the pre-production
-  hostnames.
-- Non-secret live smoke passed: web root 200, anonymous
-  `/api/auth/get-session` 200, allowed-origin credentialed preflight 204 with
-  exact origin, disallowed-origin response without allow-origin, invalid
-  device client rejection, valid device-code issuance with the expected
-  `/app/desktop-auth` verification URI, pending poll, and Google authorization
-  start with the exact Better Auth callback URI and pre-production state-cookie
-  prefix.
-- Static configuration confirms the pre-production web `API` service binding,
-  trusted-origin source, cookie isolation, credentialed CORS, and
-  `/get-session` rate-limit exemption.
+- The API version `44d96dc8-51a2-47c3-bcad-adecdd794efa` and web version
+  `c1c31ef1-45e6-4014-a4dc-484a9741c15e` are Foundation rehearsal artifacts,
+  deployed before the final Tasks 4–15 migration work. They must not be used
+  as the final API/web deployment evidence.
+- The earlier web build used Foundation-era Supabase public variables. Its
+  successful build and smoke results therefore do not prove the final
+  Better-Auth-only web artifact or its current service-binding behavior.
+- The recorded Foundation smoke passed non-secret checks including web root,
+  anonymous `/api/auth/get-session`, allowed/disallowed CORS, invalid and valid
+  Device Authorization starts, a pending poll, and Google authorization start
+  with the expected callback. These results are historical rehearsal evidence,
+  not current final acceptance.
+- The remote rehearsal state also recorded D1 migrations through
+  `0008_better_auth.sql`, pre-production secret presence without values,
+  `DTX_WEB_URL=https://pre-prod.dtx.hapadona.com`, and cookie prefix
+  `dtx-preprod`. The final reviewed API and web artifacts still require a fresh
+  pre-production deployment and live verification.
 
 ## Pre-production blockers and go/no-go
 
-Pre-production is not a production go decision yet:
+Pre-production is not a production go decision, and the current final
+cutover has not been deployed or proven in pre-production:
 
-1. Google Console registration of
+1. Deploy the final reviewed Tasks 4–15 API artifact to pre-production, then
+   deploy the matching final web artifact built without Foundation-era
+   Supabase public variables. Verify the web `API` service binding and record
+   the resulting API and web Worker versions.
+2. Execute and record the complete current pre-production acceptance matrix:
+   password sign-in, Google sign-in, explicit linking, `/app` guard,
+   GraphQL/score, upload/download, logout, invalid sessions, Device
+   Authorization approve/deny/expiry, cookie/origin isolation, CORS, and the
+   desktop candidate flows. The Foundation rehearsal smoke is not a substitute
+   for this matrix.
+3. Google Console registration of
    `https://api.pre-prod.dtx.hapadona.com/api/auth/callback/google` could not
    be independently verified from the available local tooling. The deployed
    Google start flow emits that exact callback, but completion must remain
    blocked until the client registration is externally confirmed.
-2. No real sanitized Supabase Auth export and complete application owner-ID
+4. No real sanitized Supabase Auth export and complete application owner-ID
    inventory were supplied for this run. No fabricated identity export or
    import SQL was generated/applied, and exact owner reconciliation therefore
    remains a hard gate.
-3. The manual OS-browser Device Authorization handoff has not been recorded;
+5. The manual OS-browser Device Authorization handoff has not been recorded;
    WDIO coverage is automated evidence only.
 
 Accordingly, local repository and automated E2E verification is GREEN, while
-the pre-production acceptance/production go-no-go status is BLOCKED on the
-external callback registration, real owner reconciliation/import inputs, and
-manual handoff evidence. The runbook now records the corrected five-second
-local E2E expiry override and continues to prohibit that override in remote
-environments.
+current pre-production acceptance and the production go/no-go status are
+BLOCKED on the final API/web deployments, the complete current acceptance
+matrix, external callback registration, real owner reconciliation/import
+inputs, and manual handoff evidence. The runbook now records the corrected
+five-second local E2E expiry override and continues to prohibit that override
+in remote environments.
 
 ## Production boundary
 

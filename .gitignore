@@ -11,6 +11,7 @@ packages/dtx-api/dist/*
 !packages/dtx-web/.env.types-only
 .temp
 .superpowers/
+tmp/auth-migration/
 
 sample/
 static/skin/

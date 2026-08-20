@@ -102,6 +102,33 @@ describe('fetchAuthSession', () => {
 		expect(result.session).toEqual({ id: 'session-1' });
 	});
 
+	it('uses the public local API when a loopback URL has an emulated service binding', async () => {
+		mockEnv.PUBLIC_DTX_API_URL = 'http://localhost:8787';
+		const bindingFetch = vi
+			.fn<typeof fetch>()
+			.mockResolvedValue(responseWithSession({ id: 'wrong-session' }, { id: 'wrong-user' }));
+		const eventFetch = vi
+			.fn<typeof fetch>()
+			.mockResolvedValue(responseWithSession({ id: 'session-1' }, { id: 'user-1' }));
+
+		await fetchAuthSession(
+			makeEvent({
+				api: { fetch: bindingFetch },
+				fetch: eventFetch,
+				cookie: 'session=opaque-token'
+			})
+		);
+
+		expect(bindingFetch).not.toHaveBeenCalled();
+		expect(eventFetch).toHaveBeenCalledWith(
+			'http://localhost:8787/api/auth/get-session',
+			expect.objectContaining({ method: 'GET' })
+		);
+		expect((eventFetch.mock.calls[0][1]?.headers as Headers).get('cookie')).toBe(
+			'session=opaque-token'
+		);
+	});
+
 	it('returns an anonymous result when the API has no session', async () => {
 		fetchMock.mockResolvedValue(responseWithSession(null, null));
 

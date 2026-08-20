@@ -9,7 +9,6 @@
 		"check": "tsc --noEmit",
 		"fixtures:generate": "bun run fixtures/create-test-midi.ts",
 		"fixtures:verify": "bun run fixtures/verify-fixtures.ts",
-		"setup:create-user": "bun run setup/create-local-supabase-user.ts",
 		"playwright": "playwright"
 	},
 	"devDependencies": {

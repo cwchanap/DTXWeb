@@ -312,16 +312,23 @@ git commit -m "feat: scaffold DTXWeb Access infrastructure"
 
 - [ ] **Step 1: Add failing tests for the policy and application shape**
 
-Append focused tests to `src/access.test.ts`:
+Extend the existing import from `./access.js` with these names rather than adding a second import later in the file:
 
 ```ts
 import {
   ACCESS_APPLICATION_FLAGS,
   DEFAULT_ACCESS_SESSION_DURATION,
   buildAccessApplicationArgs,
-  buildAccessPolicy
+  buildAccessPolicy,
+  getAccessStackDefinition,
+  normalizeAccessEmail,
+  normalizeDevicePostureRuleId
 } from './access.js';
+```
 
+Add these focused tests:
+
+```ts
 it('builds one email + posture allow policy', () => {
   expect(buildAccessPolicy(' operator@example.com ', ' posture-rule-id ')).toEqual({
     name: 'Allow configured operator on trusted device',
@@ -363,6 +370,17 @@ it('never builds hostname-wide production Access', () => {
   });
 
   expect(args.destinations).not.toContainEqual({ type: 'public', uri: 'dtx.hapadona.com' });
+});
+
+it('rejects an empty Cloudflare account ID before deployment', () => {
+  expect(() =>
+    buildAccessApplicationArgs({
+      accountId: '   ',
+      stackDefinition: getAccessStackDefinition('pre-prod'),
+      accessEmail: 'operator@example.com',
+      devicePostureRuleId: 'posture-rule-id'
+    })
+  ).toThrow(/cloudflareAccountId must not be empty/);
 });
 ```
 
@@ -447,7 +465,7 @@ export function createAccessApplication(args: BuildAccessApplicationArgs) {
 }
 ```
 
-If the selected `@pulumi/cloudflare` version exposes a type spelling that differs from the currently working Perseus source, use the provider's current `ZeroTrustAccessApplicationArgs`/inline-policy types without changing the external behavior above. Do not switch to deprecated `AccessApplication` resources.
+The current Pulumi Cloudflare v6 resource is `ZeroTrustAccessApplication` and supports `destinations`, `policies`, `domain`, and `sessionDuration`. If dependency resolution installs a later compatible v6 release, keep this non-deprecated resource and the external behavior above; do not switch to deprecated `AccessApplication` resources.
 
 - [ ] **Step 4: Add the Pulumi program entrypoint**
 
@@ -488,7 +506,7 @@ Expected: all pass. The root `check` should discover the new workspace through t
 
 ```bash
 git add packages/infrastructure/src
- git commit -m "feat: manage DTXWeb Access with Pulumi"
+git commit -m "feat: manage DTXWeb Access with Pulumi"
 ```
 
 ---
@@ -540,7 +558,7 @@ pulumi stack output adminAccessDevicePostureRuleId
 
 Run that command from the Perseus infrastructure project/stack that owns the current trusted-device posture rule; do not copy serial numbers into DTXWeb.
 
-Document the Cloudflare token requirement as an account-scoped token with `Access: Apps and Policies Write`, which is the Cloudflare API permission accepted for Access application/policy writes. Do not add permissions for Workers, D1, R2, service tokens, or device-posture writes for this DTXWeb package.
+Document the Cloudflare token requirement as an account-scoped token with `Access: Apps and Policies Write`, which Cloudflare currently accepts for Access application and application-policy writes. Do not add permissions for Workers, D1, R2, service tokens, or device-posture writes for this DTXWeb package.
 
 - [ ] **Step 2: Replace dashboard configuration in the runbook with Pulumi preview/apply**
 

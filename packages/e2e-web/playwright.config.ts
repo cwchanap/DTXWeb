@@ -26,6 +26,7 @@ const localAuthEnv = {
 	BETTER_AUTH_URL: apiURL,
 	BETTER_AUTH_SECRET:
 		process.env.BETTER_AUTH_SECRET ?? 'e2e-local-better-auth-secret-0123456789abcdef',
+	BETTER_AUTH_DEVICE_CODE_EXPIRES_IN: '1s',
 	DTX_WEB_URL: baseURL,
 	AUTH_COOKIE_DOMAIN: '',
 	AUTH_COOKIE_PREFIX: 'dtx-local',
@@ -58,6 +59,7 @@ const webServers = [
 			' --persist-to .wrangler/state' +
 			` --var BETTER_AUTH_URL:"${localAuthEnv.BETTER_AUTH_URL}"` +
 			` --var BETTER_AUTH_SECRET:"${localAuthEnv.BETTER_AUTH_SECRET}"` +
+			` --var BETTER_AUTH_DEVICE_CODE_EXPIRES_IN:"${localAuthEnv.BETTER_AUTH_DEVICE_CODE_EXPIRES_IN}"` +
 			` --var DTX_WEB_URL:"${localAuthEnv.DTX_WEB_URL}"` +
 			' --var AUTH_COOKIE_DOMAIN:' +
 			` --var AUTH_COOKIE_PREFIX:"${localAuthEnv.AUTH_COOKIE_PREFIX}"` +
@@ -95,7 +97,8 @@ export default defineConfig({
 					{
 						name: 'chromium-auth',
 						use: { ...devices['Desktop Chrome'] },
-						testMatch: /auth-lifecycle\.spec\.ts|score\.spec\.ts/,
+						testMatch:
+							/auth-lifecycle\.spec\.ts|device-authorization\.spec\.ts|score\.spec\.ts/,
 						dependencies: ['setup']
 					}
 				]

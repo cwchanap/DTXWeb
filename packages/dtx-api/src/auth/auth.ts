@@ -10,6 +10,7 @@ export const createAuth = (env: Env) =>
 		...createAuthOptions({
 			baseURL: env.BETTER_AUTH_URL,
 			webURL: env.DTX_WEB_URL,
+			deviceAuthorizationExpiresIn: env.BETTER_AUTH_DEVICE_CODE_EXPIRES_IN,
 			cookieDomain: env.AUTH_COOKIE_DOMAIN,
 			cookiePrefix: env.AUTH_COOKIE_PREFIX,
 			googleClientId: env.GOOGLE_AUTH_CLIENT_ID,

@@ -6,6 +6,7 @@ export type Env = {
 	RATE_LIMIT_API: KVNamespace;
 	BETTER_AUTH_URL: string;
 	BETTER_AUTH_SECRET: string;
+	BETTER_AUTH_DEVICE_CODE_EXPIRES_IN?: string;
 	DTX_WEB_URL: string;
 	AUTH_COOKIE_DOMAIN?: string;
 	AUTH_COOKIE_PREFIX: string;

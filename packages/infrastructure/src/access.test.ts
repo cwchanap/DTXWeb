@@ -1,0 +1,108 @@
+import * as pulumi from '@pulumi/pulumi';
+import { describe, expect, it } from 'vitest';
+import {
+	ACCESS_APPLICATION_FLAGS,
+	DEFAULT_ACCESS_SESSION_DURATION,
+	buildAccessApplicationArgs,
+	buildAccessPolicy,
+	getAccessStackDefinition,
+	normalizeAccessEmail
+} from './access.js';
+
+const resolveOutput = <T>(output: pulumi.Output<T>): Promise<T> =>
+	new Promise((resolve) => {
+		output.apply((value) => {
+			resolve(value);
+			return value;
+		});
+	});
+
+describe('getAccessStackDefinition', () => {
+	it('defines hostname-wide pre-production Access', () => {
+		expect(getAccessStackDefinition('pre-prod')).toEqual({
+			stackName: 'pre-prod',
+			applicationName: 'DTXWeb Pre-prod',
+			domain: 'pre-prod.dtx.hapadona.com',
+			destinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }]
+		});
+	});
+
+	it('defines production Access at exactly /app and /app/*', () => {
+		expect(getAccessStackDefinition('production')).toEqual({
+			stackName: 'production',
+			applicationName: 'DTXWeb Production App',
+			domain: 'dtx.hapadona.com/app',
+			destinations: [
+				{ type: 'public', uri: 'dtx.hapadona.com/app' },
+				{ type: 'public', uri: 'dtx.hapadona.com/app/*' }
+			]
+		});
+	});
+
+	it('does not define hostname-wide production Access', () => {
+		expect(getAccessStackDefinition('production').destinations).not.toContainEqual({
+			type: 'public',
+			uri: 'dtx.hapadona.com'
+		});
+	});
+
+	it('rejects an unsupported stack before resource creation', () => {
+		expect(() => getAccessStackDefinition('development')).toThrow(
+			/Unsupported DTXWeb infrastructure stack/
+		);
+	});
+});
+
+describe('normalizeAccessEmail', () => {
+	it('trims one email address', () => {
+		expect(normalizeAccessEmail(' operator@example.com ')).toBe('operator@example.com');
+	});
+
+	it('rejects malformed and multiple email values', () => {
+		expect(() => normalizeAccessEmail('not-an-email')).toThrow(/single email address/);
+		expect(() => normalizeAccessEmail('a@example.com,b@example.com')).toThrow(
+			/single email address/
+		);
+	});
+});
+
+describe('buildAccessApplicationArgs', () => {
+	it('uses the default session duration and browser security flags', () => {
+		const args = buildAccessApplicationArgs({
+			accountId: 'account-id',
+			stackDefinition: getAccessStackDefinition('pre-prod'),
+			accessEmail: 'operator@example.com',
+			devicePostureRuleId: 'posture-rule-id'
+		});
+
+		expect(args).toMatchObject({
+			sessionDuration: DEFAULT_ACCESS_SESSION_DURATION,
+			...ACCESS_APPLICATION_FLAGS
+		});
+	});
+});
+
+describe('buildAccessPolicy', () => {
+	it('uses an email Include and the supplied posture-rule Require', async () => {
+		const policy = buildAccessPolicy('operator@example.com', 'posture-rule-id');
+		const includedEmail = policy.includes?.[0]?.email?.email as pulumi.Output<string>;
+
+		expect(policy).toMatchObject({
+			name: 'Allow configured operator on trusted device',
+			decision: 'allow',
+			precedence: 1,
+			requires: [{ devicePosture: { integrationUid: 'posture-rule-id' } }]
+		});
+		expect(await resolveOutput(includedEmail)).toBe('operator@example.com');
+	});
+
+	it('normalizes a real Pulumi Output email through the nested policy value', async () => {
+		const policy = buildAccessPolicy(
+			pulumi.output(' operator@example.com '),
+			'posture-rule-id'
+		);
+		const includedEmail = policy.includes?.[0]?.email?.email as pulumi.Output<string>;
+
+		expect(await resolveOutput(includedEmail)).toBe('operator@example.com');
+	});
+});

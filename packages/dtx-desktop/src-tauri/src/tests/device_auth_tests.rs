@@ -1,4 +1,7 @@
-use super::device_auth::{DeviceAuthClient, DeviceAuthError, DevicePollResult};
+use super::device_auth::{
+    infer_web_origin_from_api_url, web_origin_from_values, DeviceAuthClient, DeviceAuthError,
+    DevicePollResult,
+};
 use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -7,6 +10,32 @@ const SESSION_TOKEN: &str = "opaque-session-token-must-never-leak";
 
 fn client(server: &MockServer) -> DeviceAuthClient {
     DeviceAuthClient::new(server.uri()).expect("test server URL is valid")
+}
+
+#[test]
+fn trusted_origin_matches_the_api_topology_and_strips_paths() {
+    assert_eq!(
+        infer_web_origin_from_api_url("https://api.dtx.hapadona.com/graphql")
+            .expect("production API origin"),
+        "https://dtx.hapadona.com"
+    );
+    assert_eq!(
+        infer_web_origin_from_api_url("https://api.pre-prod.dtx.hapadona.com/")
+            .expect("pre-production API origin"),
+        "https://pre-prod.dtx.hapadona.com"
+    );
+    assert_eq!(
+        infer_web_origin_from_api_url("http://localhost:8787/api").expect("local API origin"),
+        "http://localhost:5173"
+    );
+    assert_eq!(
+        infer_web_origin_from_api_url("http://[::1]:8787/api").expect("local IPv6 API origin"),
+        "http://[::1]:5173"
+    );
+    assert_eq!(
+        web_origin_from_values(Some("https://dtx.hapadona.com/app")).expect("configured origin"),
+        "https://dtx.hapadona.com"
+    );
 }
 
 #[tokio::test]
@@ -286,4 +315,25 @@ async fn network_timeout_is_a_typed_error() {
         error,
         DeviceAuthError::Timeout | DeviceAuthError::Network
     ));
+}
+
+#[tokio::test]
+async fn sign_out_posts_json_bearer_and_the_canonical_origin() {
+    let server = MockServer::start().await;
+    let token = "opaque-sign-out-token";
+    Mock::given(method("POST"))
+        .and(path("/api/auth/sign-out"))
+        .and(header("authorization", format!("Bearer {token}")))
+        .and(header("origin", server.uri()))
+        .and(header("content-type", "application/json"))
+        .and(body_json(serde_json::json!({})))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client(&server)
+        .sign_out(token)
+        .await
+        .expect("sign-out request should satisfy Better Auth's handler contract");
 }

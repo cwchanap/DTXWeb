@@ -162,3 +162,55 @@ operation, API or web deploy, desktop publication, or credential removal was
 run. Production remains for a separately approved operator change window after
 the blockers above and the runbook's backup, rollback, callback, ownership,
 Access, and acceptance gates are complete.
+
+## Final whole-branch native review fixes
+
+The final review identified three native auth correctness gaps and one desktop
+E2E assertion gap. CodeGraph was queried first for the device-auth, AuthState,
+renderer logout, and Drive reconciliation paths. The fixes remain limited to
+the native/renderer auth seam and its focused tests:
+
+- `DeviceAuthClient::sign_out` now sends an empty JSON object with
+  `Content-Type: application/json`, the captured Bearer credential, and the
+  canonical trusted web Origin. The client derives the Origin from an explicit
+  `VITE_DTX_WEB_URL` when present and otherwise maps the existing production,
+  pre-production, and local API topology. WireMock asserts the complete
+  request contract, including production/pre-production/local/IPv6 origin
+  normalization. A separate live Better Auth handler fixture was not
+  available without starting a Worker/D1 stack; the existing API auth options
+  tests continue to cover the trusted-origin configuration.
+- Device Authorization now reserves one monotonic attempt generation before
+  every begin request. Begin, poll, retry reinsertion, approval/session
+  installation, and Drive reconciliation are all checked against the current
+  generation after awaits. Cancel increments the generation even when no
+  pending flow is present; overlapping begin, delayed begin/cancel, and
+  delayed approval/cancel tests prove stale work cannot restore state.
+- Native logout snapshots the session token/user, invalidates the pending-flow
+  and session generations, clears Drive memory, then performs best-effort
+  remote revocation with the captured token. Renderer persistence/cache/Drive
+  state is cleared before awaiting native cancellation or revoke. The delayed
+  revocation proof observes native session, pending generation, and Drive
+  access-token memory cleared while the HTTP request is still delayed. No
+  credential is logged.
+- Desktop WDIO `afterEach` now asserts native `get_current_session` is null
+  after logout before reseeding the deterministic E2E session. The
+  `session_token` compatibility alias remains deferred because this review
+  did not establish a safe no-caller deletion boundary.
+
+TDD and GREEN evidence:
+
+- Initial RED: delayed native race tests failed at compile time against the
+  old Wry-only command wrappers and `Option` pending state, demonstrating the
+  missing generic test seam and attempt identity before implementation.
+- `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
+  device_auth_tests -- --nocapture`: 11 passed.
+- `cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml
+  auth::tests:: -- --nocapture`: 83 passed, including delayed begin/poll,
+  cancel, overlapping begin, delayed native logout, and Drive-clear proofs.
+- `cargo fmt --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml --
+  --check`, default-feature Clippy, and supported E2E-feature Clippy with
+  `-D warnings`: passed. The all-feature command remains the existing
+  unsupported Google Drive + E2E build-guard combination.
+- Renderer `authService.test.ts`: 15 passed; desktop typecheck reported zero
+  errors/warnings; desktop E2E typecheck and focused Prettier/diff checks
+  passed. No remote, pre-production, or production operation was run.

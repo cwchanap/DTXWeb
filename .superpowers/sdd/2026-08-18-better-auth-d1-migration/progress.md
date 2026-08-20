@@ -705,3 +705,28 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   evidence with no remaining Critical, Important, or Minor findings.
 - Final-cutover pre-production deployment and acceptance remain blocked on the
   explicit gates above; production remains out of scope until those gates pass.
+
+## Final whole-branch native review fixes
+
+- CodeGraph was queried before editing the native device-auth, AuthState,
+  renderer logout, and Drive reconciliation paths.
+- RED: delayed native race tests initially failed to compile against the
+  Wry-only command wrappers and `Option` pending state; the renderer delayed
+  revoke test established the required pre-await cleanup ordering.
+- GREEN: native sign-out WireMock contract and origin-topology tests passed
+  11/11; focused native auth tests passed 83/83, including delayed begin/cancel,
+  delayed poll approval/cancel, overlapping begin, delayed logout, Drive
+  memory clear, and best-effort revoke; renderer auth tests passed 15/15.
+- Implementation reserves a monotonic device attempt generation before begin,
+  checks it after every network await before pending/session/Drive mutation,
+  and increments it for cancel/logout even when pending state is absent.
+  Logout snapshots the token, invalidates native generations and Drive memory
+  before best-effort JSON/Origin remote revoke; renderer persistence is cleared
+  before awaiting native calls. The sign-out request contract is now
+  `{}` JSON + Bearer + canonical trusted Origin.
+- Desktop WDIO `afterEach` asserts native `get_current_session` is null before
+  reseeding. The `session_token` alias was reviewed but deferred because no
+  safe no-caller deletion proof was established.
+- Rust format, default/e2e supported Clippy, desktop typecheck, desktop E2E
+  typecheck, Prettier, and diff checks pass. No real-handler Worker/D1 fixture
+  was started and no remote/pre-production/production operation was run.

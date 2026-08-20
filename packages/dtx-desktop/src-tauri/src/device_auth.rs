@@ -11,6 +11,7 @@ use serde::Deserialize;
 use std::fmt;
 use std::time::{Duration, Instant};
 use time::{format_description::well_known::Rfc3339, Duration as TimeDuration, OffsetDateTime};
+use url::Url;
 
 pub(crate) const DESKTOP_CLIENT_ID: &str = "dtx-desktop";
 const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
@@ -32,6 +33,49 @@ pub(crate) fn api_base_url_from_values(api_url: Option<&str>) -> Result<String> 
         ));
     }
     Ok(url.to_string())
+}
+
+/// Normalize the configured web URL to the exact origin Better Auth trusts.
+pub(crate) fn web_origin_from_values(web_url: Option<&str>) -> Result<String> {
+    let web_url = web_url
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| {
+            DesktopError::Message("VITE_DTX_WEB_URL environment variable is not set".to_string())
+        })?;
+    let url = Url::parse(web_url.trim())
+        .map_err(|_| DesktopError::Message("VITE_DTX_WEB_URL is invalid".to_string()))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(DesktopError::Message(
+            "VITE_DTX_WEB_URL must use http or https".to_string(),
+        ));
+    }
+    Ok(url.origin().ascii_serialization())
+}
+
+/// Keep local development and existing packaged builds working when the web
+/// origin is not provided as a separate public build variable. Hosted Drumery
+/// API names deliberately mirror their web host (`api.` is the only prefix),
+/// while the local API uses 8787 and the local web uses 5173.
+pub(crate) fn infer_web_origin_from_api_url(api_url: &str) -> Result<String> {
+    let mut url = Url::parse(api_url)
+        .map_err(|_| DesktopError::Message("VITE_DTX_API_URL is invalid".to_string()))?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err(DesktopError::Message(
+            "VITE_DTX_API_URL must use http or https".to_string(),
+        ));
+    }
+
+    let host = url.host_str().unwrap_or_default().to_string();
+    if let Some(web_host) = host.strip_prefix("api.") {
+        url.set_host(Some(web_host))
+            .map_err(|_| DesktopError::Message("VITE_DTX_API_URL is invalid".to_string()))?;
+    } else if matches!(host.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]")
+        && url.port() == Some(8787)
+    {
+        url.set_port(Some(5173))
+            .map_err(|_| DesktopError::Message("VITE_DTX_API_URL is invalid".to_string()))?;
+    }
+    Ok(url.origin().ascii_serialization())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -65,6 +109,7 @@ pub(crate) struct DeviceAuthClient {
     client: reqwest::Client,
     base_url: String,
     client_id: String,
+    trusted_origin: String,
 }
 
 impl fmt::Debug for DeviceAuthClient {
@@ -73,17 +118,34 @@ impl fmt::Debug for DeviceAuthClient {
             .debug_struct("DeviceAuthClient")
             .field("base_url", &self.base_url)
             .field("client_id", &self.client_id)
+            .field("trusted_origin", &self.trusted_origin)
             .finish()
     }
 }
 
 impl DeviceAuthClient {
+    #[allow(dead_code)]
     pub(crate) fn new(base_url: String) -> Result<Self> {
         Self::new_with_timeout(base_url, AUTH_REQUEST_TIMEOUT)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn new_with_timeout(base_url: String, timeout: Duration) -> Result<Self> {
+        let trusted_origin = infer_web_origin_from_api_url(&base_url)?;
+        Self::new_with_origin_and_timeout(base_url, trusted_origin, timeout)
+    }
+
+    pub(crate) fn new_with_origin(base_url: String, trusted_origin: String) -> Result<Self> {
+        Self::new_with_origin_and_timeout(base_url, trusted_origin, AUTH_REQUEST_TIMEOUT)
+    }
+
+    pub(crate) fn new_with_origin_and_timeout(
+        base_url: String,
+        trusted_origin: String,
+        timeout: Duration,
+    ) -> Result<Self> {
         let base_url = api_base_url_from_values(Some(&base_url))?;
+        let trusted_origin = web_origin_from_values(Some(&trusted_origin))?;
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .build()
@@ -92,6 +154,7 @@ impl DeviceAuthClient {
             client,
             base_url,
             client_id: DESKTOP_CLIENT_ID.to_string(),
+            trusted_origin,
         })
     }
 
@@ -262,6 +325,8 @@ impl DeviceAuthClient {
             .client
             .post(self.endpoint("/api/auth/sign-out"))
             .bearer_auth(session_token)
+            .header("Origin", &self.trusted_origin)
+            .json(&serde_json::json!({}))
             .send()
             .await
             .map_err(map_reqwest_error)?;

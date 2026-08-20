@@ -698,7 +698,7 @@ impl GoogleDriveState {
     /// session epoch and cancels the token on change; the `tokio::select!`
     /// then drops the in-flight reconciliation future, aborting any pending
     /// HTTP call.
-    pub(crate) fn spawn_current_user_reconciliation(app: AppHandle) {
+    pub(crate) fn spawn_current_user_reconciliation<R: Runtime>(app: AppHandle<R>) {
         tauri::async_runtime::spawn(async move {
             let drive = app.state::<GoogleDriveState>();
             let auth = app.state::<AuthState>();

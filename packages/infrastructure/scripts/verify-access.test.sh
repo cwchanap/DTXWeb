@@ -23,6 +23,14 @@ Set-Cookie: CF_Authorization=super-secret-cookie
 RESPONSE
 }
 
+emit_spoofed_cloudflare_redirect() {
+	cat <<'RESPONSE'
+HTTP/2 302
+Location: https://tenant.cloudflareaccess.com:443@evil.example/login
+
+RESPONSE
+}
+
 emit_generic_redirect() {
 	cat <<'RESPONSE'
 HTTP/2 302
@@ -142,6 +150,13 @@ case "${FAKE_CURL_SCENARIO:-}" in
 	cloudflare-redirect)
 		if [[ "$url" == https://pre-prod.dtx.hapadona.com/* || "$url" == https://dtx.hapadona.com/app* ]]; then
 			emit_cloudflare_redirect
+		else
+			emit_public_ok
+		fi
+		;;
+	spoofed-cloudflare-host)
+		if is_pre_prod_protected_url; then
+			emit_spoofed_cloudflare_redirect
 		else
 			emit_public_ok
 		fi
@@ -281,6 +296,7 @@ assert_urls() {
 }
 
 run_case 'cloudflare-host redirect accepted' 0 cloudflare-redirect pre-prod
+run_case 'Cloudflare host userinfo spoof rejected' 1 spoofed-cloudflare-host pre-prod
 run_case 'generic redirect rejected for protected route' 1 generic-redirect pre-prod
 run_case '403 with both Access headers accepted' 0 access-403-both pre-prod
 run_case '403 missing either Access header rejected' 1 access-403-missing-domain pre-prod

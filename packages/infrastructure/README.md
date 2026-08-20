@@ -15,12 +15,29 @@ pulumi login --local
 The only supported stacks are `pre-prod` and `production`:
 
 ```bash
-pulumi stack select pre-prod || pulumi stack init pre-prod
-pulumi stack select production || pulumi stack init production
+pulumi stack select pre-prod || {
+  echo 'FAIL: expected the existing local pre-prod stack; refusing to initialize a new stack' >&2
+  exit 1
+}
+pulumi stack select production || {
+  echo 'FAIL: expected the existing local production stack; refusing to initialize a new stack' >&2
+  exit 1
+}
+
+for stack in pre-prod production; do
+  access_application_id="$(pulumi stack output accessApplicationId --stack "$stack")" || exit 1
+  if [ -z "$access_application_id" ]; then
+    echo "FAIL: $stack has no accessApplicationId output; refusing preview/apply" >&2
+    exit 1
+  fi
+done
+unset access_application_id stack
 ```
 
 The Pulumi program rejects every other stack name. Stack configuration files are local
-operator state and are ignored by git.
+operator state and are ignored by git. Both existing stack selections and non-empty
+`accessApplicationId` outputs are required before preview or apply; the captured identifiers are
+not printed in evidence. Never initialize a replacement stack when selection fails.
 
 ## Configuration
 

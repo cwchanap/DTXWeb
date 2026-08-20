@@ -2,10 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from './index';
 import type { Env } from './env';
 
-vi.mock('@supabase/supabase-js', () => ({
-	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
-}));
-
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {
@@ -50,14 +46,11 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	SUPABASE_URL: 'https://example.supabase.co',
-	SUPABASE_ANON_KEY: 'anon-key',
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: 'true',
 	CORS_ALLOWED_ORIGINS: 'https://pre-prod.dtx.hapadona.com,http://localhost:5173',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
 	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: '',
 	...overrides
 });
 

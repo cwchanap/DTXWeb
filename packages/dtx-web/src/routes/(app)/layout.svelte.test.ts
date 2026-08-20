@@ -38,7 +38,7 @@ describe('(app)/+layout.svelte', () => {
 		});
 	});
 
-	it('renders without a Supabase client or auth subscription', () => {
+	it('renders without an auth client or subscription', () => {
 		const { container } = render(AppLayout, { props: { children: noopChildren } });
 		expect(container).toBeTruthy();
 	});

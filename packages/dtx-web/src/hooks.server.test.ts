@@ -100,23 +100,20 @@ describe('auth hooks', () => {
 		expect(resolve).not.toHaveBeenCalled();
 	});
 
-	it('treats desktop redirect parameters as an ordinary safe web next path', async () => {
+	it('treats query parameters as an ordinary safe web next path', async () => {
 		const event = makeEvent({
-			url: new URL(
-				'https://example.com/app?redirect=desktop&desktop_callback=http%3A%2F%2Fevil.test'
-			)
+			url: new URL('https://example.com/app?tab=overview')
 		});
 
 		await expectRedirect(
 			authGuard({ event, resolve }),
-			'/login?next=' +
-				encodeURIComponent('/app?redirect=desktop&desktop_callback=http%3A%2F%2Fevil.test')
+			'/login?next=' + encodeURIComponent('/app?tab=overview')
 		);
 	});
 
-	it('redirects authenticated users from /login to /app without a desktop exception', async () => {
+	it('redirects authenticated users from /login to /app', async () => {
 		const event = makeEvent({
-			url: new URL('https://example.com/login?redirect=desktop'),
+			url: new URL('https://example.com/login?next=%2Fapp%2Fscore'),
 			locals: {
 				session: {
 					id: 'session-1',

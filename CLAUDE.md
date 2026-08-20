@@ -90,14 +90,14 @@ bun run deploy:api                       # Deploy GraphQL API to production
 bun run deploy:api:preprod               # Deploy API to pre-prod
 bun run deploy:api:preprod:prod-data     # Deploy API to pre-prod with prod data
 
-# Supabase type generation
-bun run gen-types              # Generate TypeScript types from Supabase schema
+# Native type generation
+bun run gen:native-types       # Generate TypeScript contracts from Rust
 
 # Clean dependencies
 bun run clean                  # Remove all node_modules
 ```
 
-> **E2E note**: `packages/e2e-web/playwright.config.ts` auto-starts its own servers (web on 5173 + API via `wrangler dev`) and seeds a local Supabase stack (`packages/e2e-web/setup/prepare-stack.ts`, `seed.sql`, `global.setup.ts` for auth storage state). Do **not** manually start dev servers before running `bun run e2e` — Playwright manages the full stack. Override the target with `PLAYWRIGHT_BASE_URL`.
+> **E2E note**: `packages/e2e-web/playwright.config.ts` auto-starts its own servers (web on 5173 + API via `wrangler dev`) and seeds a local D1 stack (`packages/e2e-web/setup/prepare-stack.ts`, `seed.sql`, `global.setup.ts` for auth storage state). Do **not** manually start dev servers before running `bun run e2e` — Playwright manages the full stack. Override the target with `PLAYWRIGHT_BASE_URL`.
 
 > **R2 uploads**: `scripts/cli.py` is a standalone Python (Click + boto3) tool — `python scripts/cli.py upload_r2 <file> [<bucket>:<path>]` — for pushing assets to Cloudflare R2. It is independent of the Bun workspace: `pip install -r scripts/requirements.txt` and set `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_ACCESS_KEY_ID` / `CLOUDFLARE_ACCESS_KEY_SECRET` in `.env`.
 
@@ -109,7 +109,7 @@ bun run clean                  # Remove all node_modules
 - **Game Engine**: Phaser 3.88 for rhythm game mechanics
 - **Styling**: TailwindCSS 4.x + Skeleton UI components
 - **API**: `dtx-api` — GraphQL on Cloudflare Workers (Pothos schema-builder + GraphQL Yoga); web client types generated via graphql-codegen
-- **Backend services**: Supabase (auth/database), Cloudflare D1 + R2 (simfile storage)
+- **Backend services**: Better Auth on Cloudflare D1, plus Cloudflare R2 for simfile storage
 - **Desktop**: Tauri 2 — Svelte/Vite webview frontend + Rust backend (`src-tauri/`), Rust 1.95 / edition 2021
 - **Build**: Vite 6.x + Bun workspaces + Turborepo
 
@@ -141,8 +141,8 @@ The ui-components package exports:
 
 ### GraphQL API (`dtx-api`)
 
-- A Cloudflare Worker exposing a GraphQL endpoint via GraphQL Yoga; the schema is built code-first with Pothos (`schema/`), backed by `services/` (Supabase + D1/R2) and `rest/` handlers.
-- Auth uses Pothos scope-auth; requests carry Supabase session context (`context.ts`).
+- A Cloudflare Worker exposing a GraphQL endpoint via GraphQL Yoga; the schema is built code-first with Pothos (`schema/`), backed by `services/` (D1/R2) and `rest/` handlers.
+- Auth uses Better Auth and Pothos scope-auth; requests carry the Better Auth session context (`context.ts`).
 - The web client consumes it through generated typed documents: edit a GraphQL operation, then run the web `codegen` script to refresh `src/lib/api/generated/`. `lint:codegen` fails CI if generated output is stale, so commit regenerated files.
 - Local dev runs on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
 
@@ -166,7 +166,7 @@ The ui-components package exports:
 
 The desktop app has a "Clear Cache" button in the navigation bar (when authenticated) that clears:
 
-- SimFile cache (5-minute cached simfile data from Supabase)
+- SimFile cache (5-minute cached simfile data from the API)
 - Template cache (user-created song templates)
 
 **Important**: The cache clear button preserves:
@@ -298,7 +298,7 @@ import { Button } from '@dtx/common/components';
 - **Web App**: Deployed to Cloudflare Workers via @sveltejs/adapter-cloudflare
 - **GraphQL API** (`dtx-api`): Deployed to Cloudflare Workers via wrangler (`deploy:api*`)
 - **Desktop**: Built with Tauri (`tauri build`), with auto-update via `tauri-plugin-updater`; distributed via GitHub releases (`desktop-build-deploy.yml`)
-- **Database**: Supabase PostgreSQL + Cloudflare D1
+- **Database**: Cloudflare D1
 - **Storage**: Cloudflare R2 (and AWS S3) for game assets
 
 ### Deployment Environments
@@ -327,7 +327,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - Uses husky + lint-staged for git hooks (lint-staged + `cargo fmt --check` on staged Rust files)
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
-- Supabase CLI for type generation and local development
+- Wrangler for local D1 development and Cloudflare Workers tooling
 - CI (`.github/workflows/`) includes required `lint-and-format` and `unit-test` workflows, plus path-filtered pull-request checks for web/desktop E2E, Rust, and CodeQL. `desktop-build-deploy` runs only on `preview`/`main` pushes, version tags, or `workflow_dispatch`. Worker deploys are manual.
 
 ## Code Maintenance

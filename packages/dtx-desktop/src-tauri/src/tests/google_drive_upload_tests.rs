@@ -413,7 +413,7 @@ impl DriveMetadataClient for ProductionOwnerMetadataClient {
     ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
         crate::api::fetch_owner_drive_simfile_impl(
             &self.base_url,
-            "supabase-token",
+            "opaque-session-token",
             simfile_id,
             "user-42",
         )
@@ -1926,7 +1926,7 @@ async fn authenticated_user(user_id: &str) -> AuthState {
     let auth = AuthState::default();
     auth.set_current_session(Some(serde_json::json!({
         "user": { "id": user_id },
-        "access_token": "supabase-token"
+        "sessionToken": "opaque-session-token"
     })))
     .await;
     auth
@@ -4320,7 +4320,7 @@ async fn reconciliation_aborts_after_blocked_owner_fetch_when_user_switches() {
         .forget();
     auth.set_current_session(Some(serde_json::json!({
         "user": { "id": "user-b" },
-        "access_token": "supabase-token-b"
+        "sessionToken": "opaque-session-token-b"
     })))
     .await;
     metadata.first_fetch_release.add_permits(1);
@@ -4397,7 +4397,7 @@ async fn reconciliation_aborts_after_blocked_drive_fetch_on_same_user_relogin() 
         .forget();
     auth.set_current_session(Some(serde_json::json!({
         "user": { "id": "user-42" },
-        "access_token": "new-supabase-token-a"
+        "sessionToken": "new-opaque-session-token-a"
     })))
     .await;
     get_file_gate.release.add_permits(1);

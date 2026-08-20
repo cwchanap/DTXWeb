@@ -25,11 +25,8 @@ on:
 # - The packaged app bakes public config into the binary at BUILD time via the
 #   config_env! macro (option_env! first, std::env::var fallback). The packaged
 #   binary does NOT load .env files, so every public config value used by the
-#   Rust backend (PUBLIC_SUPABASE_URL, PUBLIC_SUPABASE_ANON_KEY, VITE_DTX_API_URL,
-#   PUBLIC_SIMFILE_BUCKET_URL) MUST be present in this CI environment for
-#   option_env! to capture it during `tauri build`. VITE_DTX_SERVER_URL is also
-#   required by the Vite renderer (authService login redirect) and is inlined at
-#   frontend build time.
+#   Rust backend (VITE_DTX_API_URL, PUBLIC_SIMFILE_BUCKET_URL) MUST be present
+#   in this CI environment for option_env! to capture them during `tauri build`.
 # - Push to main is a CONTINUOUS RELEASE channel: every merge builds SIGNED
 #   updater artifacts and uploads them (plus latest.json) to R2, using the
 #   version committed in tauri.conf.json. Bump that version in the merge to
@@ -51,16 +48,13 @@ jobs:
     # "inactive" purely because GitHub keeps only one active deployment per
     # environment at a time). The GitHub repository's Environments settings
     # must have "Desktop-Windows" and "Desktop-macOS" environments, each with
-    # the build secrets (PUBLIC_SUPABASE_ANON_KEY, TAURI_SIGNING_PRIVATE_KEY).
-    # The build vars (PUBLIC_SUPABASE_URL, VITE_DTX_API_URL,
-    # VITE_DTX_SERVER_URL) live at repo level and are inherited by every
+    # the build secret (TAURI_SIGNING_PRIVATE_KEY).
+    # The build vars (VITE_DTX_API_URL, PUBLIC_SIMFILE_BUCKET_URL) live at repo
+    # level and are inherited by every
     # environment, so they do not need to be duplicated here.
     environment: Desktop-Windows
     env:
-      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
-      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
 
     steps:
@@ -181,10 +175,7 @@ jobs:
     # See build-windows for the rationale on per-platform environments.
     environment: Desktop-macOS
     env:
-      PUBLIC_SUPABASE_URL: ${{ vars.PUBLIC_SUPABASE_URL }}
-      PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.PUBLIC_SUPABASE_ANON_KEY }}
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
-      VITE_DTX_SERVER_URL: ${{ vars.VITE_DTX_SERVER_URL }}
       PUBLIC_SIMFILE_BUCKET_URL: ${{ vars.PUBLIC_SIMFILE_BUCKET_URL }}
 
     steps:

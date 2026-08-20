@@ -4,9 +4,9 @@ import { render, screen } from '@testing-library/svelte';
 import AppPage from './+page.svelte';
 
 describe('App Home Page', () => {
-	it('ignores the removed desktop redirect handoff', () => {
+	it('renders the dashboard with ordinary query parameters', () => {
 		const originalUrl = window.location.href;
-		window.history.replaceState({}, '', '/app?redirect=desktop');
+		window.history.replaceState({}, '', '/app?tab=overview');
 
 		try {
 			render(AppPage);

@@ -16,7 +16,7 @@ export interface SimFileServiceResult {
 
 class SimFileService {
 	/**
-	 * Fetches all simFiles for the authenticated user from Supabase via Rust backend
+	 * Fetches all simFiles for the authenticated user via the Rust backend
 	 * Includes caching logic similar to CharList.svelte
 	 */
 	async fetchUserSimFiles(): Promise<SimFileServiceResult> {

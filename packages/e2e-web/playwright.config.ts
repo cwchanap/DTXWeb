@@ -47,7 +47,6 @@ const webServers = [
 			VITE_E2E: 'true',
 			PUBLIC_DTX_API_URL: apiURL,
 			PUBLIC_SIMFILE_BUCKET_URL: process.env.PUBLIC_SIMFILE_BUCKET_URL ?? baseURL,
-			VITE_DTX_SERVER_URL: process.env.VITE_DTX_SERVER_URL ?? baseURL,
 			PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true'
 		}
 	},

@@ -15,21 +15,17 @@
 	let email = $state('');
 	let password = $state('');
 	let isLoading = $state(false);
-	let redirectToDesktop = $state(false);
 	let isCheckingAuthState = $state(true);
 	let nextPath = $state('');
 	let error = $state('');
 
-	const callbackPath = () =>
-		redirectToDesktop ? '/app?redirect=desktop' : safeAppRedirectPath(nextPath || '/app');
+	const callbackPath = () => safeAppRedirectPath(nextPath || '/app');
 
 	const socialCallbackPath = () => new URL(callbackPath(), window.location.origin).toString();
 
 	const errorCallbackPath = () => {
 		const callback = new URL('/login', window.location.origin);
-		if (redirectToDesktop) {
-			callback.searchParams.set('redirect', 'desktop');
-		} else if (nextPath) {
+		if (nextPath) {
 			callback.searchParams.set('next', nextPath);
 		}
 		return callback.toString();
@@ -98,26 +94,8 @@
 			replaceState(cleanUrl, {});
 		}
 
-		redirectToDesktop = params.get('redirect') === 'desktop';
-		if (!redirectToDesktop) {
-			const rawNext = params.get('next');
-			nextPath = rawNext ? safeAppRedirectPath(rawNext) : '';
-		}
-
-		// Keep the callback handoff used by the current desktop login flow until
-		// the native Device Authorization cutover owns this browser entry point.
-		if (redirectToDesktop) {
-			const desktopCallback = params.get('desktop_callback');
-			try {
-				if (desktopCallback) {
-					sessionStorage.setItem('dtx_desktop_auth_callback', desktopCallback);
-				} else if (!params.has('error') && !params.has('error_description')) {
-					sessionStorage.removeItem('dtx_desktop_auth_callback');
-				}
-			} catch {
-				// sessionStorage may be unavailable in private browsing mode.
-			}
-		}
+		const rawNext = params.get('next');
+		nextPath = rawNext ? safeAppRedirectPath(rawNext) : '';
 
 		isCheckingAuthState = false;
 	});
@@ -131,9 +109,7 @@
 				<p>Checking login status...</p>
 			</div>
 		{:else}
-			<h1 class="mb-6 text-center text-2xl font-bold">
-				{redirectToDesktop ? 'Login to Desktop App' : 'Login'}
-			</h1>
+			<h1 class="mb-6 text-center text-2xl font-bold">Login</h1>
 
 			{#if error}
 				<div
@@ -209,12 +185,6 @@
 			<p class="mt-3 text-center text-xs text-gray-500">
 				Google sign-in is only available for existing linked accounts.
 			</p>
-
-			{#if redirectToDesktop}
-				<div class="mt-6 text-center text-sm text-gray-500">
-					<p>You'll be redirected back to the desktop app after login.</p>
-				</div>
-			{/if}
 		{/if}
 	</div>
 </div>

@@ -1,4 +1,4 @@
-// D1 database row types — replaces Supabase Database type for D1/SQLite schema.
+// D1 database row types for the D1/SQLite schema.
 // These types mirror the D1 schema in d1-migrations/0001_initial_schema.sql.
 // SQLite booleans are stored as INTEGER (0/1), timestamps as TEXT (ISO 8601).
 

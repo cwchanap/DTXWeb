@@ -54,10 +54,7 @@ export default defineConfig({
 		},
 		env: {
 			// Set the environment to production for testing
-			PUBLIC_SUPABASE_URL: 'http://localhost:5173',
-			PUBLIC_SUPABASE_ANON_KEY: 'my_awesome_anon_key',
-			PUBLIC_SIMFILE_BUCKET_URL: 'http://localhost:5173',
-			VITE_DTX_SERVER_URL: 'http://localhost:5173'
+			PUBLIC_SIMFILE_BUCKET_URL: 'http://localhost:5173'
 		}
 	},
 	resolve: {

@@ -26,7 +26,7 @@ describe('google auth helpers', () => {
 
 	it('preserves query strings on safe /app paths', () => {
 		expect(safeAppRedirectPath('/app/account?tab=security')).toBe('/app/account?tab=security');
-		expect(safeAppRedirectPath('/app?redirect=desktop')).toBe('/app?redirect=desktop');
+		expect(safeAppRedirectPath('/app?tab=overview')).toBe('/app?tab=overview');
 	});
 
 	it('sanitizes Better Auth signup-disabled errors for existing-account-only login', () => {

@@ -2,7 +2,7 @@
 /// binary at build time and falling back to the runtime environment.
 ///
 /// The packaged Tauri binary does not inherit the build machine's environment,
-/// so public configuration such as `PUBLIC_SUPABASE_URL` must be captured with
+/// so public configuration such as `VITE_DTX_API_URL` must be captured with
 /// `option_env!` at compile time. The runtime `std::env::var` fallback keeps
 /// `tauri dev` (which loads `.env`) and ad-hoc overrides working. Empty/blank
 /// values are treated as missing so a stray empty string is never used.

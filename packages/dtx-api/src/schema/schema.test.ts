@@ -1,10 +1,6 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { yoga } from './index';
 import type { Env } from '../env';
-
-vi.mock('@supabase/supabase-js', () => ({
-	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
-}));
 
 const makeEnv = (graphiql: 'true' | 'false'): Env => ({
 	DB: {} as Env['DB'],
@@ -16,14 +12,11 @@ const makeEnv = (graphiql: 'true' | 'false'): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	SUPABASE_URL: 'https://example.supabase.co',
-	SUPABASE_ANON_KEY: 'anon',
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: graphiql,
 	CORS_ALLOWED_ORIGINS: '',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
-	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: ''
+	PUBLIC_SIMFILE_BUCKET_URL: ''
 });
 
 const ctx = {} as ExecutionContext;

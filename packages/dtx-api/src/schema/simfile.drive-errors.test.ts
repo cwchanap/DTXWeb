@@ -2,10 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ctx } from '../context';
 import { makeCtx, makeEnv, runQuery } from './simfileTestHarness';
 
-vi.mock('@supabase/supabase-js', () => ({
-	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
-}));
-
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {

@@ -4,7 +4,7 @@ import type { SimfileModel } from '@dtx/common';
 export const linkingService = {
 	/**
 	 * Automatically links remote simFiles to local folders based on song title matching
-	 * @param remoteSimFiles Array of remote simFiles from Supabase
+	 * @param remoteSimFiles Array of remote simFiles from the API
 	 * @param localFolders Array of local folder TreeNodes with song titles
 	 */
 	autoLinkSimFilesToFolders: (remoteSimFiles: SimfileModel[], localFolders: TreeNode[]): void => {
@@ -256,7 +256,7 @@ export const linkingService = {
 
 	/**
 	 * Links simFiles to a specific set of newly loaded nodes (more efficient for partial updates)
-	 * @param remoteSimFiles Array of remote simFiles from Supabase
+	 * @param remoteSimFiles Array of remote simFiles from the API
 	 * @param newNodes Array of newly loaded TreeNodes
 	 */
 	linkSimFilesToNewNodes: (remoteSimFiles: SimfileModel[], newNodes: TreeNode[]): void => {

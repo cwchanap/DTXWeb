@@ -106,6 +106,7 @@ export function createAccessApplication(
 ): cloudflare.ZeroTrustAccessApplication {
 	return new cloudflare.ZeroTrustAccessApplication(
 		`dtxweb-${args.stackDefinition.stackName}-access`,
-		buildAccessApplicationArgs(args)
+		buildAccessApplicationArgs(args),
+		{ protect: true }
 	);
 }

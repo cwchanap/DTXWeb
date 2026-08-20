@@ -1,11 +1,27 @@
 import * as pulumi from '@pulumi/pulumi';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	buildAccessApplicationArgs,
 	buildAccessPolicy,
+	createAccessApplication,
 	getAccessStackDefinition,
 	normalizeAccessEmail
 } from './access.js';
+
+const zeroTrustAccessApplicationMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@pulumi/cloudflare', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('@pulumi/cloudflare')>();
+
+	return {
+		...actual,
+		ZeroTrustAccessApplication: zeroTrustAccessApplicationMock
+	};
+});
+
+beforeEach(() => {
+	zeroTrustAccessApplicationMock.mockClear();
+});
 
 const resolveOutput = <T>(output: pulumi.Output<T>): Promise<T> =>
 	new Promise((resolve) => {
@@ -116,5 +132,25 @@ describe('buildAccessPolicy', () => {
 		const includedEmail = policy.includes?.[0]?.email?.email as pulumi.Output<string>;
 
 		expect(await resolveOutput(includedEmail)).toBe('operator@example.com');
+	});
+});
+
+describe('createAccessApplication', () => {
+	it.each([
+		['pre-prod', 'dtxweb-pre-prod-access'],
+		['production', 'dtxweb-production-access']
+	] as const)('protects the %s application resource identity', (stack, logicalName) => {
+		createAccessApplication({
+			accountId: 'account-id',
+			stackDefinition: getAccessStackDefinition(stack),
+			accessEmail: 'operator@example.com',
+			devicePostureRuleId: 'posture-rule-id'
+		});
+
+		expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
+			logicalName,
+			expect.objectContaining({ name: getAccessStackDefinition(stack).applicationName }),
+			{ protect: true }
+		);
 	});
 });

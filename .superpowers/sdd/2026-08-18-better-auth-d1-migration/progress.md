@@ -507,3 +507,10 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   check` — pass; focused Prettier, ESLint, and `git diff --check` — pass.
 - Report updated with the review finding and RED/GREEN evidence.
 - Task 12 review fix: complete and ready for a conventional fix commit.
+
+## Task 12 review completion
+
+- Scoped re-review of `42d3da8c..4f13787f` confirmed the CLI owner-input hard
+  gate, early omission/shape failures, and imported-user completeness checks.
+- No new Critical or Important findings; Task 12 is approved.
+- Task 12 is complete and ready for Task 13.

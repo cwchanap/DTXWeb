@@ -156,3 +156,11 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Current-main check: after deepening the shallow clone, `origin/main` (`c8546405`) is the branch merge base and `HEAD..origin/main` is empty; no rebase is required before deployment.
 - Wrangler preflight: authenticated to the expected Cloudflare account with Wrangler `4.123.0`; pre-production D1 reports migrations `0003` through `0008` pending.
 - Security prerequisite blocker: pre-production has only `SUPABASE_SERVICE_ROLE_KEY`; `BETTER_AUTH_SECRET` and `GOOGLE_AUTH_CLIENT_SECRET` secrets are absent, and `GOOGLE_AUTH_CLIENT_ID` is absent from Wrangler vars/local files/process environment. No migration or deployment was performed with incomplete auth configuration.
+
+## Post-Task-1 pre-production config correction
+
+- Added the public `GOOGLE_AUTH_CLIENT_ID` to the top-level production, `pre-prod`, and `pre-prod-prod-data` API Wrangler var blocks.
+- Extended `packages/dtx-desktop/src/devTopology.test.ts` to assert the client ID across all three blocks.
+- RED: the focused topology test failed because the new production assertion received `undefined`.
+- GREEN: the focused topology test passed (2/2), `bun run --filter=dtx-api check` passed, `bun run --filter=dtx-api cf-typegen` passed, and Wrangler deploy dry-runs passed for production, `pre-prod`, and `pre-prod-prod-data` without deployment.
+- No secret values or downloaded credential files were added. The Better Auth and Google OAuth secret prerequisite remains unresolved and still blocks any pre-production deployment.

@@ -11,8 +11,6 @@ export type Env = {
 	AUTH_COOKIE_PREFIX: string;
 	GOOGLE_AUTH_CLIENT_ID: string;
 	GOOGLE_AUTH_CLIENT_SECRET: string;
-	SUPABASE_URL: string;
-	SUPABASE_ANON_KEY: string;
 	RATE_LIMIT_ENV: 'prod' | 'pre-prod' | 'pre-prod-prod-data';
 	GRAPHIQL: 'true' | 'false';
 	CORS_ALLOWED_ORIGINS: string;
@@ -22,7 +20,6 @@ export type Env = {
 	PUBLIC_SIMFILE_BUCKET_URL: string;
 
 	// Phase 2 — secrets (set via `wrangler secret put` per env)
-	SUPABASE_SERVICE_ROLE_KEY: string;
 	CLOUDFLARE_ZONE_ID?: string;
 	CLOUDFLARE_API_TOKEN?: string;
 	MAX_UPLOADS_PER_HOUR?: string;

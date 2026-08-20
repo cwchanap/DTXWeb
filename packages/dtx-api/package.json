@@ -29,7 +29,6 @@
 		"@pothos/core": "^4.13.1",
 		"@pothos/plugin-errors": "^4.9.1",
 		"@pothos/plugin-scope-auth": "^4.1.7",
-		"@supabase/supabase-js": "^2.112.3",
 		"better-auth": "1.6.30",
 		"drizzle-orm": "^0.45.2",
 		"graphql": "^16.10.0",

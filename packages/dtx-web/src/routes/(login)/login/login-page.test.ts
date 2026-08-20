@@ -43,7 +43,6 @@ describe('Login Page', () => {
 			writable: true,
 			configurable: true
 		});
-		sessionStorage.clear();
 	});
 
 	afterEach(() => {
@@ -52,7 +51,6 @@ describe('Login Page', () => {
 			writable: true,
 			configurable: true
 		});
-		sessionStorage.clear();
 	});
 
 	it('shows loading spinner while the browser auth page is not mounted', () => {
@@ -216,15 +214,13 @@ describe('Login Page', () => {
 		expect(screen.queryByText('signup disabled')).not.toBeInTheDocument();
 	});
 
-	it('preserves the desktop login heading and callback intent until desktop cutover', async () => {
+	it('treats ordinary query parameters as a login request', async () => {
 		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?redirect=desktop');
+		pageMock.url = new URL('http://localhost/login?tab=overview');
 		render(LoginPage);
 
 		await waitFor(() => {
-			expect(
-				screen.getByRole('heading', { name: 'Login to Desktop App' })
-			).toBeInTheDocument();
+			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
 		});
 	});
 });

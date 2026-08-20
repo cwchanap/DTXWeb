@@ -264,7 +264,7 @@ describe('App lifecycle', () => {
 		expect(get(workspaceStore).rootId).toBeNull();
 	});
 
-	it('restores the session after workspace hydration without auth event draining', async () => {
+	it('restores the session after workspace hydration', async () => {
 		render(App);
 
 		await waitFor(() => expect(mockAuthService.restoreSession).toHaveBeenCalledOnce());

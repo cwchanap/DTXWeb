@@ -102,9 +102,7 @@ describe('desktop local dev topology', () => {
 			bucket_name: 'simfile-dtx-preprod',
 			remote: true
 		});
-		expect(turboConfig.tasks['dtx-desktop#dev:local-web']?.env).toEqual(
-			expect.arrayContaining(['PUBLIC_SUPABASE_URL', 'PUBLIC_SUPABASE_ANON_KEY'])
-		);
+		expect(turboConfig.tasks['dtx-desktop#dev:local-web']?.env).toBeUndefined();
 	});
 
 	it('bundles the generated Drumery desktop app icon', () => {

@@ -29,14 +29,11 @@ const makeEnv = (): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	SUPABASE_URL: 'https://example.supabase.co',
-	SUPABASE_ANON_KEY: 'anon',
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: 'false',
 	CORS_ALLOWED_ORIGINS: '',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
-	PUBLIC_SIMFILE_BUCKET_URL: 'http://test',
-	SUPABASE_SERVICE_ROLE_KEY: 'srk'
+	PUBLIC_SIMFILE_BUCKET_URL: 'http://test'
 });
 
 const baseCtx = (overrides: Partial<Ctx> = {}): Ctx => ({

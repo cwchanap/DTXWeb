@@ -14,9 +14,6 @@ export { formatLevel, normalizeLevel } from './utils/level';
 // Export constants
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
-// Export Supabase types (for backward compatibility with auth)
-export type { Database } from './types/supabase.types';
-
 // Export current simfile model (D1 row types stay server-only under '@dtx/common/server')
 export type { SimfileModel, SimfileDtxFile, SimfileAssetFile } from './types/simfile';
 

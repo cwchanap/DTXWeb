@@ -28,7 +28,7 @@ describe('+layout load', () => {
 		mockWaitLocale.mockResolvedValue(undefined);
 	});
 
-	it('returns the neutral server layout data without creating a Supabase client', async () => {
+	it('returns the neutral server layout data without creating an auth client', async () => {
 		const data = { session: { id: 'session-1' }, user: { id: 'user-1' } };
 
 		await expect(load({ data } as never)).resolves.toEqual(data);

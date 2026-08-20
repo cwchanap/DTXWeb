@@ -33,7 +33,7 @@ describe('+layout.svelte', () => {
 		vi.unstubAllGlobals();
 	});
 
-	it('renders without a Supabase client or auth subscription', () => {
+	it('renders without an auth client or subscription', () => {
 		const { container } = render(RootLayout, {
 			props: { children: noopChildren }
 		});

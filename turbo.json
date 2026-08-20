@@ -35,20 +35,15 @@
 		},
 		"dtx-desktop#dev": {
 			"cache": false,
-			"persistent": true,
-			"env": ["PUBLIC_SUPABASE_URL", "PUBLIC_SUPABASE_ANON_KEY"]
+			"persistent": true
 		},
 		"dtx-desktop#dev:local-web": {
 			"cache": false,
-			"persistent": true,
-			"env": ["PUBLIC_SUPABASE_URL", "PUBLIC_SUPABASE_ANON_KEY"]
+			"persistent": true
 		},
 		"@dtx/common#dev": {
 			"cache": false,
 			"persistent": true
-		},
-		"gen-types": {
-			"outputs": ["packages/common/src/lib/types/supabase.types.ts"]
 		},
 		"clean": {
 			"cache": false

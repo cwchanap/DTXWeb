@@ -3,10 +3,6 @@ import { routeDownloadSimfile } from './downloadSimfile';
 import type { Env } from '../env';
 import type { ExecutionContext, R2Bucket, KVNamespace } from '@cloudflare/workers-types';
 
-vi.mock('@supabase/supabase-js', () => ({
-	createClient: vi.fn(() => ({ auth: { getUser: vi.fn() } }))
-}));
-
 vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {
@@ -47,14 +43,11 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	SUPABASE_URL: '',
-	SUPABASE_ANON_KEY: '',
 	RATE_LIMIT_ENV: 'pre-prod',
 	GRAPHIQL: 'false',
 	CORS_ALLOWED_ORIGINS: '',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
 	PUBLIC_SIMFILE_BUCKET_URL: '',
-	SUPABASE_SERVICE_ROLE_KEY: '',
 	...overrides
 });
 

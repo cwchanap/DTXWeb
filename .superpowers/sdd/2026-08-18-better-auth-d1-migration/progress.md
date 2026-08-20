@@ -514,3 +514,34 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   gate, early omission/shape failures, and imported-user completeness checks.
 - No new Critical or Important findings; Task 12 is approved.
 - Task 12 is complete and ready for Task 13.
+
+## Task 13
+
+- Implementer: `/root/d1_task13_supabase_cleanup`.
+- Read the Task 13 brief, migration plan, repository instructions, TDD skill,
+  and Supabase skill. CodeGraph was used before source search. Supabase remote
+  documentation was not consulted because this cleanup task forbids remote
+  operations.
+- RED: the clean-base residue gate reported 154 Supabase matches across 47
+  files. The login handoff regression set then failed 1/11 after its tests were
+  updated first: the old production branch still rendered `Login to Desktop
+  App`. The bounded Svelte autofixer attempt was silent for approximately 30
+  seconds and stopped; `svelte-check` became the diagnostics fallback.
+- Implementation: removed Supabase dependencies, mocks, env/config/workflow
+  values, generated common types/export, callback-era login handoff and test
+  residue, and root/Turbo `gen-types`; updated current guidance/comments;
+  preserved API GraphQL schema generation, web codegen, native generation, and
+  Task 12's local-only Supabase-import input format.
+- GREEN: the final residue gate has only the intentional Task 12 importer
+  command in `dtx-api/package.json`; web 65 files/876 tests, API 22/385,
+  desktop renderer 58/1,010, and common unit-only 44/1,286 all pass. API,
+  common, desktop, and E2E checks pass; web types-only svelte-check has 0
+  errors/4 existing CSS warnings; Rust tests pass 922 with 2 ignored; Rust
+  format, lint, Prettier, and diff checks pass. The full common suite's sole
+  failure is its existing Miniflare listener `EPERM` sandbox integration hook.
+- `bun install` removed the five Supabase dependency entries from `bun.lock`
+  without adding packages. No build, development server, deployment, remote
+  call, unrelated data-column cleanup, or Task 14 work was performed.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-13-report.md`.
+- Task 13 source, tests, report, and ledger are ready for the scoped
+  conventional commit.

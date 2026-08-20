@@ -28,7 +28,6 @@
 		"migrate:api:preprod:prod-data": "bun run --filter=dtx-api migrate:preprod:prod-data",
 		"prepare": "husky || true",
 		"clean": "turbo run clean",
-		"gen-types": "turbo run gen-types",
 		"gen:native-types": "bun -e \"const fs=require('node:fs');fs.mkdirSync('packages/dtx-desktop/dist',{recursive:true});const p='packages/dtx-desktop/dist/index.html';if(!fs.existsSync(p))fs.writeFileSync(p,'<!DOCTYPE html><html><head></head><body></body></html>');\" && cross-env DTX_DESKTOP_BUILD_ENV=e2e DTX_E2E_DRUMERY_USER_ID=native-types GOOGLE_DRIVE_OAUTH_CLIENT_ID= GOOGLE_DRIVE_OAUTH_CLIENT_ENV= cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml --no-default-features --features e2e -- export_",
 		"test:web": "bun run --filter=dtx-web test",
 		"test:desktop": "bun run --filter=dtx-desktop test",

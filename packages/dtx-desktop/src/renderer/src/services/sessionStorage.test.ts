@@ -88,7 +88,7 @@ describe('sessionStorage', () => {
 			expect(localStorageMock.getItem).toHaveBeenCalledWith('auth_session');
 		});
 
-		it('removes obsolete Supabase-shaped values without migrating them', () => {
+		it('removes obsolete auth values without migrating them', () => {
 			localStorageMock.getItem.mockImplementation((key: string) => {
 				if (key === 'auth_access_token') return 'legacy-access';
 				if (key === 'auth_refresh_token') return 'legacy-refresh';

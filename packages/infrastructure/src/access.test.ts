@@ -1,8 +1,6 @@
 import * as pulumi from '@pulumi/pulumi';
 import { describe, expect, it } from 'vitest';
 import {
-	ACCESS_APPLICATION_FLAGS,
-	DEFAULT_ACCESS_SESSION_DURATION,
 	buildAccessApplicationArgs,
 	buildAccessPolicy,
 	getAccessStackDefinition,
@@ -76,8 +74,21 @@ describe('buildAccessApplicationArgs', () => {
 		});
 
 		expect(args).toMatchObject({
-			sessionDuration: DEFAULT_ACCESS_SESSION_DURATION,
-			...ACCESS_APPLICATION_FLAGS
+			sessionDuration: '12h',
+			appLauncherVisible: false,
+			allowAuthenticateViaWarp: false,
+			enableBindingCookie: true,
+			httpOnlyCookieAttribute: true,
+			pathCookieAttribute: false
+		});
+
+		expect(args.policies).toHaveLength(1);
+		expect(args.policies?.[0]).toEqual({
+			name: 'Allow configured operator on trusted device',
+			decision: 'allow',
+			precedence: 1,
+			includes: [{ email: { email: expect.anything() } }],
+			requires: [{ devicePosture: { integrationUid: 'posture-rule-id' } }]
 		});
 	});
 });
@@ -87,10 +98,11 @@ describe('buildAccessPolicy', () => {
 		const policy = buildAccessPolicy('operator@example.com', 'posture-rule-id');
 		const includedEmail = policy.includes?.[0]?.email?.email as pulumi.Output<string>;
 
-		expect(policy).toMatchObject({
+		expect(policy).toEqual({
 			name: 'Allow configured operator on trusted device',
 			decision: 'allow',
 			precedence: 1,
+			includes: [{ email: { email: expect.anything() } }],
 			requires: [{ devicePosture: { integrationUid: 'posture-rule-id' } }]
 		});
 		expect(await resolveOutput(includedEmail)).toBe('operator@example.com');

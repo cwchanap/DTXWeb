@@ -69,3 +69,40 @@ The first sandboxed prepare-stack attempt was blocked by host restrictions on
 Wrangler's local log path and loopback listener; the same local-only command
 passed with host-level permission. No remote calls were made.
 
+## Review fix: require complete owner reconciliation input for the CLI
+
+The review found that a Supabase Admin export can omit application owner IDs,
+but the CLI treated that omission as an empty list, emitted SQL with
+`Reconciled application owner IDs: 0`, and exited successfully. That could
+silently leave application ownership rows unreconciled during the operator
+import.
+
+### RED
+
+Added a subprocess CLI test before changing the importer. It removes the
+optional owner list from the sanitized export, omits `--owner-ids`, and asserts
+that the command fails with an owner-input error and writes no output:
+
+```text
+rtk bun run --filter=dtx-api test -- src/scripts/migrate-supabase-auth.test.ts
+FAIL — CLI requires owner IDs before writing reviewed SQL
+AssertionError: expected +0 not to be +0
+Tests: 1 failed, 5 passed
+```
+
+### Fix and GREEN
+
+- `parseArgs()` now requires `--owner-ids <path>` for CLI execution and fails
+  at usage validation before SQL generation/output.
+- CLI owner input must be a JSON array; the existing UUID validation and
+  imported-user completeness check remain authoritative.
+- `generateAuthMigrationSql()` remains a pure programmatic API so local E2E
+  seeding can supply owner IDs directly; only the hard operator CLI path is
+  mandatory.
+
+Verification:
+
+- Focused importer/CLI suite: 1 file, 6 tests passed, including the new
+  omission/no-output test and existing successful owner reconciliation test.
+- `bun run --filter=dtx-api check`: passed.
+- Focused Prettier, ESLint, and `git diff --check`: passed.

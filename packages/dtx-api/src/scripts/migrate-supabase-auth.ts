@@ -336,7 +336,7 @@ const reviewedSqlDir = resolve(repoRoot, 'tmp/auth-migration');
 
 const parseArgs = (
 	args: string[]
-): { inputPath: string; outputPath: string; passwordsPath?: string; ownersPath?: string } => {
+): { inputPath: string; outputPath: string; passwordsPath?: string; ownersPath: string } => {
 	let inputPath: string | undefined;
 	let outputPath = resolve(reviewedSqlDir, 'better-auth-import.sql');
 	let passwordsPath: string | undefined;
@@ -349,9 +349,9 @@ const parseArgs = (
 		else if (!arg.startsWith('-') && inputPath === undefined) inputPath = resolve(arg);
 		else throw new Error(`Unknown argument: ${arg}`);
 	}
-	if (!inputPath)
+	if (!inputPath || !ownersPath)
 		throw new Error(
-			'Usage: migrate-supabase-auth.ts <export.json> [--output path] [--replacement-passwords path] [--owner-ids path]'
+			'Usage: migrate-supabase-auth.ts <export.json> --owner-ids <path> [--output path] [--replacement-passwords path]'
 		);
 	const outputRelative = relative(reviewedSqlDir, outputPath);
 	if (outputRelative.startsWith('..') || isAbsolute(outputRelative)) {
@@ -368,10 +368,13 @@ const runCli = async (args: string[]): Promise<void> => {
 	const replacementPasswords = passwordsPath
 		? (parseJsonFile(passwordsPath) as Record<string, string>)
 		: undefined;
-	const applicationOwnerIds = ownersPath ? (parseJsonFile(ownersPath) as string[]) : undefined;
+	const ownerIds = parseJsonFile(ownersPath);
+	if (!Array.isArray(ownerIds)) {
+		throw new Error('Owner ID file must contain a JSON array of UUIDs');
+	}
 	const sql = await generateAuthMigrationSql(input, {
 		replacementPasswords,
-		applicationOwnerIds
+		applicationOwnerIds: ownerIds
 	});
 	mkdirSync(dirname(outputPath), { recursive: true });
 	writeFileSync(outputPath, `${sql}\n`, 'utf8');

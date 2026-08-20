@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { verifyPassword } from 'better-auth/crypto';
 import { describe, expect, test } from 'vitest';
 import { generateAuthMigrationSql } from './migrate-supabase-auth';
@@ -15,6 +17,38 @@ const firstAccountRow = (sql: string, provider: string): string => {
 };
 
 describe('Supabase auth export migration', () => {
+	test('CLI requires owner IDs before writing reviewed SQL', () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-omission-'));
+		const inputPath = join(inputDir, 'export.json');
+		const outputPath = join(
+			resolve(import.meta.dirname, '../../../..', 'tmp/auth-migration'),
+			`cli-omission-${process.pid}-${Date.now()}.sql`
+		);
+		const supabaseExportWithoutOwners = { ...fixture };
+		delete supabaseExportWithoutOwners.applicationOwnerIds;
+		writeFileSync(inputPath, JSON.stringify(supabaseExportWithoutOwners));
+
+		try {
+			const result = spawnSync(
+				process.execPath,
+				[
+					resolve(import.meta.dirname, 'migrate-supabase-auth.ts'),
+					inputPath,
+					'--output',
+					outputPath
+				],
+				{ encoding: 'utf8' }
+			);
+
+			expect(result.status).not.toBe(0);
+			expect(`${result.stdout}\n${result.stderr}`).toMatch(/--owner-ids/);
+			expect(existsSync(outputPath)).toBe(false);
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+			rmSync(outputPath, { force: true });
+		}
+	});
+
 	test('preserves user identity, Google identity, timestamps, and omits sessions and tokens', async () => {
 		const sql = await generateAuthMigrationSql(fixture);
 

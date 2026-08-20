@@ -6,6 +6,19 @@ export type CreateSimfileRecordInput = { title: string, artist: string, bpm: num
 
 export type CreateSimfileRecordResult = { success: boolean, simfileId?: string, data?: NativeSimfile, error?: string, warnings?: Array<string>, };
 
+export type DesktopAuthSession = { sessionToken: string, user: DesktopAuthUser, };
+
+/**
+ * The Better Auth user fields that cross the native/renderer boundary.
+ *
+ * Better Auth always returns these core fields for a session user. Defaults
+ * keep the native decoder tolerant of older/local test fixtures while the
+ * generated contract remains the stable renderer-facing shape.
+ */
+export type DesktopAuthUser = { id: string, name: string, email: string, emailVerified: boolean, image: string | null, createdAt: string, updatedAt: string, };
+
+export type DeviceAuthorizationAttempt = { userCode: string, verificationUri: string, verificationUriComplete: string, expiresAt: string, };
+
 export type FetchCloudSongResult = { success: boolean, cloudSongData?: NativeSimfile, error?: string, };
 
 export type FetchUserSimfilesResult = { success: boolean, data: Array<NativeSimfile>, fromCache: boolean, error?: string, };

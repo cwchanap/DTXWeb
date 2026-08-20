@@ -1,6 +1,83 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+/// The Better Auth user fields that cross the native/renderer boundary.
+///
+/// Better Auth always returns these core fields for a session user. Defaults
+/// keep the native decoder tolerant of older/local test fixtures while the
+/// generated contract remains the stable renderer-facing shape.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../src/renderer/src/lib/generated/native-api-contracts.ts"
+)]
+pub struct DesktopAuthUser {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub email_verified: bool,
+    #[serde(default)]
+    pub image: Option<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
+}
+
+impl std::fmt::Debug for DesktopAuthUser {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DesktopAuthUser")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("email", &self.email)
+            .field("email_verified", &self.email_verified)
+            .field("image", &self.image)
+            .field("created_at", &self.created_at)
+            .field("updated_at", &self.updated_at)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../src/renderer/src/lib/generated/native-api-contracts.ts"
+)]
+pub struct DesktopAuthSession {
+    #[serde(default)]
+    pub session_token: String,
+    pub user: DesktopAuthUser,
+}
+
+impl std::fmt::Debug for DesktopAuthSession {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DesktopAuthSession")
+            .field("session_token", &"<redacted>")
+            .field("user", &self.user)
+            .finish()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../src/renderer/src/lib/generated/native-api-contracts.ts"
+)]
+pub struct DeviceAuthorizationAttempt {
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub expires_at: String,
+}
+
 mod f64_as_number {
     use serde::Serializer;
 

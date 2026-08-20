@@ -1,5 +1,5 @@
 use crate::api::{
-    access_token_from_auth_state, api_base_url_from_env, graphql_data_with_url, graphql_document,
+    api_base_url_from_env, current_session_token, graphql_data_with_url, graphql_document,
     graphql_result_with_url, run_graphql_value, upload_bytes_to_api, ApiResultValue,
 };
 use crate::api_contracts::{
@@ -280,7 +280,7 @@ pub(crate) async fn fetch_user_simfiles_impl(
 #[tauri::command]
 pub async fn fetch_user_simfiles(app: AppHandle) -> Result<FetchUserSimfilesResult> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     fetch_user_simfiles_impl(&base_url, &token).await
 }
 
@@ -294,7 +294,7 @@ pub(crate) async fn get_next_display_id_impl(base_url: &str, token: &str) -> Res
 #[tauri::command]
 pub async fn get_next_display_id(app: AppHandle) -> Result<i64> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     get_next_display_id_impl(&base_url, &token).await
 }
 
@@ -341,7 +341,7 @@ pub async fn fetch_cloud_song(
     cloud_song_id: String,
 ) -> Result<FetchCloudSongResult> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     fetch_cloud_song_impl(&base_url, &token, cloud_song_id).await
 }
 
@@ -387,7 +387,7 @@ pub async fn update_simfile_record(
     update_data: UpdateSimfileRecordInput,
 ) -> Result<UpdateSimfileRecordResult> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     update_simfile_record_impl(&base_url, &token, simfile_id, update_data).await
 }
 
@@ -475,7 +475,7 @@ pub async fn create_simfile_record(
 ) -> Result<CreateSimfileRecordResult> {
     let workspace_root = state.current()?;
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     create_simfile_record_impl(&base_url, &token, simfile_data, &workspace_root).await
 }
 

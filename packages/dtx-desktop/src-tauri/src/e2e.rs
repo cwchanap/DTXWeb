@@ -1,3 +1,5 @@
+#[cfg(debug_assertions)]
+use crate::api_contracts::{DesktopAuthSession, DesktopAuthUser};
 use crate::error::{DesktopError, Result};
 #[cfg(debug_assertions)]
 use crate::google_drive::GoogleDriveState;
@@ -7,6 +9,22 @@ use crate::models::{E2eDriveControl, E2eDriveSnapshot};
 use tauri::{AppHandle, Manager};
 
 const SESSION_NONCE_ENV: &str = "DTX_E2E_SESSION_NONCE";
+
+#[cfg(debug_assertions)]
+pub(crate) fn seeded_auth_session(user_id: &str) -> DesktopAuthSession {
+    DesktopAuthSession {
+        session_token: "e2e-better-auth-session-token".to_string(),
+        user: DesktopAuthUser {
+            id: user_id.to_string(),
+            name: "Desktop E2E".to_string(),
+            email: "desktop-e2e@drumery.invalid".to_string(),
+            email_verified: true,
+            image: None,
+            created_at: String::new(),
+            updated_at: String::new(),
+        },
+    }
+}
 
 /// Proves that the WebDriver session belongs to the e2e process that received
 /// this launch's nonce. This module is compiled only with the e2e Cargo feature.

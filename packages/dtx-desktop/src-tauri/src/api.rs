@@ -1,4 +1,5 @@
 use crate::auth::AuthState;
+pub(crate) use crate::device_auth::api_base_url_from_values;
 use crate::error::{DesktopError, Result};
 use crate::google_drive::{DriveMetadataError, ExpectedPreviousDriveFile, OwnerDriveSimfile};
 use crate::workspace::WorkspaceRootState;
@@ -107,16 +108,6 @@ impl ApiResultValue {
     }
 }
 
-pub fn api_base_url_from_values(api_url: Option<&str>) -> Result<String> {
-    let url = api_url
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            DesktopError::Message("VITE_DTX_API_URL environment variable is not set".to_string())
-        })?;
-
-    Ok(url.trim().trim_end_matches('/').to_string())
-}
-
 pub(crate) fn api_base_url_from_env() -> Result<String> {
     api_base_url_from_values(config_env!("VITE_DTX_API_URL").as_deref())
 }
@@ -130,16 +121,8 @@ fn bucket_base_url_from_env() -> Result<String> {
     Ok(url.trim().trim_end_matches('/').to_string())
 }
 
-pub(crate) async fn access_token_from_auth_state<R: Runtime>(
-    state: &AuthState,
-    app: Option<&AppHandle<R>>,
-) -> Result<String> {
-    // Delegates to `ensure_valid_access_token`, which proactively refreshes
-    // the session when the access token is near expiry so long-running
-    // desktop sessions keep working past the Supabase token lifetime. The
-    // `AppHandle` is forwarded so a successful refresh can emit
-    // `session-refreshed` and the renderer persists the rotated tokens.
-    crate::auth::ensure_valid_access_token(state, app).await
+pub(crate) async fn current_session_token(state: &AuthState) -> Result<String> {
+    state.current_session_token().await
 }
 
 pub(crate) fn graphql_document(operation: &str) -> String {
@@ -390,23 +373,19 @@ pub(crate) async fn update_drive_file_impl(
 async fn authenticated_user_id(
     auth: &AuthState,
 ) -> std::result::Result<String, DriveMetadataError> {
-    auth.current_session()
+    auth.current_user_id()
         .await
-        .as_ref()
-        .and_then(|session| session.pointer("/user/id"))
-        .and_then(Value::as_str)
         .filter(|user_id| !user_id.is_empty())
-        .map(str::to_string)
         .ok_or(DriveMetadataError::Authentication)
 }
 
 pub(crate) async fn fetch_owner_drive_simfile<R: Runtime>(
     auth: &AuthState,
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
     simfile_id: &str,
 ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
     let base_url = api_base_url_from_env().map_err(|_| DriveMetadataError::LocalState)?;
-    let token = access_token_from_auth_state(auth, Some(app))
+    let token = current_session_token(auth)
         .await
         .map_err(classify_metadata_auth_error)?;
     let user_id = authenticated_user_id(auth).await?;
@@ -415,14 +394,14 @@ pub(crate) async fn fetch_owner_drive_simfile<R: Runtime>(
 
 pub(crate) async fn update_drive_file<R: Runtime>(
     auth: &AuthState,
-    app: &AppHandle<R>,
+    _app: &AppHandle<R>,
     simfile_id: &str,
     drive_file_id: &str,
     download_url: &str,
     expected_previous: Option<&ExpectedPreviousDriveFile>,
 ) -> std::result::Result<OwnerDriveSimfile, DriveMetadataError> {
     let base_url = api_base_url_from_env().map_err(|_| DriveMetadataError::LocalState)?;
-    let token = access_token_from_auth_state(auth, Some(app))
+    let token = current_session_token(auth)
         .await
         .map_err(classify_metadata_auth_error)?;
     let user_id = authenticated_user_id(auth).await?;
@@ -723,7 +702,7 @@ pub async fn search_cloud_songs(
     exclude_linked_song_ids: Option<Vec<Value>>,
 ) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     search_cloud_songs_impl(&base_url, &token, query, limit, exclude_linked_song_ids).await
 }
 
@@ -770,7 +749,7 @@ pub(crate) async fn fetch_cloud_song_charts_impl(
 #[tauri::command]
 pub async fn fetch_cloud_song_charts(app: AppHandle, cloud_song_id: Value) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     fetch_cloud_song_charts_impl(&base_url, &token, cloud_song_id).await
 }
 
@@ -884,7 +863,7 @@ pub(crate) async fn upload_scores_impl(
 #[tauri::command]
 pub async fn upload_scores(app: AppHandle, payload: Value) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     upload_scores_impl(&base_url, &token, payload).await
 }
 
@@ -938,7 +917,7 @@ pub(crate) async fn load_asset_files_impl(
 #[tauri::command]
 pub async fn load_asset_files(app: AppHandle, simfile_id: String) -> Result<Value> {
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     load_asset_files_impl(&base_url, &token, simfile_id).await
 }
 
@@ -978,7 +957,7 @@ pub async fn upload_file(
 ) -> Result<Value> {
     let workspace_root = state.current()?;
     let base_url = api_base_url_from_env()?;
-    let token = access_token_from_auth_state(&app.state::<AuthState>(), Some(&app)).await?;
+    let token = current_session_token(&app.state::<AuthState>()).await?;
     Ok(upload_file_to_api(
         &base_url,
         &token,

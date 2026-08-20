@@ -344,3 +344,32 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Task 9: minor (deferred): invalid/expired tests mock `{ code, message }` rather than Better Auth's installed `{ error, error_description, status, statusText }` wire error shape; implementation uses the pinned API correctly. Final review must triage.
 - Review: spec compliant; task quality acceptable; no Critical or Important findings.
 - Task 9: complete (commits `576dacc..db495673`, review clean with 1 deferred minor).
+
+## Task 10
+
+- Implementer: `/root/d1_task10_native_device_auth`.
+- CodeGraph traced the native auth/API bearer-token/e2e seed/generated-contract
+  call paths once before edits.
+- RED: focused WireMock protocol tests were added before production code and
+  failed with unresolved `DeviceAuthClient`, `DeviceAuthError`, and
+  `DevicePollResult` imports; the protocol module then supplied the seam.
+- Implementation: added Tauri-free Better Auth Device Authorization with exact
+  device-code/token/session routes, typed wire errors, timeout/network mapping,
+  poll backoff, secret redaction, and display-safe IPC attempt DTO. Replaced
+  native Supabase JSON/refresh/JWT/callback state with typed opaque
+  `sessionToken`, preserving `AuthState` generation/epoch, Drive ownership,
+  command names, single-instance focus, and debug+e2e seed gating. Removed the
+  unused auth deep-link plugin/config/capability after its call paths were
+  clean. Generated native renderer contracts.
+- GREEN: protocol WireMock tests 9 passed; focused auth tests 77 passed; e2e
+  auth tests 31 passed; full default Rust suite 920 passed with 2 ignored;
+  default and supported e2e clippy passed with `-D warnings`; fmt, generated
+  native types (42 export tests), diff, and search gates passed.
+- The mandated `cargo clippy --all-targets --all-features -- -D warnings`
+  combination is blocked before compilation by the existing Google Drive
+  configuration guard requiring `--no-default-features --features e2e` for an
+  e2e build. This is recorded in the task report; supported default/e2e
+  clippy modes are green.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-10-report.md`.
+- Task 10: source, tests, generated contract, report, and ledger are ready for
+  the scoped conventional commit.

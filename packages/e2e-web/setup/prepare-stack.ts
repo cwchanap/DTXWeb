@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSy
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { TEST_USER_ID, CHART_B_ID, isAuthConfigured } from '../test-config';
+import { TEST_USER_ID, CHART_A_ID, CHART_B_ID, isAuthConfigured } from '../test-config';
 import { createBetterAuthSeedSql } from './seed-better-auth-user';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -131,19 +131,22 @@ try {
 	rmSync(tmpSeedDir, { recursive: true, force: true });
 }
 
-// 4. Put the R2 object so chart B reports has_uploaded_files=true and download has content.
-wrangler('put R2 object', [
-	'r2',
-	'object',
-	'put',
-	`simfile-dtx/${CHART_B_ID}/song.dtx`,
-	'--local',
-	'--persist-to',
-	persist,
-	'--file',
-	fixture
-]);
+// 4. Put the R2 objects so both the owner-only chart A and public blog chart B
+// report has_uploaded_files=true and download has content.
+for (const chartId of [CHART_A_ID, CHART_B_ID]) {
+	wrangler('put R2 object', [
+		'r2',
+		'object',
+		'put',
+		`simfile-dtx/${chartId}/song.dtx`,
+		'--local',
+		'--persist-to',
+		persist,
+		'--file',
+		fixture
+	]);
+}
 
 console.log(
-	`[prepare-stack] seeded ${pkg} local Miniflare (charts 1001/1002 + R2 ${CHART_B_ID}/song.dtx)`
+	`[prepare-stack] seeded ${pkg} local Miniflare (charts 1001/1002 + R2 ${CHART_A_ID}/${CHART_B_ID}/song.dtx)`
 );

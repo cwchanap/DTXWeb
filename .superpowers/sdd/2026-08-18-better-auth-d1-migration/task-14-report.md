@@ -122,3 +122,49 @@ Authorization handoff is intentionally manual evidence and is described as
 such in the runbook; it was not claimed as automated GREEN here.
 
 No remote operation was run.
+
+## Task 14 review fixes
+
+The scoped review identified five Important findings; all five were fixed
+without broadening Task 14:
+
+1. Web shared-session race: RED reproduced that cloning `.auth/user.json`
+   cookies into another context shared the server session; logging out the
+   page made the baseline `/get-session` user null. The logout coverage now
+   clears the page context and signs in with the seeded credentials to create a
+   distinct session before revocation, then asserts the baseline session still
+   resolves to `TEST_USER_ID`. Focused Playwright GREEN: setup plus regression,
+   2 passed in 32.6s.
+2. Desktop native seed: RED was a focused Rust compile failure for the absent
+   restore helper. A debug-only `restore_seeded_auth_session` helper and
+   `restore_e2e_auth_session` IPC command now reuse the existing native seed;
+   the handler is registered only under `feature="e2e"` and
+   `debug_assertions`. WDIO `afterEach` restores native state even after a
+   renderer assertion failure. Focused Rust GREEN: 1 test passed. No release
+   test endpoint was added.
+3. Authenticated download: RED occurred because owner-only chart A had no
+   file. Chart A now has a minimal D1 `dtx_file` row and local R2 fixture; the
+   authenticated request succeeds while an empty-storage anonymous context is
+   rejected with 401. The existing public blog chart-B coverage remains
+   separate. Focused Playwright GREEN: setup plus owner-only download, 2
+   passed in 32.8s.
+4. Import command: the runbook now uses the positional export argument,
+   mandatory `--owner-ids`, optional replacement-password input, and the exact
+   repository-local `tmp/auth-migration/better-auth-import.sql` output path,
+   followed by a second-operator review and explicit pre-production D1 apply.
+5. Pre-production safety: the runbook now has explicit `--env pre-prod`
+   `versions secret put` and legacy `secret put` forms, warns that legacy
+   `wrangler secret put` immediately creates and deploys a Worker version, and
+   separates pre-production migration/deploy scripts from gated production-only
+   commands. Secret values remain interactive and undocumented.
+
+Review-fix verification: the focused auth lifecycle Playwright file passed 7/7
+(including setup) in 27.6s; the focused Device Authorization file passed 4/4
+(including setup) in 28.1s; `bun run --filter=dtx-e2e-desktop check`,
+`bun run --filter=dtx-desktop typecheck`, focused desktop support/unit checks
+(29 passed), and the Rust E2E-feature test set (40 passed) passed. Lint,
+Prettier, Rust format, and `git diff --check` also passed. The full desktop
+executable suite remains unrun
+because `packages/dtx-desktop/src-tauri/target-e2e/debug/dtx-desktop` is absent;
+that build is potentially longer and hardware-bound. No remote operation or
+Task 15 work was performed.

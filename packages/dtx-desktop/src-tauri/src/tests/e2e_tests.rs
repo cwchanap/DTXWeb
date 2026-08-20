@@ -60,6 +60,23 @@ async fn e2e_auth_state_is_seeded_only_for_the_configured_user() {
     assert!(crate::auth::AuthState::for_e2e_user(" other-user ").is_err());
 }
 
+#[tokio::test]
+async fn e2e_auth_state_can_be_restored_after_logout() {
+    let state =
+        crate::auth::AuthState::for_e2e_user("fixed-e2e-user").expect("valid fixed E2E user");
+    state.set_current_auth_session(None).await;
+
+    let restored = crate::e2e::restore_seeded_auth_session(&state, "fixed-e2e-user")
+        .await
+        .expect("the debug E2E seed should be restorable after logout");
+
+    assert_eq!(restored.user.id, "fixed-e2e-user");
+    assert_eq!(
+        state.current_user_id().await.as_deref(),
+        Some("fixed-e2e-user")
+    );
+}
+
 #[test]
 fn e2e_session_validation_accepts_only_the_seeded_user() {
     let matching = crate::auth::SessionData {

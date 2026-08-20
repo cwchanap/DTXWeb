@@ -39,6 +39,13 @@ describe('Desktop Better Auth session lifecycle', () => {
 		await resetApp();
 	});
 
+	afterEach(async () => {
+		const restored = await browser.tauri.execute<NativeAuthSession, []>(
+			({ core }) => core.invoke('restore_e2e_auth_session') as unknown as NativeAuthSession
+		);
+		expect(restored.user.id).toBe(e2eUserId);
+	});
+
 	it('restores the Better Auth session shape and authenticated shell without a test-auth endpoint', async () => {
 		const nativeSession = await browser.tauri.execute<NativeAuthSession | null, []>(
 			({ core }) => core.invoke('get_current_session') as unknown as NativeAuthSession | null

@@ -9,4 +9,5 @@ VALUES (1001, 'E2E Lifecycle Chart', 'E2E', 120, '__TEST_USER_ID__', 0, 1001);
 INSERT INTO simfiles (id, title, artist, bpm, user_id, is_published, display_id)
 VALUES (1002, 'E2E Download Chart', 'E2E', 140, '__TEST_USER_ID__', 1, 1002);
 
+INSERT INTO dtx_files (label, level, simfile_id) VALUES ('BASIC', 40, 1001);
 INSERT INTO dtx_files (label, level, simfile_id) VALUES ('BASIC', 50, 1002);

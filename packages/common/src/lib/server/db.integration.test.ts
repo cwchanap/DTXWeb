@@ -87,9 +87,10 @@ afterAll(async () => {
 // tests are isolated. The chart (dtx_files.id = 1) is the target for all
 // upsert calls (chartId = 1).
 const runMigration = async (statements: string[]) => {
-	for (const stmt of statements) {
-		await db.prepare(stmt).run();
-	}
+	// D1 batches execute in list order and roll back the sequence on failure.
+	// Keep each migration statement distinct while avoiding one IPC round trip
+	// per statement under the full monorepo test load.
+	await db.batch(statements.map((stmt) => db.prepare(stmt)));
 };
 
 const runMigrations = async () => {
@@ -115,21 +116,21 @@ const runMigrationsThrough = async (lastFileName: string) => {
 const resetSchema = async () => {
 	// Drop child tables before their referenced parents so this remains valid
 	// if the test database enforces foreign keys.
-	for (const table of [
-		'account',
-		'session',
-		'scores',
-		'chart_scores',
-		'dtx_files',
-		'user_profiles',
-		'simfiles',
-		'device_code',
-		'rate_limit',
-		'user',
-		'verification'
-	]) {
-		await db.prepare(`DROP TABLE IF EXISTS \`${table}\``).run();
-	}
+	await db.batch(
+		[
+			'account',
+			'session',
+			'scores',
+			'chart_scores',
+			'dtx_files',
+			'user_profiles',
+			'simfiles',
+			'device_code',
+			'rate_limit',
+			'user',
+			'verification'
+		].map((table) => db.prepare(`DROP TABLE IF EXISTS \`${table}\``))
+	);
 };
 
 beforeEach(async () => {

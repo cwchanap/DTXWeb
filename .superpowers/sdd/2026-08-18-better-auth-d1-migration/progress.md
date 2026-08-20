@@ -117,3 +117,12 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Fresh root verification exposed that the dynamically discovered `0008_better_auth.sql` migration was not included in the explicit migration-list contract and the common D1 harness only dropped legacy tables before reapplying all migrations.
 - Fix: reset every numbered-migration table in foreign-key-safe child-before-parent order, update the contract/name through `0008`, and reuse the reset for the direct `0007` setup.
 - Focused GREEN: `bun run --filter=@dtx/common test -- src/lib/server/db.integration.test.ts` — 1 file, 39 tests passed; `git diff --check` passed.
+
+## Verification-driven D1 harness performance fix
+
+- RED evidence: fresh escalated `bun run test` under parallel monorepo load completed API 389/389, but common's `db.integration.test.ts` ran for 178.7s and timed out in `beforeEach` at line 135 for `D1 partial unique indexes > rejects duplicate non-null display_order`; the focused suite remained 39/39, confirming a contention-sensitive harness timeout rather than migration SQL failure.
+- Root cause: the harness issued one Miniflare/D1 IPC request per schema drop and per migration statement after adding `0008`; the additional sequential calls exceeded Vitest's 10-second hook ceiling under full-load contention.
+- Fix: use D1 `batch()` for ordered, transactional schema resets and for each migration's already-split statements. The migration boundaries and statement order remain unchanged, preserving the explicit `0006` duplicate-column assertion and `0007` migration setup.
+- D1 semantics evidence: Miniflare smoke verified ordered execution and rollback; the installed Workers types expose `D1Database.batch`, and the Cloudflare D1 binding contract specifies ordered transactional batches.
+- Focused GREEN: `bun run --filter=@dtx/common test -- src/lib/server/db.integration.test.ts` — 1 file, 39 tests passed in 35.64s.
+- Full-load GREEN: `bun run test` — 7/7 Turbo tasks passed; common 45 files/1,325 tests, API 24 files/389 tests, desktop 58 files/1,013 tests, and web 66 files/959 tests passed in 2m48.621s.

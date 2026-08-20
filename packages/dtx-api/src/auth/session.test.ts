@@ -47,6 +47,20 @@ const sessionResult = {
 const makeRequest = (method: string, headers: Record<string, string> = {}) =>
 	new Request('https://api.example.com/graphql', { method, headers });
 
+const makeRawRequest = (method: string, headers: Record<string, string>) => {
+	const normalizedHeaders = new Map(
+		Object.entries(headers).map(([name, value]) => [name.toLowerCase(), value])
+	);
+
+	return {
+		method,
+		headers: {
+			get: (name: string) => normalizedHeaders.get(name.toLowerCase()) ?? null,
+			has: (name: string) => normalizedHeaders.has(name.toLowerCase())
+		}
+	} as unknown as Request;
+};
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	authMocks.createAuth.mockReturnValue({ api: { getSession: authMocks.getSession } });
@@ -96,7 +110,7 @@ describe('resolveAuthSession', () => {
 	});
 
 	it('accepts a valid Bearer session for a POST without Origin', async () => {
-		const request = makeRequest('POST', { Authorization: 'Bearer opaque-session-token' });
+		const request = makeRequest('POST', { Authorization: 'bearer opaque-session-token' });
 
 		const result = await resolveAuthSession(request, makeEnv());
 
@@ -104,7 +118,32 @@ describe('resolveAuthSession', () => {
 		expect(authMocks.getSession).toHaveBeenCalledWith({ headers: request.headers });
 	});
 
-	it('returns null for a malformed Bearer session', async () => {
+	it('rejects a cookie session with an empty Bearer token without Origin', async () => {
+		const request = makeRawRequest('POST', {
+			cookie: 'dtx-local-session=session',
+			authorization: 'Bearer '
+		});
+
+		const result = await resolveAuthSession(request, makeEnv());
+
+		expect(result).toBeNull();
+		expect(authMocks.getSession).not.toHaveBeenCalled();
+	});
+
+	it('rejects a cookie session with a malformed Bearer scheme from another Origin', async () => {
+		const request = makeRequest('POST', {
+			cookie: 'dtx-local-session=session',
+			Authorization: 'Bearer',
+			Origin: 'https://evil.example.com'
+		});
+
+		const result = await resolveAuthSession(request, makeEnv());
+
+		expect(result).toBeNull();
+		expect(authMocks.getSession).not.toHaveBeenCalled();
+	});
+
+	it('returns null for an invalid non-empty Bearer session without a cookie', async () => {
 		authMocks.getSession.mockResolvedValue(null);
 		const request = makeRequest('POST', { Authorization: 'Bearer malformed-token' });
 

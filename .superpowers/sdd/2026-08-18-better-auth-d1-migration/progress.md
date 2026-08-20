@@ -126,3 +126,10 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - D1 semantics evidence: Miniflare smoke verified ordered execution and rollback; the installed Workers types expose `D1Database.batch`, and the Cloudflare D1 binding contract specifies ordered transactional batches.
 - Focused GREEN: `bun run --filter=@dtx/common test -- src/lib/server/db.integration.test.ts` — 1 file, 39 tests passed in 35.64s.
 - Full-load GREEN: `bun run test` — 7/7 Turbo tasks passed; common 45 files/1,325 tests, API 24 files/389 tests, desktop 58 files/1,013 tests, and web 66 files/959 tests passed in 2m48.621s.
+
+## Verification-driven auth schema check fix
+
+- RED evidence: `bun run --filter=dtx-api auth:schema:check` regenerated `src/auth/schema.ts` with generator formatting and then failed the repository diff check; formatting the generated file with the installed Prettier produced no semantic diff.
+- Root cause: `auth:schema:check` compared raw generator output directly against the Prettier-formatted checked-in schema.
+- Fix: format `src/auth/schema.ts` with the workspace-installed `prettier --write` between generation and `git diff`, leaving `auth:schema:generate` unchanged.
+- GREEN: `bun run --filter=dtx-api auth:schema:check` passed twice consecutively, including the clean-schema idempotence check; `bun run --filter=dtx-api check`, `git diff --check`, and the generated-schema diff check all passed.

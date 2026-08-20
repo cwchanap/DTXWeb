@@ -4,9 +4,9 @@ This is the live operator procedure for DTXWeb Cloudflare Access. Steps that mut
 
 ## Scope
 
-| Stack | Application | Protection scope |
-| --- | --- | --- |
-| `pre-prod` | `DTXWeb Pre-prod` | entire `pre-prod.dtx.hapadona.com` hostname |
+| Stack        | Application             | Protection scope                                         |
+| ------------ | ----------------------- | -------------------------------------------------------- |
+| `pre-prod`   | `DTXWeb Pre-prod`       | entire `pre-prod.dtx.hapadona.com` hostname              |
 | `production` | `DTXWeb Production App` | `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*` only |
 
 Wrangler continues to own Worker/API/runtime infrastructure. Both API hostnames remain outside Access.

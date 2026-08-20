@@ -78,7 +78,7 @@ Expected: dependency lock updates and TypeScript can load the scaffold package.
 Create `private-route-boundary.test.ts` that recursively finds route-bearing `+page*` and `+server*` files below `src/routes/(app)`, strips route-group segments such as `(app)`, derives the emitted URL directory, and asserts every derived path satisfies:
 
 ```ts
-route === '/app' || route.startsWith('/app/')
+route === '/app' || route.startsWith('/app/');
 ```
 
 The test must fail if a future route such as `(app)/admin/+page.svelte` or `(app)/studio/+server.ts` is added.
@@ -97,11 +97,11 @@ Create `.github/scripts/fixtures/turbo-infrastructure.json` representing exactly
 
 ```json
 {
-  "packageManager": "bun",
-  "packages": {
-    "count": 1,
-    "items": [{ "name": "@dtx/infrastructure", "path": "packages/infrastructure" }]
-  }
+	"packageManager": "bun",
+	"packages": {
+		"count": 1,
+		"items": [{ "name": "@dtx/infrastructure", "path": "packages/infrastructure" }]
+	}
 }
 ```
 

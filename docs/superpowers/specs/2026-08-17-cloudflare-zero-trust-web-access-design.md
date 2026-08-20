@@ -2,88 +2,105 @@
 
 ## Summary
 
-DTXWeb will manage its Cloudflare Zero Trust Access applications with Pulumi, using the same Cloudflare provider and Access-resource shape already proven in Perseus, while keeping the DTXWeb slice deliberately narrower.
+DTXWeb will manage its Cloudflare Zero Trust Access applications with a small Pulumi package modeled on the proven Perseus Access implementation.
 
-Production protects only `/app` and its descendants. This is intentionally an operator-only surface: the configured Access identity must match the intended operator and the request must satisfy the existing Perseus trusted-device posture rule. Other Supabase users may still reach public `/login`, but they cannot enter production `/app` or complete desktop login against production.
+The package owns **Access only**. Wrangler remains the owner of DTXWeb Workers, API deployment, D1, R2, service bindings, routes, runtime variables, and application secrets.
 
-Pre-production protects the entire `pre-prod.dtx.hapadona.com` web hostname. It is deployed and verified first. Production is not applied until the pre-production Access stack passes the documented identity, posture, browser-auth, and route-boundary checks.
+Production protects only exact `/app` plus descendants under `/app/`. This is intentionally an operator-only surface: the configured Access identity must match the intended operator and the request must satisfy the existing Perseus trusted-device posture rule. Production `/login`, `/auth/*`, the rest of the public web site, and both API hostnames remain outside Access.
 
-DTXWeb gets a small `packages/infrastructure` workspace that owns only the two Access applications. Existing Worker/API deployment remains on Wrangler. This slice does not migrate Workers, D1, R2, service bindings, secrets, or runtime deployment into Pulumi.
+Pre-production protects the entire `pre-prod.dtx.hapadona.com` web hostname. It is always previewed and proven before production is applied.
 
 DTXWeb does not create another serial-number list or device-posture rule. Perseus remains the owner of trusted-device membership; DTXWeb consumes the existing Perseus posture-rule resource ID as Pulumi configuration.
 
+The infrastructure code, tests, CI wiring, and Pulumi previews are implementation work. **Live `pulumi up`, live acceptance, and rollback/destroy are operator-executed runbook procedures, not agent implementation-plan steps.**
+
 ## Goals
 
-- Manage DTXWeb Cloudflare Access declaratively with Pulumi rather than manual dashboard configuration.
-- Follow the proven Perseus Access implementation shape where it applies.
-- Reuse the existing Perseus device-posture rule ID instead of duplicating its serial list or rule.
+- Manage DTXWeb Cloudflare Access declaratively with Pulumi rather than dashboard-created configuration.
+- Follow the proven Perseus `ZeroTrustAccessApplication` + inline policy shape where it applies.
+- Reuse the existing Perseus device-posture rule ID instead of duplicating its serial list or posture rule.
 - Make production `/app` and production desktop login intentionally operator-only behind Cloudflare Access.
-- Keep the production public site outside Access, including `/`, `/blog`, `/preview/*`, `/editor`, `/tool/*`, `/game`, `/login`, and `/auth/*`.
+- Keep production `/`, `/blog`, `/preview/*`, `/editor`, `/tool/*`, `/game`, `/login`, `/auth/*`, and other intended public routes outside Access.
 - Require Cloudflare Access for every route served by `pre-prod.dtx.hapadona.com`.
-- Preserve Supabase authentication as an independent inner gate after Access allows a request.
 - Keep `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com` outside Access.
-- Make pre-production and production separate Pulumi stacks so rollout and rollback are environment-specific.
-- Make the stack name determine the hostname and protection scope so ordinary configuration cannot accidentally broaden production Access.
-- Roll out pre-production first, then production only after the pre-production gate and auth round-trip are verified.
-- Verify the Access identity `Include` clause independently from the device-posture `Require` clause.
-- Keep the existing operator runbook as the durable acceptance/rollback procedure, updated to use Pulumi preview/apply instead of dashboard clicks.
+- Preserve Supabase authentication as an independent inner gate after Access allows a request.
+- Use separate `pre-prod` and `production` Pulumi stacks so rollout and rollback are environment-specific.
+- Make stack name determine hostname/path scope so ordinary config cannot accidentally broaden production Access.
+- Wire `@dtx/infrastructure` into the repository's fail-closed affected-scope CI and coverage workflow.
+- Reuse DTXWeb's current TypeScript/Vitest/Node type major versions instead of importing Perseus's newer JS test toolchain.
+- Keep one checked-in runbook as the live operator source of truth for preview, apply, verification, emergency fallback, and rollback.
 
 ## Non-Goals
 
 - Migrate DTXWeb Worker or API deployment from Wrangler to Pulumi.
 - Manage D1, R2, KV, Workers, routes, service bindings, runtime environment variables, or application secrets with Pulumi in this slice.
 - Create or manage the shared trusted-device serial-number list in DTXWeb.
-- Create or manage a second DTXWeb-specific device-posture rule.
+- Create a DTXWeb-specific device-posture rule.
 - Add a Pulumi `StackReference` dependency on the Perseus stack.
 - Protect the entire production `dtx.hapadona.com` hostname.
 - Protect either API hostname.
 - Make production `/app` available to every Supabase user.
-- Add a public logout route or otherwise change the current non-operator recovery behavior in this slice.
+- Add a public logout route or change the current non-operator recovery behavior.
 - Replace Supabase authentication.
 - Add Worker-side validation of `CF_Authorization` or Access JWTs.
 - Add Cloudflare Access service tokens, Service Auth policies, CLI applications, or Managed OAuth.
-- Copy Perseus's admin CLI/service-token resources.
-- Make pre-production an unattended E2E target in this slice.
-- Add GitHub Actions deployment for the new Pulumi package in this slice.
-- Change SvelteKit, GraphQL API, or desktop application code.
+- Copy Perseus's CLI/service-token/Worker/storage resources.
+- Make pre-production an unattended E2E target.
+- Add GitHub Actions deployment of Pulumi resources.
+- Let an agent execute live `pulumi up` or `pulumi destroy` as part of the implementation plan.
+- Change code under `packages/dtx-web`, `packages/dtx-api`, or `packages/dtx-desktop`.
 
 ## Existing Context
 
 ### DTXWeb routing and deployment
 
-`packages/dtx-web/wrangler.jsonc` deploys the production web Worker to `dtx.hapadona.com` and pre-production to `pre-prod.dtx.hapadona.com`. The web application uses separate API hostnames: `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com`.
+`packages/dtx-web/wrangler.jsonc` deploys the production web Worker to `dtx.hapadona.com` and pre-production to `pre-prod.dtx.hapadona.com`. The GraphQL API uses separate hostnames: `api.dtx.hapadona.com` and `api.pre-prod.dtx.hapadona.com`.
 
 `packages/dtx-web/src/hooks.server.ts` currently treats any pathname beginning with `/app` as Supabase-authenticated. The intended private route family for this design is narrower: exact `/app` or descendants under `/app/`. Production Access therefore protects `/app` and `/app/*`.
 
-This dependency is an operating invariant: any new private production page must live at `/app` or below `/app/`, or the Access design must be revisited before shipping it. A new private sibling such as `/studio` or `/admin` would otherwise be public at the edge. The current `pathname.startsWith('/app')` guard is slightly broader than the intended Access family and must not be used to justify new `/app...` sibling-style routes.
+Any new private production page must live at `/app` or below `/app/`, or this Access design must be revised before shipping it. The broader `pathname.startsWith('/app')` application guard must not be used to justify new `/app...` sibling-style routes.
 
 ### Desktop authentication
 
-The desktop flow starts at web `/login` and finishes through `/app?redirect=desktop...`. Password login redirects there directly; Google OAuth does the same through the auth callback. The login page preserves the desktop callback in `sessionStorage` so the `/app` page can hand the magic link back to either the bundled `dtx://` callback or the Tauri-development loopback callback.
+Desktop login begins on public `/login` and completes through `/app?redirect=desktop...`. Password and Google OAuth both return through the protected `/app` handoff.
 
-Standalone desktop development (`bun run dev:desktop`) loads `VITE_DTX_SERVER_URL` from the ignored root `.env`. In the current operator setup it points at production, so standalone `tauri dev` authentication traverses production `/login` and protected production `/app`. The full local-stack command (`bun run dev`) instead uses `dtx-desktop#dev:local-web` and localhost.
+Standalone `bun run dev:desktop` consumes `VITE_DTX_SERVER_URL` from the ignored root `.env`; in the current operator setup this targets production. Full local-stack `bun run dev` instead uses `dtx-desktop#dev:local-web` and localhost.
 
-After this Access change, authentication against either deployed web environment is operator-only. Non-operator contributors must use the full local stack or another separately designed ungated development environment.
+After this Access change, authentication against deployed production or pre-production is operator-only. Non-operator contributors use the full local stack or a separately designed ungated development environment.
 
 ### Non-operator production lockout
 
-Because production `/app` sits behind a single-operator Access policy, public `/login` is an entry form, not an Access bypass. A non-operator Supabase user may authenticate successfully and then be denied when the browser returns to `/app`.
+A non-operator Supabase user can authenticate on public `/login` and then be denied by Access when the browser returns to `/app`.
 
-That state currently has no UI recovery path. `hooks.server.ts` redirects an already-authenticated visitor from `/login` to `/app`, while the only current sign-out control lives inside the Access-protected `(app)` layout. A signed-in non-operator therefore must clear the Drumery/Supabase cookies for the production origin. A public logout route or a change to the authenticated `/login` redirect is an explicit deferred product decision.
+If they now hold a Supabase session, revisiting `/login` redirects them back to `/app`, while the current sign-out control is inside the protected application layout. Clearing the Drumery/Supabase cookies for the production origin is the documented recovery. A public logout route is a separate product/code decision.
 
 ### Perseus precedent
 
-Perseus already manages Cloudflare Zero Trust Access with `@pulumi/cloudflare`. Its infrastructure package creates a `ZeroTrustAccessApplication` with inline policies, uses an email `Include` selector, requires a device-posture rule, defaults the Access session to `12h`, and applies hardened cookie/application flags.
+Perseus already manages Cloudflare Access with `@pulumi/cloudflare`. Its browser-admin application uses `ZeroTrustAccessApplication`, an email `Include` rule, a device-posture `Require` rule, a `12h` default session, and hardened application/cookie flags.
 
-Perseus also owns the trusted-device serial-number list and device-posture rule and exports `adminAccessDevicePostureRuleId` from its Pulumi program. DTXWeb will reuse that existing Cloudflare posture-rule resource ID instead of reproducing the list/rule ownership.
+Perseus owns the trusted-device serial-number list and posture rule and exports `adminAccessDevicePostureRuleId`. DTXWeb reuses that existing Cloudflare rule ID as config.
 
-Perseus's later CLI application, service token, `non_identity` Service Auth policy, Worker resources, R2/KV/D1 resources, and deployment workflow solve different product requirements and are not part of this design.
+Perseus's CLI application, service token, `non_identity` policy, Worker resources, storage resources, and deployment workflows solve different requirements and are not copied.
+
+### Existing CI contract
+
+`.github/scripts/ci-affected-scope.sh` validates every Turbo package against a hardcoded fail-closed package allowlist and separately decides whether unit tests are affected.
+
+Adding `@dtx/infrastructure` without updating that script would make an infrastructure-only PR fail as an unknown package. The package must also participate in `unit_affected`, because `.github/workflows/unit-test.yml` only installs dependencies and runs unit coverage when that detector returns `true`.
+
+The unit workflow runs root `bun run test:coverage`. Therefore `@dtx/infrastructure` must expose `test:coverage`, not only `test`.
+
+`.github/scripts/ci-affected-scope.test.sh` and its JSON fixtures are the existing contract tests for this fail-closed detector and must gain infrastructure coverage.
+
+### Existing operator precedent
+
+`docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md` explicitly marks interactive/live Cloudflare steps as operator-executed. This design keeps that boundary: agents may author/test the Pulumi program and produce previews when credentials/config are already available, but live Cloudflare mutations and human browser/device observations stay in the runbook.
 
 ## Architecture
 
-### DTXWeb infrastructure workspace
+### Infrastructure workspace
 
-Add a dedicated workspace:
+Add:
 
 ```text
 packages/infrastructure/
@@ -99,21 +116,33 @@ packages/infrastructure/
     └── index.ts
 ```
 
-The package is intentionally Access-only. It has no Worker build/deployment logic and no storage resources.
+The root workspace list adds `packages/infrastructure`.
 
-The root workspace list adds `packages/infrastructure` so Bun installs and repository checks include the package naturally.
+The package is intentionally Access-only. It contains no Worker build/deploy logic and no storage resources.
 
-Use the same dependency versions currently working in Perseus for the initial implementation unless DTXWeb dependency resolution requires a compatible update:
+### Toolchain
+
+Reuse the Pulumi provider floors already proven in Perseus:
 
 - `@pulumi/pulumi` `^3.144.0`
 - `@pulumi/cloudflare` `^6.13.0`
-- `typescript` `^5.9.0`
-- `vitest` `^4.0.18`
-- `@types/node` `^22.10.0`
 
-### Pulumi project
+Align development tooling with DTXWeb instead of Perseus:
 
-`Pulumi.yaml` defines one DTXWeb infrastructure project:
+- TypeScript `^5.8.3`
+- Vitest `^3.1.4`
+- `@vitest/coverage-v8` `^3.0.0`
+- `@types/node` `^20.11.25`
+
+Do not introduce Vitest 4, TypeScript 5.9, or Node type major 22 merely because Perseus currently uses them.
+
+`packages/infrastructure/package.json` exposes only repository-safe scripts such as `build`, `check`, `test`, and `test:coverage`. Do not add unscoped `pulumi:up`, `pulumi:destroy`, or `pulumi:preview` scripts that operate on whichever stack happens to be selected.
+
+Operational docs invoke the Pulumi CLI directly and always name `--stack`.
+
+### Pulumi project and supported stacks
+
+`Pulumi.yaml` defines:
 
 ```yaml
 name: dtxweb-infrastructure
@@ -122,18 +151,76 @@ description: DTXWeb Cloudflare Access infrastructure managed by Pulumi
 main: dist/index.js
 ```
 
-One program serves exactly two supported stacks:
+One program supports exactly:
 
 - `pre-prod`
 - `production`
 
-Any other `pulumi.getStack()` value fails loudly before creating resources.
+Any other `pulumi.getStack()` value fails before a Cloudflare resource is registered.
 
-This is intentional. Stack-specific hostname/path scope is code-owned rather than freely configurable.
+### `pre-prod` stack
 
-### State and local stack configuration
+Creates exactly one `ZeroTrustAccessApplication` named `DTXWeb Pre-prod` for:
 
-Match the current Perseus operational model for this slice: local Pulumi usage with stack configuration excluded from git.
+```text
+pre-prod.dtx.hapadona.com
+```
+
+No API hostname is included.
+
+### `production` stack
+
+Creates exactly one `ZeroTrustAccessApplication` named `DTXWeb Production App` with exactly:
+
+```text
+dtx.hapadona.com/app
+dtx.hapadona.com/app/*
+```
+
+Hostname and destinations are code-owned, not Pulumi configuration.
+
+### Pulumi configuration
+
+Both stacks require:
+
+- `cloudflareAccountId` — plain config.
+- `accessEmail` — Pulumi secret config.
+- `devicePostureRuleId` — plain config containing the existing Perseus-managed rule ID.
+- `accessSessionDuration` — optional; defaults to `12h`.
+
+DTXWeb does not use `StackReference`. If Perseus replaces its posture rule and the Cloudflare ID changes, the operator updates `devicePostureRuleId` in both DTXWeb stacks before the next preview/apply.
+
+### Access resource construction
+
+`src/access.ts` owns pure builders plus one resource factory.
+
+Reuse these Perseus browser-application flags:
+
+```ts
+{
+  appLauncherVisible: false,
+  allowAuthenticateViaWarp: false,
+  enableBindingCookie: true,
+  httpOnlyCookieAttribute: true,
+  pathCookieAttribute: false
+}
+```
+
+Each Access application has one inline policy:
+
+- name: `Allow configured operator on trusted device`
+- decision: `allow`
+- precedence: `1`
+- `includes`: configured email identity
+- `requires`: configured existing posture-rule ID
+
+No posture/list/token resource is created by DTXWeb.
+
+### Local state and config
+
+Follow the same local-backend operating model as Perseus, but document it accurately.
+
+`pulumi login --local` is equivalent to a filesystem backend rooted at the operator's home directory, with default state under `~/.pulumi`. Stack config files created in the project (`Pulumi.<stack>.yaml`) are ignored and not committed.
 
 `packages/infrastructure/.gitignore` includes at least:
 
@@ -146,341 +233,172 @@ dist/
 .env.local
 ```
 
-The operator configures both stacks locally with `pulumi config set` commands. No stack config file, encrypted secret value, or local state directory is committed.
+The `.pulumi/` ignore is defensive for explicitly project-local filesystem backends; it is not a claim that `pulumi login --local` stores default state in the repository.
 
-This slice does not add CI deployment, so reproducing the stack on another machine requires re-establishing the local Pulumi backend/login plus the documented config values.
+Because state is local-machine-owned, the runbook must include both normal Pulumi rollback and an emergency Cloudflare dashboard delete/disable path if state/backend access is unavailable.
 
-## Stack Model
+## CI Integration
 
-### `pre-prod`
+Task implementation must update:
 
-Creates one `ZeroTrustAccessApplication` named `DTXWeb Pre-prod` covering the entire web hostname:
+- `.github/scripts/ci-affected-scope.sh`
+- `.github/scripts/ci-affected-scope.test.sh`
+- `.github/scripts/fixtures/turbo-infrastructure.json`
 
-```text
-pre-prod.dtx.hapadona.com
-```
-
-There is no path bypass. All current and future routes on that web hostname are behind Access.
-
-`api.pre-prod.dtx.hapadona.com` is not a destination and remains outside Access.
-
-### `production`
-
-Creates one `ZeroTrustAccessApplication` named `DTXWeb Production App` with exactly these destinations:
+The detector allowlist gains:
 
 ```text
-dtx.hapadona.com/app
-dtx.hapadona.com/app/*
+@dtx/infrastructure:packages/infrastructure
 ```
 
-The production program must not accept arbitrary destination configuration. A hostname-wide production Access application cannot be produced by changing stack config alone.
+`@dtx/infrastructure` also sets `unit_affected=true`.
 
-`api.dtx.hapadona.com` and all production web routes outside `/app` remain outside Access.
+The detector tests add an infrastructure-only fixture and assert:
 
-## Pulumi Configuration
+- `unit` => `true`
+- `lint` => `true`
 
-Both stacks require the same small set of values:
+`@dtx/infrastructure` defines:
 
-- `cloudflareAccountId` — Cloudflare account ID; plain configuration.
-- `accessEmail` — the allowed operator Access identity/email; Pulumi secret.
-- `devicePostureRuleId` — the existing Perseus Cloudflare device-posture rule ID; plain configuration.
-- `accessSessionDuration` — optional; defaults to `12h`.
-
-The production and pre-production hostnames are not config values.
-
-The allowed identity is secret because the repository should not publish the operator email. The posture-rule ID is a Cloudflare resource identifier rather than a device serial or credential and does not need Pulumi-secret handling.
-
-### Reusing the Perseus posture-rule ID
-
-The operator obtains the current `adminAccessDevicePostureRuleId` from the Perseus Pulumi stack and writes that value into both DTXWeb stacks as `devicePostureRuleId`.
-
-DTXWeb does not use `pulumi.StackReference` for this dependency. A direct stack reference would couple DTXWeb to the exact Perseus Pulumi backend, organization/project name, and stack identity. Passing the stable Cloudflare resource ID as DTXWeb configuration keeps deployment of the two repositories independent while preserving Perseus as the owner of trusted-device membership.
-
-If Perseus ever replaces the posture rule and its resource ID changes, the DTXWeb stack config must be updated before the next DTXWeb `pulumi up`. This is an explicit operational dependency and belongs in the runbook.
-
-## Access Resource Construction
-
-`src/access.ts` owns pure builders plus the small resource factory.
-
-### Shared application flags
-
-Reuse the relevant hardened application flags from Perseus:
-
-```ts
-{
-  appLauncherVisible: false,
-  allowAuthenticateViaWarp: false,
-  enableBindingCookie: true,
-  httpOnlyCookieAttribute: true,
-  pathCookieAttribute: false
-}
+```json
+"test:coverage": "vitest --run --coverage"
 ```
 
-Do not import or copy CLI/service-token-specific behavior.
+so the existing root `bun run test:coverage` workflow executes the Access unit tests.
 
-### Access policy
-
-Both stacks use one inline policy:
-
-- name: `Allow configured operator on trusted device`
-- decision: `allow`
-- precedence: `1`
-- `includes`: configured email identity
-- `requires`: configured existing device-posture rule ID
-
-The policy mirrors the proven Perseus browser-admin policy shape but references the pre-existing posture rule directly.
-
-### Stack definition and application builder
-
-Keep stack selection testable as pure data. A helper such as `getAccessStackDefinition(stackName)` returns the immutable application name, domain, and destinations for `pre-prod` or `production` and throws for any other stack.
-
-The application builder accepts:
-
-- account ID;
-- stack definition;
-- operator email;
-- existing posture-rule ID;
-- optional session duration.
-
-It returns `cloudflare.ZeroTrustAccessApplicationArgs`.
-
-No destination or hostname comes from Pulumi config.
-
-### Resource ownership
-
-DTXWeb owns only:
-
-- `DTXWeb Pre-prod` Access application in the `pre-prod` stack;
-- `DTXWeb Production App` Access application in the `production` stack.
-
-DTXWeb explicitly does not own:
-
-- Perseus device serial list;
-- Perseus device-posture rule;
-- Access identity provider configuration;
-- service tokens;
-- Service Auth policies;
-- API hostnames;
-- Workers or storage resources.
+No new CI workflow is needed.
 
 ## Protection Matrix
 
-| Surface | Cloudflare Access | Owner |
-| --- | --- | --- |
-| `dtx.hapadona.com/app` | Protected | DTXWeb production Pulumi stack |
-| `dtx.hapadona.com/app/` | Protected; verify explicitly | DTXWeb production Pulumi stack |
-| `dtx.hapadona.com/app/*` | Protected | DTXWeb production Pulumi stack |
-| `dtx.hapadona.com/` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/blog/*` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/preview/*` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/editor` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/tool/*` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/game` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/login` | Public | Existing Worker deployment |
-| `dtx.hapadona.com/auth/*` | Public | Existing Worker deployment |
-| Other production web paths outside `/app` | Public | Existing Worker deployment |
-| `pre-prod.dtx.hapadona.com/*` | Protected | DTXWeb pre-prod Pulumi stack |
-| `api.dtx.hapadona.com/*` | Outside Access | Existing API deployment |
-| `api.pre-prod.dtx.hapadona.com/*` | Outside Access | Existing API deployment |
+| Surface | Access |
+| --- | --- |
+| `dtx.hapadona.com/app` | Protected |
+| `dtx.hapadona.com/app/` | Protected; verify explicitly |
+| `dtx.hapadona.com/app/*` | Protected |
+| Production routes outside `/app` | Public |
+| `pre-prod.dtx.hapadona.com/*` | Protected |
+| `api.dtx.hapadona.com/*` | Outside Access |
+| `api.pre-prod.dtx.hapadona.com/*` | Outside Access |
 
-## Deployment Workflow
+Production verification includes real public examples `/`, `/blog`, `/preview/1`, `/editor`, `/tool/dtx-to-midi`, `/game`, `/login`, and `/auth/callback`.
 
-Pulumi manages only Access. Wrangler remains the runtime deployment tool.
-
-### Initial setup
-
-Use the same local-backend pattern as Perseus:
-
-```bash
-cd packages/infrastructure
-pulumi login --local
-pulumi stack init pre-prod
-pulumi stack init production
-```
-
-If either stack already exists locally, select it rather than recreating it.
-
-Configure both stacks with the Cloudflare account ID, secret Access email, reused Perseus posture-rule ID, and optional session duration. The implementation runbook will contain the exact commands without real values.
-
-### Pre-production first
-
-1. Build/typecheck/test the infrastructure package.
-2. Run `pulumi preview -s pre-prod`.
-3. Review the preview and confirm it creates only the hostname-wide `DTXWeb Pre-prod` Access application.
-4. Run `pulumi up -s pre-prod`.
-5. Execute the complete pre-production verification section from the runbook.
-6. If any required check fails, run the pre-production rollback immediately.
-
-Production must not be applied before pre-production is green.
-
-### Production
-
-1. Run `pulumi preview -s production`.
-2. Review the preview and confirm the application has exactly `/app` and `/app/*` destinations.
-3. Run `pulumi up -s production`.
-4. Execute the complete production route, identity, posture, browser, session-expiry, and desktop verification sections from the runbook.
-
-Do not use `pulumi up` without an explicit stack in operational documentation for this feature.
-
-## Testing Strategy
+## Testing And Implementation Gates
 
 ### Unit tests
 
-`src/access.test.ts` tests builders without contacting Cloudflare.
+`src/access.test.ts` tests pure builders without contacting Cloudflare.
 
-At minimum, test:
+At minimum:
 
-- production destinations are exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`;
-- pre-production destination is hostname-wide and does not include the API hostname;
-- production cannot become hostname-wide through configuration;
-- policy contains the normalized configured email in `includes`;
-- policy references the provided posture-rule ID in `requires`;
+- pre-prod is hostname-wide and never includes the API hostname;
+- production destinations are exactly `/app` and `/app/*`;
+- unsupported stack names throw;
+- malformed/multiple email values throw;
+- blank account ID and posture-rule ID throw;
+- the policy uses the normalized email in `includes`;
+- the policy references the supplied posture-rule ID in `requires`;
 - default session duration is `12h`;
-- hardened application flags match the intended values;
-- unsupported stack names fail loudly;
-- empty/invalid email and empty posture-rule ID fail before deployment.
+- hardened flags match the approved values;
+- production cannot become hostname-wide through config.
 
-Follow the Perseus pattern of separating pure builders from Pulumi resource creation so the security-sensitive shape is deterministic and unit-testable.
+### CI contract tests
 
-### Static verification
+Run `.github/scripts/ci-affected-scope.test.sh` and prove infrastructure-only changes select the unit gate rather than failing closed or skipping unit coverage.
 
-Run the package TypeScript check and unit tests before any preview.
+### Repository checks
 
-The root repository check should include the new workspace through normal workspace/turbo integration where practical; do not add unrelated CI redesign merely for this package.
+Run:
 
-### Pulumi preview as a safety gate
+```bash
+bun install
+bun run --filter=@dtx/infrastructure check
+bun run --filter=@dtx/infrastructure test:coverage
+.github/scripts/ci-affected-scope.test.sh
+```
 
-`pulumi preview` is required before each environment apply.
+Then run the relevant root checks if practical.
 
-Pre-production preview must show only the intended pre-production Access application.
+### Pulumi preview gate
 
-Production preview must show only the intended production Access application and exactly the two path destinations. A preview that shows hostname-wide production Access, an API destination, a new posture rule/list, or a service token is a hard stop.
+Before any live apply, the operator or an authenticated implementation environment runs explicit-stack previews.
 
-## Runtime Verification Requirements
+Pre-prod preview must show only one `DTXWeb Pre-prod` Access application.
 
-The existing runbook remains the owner of live acceptance commands and browser checks. It is rewritten from dashboard instructions to Pulumi preview/apply/rollback instructions.
+Production preview must show only one `DTXWeb Production App` and exactly `/app` plus `/app/*` destinations.
 
-The route-boundary helper must fail loudly if DNS, connection, TLS, or timeout fails; a request that never received an HTTP response cannot count as a successful public-route assertion.
+A preview showing a hostname-wide production app, API destination, new posture/list resource, service token, or unrelated resource is a hard stop.
 
-The production matrix must include:
+**The implementation plan ends at tested code, rewritten runbook, and successful/non-run preview evidence. It does not contain `pulumi up` or `pulumi destroy` execution steps.**
 
-- protected: `/app`, `/app/`, `/app/score`, `/app/__data.json`;
-- public: `/`, `/blog`, `/preview/1`, `/editor`, `/tool/dtx-to-midi`, `/game`, `/login`, `/auth/callback`;
-- outside Access: both API hostnames.
+## Operator Runbook Boundary
 
-The policy checks independently prove:
+`docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md` is marked operator-executed.
 
-- allowed identity + trusted posture passes;
-- trusted device + non-allowed IdP identity is denied;
-- allowed identity on a device that fails posture is denied.
+It owns:
 
-The browser checks cover:
+1. Pulumi local-backend login and stack/config setup.
+2. Obtaining the current Perseus posture-rule ID.
+3. Explicit-stack previews.
+4. `pulumi up --stack pre-prod`.
+5. Pre-prod HTTP/browser/posture acceptance.
+6. Only after pre-prod is green, `pulumi up --stack production`.
+7. Production route, identity, posture, browser, session-expiry, bundled desktop, and standalone Tauri-dev acceptance.
+8. Normal stack-specific rollback.
+9. Emergency Cloudflare dashboard disable/delete when Pulumi state/backend access is unavailable.
 
-- pre-production password and Google login before production is applied;
-- production `/app -> /login -> /app` for the operator;
-- bundled desktop login;
-- standalone Tauri-development loopback login against deployed production in the current operator setup;
-- expired/logged-out Access session during SvelteKit client-side navigation into `/app`;
-- non-operator production login dead-end and documented cookie-clearing recovery.
+Agents may prepare or verify non-mutating artifacts, but live applies/destroys and human browser/device observations are operator actions.
 
 ## Rollback
 
-Rollback is stack-specific and does not touch Worker/API deployment.
+### Normal Pulumi rollback
 
-Because each stack owns exactly one Cloudflare resource in this slice, the rollback procedure is explicit:
-
-```bash
-pulumi preview --destroy -s pre-prod
-pulumi destroy -s pre-prod --yes
-```
-
-for pre-production, or:
+For the affected stack, the operator first reviews:
 
 ```bash
-pulumi preview --destroy -s production
-pulumi destroy -s production --yes
+pulumi preview --destroy --stack <pre-prod|production>
 ```
 
-for production.
+The preview must show exactly one deletion: the corresponding DTXWeb Access application.
 
-Before running `destroy`, the operator must review the destroy preview and confirm the only deletion is the corresponding DTXWeb Access application. If the infrastructure package later owns additional resources, this rollback procedure must be redesigned before those resources ship.
+Then the operator may run:
 
-If pre-production fails required acceptance, destroy only the `pre-prod` stack's Access application. Production remains untouched.
+```bash
+pulumi destroy --stack <pre-prod|production> --yes
+```
 
-If production fails required acceptance, destroy only the `production` stack's Access application. Pre-production remains available for further diagnosis.
+### Emergency fallback without usable state
 
-Rollback requires no Worker redeploy and no application-code rollback.
+If the local Pulumi backend/state is unavailable and immediate Access removal is necessary, the operator uses Cloudflare Zero Trust dashboard controls to disable/delete the named application:
 
-Do not add a service token, API Access application, bypass policy, or widened destination as an emergency workaround.
+- `DTXWeb Pre-prod`, or
+- `DTXWeb Production App`.
 
-## Security And Secret Handling
+Do not create a bypass policy, service token, API Access app, or broader route as an emergency workaround.
 
-Never commit:
-
-- operator email;
-- device serial numbers;
-- Access cookies or JWTs;
-- Cloudflare API tokens;
-- `Pulumi.<stack>.yaml` files for this local-stack workflow;
-- `.pulumi/` local state;
-- screenshots containing security identifiers.
-
-`accessEmail` is set with Pulumi secret configuration.
-
-`devicePostureRuleId` is plain configuration, but it must refer to the existing Perseus-managed rule and must never be replaced with a freshly created DTXWeb rule as part of this slice.
-
-The Cloudflare API token used for Pulumi should be scoped to the least privilege needed to manage the intended Access application resources. The exact token permission checklist must be verified against the provider/Cloudflare API during implementation and recorded in the runbook rather than guessed in application source.
-
-## Operational Consequences
-
-### Shared posture ownership
-
-Perseus controls trusted-device membership. Changing the Perseus serial list affects DTXWeb because both applications require the same posture rule.
-
-If the posture rule is replaced rather than updated in place, DTXWeb's `devicePostureRuleId` config becomes stale and must be changed before the next DTXWeb deployment.
-
-### Desktop development
-
-Standalone desktop auth against production or pre-production is operator-only. Full local-stack development remains the non-operator path.
-
-### Pre-production automation
-
-This slice adds no non-interactive Access credential. Unattended E2E/CI against the Access-protected pre-production hostname remains unsupported even though Playwright can target another base URL.
-
-### Non-operator logout dead end
-
-The existing production Supabase/UI behavior is unchanged. Signed-in non-operators can become trapped between public `/login` redirect behavior and Access denial at `/app`; clearing production site cookies remains the documented recovery until a separate product/code change is approved.
+If Pulumi state later becomes available after a manual provider-side deletion, reconcile it before any future `pulumi up` (for example through the appropriate refresh/import/recovery procedure) rather than blindly applying stale state.
 
 ## Repository Changes
 
-The implementation is expected to modify only infrastructure/workspace/documentation files:
+Expected implementation changes:
 
-- `package.json` — add `packages/infrastructure` workspace and optional convenience scripts if justified by the implementation plan.
-- `bun.lock` — dependency resolution.
-- `packages/infrastructure/.gitignore` — ignore local stack config/state, dependencies, build output, and env files.
-- `packages/infrastructure/Pulumi.yaml` — Pulumi project metadata.
-- `packages/infrastructure/package.json` — Pulumi/Cloudflare/TypeScript/Vitest package definition.
-- `packages/infrastructure/tsconfig.json`.
-- `packages/infrastructure/vitest.config.ts`.
-- `packages/infrastructure/src/access.ts` — stack definitions, Access builders, and resource factory.
-- `packages/infrastructure/src/access.test.ts` — unit tests.
-- `packages/infrastructure/src/index.ts` — stack selection and resource creation.
-- `packages/infrastructure/README.md` — local config/preview/apply instructions.
-- `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md` — Pulumi-based rollout, verification, and rollback.
-- `docs/superpowers/plans/2026-08-17-cloudflare-zero-trust-web-access.md` — rewritten implementation plan after this spec is approved.
+- `package.json`
+- `bun.lock`
+- `.github/scripts/ci-affected-scope.sh`
+- `.github/scripts/ci-affected-scope.test.sh`
+- `.github/scripts/fixtures/turbo-infrastructure.json`
+- `packages/infrastructure/.gitignore`
+- `packages/infrastructure/Pulumi.yaml`
+- `packages/infrastructure/package.json`
+- `packages/infrastructure/tsconfig.json`
+- `packages/infrastructure/vitest.config.ts`
+- `packages/infrastructure/src/access.ts`
+- `packages/infrastructure/src/access.test.ts`
+- `packages/infrastructure/src/index.ts`
+- `packages/infrastructure/README.md`
+- `docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md`
+- `docs/superpowers/plans/2026-08-17-cloudflare-zero-trust-web-access.md`
 
-No changes are planned under `packages/dtx-web`, `packages/dtx-api`, or `packages/dtx-desktop`.
-
-## Superseded Manual-Configuration Design
-
-The earlier version of this design used two manually configured dashboard applications. That approach is superseded by this Pulumi design.
-
-The approved protection matrix, product consequences, pre-production-first order, verification matrix, and rollback criteria remain valid. What changes is resource ownership and deployment:
-
-- Access applications are created by Pulumi rather than dashboard clicks;
-- the posture rule is referenced by existing Perseus resource ID rather than manually selected as an unmanaged dependency;
-- previews/unit tests provide an additional configuration safety gate;
-- the existing runbook and implementation plan must be rewritten before execution because their dashboard-configuration instructions are obsolete.
+No application/API/desktop source files change.
 
 ## References
 
@@ -489,10 +407,11 @@ Repository precedent:
 - Perseus `packages/infrastructure/src/admin-access.ts`
 - Perseus `packages/infrastructure/src/admin-access.test.ts`
 - Perseus `packages/infrastructure/src/index.ts`
-- Perseus `packages/infrastructure/src/config.ts`
 - Perseus `packages/infrastructure/Pulumi.yaml`
 - Perseus `packages/infrastructure/package.json`
-- Perseus `packages/infrastructure/.gitignore`
-- Perseus `packages/infrastructure/README.md`
+- DTXWeb `.github/scripts/ci-affected-scope.sh`
+- DTXWeb `.github/scripts/ci-affected-scope.test.sh`
+- DTXWeb `.github/workflows/unit-test.yml`
+- DTXWeb `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md`
 
-Cloudflare/Pulumi behavior should be verified against current provider and Cloudflare documentation during implementation if the working Perseus resource shape no longer typechecks against the selected provider version.
+Current Pulumi local-backend and recovery behavior should be verified against Pulumi's official state/backend and destroy-troubleshooting documentation during implementation.

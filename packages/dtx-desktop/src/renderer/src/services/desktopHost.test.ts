@@ -236,11 +236,39 @@ describe('desktopHost', () => {
 		);
 		await expectTauriInvoke(
 			true,
-			() => desktopHost.validateSession({ accessToken: 'a', refreshToken: 'r' }),
+			() =>
+				desktopHost.validateSession({
+					sessionToken: 'opaque-token',
+					user: { id: 'user-1' }
+				}),
 			'validate_session',
 			{
-				sessionData: { accessToken: 'a', refreshToken: 'r' }
+				sessionData: {
+					sessionToken: 'opaque-token',
+					user: { id: 'user-1' }
+				}
 			}
+		);
+		await expectTauriInvoke(
+			{
+				userCode: 'ABCD-EFGH',
+				verificationUri: 'https://dtx.example.com/app/desktop-auth',
+				verificationUriComplete:
+					'https://dtx.example.com/app/desktop-auth?user_code=ABCD-EFGH',
+				expiresAt: '2026-08-20T00:15:00.000Z'
+			},
+			() => desktopHost.beginDeviceAuthorization(),
+			'begin_device_authorization'
+		);
+		await expectTauriInvoke(
+			{ status: 'pending', retryAfterMs: 1000 },
+			() => desktopHost.pollDeviceAuthorization(),
+			'poll_device_authorization'
+		);
+		await expectTauriInvoke(
+			true,
+			() => desktopHost.cancelDeviceAuthorization(),
+			'cancel_device_authorization'
 		);
 		await expectTauriInvoke({}, () => desktopHost.getCurrentSession(), 'get_current_session');
 		await expectTauriInvoke(true, () => desktopHost.logoutSession(), 'logout_session');
@@ -530,39 +558,10 @@ describe('desktopHost', () => {
 		});
 	});
 
-	it('registers and removes magic-link listeners', async () => {
-		const unlisten = vi.fn();
-		vi.mocked(runtime.listen).mockResolvedValue(unlisten);
-		const callback = vi.fn();
-
-		const stop = await desktopHost.onMagicLinkResult(callback);
-		expect(runtime.listen).toHaveBeenCalledWith('magic-link-result', callback);
-
-		stop();
-		expect(unlisten).toHaveBeenCalledTimes(1);
-	});
-
-	it('registers and removes session-refreshed listeners', async () => {
-		const unlisten = vi.fn();
-		vi.mocked(runtime.listen).mockResolvedValue(unlisten);
-		const callback = vi.fn();
-
-		const stop = await desktopHost.onSessionRefreshed(callback);
-		expect(runtime.listen).toHaveBeenCalledWith('session-refreshed', callback);
-
-		stop();
-		expect(unlisten).toHaveBeenCalledTimes(1);
-	});
-
 	it('removes host listeners by event name', () => {
-		desktopHost.removeAllListeners('magic-link-result');
+		desktopHost.removeAllListeners('google-drive-upload-progress');
 
-		expect(runtime.removeAllListeners).toHaveBeenCalledWith('magic-link-result');
-	});
-
-	it('drains pending auth events through Tauri only', async () => {
-		await desktopHost.drainPendingAuthEvents();
-		expect(runtime.invoke).toHaveBeenCalledWith('drain_pending_auth_events');
+		expect(runtime.removeAllListeners).toHaveBeenCalledWith('google-drive-upload-progress');
 	});
 
 	it('delegates getDefaultDownloadsDir to the active runtime', async () => {
@@ -659,9 +658,12 @@ describe('desktopHost', () => {
 		});
 
 		const userCallback = vi.fn();
-		const stop = await desktopHost.onMagicLinkResult(userCallback);
+		const stop = await desktopHost.onGoogleDriveUploadProgress(userCallback);
 
-		expect(tauriListen).toHaveBeenCalledWith('magic-link-result', expect.any(Function));
+		expect(tauriListen).toHaveBeenCalledWith(
+			'google-drive-upload-progress',
+			expect.any(Function)
+		);
 
 		// Verify the payload is unwrapped before reaching the user callback
 		capturedCallback!({ payload: { success: true } });
@@ -677,10 +679,10 @@ describe('desktopHost', () => {
 		const tauriUnlisten = vi.fn();
 		vi.mocked(tauriListen).mockResolvedValue(tauriUnlisten);
 
-		await desktopHost.onMagicLinkResult(vi.fn());
-		await desktopHost.onMagicLinkResult(vi.fn());
+		await desktopHost.onGoogleDriveUploadProgress(vi.fn());
+		await desktopHost.onGoogleDriveUploadProgress(vi.fn());
 
-		desktopHost.removeAllListeners('magic-link-result');
+		desktopHost.removeAllListeners('google-drive-upload-progress');
 
 		// Both registrations should have been cleaned up
 		expect(tauriUnlisten).toHaveBeenCalledTimes(2);
@@ -691,7 +693,7 @@ describe('desktopHost', () => {
 		const tauriUnlisten = vi.fn();
 		vi.mocked(tauriListen).mockResolvedValue(tauriUnlisten);
 
-		await desktopHost.onMagicLinkResult(vi.fn());
+		await desktopHost.onGoogleDriveUploadProgress(vi.fn());
 
 		desktopHost.removeAllListeners();
 		expect(tauriUnlisten).toHaveBeenCalledTimes(1);

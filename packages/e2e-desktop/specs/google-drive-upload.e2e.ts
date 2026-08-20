@@ -113,14 +113,19 @@ const openAuthenticatedLinkedSong = async ({
 	await browser.execute(
 		({ cloudSong, songPath, userId }) => {
 			localStorage.clear();
-			localStorage.setItem('auth_access_token', 'renderer-e2e-access-token');
-			localStorage.setItem('auth_refresh_token', 'renderer-e2e-refresh-token');
 			localStorage.setItem(
-				'auth_user_data',
+				'auth_session',
 				JSON.stringify({
-					id: userId,
-					email: 'desktop-e2e@drumery.invalid',
-					user_metadata: { name: 'Desktop E2E' }
+					sessionToken: 'renderer-e2e-session-token',
+					user: {
+						id: userId,
+						name: 'Desktop E2E',
+						email: 'desktop-e2e@drumery.invalid',
+						emailVerified: true,
+						image: null,
+						createdAt: '',
+						updatedAt: ''
+					}
 				})
 			);
 			localStorage.setItem(

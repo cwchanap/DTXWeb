@@ -13,47 +13,15 @@
 	import { linkingService } from './services/linkingService';
 	import { workspaceService } from './services/workspaceService';
 	import { desktopHost } from './services/desktopHost';
-	import { storeSessionData } from './services/supabaseService';
 	import { onMount, onDestroy } from 'svelte';
 	import { _ } from 'svelte-i18n';
-	import type { Session } from '@supabase/supabase-js';
 	import type { SimfileModel } from '@dtx/common';
-
-	type MagicLinkResult = {
-		success: boolean;
-		error?: string;
-		session?: Session | null;
-		user?: {
-			id: string;
-			email: string | null;
-			user_metadata?: { name?: string };
-		};
-	};
-
-	// Supabase session value emitted by the Rust backend after a token refresh
-	// rotates the access/refresh tokens. Shape mirrors `StoredSession` in
-	// supabaseService so it can be persisted directly.
-	type RefreshedSession = {
-		access_token: string;
-		refresh_token: string;
-		user: unknown;
-	};
 
 	// Routing state
 	let currentRoute = $state('workspace');
 	let routeParams = $state<{ simFileId?: string }>({});
 	let workspaceHydrationSettled = $state(false);
-	const hostUnlisteners: Array<() => void> = [];
 	let destroyed = false;
-
-	const registerHostUnlistener = (unlisten: () => void) => {
-		if (destroyed) {
-			unlisten();
-			return;
-		}
-
-		hostUnlisteners.push(unlisten);
-	};
 
 	// Function to handle route changes
 	function handleRouteChange() {
@@ -125,45 +93,6 @@
 
 		if (destroyed) return;
 
-		// Set up the magic link result handler (new approach)
-		try {
-			const unlistenMagicLinkResult = await desktopHost.onMagicLinkResult<MagicLinkResult>(
-				async (result) => {
-					await authService.handleMagicLinkResult(result);
-				}
-			);
-			registerHostUnlistener(unlistenMagicLinkResult);
-		} catch (error) {
-			console.error('Failed to register magic link result handler:', error);
-		}
-
-		// Persist rotated tokens whenever the Rust backend refreshes the
-		// session (proactive near-expiry refresh during long sessions, or the
-		// startup validation refresh). Without this, localStorage keeps the
-		// now-revoked refresh token and the next launch logs the user out.
-		if (destroyed) return;
-		try {
-			const unlistenSessionRefreshed = await desktopHost.onSessionRefreshed<RefreshedSession>(
-				(session) => {
-					try {
-						storeSessionData(session);
-					} catch (error) {
-						console.error('Failed to persist refreshed session:', error);
-					}
-				}
-			);
-			registerHostUnlistener(unlistenSessionRefreshed);
-		} catch (error) {
-			console.error('Failed to register session refreshed handler:', error);
-		}
-
-		if (destroyed) return;
-		try {
-			await desktopHost.drainPendingAuthEvents();
-		} catch (error) {
-			console.error('Failed to drain pending auth events:', error);
-		}
-
 		// Try to restore session
 		if (destroyed) return;
 		await authService.restoreSession();
@@ -233,9 +162,6 @@
 	onDestroy(() => {
 		destroyed = true;
 		workspaceService.disposeOperations();
-		for (const unlisten of hostUnlisteners.splice(0)) {
-			unlisten();
-		}
 		window.removeEventListener('hashchange', handleRouteChange);
 	});
 </script>

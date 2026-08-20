@@ -107,7 +107,7 @@ fn session_data_accepts_only_the_better_auth_shape() {
 fn external_url_allowlist_rejects_non_web_schemes() {
     assert!(ensure_allowed_external_url("https://auth.example.test/device").is_ok());
     assert!(ensure_allowed_external_url("http://localhost:5173/device").is_ok());
-    assert!(ensure_allowed_external_url("dtx://auth-callback").is_err());
+    assert!(ensure_allowed_external_url("ftp://auth.example.test/device").is_err());
     assert!(ensure_allowed_external_url("file:///tmp/auth").is_err());
 }
 

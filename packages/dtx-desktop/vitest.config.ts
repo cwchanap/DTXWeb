@@ -43,7 +43,6 @@ export default defineConfig({
 		},
 		env: {
 			// Set test environment variables
-			VITE_DTX_SERVER_URL: 'http://localhost:5173',
 			VITE_DTX_API_URL: 'http://localhost:5173',
 			PUBLIC_SUPABASE_URL: 'http://localhost:5173',
 			PUBLIC_SUPABASE_ANON_KEY: 'test_anon_key',

@@ -402,3 +402,36 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Deferred Minor: split the device-auth timeout test so a delayed mock proves
   `Timeout` independently from a refused connection proving `Network`.
 - Task 10 is complete and ready for Task 11.
+
+## Task 11
+
+- Implementer: `/root/d1_task11_renderer_auth_retry` (recovered the shared
+  worktree after an interrupted renderer attempt; preserved the staged
+  `supabaseService` to `sessionStorage` rename).
+- CodeGraph was run before source inspection for the renderer host, editor,
+  auth-store, native session, and API session paths.
+- RED: the recovered focused matrix failed before the remaining production
+  edits because `App.svelte` still imported the removed `supabaseService` and
+  registered removed auth listeners, while topology still expected callback
+  port variables. The three other focused files passed 71 tests.
+- Implementation: renderer Device Authorization start/open/poll/persist,
+  cancellation/retry, terminal errors, browser fallback, neutral session
+  storage, tri-state restore, logout cleanup, App lifecycle cleanup, native host
+  DTO calls, Better Auth-shaped Google Drive/crash-recovery seeds, and callback
+  configuration removal. The web local-dev callback variable was removed after
+  the source search found it outside the desktop package; no API test-auth
+  endpoint was added.
+- GREEN: focused renderer/storage/host/App/topology matrix — 5 files, 91 tests;
+  full desktop suite — 58 files, 998 tests; desktop svelte-check — 0 errors,
+  0 warnings; E2E typecheck; standalone/crash tests — 29 passed; generated
+  native exports — 42 passed; focused Prettier/ESLint, Rust fmt, and diff checks
+  passed.
+- Svelte autofixer: bounded `@sveltejs/mcp` attempt produced no output and was
+  stopped; svelte-check was used as the available Svelte gate.
+- The requested Rust `cargo test --all-features` command is blocked before
+  compilation by the existing Google Drive feature guard; supported feature
+  modes remain the Task 10 green evidence. No build, deployment, or Task 12
+  work was performed.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-11-report.md`.
+- Task 11: source, tests, report, and ledger are ready for the scoped
+  conventional commit.

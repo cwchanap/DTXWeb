@@ -1,21 +1,20 @@
 // See https://kit.svelte.dev/docs/types#app
 // for information about these interfaces
 
-import type { Session, SupabaseClient, User } from '@supabase/supabase-js';
-import type { Database } from '@dtx/common'; // import shared types
-import { Fetcher } from '@cloudflare/workers-types';
+import type { Fetcher } from '@cloudflare/workers-types';
+
+import type { AuthSession, AuthUser } from '$lib/auth/session';
 
 declare global {
 	namespace App {
 		// interface Error {}
 		interface Locals {
-			supabase: SupabaseClient<Database>;
-			safeGetSession: () => Promise<{ session: Session | null; user: User | null }>;
-			session: Session | null;
-			user: User | null;
+			session: AuthSession | null;
+			user: AuthUser | null;
 		}
 		interface PageData {
-			session: Session | null;
+			session: AuthSession | null;
+			user: AuthUser | null;
 		}
 		// interface PageState {}
 		interface Platform {

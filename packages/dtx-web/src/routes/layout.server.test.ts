@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { load } from './+layout.server';
 
@@ -15,46 +15,21 @@ const requireLayoutLoadResult = (
 };
 
 describe('+layout.server load', () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
+	it('returns neutral session and user data from locals', async () => {
+		const session = { id: 'session-1' };
+		const user = { id: 'user-1' };
+		const result = requireLayoutLoadResult(
+			await load({ locals: { session, user } } as unknown as LayoutServerLoadArg)
+		);
+
+		expect(result).toEqual({ session, user });
 	});
 
-	afterEach(() => {
-		vi.restoreAllMocks();
-	});
+	it('returns null session and user when not authenticated', async () => {
+		const result = requireLayoutLoadResult(
+			await load({ locals: { session: null, user: null } } as unknown as LayoutServerLoadArg)
+		);
 
-	it('returns session and cookies from safeGetSession', async () => {
-		const mockSession = { access_token: 'tok', user: { id: 'u1' } };
-		const mockCookies = [{ name: 'sb-token', value: 'abc' }];
-
-		const event = {
-			locals: {
-				safeGetSession: vi.fn().mockResolvedValue({ session: mockSession })
-			},
-			cookies: {
-				getAll: vi.fn().mockReturnValue(mockCookies)
-			}
-		};
-
-		const result = requireLayoutLoadResult(await load(event as unknown as LayoutServerLoadArg));
-
-		expect(result.session).toEqual(mockSession);
-		expect(result.cookies).toEqual(mockCookies);
-	});
-
-	it('returns null session when not authenticated', async () => {
-		const event = {
-			locals: {
-				safeGetSession: vi.fn().mockResolvedValue({ session: null })
-			},
-			cookies: {
-				getAll: vi.fn().mockReturnValue([])
-			}
-		};
-
-		const result = requireLayoutLoadResult(await load(event as unknown as LayoutServerLoadArg));
-
-		expect(result.session).toBeNull();
-		expect(result.cookies).toEqual([]);
+		expect(result).toEqual({ session: null, user: null });
 	});
 });

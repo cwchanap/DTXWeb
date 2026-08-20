@@ -317,3 +317,27 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Task 8: minor (deferred): no-session service-binding test asserts Authorization absence but not explicit Cookie and Origin absence; production code already omits both. Final review must triage.
 - Review: spec compliant; task quality acceptable; no Critical or Important findings.
 - Task 8: complete (commits `cac6e39..ec70b4b`, review clean with 1 deferred minor).
+
+## Task 9
+
+- Implementer: `/root/d1_task9_desktop_auth_page`.
+- CodeGraph was run once for the `/app` guard/layout path; direct source
+  inspection supplied the relevant guard flow after the result was not useful.
+- RED: the new page/layout matrix failed before implementation because
+  `packages/dtx-web/src/routes/(app)/app/desktop-auth/+page.svelte` did not yet
+  exist; the baseline layout tests passed 3/3.
+- Implementation: added the authenticated `/app/desktop-auth` page, exact
+  Better Auth 1.6.30 `authClient.device`, `.approve`, and `.deny` calls,
+  normalized code handling, prefill/manual entry, invalid/expired errors,
+  explicit approve/deny terminal states, fixed `dtx-desktop` identity, and
+  in-flight double-submit protection. Added the `/app` guard return-through-
+  login regression and the shared desktop client-ID constant.
+- GREEN: focused page/layout matrix — 2 files, 11 tests; full web suite — 65
+  files, 875 tests; types-only sync and `svelte-check` — 0 errors, 4 existing
+  CSS warnings; focused Prettier/ESLint and `git diff --check` passed.
+- Svelte autofixer: bounded `@sveltejs/mcp` attempt produced no output and
+  was stopped after 30 seconds; `svelte-check` was the available Svelte gate.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-9-report.md`.
+- No build, deployment, native desktop cutover, or Task 10+ work was performed.
+- Task 9: source, tests, report, and ledger are ready for the scoped
+  conventional commit.

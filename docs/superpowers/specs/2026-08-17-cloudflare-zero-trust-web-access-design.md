@@ -6,9 +6,9 @@ DTXWeb will manage Cloudflare Zero Trust Access with a small Pulumi workspace th
 
 One Pulumi program serves exactly two stacks:
 
-| Stack | Application | Code-owned protection scope |
-| --- | --- | --- |
-| `pre-prod` | `DTXWeb Pre-prod` | entire `pre-prod.dtx.hapadona.com` hostname |
+| Stack        | Application             | Code-owned protection scope                              |
+| ------------ | ----------------------- | -------------------------------------------------------- |
+| `pre-prod`   | `DTXWeb Pre-prod`       | entire `pre-prod.dtx.hapadona.com` hostname              |
 | `production` | `DTXWeb Production App` | `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*` only |
 
 Production host/path scope is not Pulumi config. This prevents a stack-config typo from broadening Access over the public production site.

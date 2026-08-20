@@ -1,0 +1,54 @@
+{
+	"users": [
+		{
+			"id": "00000000-0000-0000-0000-000000000001",
+			"email": "o'hara@example.test",
+			"user_metadata": {
+				"full_name": "O'Hara Fixture"
+			},
+			"email_confirmed_at": "2025-01-02T03:04:05.000Z",
+			"created_at": "2025-01-01T03:04:05.000Z",
+			"updated_at": "2025-01-03T03:04:05.000Z",
+			"identities": [
+				{
+					"provider": "email",
+					"identity_id": "00000000-0000-0000-0000-000000000001",
+					"identity_data": {
+						"email": "o'hara@example.test"
+					}
+				},
+				{
+					"provider": "google",
+					"identity_id": "google-fixture-sub-001",
+					"identity_data": {
+						"sub": "google-fixture-sub-001",
+						"email": "o'hara@example.test"
+					}
+				}
+			]
+		},
+		{
+			"id": "00000000-0000-0000-0000-000000000002",
+			"email": "credential@example.test",
+			"user_metadata": {
+				"name": "Credential Fixture"
+			},
+			"email_confirmed_at": null,
+			"created_at": "2025-02-01T03:04:05.000Z",
+			"updated_at": "2025-02-02T03:04:05.000Z",
+			"identities": [
+				{
+					"provider": "email",
+					"identity_id": "00000000-0000-0000-0000-000000000002",
+					"identity_data": {
+						"email": "credential@example.test"
+					}
+				}
+			]
+		}
+	],
+	"applicationOwnerIds": [
+		"00000000-0000-0000-0000-000000000001",
+		"00000000-0000-0000-0000-000000000002"
+	]
+}

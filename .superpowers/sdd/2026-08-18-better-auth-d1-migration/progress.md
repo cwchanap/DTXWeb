@@ -455,3 +455,38 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Deferred Minor: make the `desktopHost.test.ts` seeded `DesktopAuthUser`
   fixture use the full generated contract instead of a partial user object.
 - Task 11 is complete and ready for Task 12.
+
+## Task 12
+
+- Implementer: `/root/d1_task12_e2e_fix`.
+- Read the Task 12 brief, migration plan/spec, repository instructions, and
+  the TDD, systematic-debugging, and Supabase skills before editing. The
+  Supabase remote-doc step was skipped because this task explicitly forbids
+  remote calls; local source and local D1 evidence were used instead.
+- Existing Task 12 changes add the local-only ID-preserving importer and tests,
+  sanitized fixture, Better Auth D1 E2E seed, Playwright/CI retargeting, and
+  remove the Supabase local user creator.
+- RED: after adding the local SSR regression first,
+  `rtk bun run --filter=dtx-web test -- src/lib/auth/session.test.ts` failed
+  1/7 because an emulated `platform.env.API` was called despite
+  `PUBLIC_DTX_API_URL=http://localhost:8787`; the other six session tests
+  passed.
+- Root cause: adapter-cloudflare's dev platform proxy exposes an emulated
+  `API` binding even when browser auth and `PUBLIC_DTX_API_URL` target the
+  local API, so SSR session lookup selected a different D1/session store.
+- Fix: `packages/dtx-web/src/lib/auth/session.ts` now bypasses the service
+  binding only for `localhost`, `127.0.0.1`, and `[::1]`, using the public
+  local `event.fetch`; non-loopback URLs retain service-binding preference.
+  The test covers local routing and forwarded cookies without changing
+  cookie/error semantics.
+- GREEN: focused web session tests — 1 file, 7 tests; importer tests — 1
+  file, 5 tests; `bun run --filter=dtx-e2e-web check` — pass; local
+  `prepare-stack.ts` — all 8 migrations, Better Auth/application/R2 seed;
+  local D1 query — fixed UUID/email present; Playwright `setup` project — 1
+  test passed in 24.3s, including `/login` to `/app` navigation.
+- Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-12-report.md`.
+- The first sandboxed local preparation was blocked by Wrangler log/listener
+  permissions; the same local-only command passed with host-level permission.
+  No remote calls were made.
+- Task 12: source, tests, report, seed/import tooling, and ledger are ready
+  for the scoped conventional commit.

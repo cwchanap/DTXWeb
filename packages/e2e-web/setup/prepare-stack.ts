@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { TEST_USER_ID, CHART_B_ID, isAuthConfigured } from '../test-config';
+import { createBetterAuthSeedSql } from './seed-better-auth-user';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const repoRoot = join(here, '..', '..', '..');
@@ -64,7 +65,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 if (!UUID_RE.test(ownerId)) {
 	throw new Error(
 		`[prepare-stack] ownerId ("${ownerId}") is not a valid UUID. ` +
-			'Set E2E_USER_ID in your environment.'
+			'Check the fixed Better Auth test UUID in test-config.ts.'
 	);
 }
 
@@ -85,7 +86,31 @@ migrations.forEach((migration, i) => {
 	]);
 });
 
-// 2. Seed rows (idempotent: the seed deletes ids 1001/1002 first).
+// 2. Seed the Better Auth user into this same freshly migrated D1. The
+//    generated replacement password is written only to a short-lived local
+//    SQL file and is never sent to a remote service.
+if (isAuthConfigured) {
+	const authSeedSql = await createBetterAuthSeedSql();
+	const tmpAuthSeedDir = mkdtempSync(join(tmpdir(), 'e2e-auth-seed-'));
+	const tmpAuthSeed = join(tmpAuthSeedDir, 'seed.sql');
+	try {
+		writeFileSync(tmpAuthSeed, `${authSeedSql}\n`);
+		wrangler('seed Better Auth user', [
+			'd1',
+			'execute',
+			D1_NAME,
+			'--local',
+			'--persist-to',
+			persist,
+			'--file',
+			tmpAuthSeed
+		]);
+	} finally {
+		rmSync(tmpAuthSeedDir, { recursive: true, force: true });
+	}
+}
+
+// 3. Seed application rows (idempotent: the seed deletes ids 1001/1002 first).
 const seedSql = readFileSync(seedFile, 'utf8').replaceAll('__TEST_USER_ID__', ownerId);
 const tmpSeedDir = mkdtempSync(join(tmpdir(), 'e2e-seed-'));
 const tmpSeed = join(tmpSeedDir, 'seed.sql');
@@ -106,7 +131,7 @@ try {
 	rmSync(tmpSeedDir, { recursive: true, force: true });
 }
 
-// 3. Put the R2 object so chart B reports has_uploaded_files=true and download has content.
+// 4. Put the R2 object so chart B reports has_uploaded_files=true and download has content.
 wrangler('put R2 object', [
 	'r2',
 	'object',

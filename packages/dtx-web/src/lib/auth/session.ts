@@ -34,6 +34,15 @@ type MultiCookieHeaders = Headers & {
 const getSetCookies = (headers: Headers): string[] =>
 	(headers as MultiCookieHeaders).getSetCookie?.() ?? [];
 
+const isLoopbackApiUrl = (value: string): boolean => {
+	try {
+		const hostname = new URL(value).hostname;
+		return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]';
+	} catch {
+		return false;
+	}
+};
+
 const buildSessionRequest = (event: AuthSessionEvent, url: string): Request => {
 	const headers = new Headers();
 	const cookie = event.request.headers.get('cookie');
@@ -42,7 +51,7 @@ const buildSessionRequest = (event: AuthSessionEvent, url: string): Request => {
 };
 
 const fetchSessionResponse = async (event: AuthSessionEvent): Promise<Response> => {
-	const api = event.platform?.env?.API;
+	const api = isLoopbackApiUrl(PUBLIC_DTX_API_URL) ? undefined : event.platform?.env?.API;
 	if (api) {
 		const url = new URL('/api/auth/get-session', event.url).toString();
 		return (await api.fetch(

@@ -1,9 +1,15 @@
 import { test as setup, expect } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { TEST_USER_EMAIL, TEST_USER_PASSWORD } from './test-config';
+import { TEST_USER_EMAIL, TEST_USER_PASSWORD, isAuthConfigured } from './test-config';
 
 const authFile = '.auth/user.json';
+
+if (!isAuthConfigured) {
+	throw new Error(
+		'Better Auth e2e setup requires E2E_USER_EMAIL and E2E_USER_PASSWORD to be configured'
+	);
+}
 
 setup('authenticate test user', async ({ page }) => {
 	await page.goto('/login');

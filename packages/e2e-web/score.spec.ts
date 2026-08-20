@@ -15,71 +15,18 @@ test.describe.configure({ mode: 'serial', retries: 0 });
 const API_URL = `http://localhost:${DTX_API_LOCAL_PORT}/graphql`;
 
 /**
- * Extract the Supabase access token from the browser's session cookies.
- * The @supabase/ssr browser client stores the session in a cookie named
- * `sb-<project-ref>-auth-token`. Encoding varies by @supabase/ssr version
- * (URL-encoded JSON, plain base64, or base64url with a "base64-" prefix), so
- * each form is tried in order.
- */
-const getAccessToken = async (page: Page): Promise<string> => {
-	const cookies = await page.context().cookies();
-	// @supabase/ssr stores the session as a single cookie when it fits, or as
-	// chunked cookies (`sb-...-auth-token.0`, `.1`, ...) when the value exceeds
-	// the ~3180-byte chunk limit. Prefer the single cookie; otherwise reassemble
-	// chunks in index order.
-	const single = cookies.find((c) => /^sb-.+-auth-token$/.test(c.name));
-	let rawValue = single?.value;
-	if (!rawValue) {
-		const chunks = cookies
-			.filter((c) => /^sb-.+-auth-token\.\d+$/.test(c.name))
-			.sort((a, b) => {
-				const aIndex = Number(a.name.slice(a.name.lastIndexOf('.') + 1));
-				const bIndex = Number(b.name.slice(b.name.lastIndexOf('.') + 1));
-				return aIndex - bIndex;
-			});
-		if (chunks.length === 0) {
-			throw new Error(
-				'No Supabase auth cookie found. Ensure storageState has a valid session.'
-			);
-		}
-		rawValue = chunks.map((c) => c.value).join('');
-	}
-	let parsed: { access_token?: string };
-	try {
-		parsed = JSON.parse(decodeURIComponent(rawValue));
-	} catch {
-		try {
-			parsed = JSON.parse(atob(rawValue));
-		} catch {
-			// base64url ("-" / "_" alphabet) with a "base64-" prefix, as used
-			// by @supabase/ssr 0.5+. Strip the prefix and remap to the base64
-			// alphabet that atob understands before decoding.
-			const raw = rawValue.startsWith('base64-')
-				? rawValue.slice('base64-'.length)
-				: rawValue;
-			const remapped = raw.replace(/-/g, '+').replace(/_/g, '/');
-			parsed = JSON.parse(atob(remapped));
-		}
-	}
-	if (!parsed.access_token) {
-		throw new Error('Supabase auth cookie has no access_token');
-	}
-	return parsed.access_token;
-};
-
-/**
- * Make an authenticated GraphQL request to the local dtx-api worker.
+ * Make an authenticated GraphQL request to the local dtx-api worker. The
+ * Playwright request context shares the browser context's Better Auth cookies,
+ * so this exercises the same cookie transport as the web client.
  */
 const graphqlRequest = async <T>(
 	page: Page,
-	token: string,
 	query: string,
 	variables?: Record<string, unknown>
 ): Promise<T> => {
 	const res = await page.request.post(API_URL, {
 		headers: {
-			'content-type': 'application/json',
-			authorization: `Bearer ${token}`
+			'content-type': 'application/json'
 		},
 		data: { query, variables }
 	});
@@ -206,11 +153,9 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 	test('upload scores for a seeded chart and verify they appear in myScoredSimfiles', async ({
 		page
 	}) => {
-		// Navigate to /app so the Supabase session cookies are loaded.
+		// Navigate to /app so the Better Auth session cookies are loaded.
 		await page.goto('/app');
 		await page.waitForSelector('html[data-e2e-hydrated="true"]');
-
-		const token = await getAccessToken(page);
 
 		// 1. Query the seeded simfile to get its dtx_files id (the chartId for
 		//    uploadScores). CHART_B_ID (1002) is published with one BASIC dtx_file.
@@ -232,7 +177,7 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 				title: string;
 				dtxFiles: { id: string; label: string; level: number }[];
 			};
-		}>(page, token, simfileQuery, { id: String(CHART_B_ID) });
+		}>(page, simfileQuery, { id: String(CHART_B_ID) });
 
 		expect(simfileData.simfile).not.toBeNull();
 		expect(simfileData.simfile.dtxFiles.length).toBeGreaterThan(0);
@@ -261,7 +206,7 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 				insertedScores: number;
 				skipped: { chartId: string; reason: string }[];
 			};
-		}>(page, token, uploadMutation, { input: uploadInput });
+		}>(page, uploadMutation, { input: uploadInput });
 
 		expect(uploadData.uploadScores.updatedCharts).toBe(1);
 		expect(uploadData.uploadScores.insertedScores).toBe(3);
@@ -344,7 +289,7 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 					}[];
 				}[];
 			};
-		}>(page, token, scoredQuery);
+		}>(page, scoredQuery);
 
 		expect(scoredData.myScoredSimfiles.count).toBeGreaterThanOrEqual(1);
 		const chart = scoredData.myScoredSimfiles.data.find((s) => s.id === String(CHART_B_ID));
@@ -388,11 +333,9 @@ test.describe('score upload round-trip (uploadScores → myScoredSimfiles)', () 
 
 test.describe('Score page UI (/app/score)', () => {
 	test('renders uploaded scores in the score page UI', async ({ page }) => {
-		// Navigate to /app so the Supabase session cookies are loaded.
+		// Navigate to /app so the Better Auth session cookies are loaded.
 		await page.goto('/app');
 		await page.waitForSelector('html[data-e2e-hydrated="true"]');
-
-		const token = await getAccessToken(page);
 
 		// 1. Query the seeded simfile to get its dtx_files id (the chartId).
 		const simfileQuery = `
@@ -404,7 +347,7 @@ test.describe('Score page UI (/app/score)', () => {
 			}`;
 		const simfileData = await graphqlRequest<{
 			simfile: { dtxFiles: { id: string; label: string; level: number }[] };
-		}>(page, token, simfileQuery, { id: String(CHART_B_ID) });
+		}>(page, simfileQuery, { id: String(CHART_B_ID) });
 		expect(simfileData.simfile.dtxFiles.length).toBeGreaterThan(0);
 		const chartId = simfileData.simfile.dtxFiles[0].id;
 		const chartLabel = simfileData.simfile.dtxFiles[0].label;
@@ -420,7 +363,7 @@ test.describe('Score page UI (/app/score)', () => {
 			}`;
 		const uploadData = await graphqlRequest<{
 			uploadScores: { updatedCharts: number; skipped: { chartId: string; reason: string }[] };
-		}>(page, token, uploadMutation, { input: scorePagePayload(chartId) });
+		}>(page, uploadMutation, { input: scorePagePayload(chartId) });
 		expect(uploadData.uploadScores.updatedCharts).toBe(1);
 		expect(uploadData.uploadScores.skipped).toEqual([]);
 

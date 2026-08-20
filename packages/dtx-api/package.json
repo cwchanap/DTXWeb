@@ -19,6 +19,7 @@
 		"check": "tsc --noEmit",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
 		"gen-schema": "bun run src/scripts/gen-schema.ts",
+		"auth:migrate": "bun run src/scripts/migrate-supabase-auth.ts",
 		"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
 		"auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",
 		"auth:schema:check": "bun run auth:schema:generate && prettier --write src/auth/schema.ts && git diff --exit-code -- src/auth/schema.ts"

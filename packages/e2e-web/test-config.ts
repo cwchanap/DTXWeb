@@ -26,6 +26,7 @@ export const isAuthConfigured = !PLACEHOLDER(TEST_USER_EMAIL) && !PLACEHOLDER(TE
 /** Fixed seed chart ids (see plan's test-data table). */
 export const CHART_A_ID: number = 1001; // owned by test user, unpublished — lifecycle journey
 export const CHART_B_ID: number = 1002; // published, has R2 file — download journey
+export const CHART_C_ID: number = 1003; // owned by test user, unpublished — auth download proof
 export const CHART_A_TITLE: string = 'E2E Lifecycle Chart';
 export const CHART_B_TITLE: string = 'E2E Download Chart';
 

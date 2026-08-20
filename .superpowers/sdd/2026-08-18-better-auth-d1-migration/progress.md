@@ -631,3 +631,18 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   typechecks, 29 desktop support tests, lint, Prettier, Rust format, and diff
   checks passed. The full desktop executable remains unavailable because its
   target-e2e binary is absent.
+
+## Task 14 scoped re-review fixes
+
+- RED: changed the owner-only download proof to dedicated private chart C
+  before seeding it; focused Playwright failed because chart C had no fixture.
+- Fix: seeded chart C (`1003`) as a separate unpublished owner chart with its
+  own D1 file row and R2 object. The runbook importer output is now
+  `../../tmp/auth-migration/better-auth-import.sql` for the filtered package
+  cwd, and the pre-production secret flow is consistently explicit legacy
+  `wrangler secret put --env pre-prod` with immediate-deploy warning.
+- GREEN: focused auth lifecycle passed 7/7 with `--workers=2`; focused chart-C
+  download passed 2/2 with `--workers=2`; the documented importer command
+  reached input-file validation (`ENOENT`) using protected nonexistent paths;
+  Wrangler help confirmed the documented secret flags. The desktop
+  native-clearance assertion Minor is deferred and recorded in the report.

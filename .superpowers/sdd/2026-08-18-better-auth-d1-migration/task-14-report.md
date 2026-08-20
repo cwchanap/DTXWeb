@@ -168,3 +168,37 @@ executable suite remains unrun
 because `packages/dtx-desktop/src-tauri/target-e2e/debug/dtx-desktop` is absent;
 that build is potentially longer and hardware-bound. No remote operation or
 Task 15 work was performed.
+
+## Task 14 scoped re-review fixes
+
+The scoped re-review found two Important issues and one easy runbook Minor;
+these were addressed without serializing the unrelated web suite:
+
+- Download isolation: the owner-only download proof originally used chart A,
+  which is deleted by the existing chart-A lifecycle test. The RED-first change
+  introduced a dedicated private chart C (`1003`); before its fixture was
+  seeded, the focused authenticated download assertion failed at the expected
+  download-success check. Chart C now has its own unpublished D1 row, file row,
+  and local R2 object. The full focused auth lifecycle file passed 7/7 with
+  `--workers=2`, including chart-C authenticated success and anonymous 401
+  rejection while chart A was deleted by its separate test. No suite-wide
+  serialization was added.
+- Import output path: the runbook now documents
+  `../../tmp/auth-migration/better-auth-import.sql`, accounting for the
+  `packages/dtx-api` working directory used by `bun run --filter=dtx-api`.
+  Executing the documented command with nonexistent protected input paths
+  reached `parseJsonFile` and returned the expected input `ENOENT`, proving the
+  positional input, required owner flag, and output path passed CLI validation.
+- Secret-flow Minor: the runbook now uses one coherent pre-production flow,
+  explicit legacy `wrangler secret put ... --env pre-prod`, with the warning
+  that each interactive update immediately creates and deploys a Worker
+  version. The version-staging alternative was removed rather than documented
+  alongside a contradictory immediate-deploy flow. The desktop
+  native-clearance assertion Minor is deferred: the existing logout coverage
+  verifies renderer cleanup, and the debug-only afterEach restore protects the
+  runner-wide native seed without adding a new runner seam in this scoped fix.
+
+Re-review verification: focused auth lifecycle Playwright 7/7 with two
+workers; focused owner-only download setup plus test 2/2 with two workers;
+Wrangler 4.123.0 command help confirmed `--config` and `--env` on `secret put`;
+no remote operation was run.

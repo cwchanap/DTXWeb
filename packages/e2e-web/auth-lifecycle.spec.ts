@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import {
 	CHART_A_ID,
 	CHART_A_TITLE,
+	CHART_C_ID,
 	DTX_API_LOCAL_PORT,
 	TEST_USER_ID,
 	TEST_USER_EMAIL,
@@ -17,8 +18,8 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 	test.describe.configure({ retries: 0 });
 	//
 	// NOTE: the Actions menu uses Skeleton's <Popover>, which renders its content in a body
-	// portal and only while open. Both seeded charts (1001 + 1002) are owned by the test user,
-	// so /app/chart shows two cards — but only the OPEN card's menu items exist in the DOM.
+	// portal and only while open. All seeded charts are owned by the test user,
+	// so /app/chart shows three cards — but only the OPEN card's menu items exist in the DOM.
 	// That is why the Edit/Delete menu items are selected page-level (NOT scoped to the card):
 	// scoping to the card would miss the portaled content, and page-level still matches exactly
 	// one element because closed popovers render nothing.
@@ -27,7 +28,7 @@ test.describe('authenticated chart lifecycle (dual-path)', () => {
 		page,
 		browser
 	}) => {
-		const downloadUrl = `http://localhost:${DTX_API_LOCAL_PORT}/downloads/${CHART_A_ID}`;
+		const downloadUrl = `http://localhost:${DTX_API_LOCAL_PORT}/downloads/${CHART_C_ID}`;
 		const authenticatedDownload = await page.request.get(downloadUrl, {
 			headers: { 'x-forwarded-for': '127.0.0.1' }
 		});

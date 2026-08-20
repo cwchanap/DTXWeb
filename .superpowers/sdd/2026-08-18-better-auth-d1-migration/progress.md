@@ -149,3 +149,10 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - `bun run packages/e2e-web/setup/prepare-stack.ts`: pass; all eight numbered D1 migrations applied to fresh local state, seed data loaded, and the R2 fixture uploaded.
 - `bun run --filter=dtx-web check` with inert required public env values: the exact pre-existing baseline remains — one `hooks.server.ts` Supabase `setAll` type mismatch and four CSS warnings; no Foundation-slice regression appeared.
 - Local Foundation implementation and reviews are complete. Stop at the plan's external gate: publish/record the pinned `1.6.30` version, deploy PR A to pre-production, prove Worker multi-cookie behavior and the pre-production auth endpoint, then merge/rebase before starting Tasks 4-15.
+
+## Authorized direct pre-production continuation
+
+- User authorized skipping PR publication and proceeding directly to pre-production deployment and Tasks 4-15 on the stacked branch.
+- Current-main check: after deepening the shallow clone, `origin/main` (`c8546405`) is the branch merge base and `HEAD..origin/main` is empty; no rebase is required before deployment.
+- Wrangler preflight: authenticated to the expected Cloudflare account with Wrangler `4.123.0`; pre-production D1 reports migrations `0003` through `0008` pending.
+- Security prerequisite blocker: pre-production has only `SUPABASE_SERVICE_ROLE_KEY`; `BETTER_AUTH_SECRET` and `GOOGLE_AUTH_CLIENT_SECRET` secrets are absent, and `GOOGLE_AUTH_CLIENT_ID` is absent from Wrangler vars/local files/process environment. No migration or deployment was performed with incomplete auth configuration.

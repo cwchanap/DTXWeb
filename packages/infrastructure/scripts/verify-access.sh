@@ -4,6 +4,7 @@ set -euo pipefail
 CLOUDFLARE_LOCATION_RE='^https://([[:alnum:]-]+\.)+cloudflareaccess\.com([/:?#]|$)'
 
 HTTP_HEADERS=''
+HTTP_FINAL_HEADERS=''
 HTTP_STATUS_LINE=''
 HTTP_STATUS=''
 HTTP_LOCATION=''
@@ -19,8 +20,26 @@ http_headers() {
 		return 1
 	fi
 
-	HTTP_HEADERS="$headers"
-	HTTP_STATUS_LINE="$(printf '%s\n' "$HTTP_HEADERS" | sed 's/\r$//' | grep -Ei '^HTTP/[0-9]+(\.[0-9]+)?[[:space:]]+[0-9]{3}([[:space:]]|$)' | tail -n 1 || true)"
+	HTTP_HEADERS="$(printf '%s\n' "$headers" | sed 's/\r$//')"
+	HTTP_FINAL_HEADERS="$(printf '%s\n' "$HTTP_HEADERS" | awk '
+		/^HTTP\/[0-9]/ {
+			if (in_block) {
+				final = block
+			}
+			block = $0 ORS
+			in_block = 1
+			next
+		}
+		in_block {
+			block = block $0 ORS
+		}
+		END {
+			if (in_block) {
+				final = block
+			}
+			printf "%s", final
+		}')"
+	HTTP_STATUS_LINE="$(printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Ei '^HTTP/[0-9]+(\.[0-9]+)?[[:space:]]+[0-9]{3}([[:space:]]|$)' | tail -n 1 || true)"
 	if [[ -z "$HTTP_STATUS_LINE" ]]; then
 		printf 'response contained no HTTP status for %s\n' "$url" >&2
 		return 1
@@ -28,15 +47,15 @@ http_headers() {
 
 	HTTP_STATUS="${HTTP_STATUS_LINE#* }"
 	HTTP_STATUS="${HTTP_STATUS%% *}"
-	HTTP_LOCATION="$(printf '%s\n' "$HTTP_HEADERS" | sed 's/\r$//' | grep -Ei '^Location:[[:space:]]*' | tail -n 1 || true)"
+	HTTP_LOCATION="$(printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Ei '^Location:[[:space:]]*' | tail -n 1 || true)"
 	HTTP_LOCATION="${HTTP_LOCATION#*:}"
 	HTTP_LOCATION="${HTTP_LOCATION#${HTTP_LOCATION%%[![:space:]]*}}"
 	HTTP_HAS_ACCESS_AUD=0
 	HTTP_HAS_ACCESS_DOMAIN=0
-	if printf '%s\n' "$HTTP_HEADERS" | sed 's/\r$//' | grep -Eiq '^cf-access-aud:'; then
+	if printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Eiq '^cf-access-aud:'; then
 		HTTP_HAS_ACCESS_AUD=1
 	fi
-	if printf '%s\n' "$HTTP_HEADERS" | sed 's/\r$//' | grep -Eiq '^cf-access-domain:'; then
+	if printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Eiq '^cf-access-domain:'; then
 		HTTP_HAS_ACCESS_DOMAIN=1
 	fi
 }

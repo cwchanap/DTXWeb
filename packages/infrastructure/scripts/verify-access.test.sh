@@ -51,6 +51,34 @@ Set-Cookie: CF_Authorization=super-secret-cookie
 RESPONSE
 }
 
+emit_multi_block_final_403_without_access() {
+	cat <<'RESPONSE'
+HTTP/2 103
+Location: https://login.cloudflareaccess.com/stale
+Cf-Access-Aud: super-secret-audience
+cf-ACCESS-DOMAIN: super-secret-domain
+Set-Cookie: CF_Authorization=super-secret-cookie
+
+HTTP/2 403
+Content-Type: text/plain
+
+RESPONSE
+}
+
+emit_multi_block_final_303_without_location() {
+	cat <<'RESPONSE'
+HTTP/2 103
+Location: https://login.cloudflareaccess.com/stale
+Cf-Access-Aud: super-secret-audience
+cf-ACCESS-DOMAIN: super-secret-domain
+Set-Cookie: CF_Authorization=super-secret-cookie
+
+HTTP/2 303
+Content-Type: text/html
+
+RESPONSE
+}
+
 emit_public_ok() {
 	cat <<'RESPONSE'
 HTTP/2 200
@@ -135,6 +163,20 @@ case "${FAKE_CURL_SCENARIO:-}" in
 	access-403-missing-domain)
 		if is_pre_prod_protected_url || is_production_protected_url; then
 			emit_access_forbidden_missing_domain
+		else
+			emit_public_ok
+		fi
+		;;
+	multi-block-final-403)
+		if is_pre_prod_protected_url || is_production_protected_url; then
+			emit_multi_block_final_403_without_access
+		else
+			emit_public_ok
+		fi
+		;;
+	multi-block-final-303)
+		if is_pre_prod_protected_url || is_production_protected_url; then
+			emit_multi_block_final_303_without_location
 		else
 			emit_public_ok
 		fi
@@ -242,6 +284,8 @@ run_case 'cloudflare-host redirect accepted' 0 cloudflare-redirect pre-prod
 run_case 'generic redirect rejected for protected route' 1 generic-redirect pre-prod
 run_case '403 with both Access headers accepted' 0 access-403-both pre-prod
 run_case '403 missing either Access header rejected' 1 access-403-missing-domain pre-prod
+run_case 'earlier Access headers ignored for final 403' 1 multi-block-final-403 pre-prod
+run_case 'earlier Access Location ignored for final 303' 1 multi-block-final-303 pre-prod
 run_case 'public 200, 303, and 404 accepted' 0 public-matrix production
 run_case 'Access interception on a public route rejected' 1 public-intercepted pre-prod
 run_case 'network failure rejected' 1 network-failure pre-prod

@@ -8,6 +8,7 @@
 - Active-task audit: no other active Codex task owns this Drumery migration; the only other Drumery tasks listed were not loaded.
 - Ruling: Execute Foundation PR A (Tasks 1-3) as this run's independently reviewable unit, then stop at the pre-production deploy/merge gate — the plan requires that external proof and merge before PR B starts — if wrong, the cost is a second coordination cycle before Tasks 4-15.
 - Ruling: Start from the still-open plan PR head and preserve a stacked/rebase dependency on PR #228 rather than reconstructing the plan on `main` — this preserves the approved documents verbatim — if wrong, the cost is rebasing the foundation branch after the plan lands.
+- Ruling: Skip Foundation PR publication/merge and proceed directly through the authorized pre-production proof into Tasks 4-15 on the same stacked branch — the user explicitly chose continuous delivery over the plan's PR boundary, while production remains untouched — if wrong, the cost is a larger combined review/rebase and loss of the independently mergeable Foundation checkpoint.
 
 ## Pre-flight consistency scan
 

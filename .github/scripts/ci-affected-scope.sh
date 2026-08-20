@@ -117,6 +117,7 @@ if [[ "$packages_affected" == true ]]; then
 
 		case "$package_name:$package_path" in
 			'@dtx/common:packages/common' | \
+			'@dtx/infrastructure:packages/infrastructure' | \
 			'@dtx/ui-components:packages/ui-components' | \
 			'dtx-api:packages/dtx-api' | \
 			'dtx-desktop:packages/dtx-desktop' | \
@@ -127,7 +128,7 @@ if [[ "$packages_affected" == true ]]; then
 		esac
 
 		case "$package_name" in
-			'@dtx/common' | '@dtx/ui-components' | dtx-api | dtx-desktop | dtx-web)
+			'@dtx/common' | '@dtx/infrastructure' | '@dtx/ui-components' | dtx-api | dtx-desktop | dtx-web)
 				unit_affected=true
 				;;
 		esac

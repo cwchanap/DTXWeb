@@ -1,0 +1,6 @@
+Pulumi.*.yaml
+.pulumi/
+node_modules/
+dist/
+.env
+.env.local

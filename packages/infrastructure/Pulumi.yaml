@@ -1,0 +1,3 @@
+name: dtxweb-infrastructure
+runtime: nodejs
+main: dist/index.js

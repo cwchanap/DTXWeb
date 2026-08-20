@@ -490,3 +490,20 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   No remote calls were made.
 - Task 12: source, tests, report, seed/import tooling, and ledger are ready
   for the scoped conventional commit.
+
+## Task 12 review fix
+
+- Important finding: Supabase Admin exports do not carry application owner IDs,
+  but the CLI accepted an omitted owner list as `[]`, emitted SQL reporting
+  zero reconciled owners, and exited successfully.
+- RED: added a subprocess CLI test first; the focused importer suite failed
+  1/6 because omission returned status 0 and wrote SQL, while the existing five
+  pure-generator tests remained green.
+- Fix: CLI parsing now requires `--owner-ids <path>` before generation/output,
+  rejects a non-array owner file explicitly, and passes the supplied list into
+  the existing UUID and imported-user completeness validation. The pure
+  generator remains ergonomic for the local E2E seed path.
+- GREEN: importer/CLI suite — 1 file, 6 tests; `bun run --filter=dtx-api
+  check` — pass; focused Prettier, ESLint, and `git diff --check` — pass.
+- Report updated with the review finding and RED/GREEN evidence.
+- Task 12 review fix: complete and ready for a conventional fix commit.

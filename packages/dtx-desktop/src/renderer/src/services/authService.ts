@@ -91,11 +91,16 @@ const handleTerminalPoll = (poll: DeviceAuthorizationPoll): boolean => {
 export const authService = {
 	login: async (): Promise<void> => {
 		const generation = ++authFlowGeneration;
+		authStore.startLogin();
 		authStore.setLoading(true);
 
 		try {
 			const attempt = await desktopHost.beginDeviceAuthorization();
 			if (generation !== authFlowGeneration) return;
+			authStore.setDeviceAuthorization({
+				verificationUri: attempt.verificationUri,
+				userCode: attempt.userCode
+			});
 
 			try {
 				await desktopHost.openExternalUrl(attempt.verificationUriComplete);
@@ -104,9 +109,8 @@ export const authService = {
 				authStore.setError(
 					manualAuthorizationMessage(attempt.verificationUri, attempt.userCode)
 				);
-				// Login.svelte displays errors only outside its loading state. Keep the
-				// poll alive while exposing the manual handoff to the user.
-				authStore.setLoading(false);
+				// Keep the device-code surface open while polling so the user can
+				// cancel the pending flow after switching to the manual URL.
 			}
 
 			while (generation === authFlowGeneration) {
@@ -149,6 +153,7 @@ export const authService = {
 			console.error('Failed to cancel authentication:', error);
 		} finally {
 			authStore.setLoading(false);
+			authStore.setError('Sign-in canceled.');
 		}
 	},
 
@@ -184,10 +189,16 @@ export const authService = {
 		authStore.logout();
 		googleDriveStore.reset();
 		try {
-			await desktopHost.cancelDeviceAuthorization();
-			await desktopHost.logoutSession();
-		} catch (error) {
-			console.error('Failed to logout:', error);
+			try {
+				await desktopHost.cancelDeviceAuthorization();
+			} catch (error) {
+				console.error('Failed to cancel authentication during logout:', error);
+			}
+			try {
+				await desktopHost.logoutSession();
+			} catch (error) {
+				console.error('Failed to logout:', error);
+			}
 		} finally {
 			clearStoredSessionData();
 			simFileService.clearCache();

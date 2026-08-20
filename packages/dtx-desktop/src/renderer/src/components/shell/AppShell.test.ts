@@ -7,7 +7,9 @@ import { workspaceStore } from '../../stores/workspaceStore';
 import { preferencesStore } from '../../stores/preferencesStore';
 
 vi.mock('@lucide/svelte');
-vi.mock('../../services/authService', () => ({ authService: { login: vi.fn(), logout: vi.fn() } }));
+vi.mock('../../services/authService', () => ({
+	authService: { login: vi.fn(), cancelLogin: vi.fn(), logout: vi.fn() }
+}));
 vi.mock('../../services/simFileService', () => ({
 	simFileService: { clearCache: vi.fn(), fetchUserSimFiles: vi.fn() }
 }));
@@ -28,6 +30,7 @@ import AppShell from './AppShell.svelte';
 import Workspace from '../Workspace.svelte';
 import Templates from '../Templates.svelte';
 import { loadPreferences, savePreferences } from '../../services/preferencesService';
+import { authService } from '../../services/authService';
 
 const selectAnySong = () =>
 	workspaceStore.selectSong({
@@ -60,6 +63,21 @@ describe('AppShell', () => {
 		expect(screen.getByRole('button', { name: /Library/i })).toBeInTheDocument();
 		expect(vi.mocked(Workspace)).toHaveBeenCalled();
 		expect(vi.mocked(Templates)).not.toHaveBeenCalled();
+	});
+
+	it('opens the device authorization surface from the toolbar login entry point', async () => {
+		vi.mocked(authService.login).mockImplementation(() => {
+			authStore.startLogin();
+		});
+		render(AppShell);
+
+		await fireEvent.click(
+			screen.getByRole('button', { name: /Login to access cloud features/i })
+		);
+
+		expect(authService.login).toHaveBeenCalledOnce();
+		expect(screen.getByRole('dialog', { name: /sign in/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /try again/i })).toBeInTheDocument();
 	});
 
 	it('renders Templates content when section is templates', () => {

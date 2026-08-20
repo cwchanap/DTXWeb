@@ -49,10 +49,23 @@ export const getStoredSessionData = (): StoredSession | null => {
 			removeLegacyStorage();
 		}
 
-		if (!stored) return null;
+		if (stored === null) return null;
 
-		const session: unknown = JSON.parse(stored);
-		return isStoredSession(session) ? session : null;
+		let session: unknown;
+		try {
+			session = JSON.parse(stored);
+		} catch (error) {
+			console.error('Failed to parse stored session data:', error);
+			localStorage.removeItem(SESSION_STORAGE_KEY);
+			return null;
+		}
+
+		if (!isStoredSession(session)) {
+			localStorage.removeItem(SESSION_STORAGE_KEY);
+			return null;
+		}
+
+		return session;
 	} catch (error) {
 		console.error('Failed to get stored session data:', error);
 		return null;

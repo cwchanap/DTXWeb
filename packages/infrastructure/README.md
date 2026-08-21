@@ -32,9 +32,11 @@ token. It uses the repository variable `PULUMI_ORG` (`cwchanap`), audience
 - `repo:cwchanap/DTXWeb:environment:dtx-access-pre-prod`
 - `repo:cwchanap/DTXWeb:environment:dtx-access-production`
 
-The workflow uses the SHA-pinned `pulumi/auth-actions` and `pulumi/actions` actions with the
-personal token type and `user:cwchanap` scope. It does not create or use
-`PULUMI_ACCESS_TOKEN`.
+The workflow uses the SHA-pinned `pulumi/auth-actions` and `pulumi/actions` actions.
+`pulumi/auth-actions` exchanges the GitHub Actions OIDC identity for a runtime Pulumi Cloud access
+token and exports it as `PULUMI_ACCESS_TOKEN` for the deployment step, so no long-lived
+`PULUMI_ACCESS_TOKEN` secret is stored. It requests the personal token type with `user:cwchanap`
+scope for that exchange.
 
 The repository's existing `CLOUDFLARE_ACCOUNT_ID` variable remains available to workflows that
 already use it. The Access workflow does not inject that variable: the non-secret account setting

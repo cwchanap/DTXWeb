@@ -15,18 +15,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
   deploy-pre-prod:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dtx-access-pre-prod
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -49,14 +50,14 @@ jobs:
         run: test -f packages/infrastructure/dist/index.js
 
       - name: Authenticate with Pulumi Cloud
-        uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640
+        uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640 # v1.0.1
         with:
           organization: ${{ vars.PULUMI_ORG }}
           requested-token-type: urn:pulumi:token-type:access_token:personal
           scope: user:cwchanap
 
       - name: Update pre-production Access
-        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58
+        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6.6.1
         with:
           command: up
           stack-name: cwchanap/dtxweb-infrastructure/pre-prod
@@ -74,9 +75,14 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dtx-access-production
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -99,14 +105,14 @@ jobs:
         run: test -f packages/infrastructure/dist/index.js
 
       - name: Authenticate with Pulumi Cloud
-        uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640
+        uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640 # v1.0.1
         with:
           organization: ${{ vars.PULUMI_ORG }}
           requested-token-type: urn:pulumi:token-type:access_token:personal
           scope: user:cwchanap
 
       - name: Update production Access
-        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58
+        uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58 # v6.6.1
         with:
           command: up
           stack-name: cwchanap/dtxweb-infrastructure/production

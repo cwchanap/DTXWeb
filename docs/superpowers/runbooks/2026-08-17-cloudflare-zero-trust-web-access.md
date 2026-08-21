@@ -80,8 +80,10 @@ Environment subjects, with audience `urn:pulumi:org:cwchanap`:
 - `repo:cwchanap/DTXWeb:environment:dtx-access-pre-prod`
 - `repo:cwchanap/DTXWeb:environment:dtx-access-production`
 
-The pinned actions request the personal Pulumi token type with `user:cwchanap` scope. No
-`PULUMI_ACCESS_TOKEN` is created or passed to CI.
+`pulumi/auth-actions` exchanges the job's GitHub OIDC identity for a runtime Pulumi Cloud access
+token, exports it as `PULUMI_ACCESS_TOKEN` for the following `pulumi/actions` step, and requires
+no stored long-lived secret. The requested token type (personal) and `user:cwchanap` scope
+describe that runtime exchange, not a stored credential.
 
 During migration, both live named applications were reverified against their intended scopes,
 refreshed, protected in Pulumi Cloud state, and checked with the complete boundary matrices. That
@@ -123,7 +125,7 @@ test -n "$PERSEUS_POSTURE_RULE_ID" || {
 for stack in \
   cwchanap/dtxweb-infrastructure/pre-prod \
   cwchanap/dtxweb-infrastructure/production; do
-  configured="$(pulumi config get devicePostureRuleId --stack "$stack")" || exit 1
+  configured="$(pulumi config get devicePostureRuleId --stack "$stack" -C packages/infrastructure)" || exit 1
   if [ "$configured" != "$PERSEUS_POSTURE_RULE_ID" ]; then
     echo "FAIL: $stack devicePostureRuleId does not match current Perseus rule" >&2
     exit 1
@@ -242,7 +244,17 @@ pulumi preview --destroy --stack cwchanap/dtxweb-infrastructure/pre-prod
 pulumi destroy --stack cwchanap/dtxweb-infrastructure/pre-prod --yes
 ```
 
-Confirm the preview contains only `DTXWeb Pre-prod` before the destroy. Unprotecting and deleting
+Confirm the preview contains only `DTXWeb Pre-prod` before the destroy. If the preview is
+rejected, or the destroy is cancelled or fails while the application still exists in Pulumi state,
+re-protect the exact resource and confirm the protection bit before exiting:
+
+```bash
+pulumi state protect \
+  'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' \
+  --stack cwchanap/dtxweb-infrastructure/pre-prod
+```
+
+Unprotecting and deleting
 is a separately reviewed exception to the normal protection guard. The source program still
 declares the application, so a later automatic update will reconcile the desired declaration;
 reconcile source and Pulumi state deliberately before any future deployment.
@@ -253,15 +265,23 @@ If immediate Access removal is required but Pulumi Cloud or its state cannot be 
 
 1. Open **Zero Trust > Access controls > Applications**.
 2. Locate exactly `DTXWeb Pre-prod` or `DTXWeb Production App`.
-3. Disable/delete only that named DTXWeb application.
+3. Disable only that named DTXWeb application; delete it only if disabling is insufficient.
 4. Do not alter Perseus posture resources or unrelated Access applications.
 5. Do not create a bypass, service token, or wider application.
 
-This dashboard procedure is an emergency exception, not a deployment path. Before the next
-automated run, reconcile the provider-side change into the Pulumi program and commit the intended
-source change. Every workflow `pulumi up` uses `refresh: true`, so it queries the live provider and
-will otherwise restore the Pulumi program's desired state; reconciling only a Pulumi checkpoint is
-not sufficient. Do not record dashboard screenshots or responses containing security identifiers.
+This dashboard procedure is an emergency exception, not a deployment path, and disablement and
+deletion reconcile differently:
+
+- A dashboard-disabled application is not reconciled by the automatic workflow, because the
+  program does not manage the disabled flag. Re-enable that exact application through the Zero
+  Trust dashboard or the Cloudflare Access API, then re-run the version-controlled verifier for
+  the affected environment before closing the incident.
+- A dashboard-deleted application is recreated by the next `pulumi up`, because every workflow
+  update uses `refresh: true` and queries the live provider. Before the next automated run,
+  reconcile the provider-side change into the Pulumi program and commit the intended source
+  change; reconciling only a Pulumi checkpoint is not sufficient.
+
+Do not record dashboard screenshots or responses containing security identifiers.
 
 ## Final non-sensitive record
 

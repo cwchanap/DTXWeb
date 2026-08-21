@@ -1,6 +1,9 @@
-# Cloudflare Zero Trust Web Access Runbook (operator-executed)
+# Cloudflare Zero Trust Web Access Runbook
 
-This is the live operator procedure for DTXWeb Cloudflare Access. Steps that mutate Cloudflare, require interactive identity/device checks, or require browser observation are performed by a human operator, not by an implementation agent.
+This runbook describes the active Pulumi Cloud deployment path for DTXWeb Cloudflare Access and
+the human checks that automation cannot perform. Pulumi updates and unauthenticated boundary
+checks are automatic; trusted-device admission, denied-device rejection, and emergency dashboard
+operations remain human procedures.
 
 ## Scope
 
@@ -9,143 +12,115 @@ This is the live operator procedure for DTXWeb Cloudflare Access. Steps that mut
 | `pre-prod`   | `DTXWeb Pre-prod`       | entire `pre-prod.dtx.hapadona.com` hostname              |
 | `production` | `DTXWeb Production App` | `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*` only |
 
-Wrangler continues to own Worker/API/runtime infrastructure. Both API hostnames remain outside Access.
+Wrangler continues to own Worker, API, D1, R2, and other runtime infrastructure. Both API
+hostnames remain outside Access. DTXWeb reuses the Perseus-managed device-posture rule; do not
+create another posture rule, serial list, service token, Service Auth policy, bypass policy, API
+Access application, or wider production destination.
 
-DTXWeb reuses the Perseus-managed device-posture rule by Cloudflare resource ID. Do not create another serial list/posture rule, service token, Service Auth policy, API Access app, bypass policy, or wider production destination.
+## Current deployment ownership
 
-## Production State — Live, Local Pulumi Backend
+The migration to Pulumi Cloud is complete. The live applications are managed by these exact
+remote stacks:
 
-Both DTXWeb Access applications are already live. Their state remains managed by the local Pulumi backend until the remote-state migration gate; no Pulumi Cloud or GitHub Actions deployment automation is enabled in PR A.
+- `cwchanap/dtxweb-infrastructure/pre-prod`
+- `cwchanap/dtxweb-infrastructure/production`
 
-Until that migration gate is complete, use only the manual, operator-reviewed Pulumi apply path in this runbook. Do not use an automatic workflow before remote state migration.
+The committed `packages/infrastructure/Pulumi.pre-prod.yaml` and
+`packages/infrastructure/Pulumi.production.yaml` files use Pulumi Cloud's `default` secrets
+provider. They contain encrypted `accessEmail` configuration and non-secret
+`devicePostureRuleId` and `cloudflareAccountId` configuration. The application names,
+destinations, policy shape, session duration, and browser flags remain code-owned.
 
-The queued Better Auth/D1 migration removes the current desktop callback/magic-link flow, adds Device Authorization approval at `/app/desktop-auth`, and explicitly schedules reconciliation of PR #221's Zero Trust documents. Re-run the relevant identity, posture, browser, session, and desktop acceptance checks after that migration.
+Local passphrase state is retired. CI does not set or use `PULUMI_CONFIG_PASSPHRASE`, and there is
+no local-backend apply path. Do not initialize replacement stacks or pass runtime config that
+would replace the committed settings. The repository's existing `CLOUDFLARE_ACCOUNT_ID` variable
+remains available to workflows that already use it; the Access workflow reads the committed
+account configuration instead. `PULUMI_ORG` is the repository variable used for Pulumi Cloud
+authentication.
 
-## Pulumi Backend And Secrets
+Each job uses its own GitHub Environment, with only the dedicated secret
+`CLOUDFLARE_ACCESS_API_TOKEN`:
 
-From `packages/infrastructure`:
+- `dtx-access-pre-prod`
+- `dtx-access-production`
 
-```bash
-pulumi login --local
+The secret is exposed to the Pulumi provider only as `CLOUDFLARE_API_TOKEN`. It must have only
+account-level Cloudflare `Access: Apps and Policies Edit` for the target account, with no Workers,
+DNS, D1, R2, token-management, or Global API Key privileges. Never print or record the token,
+operator email, posture-rule ID, account ID, application ID, ciphertext, cookies, or Pulumi stack
+state.
+
+## Automatic deployment paths
+
+`.github/workflows/deploy-cloudflare-access.yml` runs on either:
+
+1. a push to `main` that changes `packages/infrastructure/**`, `bun.lock`, the root `package.json`,
+   `tsconfig.base.json`, or the deployment workflow itself; or
+2. `workflow_dispatch` from `main` for a recovery rerun.
+
+Both paths run the same serial sequence:
+
+```text
+deploy-pre-prod: check -> test:coverage -> build -> verify dist/index.js -> Pulumi up --refresh -> boundary verifier
+deploy-production: check -> test:coverage -> build -> verify dist/index.js -> Pulumi up --refresh -> boundary verifier
 ```
 
-The default local filesystem backend is under the operator's home directory (`~/.pulumi`). The repository also ignores project-local `.pulumi/` defensively.
+The production job has `needs: deploy-pre-prod`, so a pre-production check, update, or boundary
+failure prevents production from starting. Each job authenticates to Pulumi Cloud through GitHub
+OIDC with `id-token: write`, runs one `pulumi/actions` `up` with `refresh: true`, suppresses stack
+outputs, and then invokes the committed verifier. The workflow uses no pull-request deploy,
+standalone recurring preview, automatic rollback, or automatic destroy. A dispatch from a ref
+other than `main` is not an automatic deployment because both jobs guard the `main` ref. Its
+workflow/ref concurrency uses `cancel-in-progress: false`, so a newer run waits for an active
+deployment instead of interrupting it.
 
-Never commit or paste into PRs/logs:
+Pulumi Cloud trusts only the workflow's configured organization and the two exact GitHub
+Environment subjects, with audience `urn:pulumi:org:cwchanap`:
 
-- operator email;
-- Cloudflare API token;
-- device serials;
-- Access cookies/JWTs;
-- `Pulumi.<stack>.yaml` files;
-- Pulumi state exports;
-- screenshots containing security identifiers.
+- `repo:cwchanap/DTXWeb:environment:dtx-access-pre-prod`
+- `repo:cwchanap/DTXWeb:environment:dtx-access-production`
 
-Use `accessEmail` as Pulumi secret config. `devicePostureRuleId` is a non-secret Cloudflare resource ID.
+The pinned actions request the personal Pulumi token type with `user:cwchanap` scope. No
+`PULUMI_ACCESS_TOKEN` is created or passed to CI.
 
-## Cloudflare API Credential
+During migration, both live named applications were reverified against their intended scopes,
+refreshed, protected in Pulumi Cloud state, and checked with the complete boundary matrices. That
+baseline does not replace the boundary verification after each automatic update or the human
+admission checks after security-policy changes.
 
-Set `CLOUDFLARE_API_TOKEN` in the operator shell to an account-scoped token whose only permission is account-level `Access: Apps and Policies Edit` for the target account. The token must not carry Workers, DNS, D1, R2, or API-token-management permissions, and a Global API Key must never be used.
+## Resource protection and intentional changes
 
-## Select Existing Stacks And Verify Live IDs
+Both Access resources are declared with `protect: true`, and the protection bit is persisted in
+Pulumi Cloud state. Normal in-place updates are allowed, but Pulumi refuses deletion or
+replacement. The automatic workflow never unprotects, destroys, or rolls back a resource.
 
-```bash
-cd packages/infrastructure
-pulumi stack select pre-prod || {
-  echo 'FAIL: expected the existing local pre-prod stack; refusing to initialize a new stack' >&2
-  exit 1
-}
-pulumi stack select production || {
-  echo 'FAIL: expected the existing local production stack; refusing to initialize a new stack' >&2
-  exit 1
-}
+An intentional replacement or deletion requires a separately reviewed, one-time unprotect
+operation on the exact resource, followed by a fresh preview and explicit approval. Do not weaken
+the resource protection or turn this exception into an automated workflow step.
 
-for stack in pre-prod production; do
-  access_application_id="$(pulumi stack output accessApplicationId --stack "$stack")" || exit 1
-  if [ -z "$access_application_id" ]; then
-    echo "FAIL: $stack has no accessApplicationId output; refusing preview/apply" >&2
-    exit 1
-  fi
-done
-unset access_application_id stack
-```
+## Pulumi posture preflight
 
-Both stack selections must succeed because these applications already exist. The output check
-proves each existing local stack exposes a non-empty `accessApplicationId` before any preview or
-apply; the identifier is captured for the check and is not printed in evidence. Never replace a
-failed selection with `pulumi stack init`.
-
-## Establish State-Level Resource Protection
-
-`pulumi destroy` does not run the program by default — it operates on the resources already
-recorded in state. The source-level `{ protect: true }` added in PR A is not active for these
-pre-existing local stacks until the protect bit is persisted into state. Without this step there
-is an interim window where a `pulumi destroy` would not fail closed.
-
-After PR A has merged (so the source program sets `protect: true`), run `pulumi state protect`
-on both Access application URNs to write the protect bit directly into state:
-
-```bash
-pulumi state protect 'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' --stack pre-prod -y
-pulumi state protect 'urn:pulumi:production::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-production-access' --stack production -y
-```
-
-Verify the protect bit is present in both stack states:
-
-```bash
-for stack in pre-prod production; do
-  pulumi stack export --stack "$stack" --file /dev/stdout \
-    | jq -e '.deployment.resources[] | select(.type == "cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication") | .protect == true' >/dev/null \
-    || { echo "FAIL: $stack protect bit is not in state" >&2; exit 1; }
-done
-unset stack
-```
-
-Because the source program also sets `protect: true`, the state-level bit is durable — a
-subsequent `pulumi up` will not clear it. Do not run `pulumi state unprotect` outside of the
-separately reviewed rollback exception below.
-
-Configure both stacks from local shell variables:
-
-```bash
-pulumi config set cloudflareAccountId "$DTX_CLOUDFLARE_ACCOUNT_ID" --stack pre-prod
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack pre-prod
-pulumi config set devicePostureRuleId "$DTX_DEVICE_POSTURE_RULE_ID" --stack pre-prod
-
-pulumi config set cloudflareAccountId "$DTX_CLOUDFLARE_ACCOUNT_ID" --stack production
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack production
-pulumi config set devicePostureRuleId "$DTX_DEVICE_POSTURE_RULE_ID" --stack production
-```
-
-Optional explicit session duration:
-
-```bash
-pulumi config set accessSessionDuration 12h --stack pre-prod
-pulumi config set accessSessionDuration 12h --stack production
-```
-
-Hostnames and production destinations are code-owned; do not add them as config.
-
-## Preflight — Shared Posture Rule Must Match Perseus
-
-This check replaces the old "remember to update the ID" instruction.
-
-Set `PERSEUS_INFRA_DIR` to the local Perseus `packages/infrastructure` directory. Ensure that directory is logged into the correct Pulumi backend and has the production Perseus stack selected, then run from the DTXWeb infrastructure directory:
+The committed `devicePostureRuleId` values must continue to match the current Perseus production
+`adminAccessDevicePostureRuleId` output. Before applying a change to identity, posture, policy, or
+tenant settings, use an authenticated Pulumi Cloud CLI session and compare both remote stacks
+without printing either value:
 
 ```bash
 : "${PERSEUS_INFRA_DIR:?set PERSEUS_INFRA_DIR to Perseus packages/infrastructure}"
 
-PERSEUS_POSTURE_RULE_ID="$(
+PERSEUS_POSTURE_RULE_ID="$({
   cd "$PERSEUS_INFRA_DIR" &&
     pulumi stack output adminAccessDevicePostureRuleId
-)" || exit 1
+})" || exit 1
 
 test -n "$PERSEUS_POSTURE_RULE_ID" || {
   echo 'FAIL: Perseus posture-rule output is empty' >&2
   exit 1
 }
 
-for stack in pre-prod production; do
+for stack in \
+  cwchanap/dtxweb-infrastructure/pre-prod \
+  cwchanap/dtxweb-infrastructure/production; do
   configured="$(pulumi config get devicePostureRuleId --stack "$stack")" || exit 1
   if [ "$configured" != "$PERSEUS_POSTURE_RULE_ID" ]; then
     echo "FAIL: $stack devicePostureRuleId does not match current Perseus rule" >&2
@@ -153,199 +128,163 @@ for stack in pre-prod production; do
   fi
 done
 
-unset configured PERSEUS_POSTURE_RULE_ID
+unset configured stack PERSEUS_POSTURE_RULE_ID
 ```
 
-Any mismatch is a hard stop before preview or apply.
+Any mismatch is a hard stop. Do not add a cross-repository `StackReference` or a CI checkout of
+Perseus to bypass this human preflight.
 
-## Preflight — Repository Gates And Build
+## Version-controlled boundary verifier
 
-Run from the DTXWeb repository root before every rollout session:
-
-```bash
-bun install --frozen-lockfile
-bun run --filter=@dtx/infrastructure check
-bun run --filter=@dtx/infrastructure test:coverage
-bun run --filter=@dtx/infrastructure build
-.github/scripts/ci-affected-scope.test.sh
-bun run lint
-bunx prettier --check .
-```
-
-All commands must pass. `build` is mandatory because `Pulumi.yaml` executes `dist/index.js`; do not preview stale or missing compiled output.
-
-If any infrastructure source changes after this block, rebuild before the next preview.
-
-## Committed Boundary Verifier
-
-Use unauthenticated requests with no Access cookies. Run the version-controlled verifier from the repository root:
+Run the committed verifier from the repository root with no Access cookies:
 
 ```bash
 packages/infrastructure/scripts/verify-access.sh pre-prod
 packages/infrastructure/scripts/verify-access.sh production
 ```
 
-The script accepts only the two supported environments, requests each environment's exact protected and public route matrix, recognizes only an HTTPS `3xx` redirect matching `^https://([[:alnum:]-]+\.)+cloudflareaccess\.com(:[0-9]+)?([/?#]|$)` or HTTP `403` with both `cf-access-aud` and `cf-access-domain`, and fails closed on DNS, TLS, connection, timeout, malformed-response, and unsupported-environment errors. It prints status and header/redirect presence with values redacted; never record header values.
+The script accepts only `pre-prod` and `production`, fails closed on DNS, TLS, connection,
+timeout, malformed-response, and unsupported-environment errors, and prints only redacted status,
+redirect, and Access-header presence. It recognizes only the strict HTTPS `3xx`
+`cloudflareaccess.com` redirect or HTTP `403` with both `cf-access-aud` and `cf-access-domain`.
+Never record header values, cookies, or redirect values.
 
-# Phase 1 — Pre-production
+The script owns these exact matrices. Do not replace it with an ad hoc route check:
 
-## 1. Preview Pre-production
+- Pre-production protects `/`, `/login`, `/auth/callback`, `/blog`, `/preview/1`, `/editor`,
+  `/tool/dtx-to-midi`, `/game`, `/app`, `/app/`, `/app/score`, and `/app/__data.json` on
+  `pre-prod.dtx.hapadona.com`; `https://api.pre-prod.dtx.hapadona.com/` remains public.
+- Production protects `/app`, `/app/`, and `/app/score` on `dtx.hapadona.com`; `/`, `/login`,
+  `/auth/callback`, `/blog`, `/preview/1`, `/editor`, `/tool/dtx-to-midi`, and `/game` on that
+  host remain public, as does `https://api.dtx.hapadona.com/`.
 
-From `packages/infrastructure`, after the build/preflight:
+The production matrix is intentionally `/app`-only. A response outside that boundary must not be
+treated as an Access success.
 
-```bash
-pulumi preview --stack pre-prod
-```
+## Human admission checks
 
-The preview must contain only the DTXWeb pre-production Access application with:
+An unauthenticated runner cannot satisfy the operator identity and shared WARP posture rule. After
+any change to `accessEmail`, `devicePostureRuleId`, the Access policy, or relevant Cloudflare
+identity/posture settings:
 
-- name `DTXWeb Pre-prod`;
-- self-hosted type;
-- hostname-wide destination `pre-prod.dtx.hapadona.com`;
-- one allow policy using configured email Include + existing posture Require;
-- no API hostname;
-- no posture/list/service-token/Worker/storage resource.
+1. Run the relevant version-controlled verifier.
+2. On the configured identity and a trusted device, enter the protected application through
+   Access and confirm the current browser login, `/app`, and API use work.
+3. From a device that fails the shared posture rule, request the same protected surface and confirm
+   Access denies the request before DTXWeb loads.
 
-Any extra resource or different scope is a hard stop.
+For pre-production, also complete the current Google login/OAuth flow. For production, confirm the
+current `/app` browser flow and API use after the serial deployment completes. These checks are
+manual admission evidence; the boundary script does not prove them.
 
-## 2. Apply Pre-production — Operator Only
+The queued Better Auth/D1 migration is a future acceptance gate. It must add the `/app/desktop-auth`
+Device Authorization flow and then restore separate desktop approval, browser login, identity and
+posture, and session-expiry checks. Re-run those desktop/browser/session-expiry checks after that
+migration and whenever its auth contract changes. The current repository and boundary matrices do
+not claim to verify that future flow.
 
-Pre-production Access is already applied. For a reviewed operator-only change while the state remains local, use:
+## Phase 1 — Pre-production
 
-```bash
-pulumi up --stack pre-prod
-```
+The `deploy-pre-prod` job is the first half of every normal deployment and every recovery
+dispatch. It runs the infrastructure checks, coverage suite, build, Pulumi Cloud update with live
+provider refresh, and the complete pre-production verifier before production can start.
 
-Review the interactive Pulumi confirmation. Approve only the expected `DTXWeb Pre-prod` Access application change.
+The desired pre-production shape is:
 
-## 3. Pre-production Boundary Verification
+- `DTXWeb Pre-prod` with a hostname-wide `pre-prod.dtx.hapadona.com` destination;
+- one allow policy with the configured email in `Include` and the existing Perseus posture rule in
+  `Require`;
+- no API hostname, production destination, extra posture/list/token resource, or runtime resource.
 
-With no Access session, run the committed verifier from the repository root:
+If the job fails, repair the source or configuration and rerun the same serial path from `main`.
+There is no automatic rollback or production bypass.
 
-```bash
-packages/infrastructure/scripts/verify-access.sh pre-prod
-```
+## Phase 2 — Production
 
-It checks the complete pre-production protected-route matrix and confirms that `https://api.pre-prod.dtx.hapadona.com/` is outside Access. The command must exit `0`.
+Production starts only after `deploy-pre-prod` succeeds. The `deploy-production` job repeats the
+checks, builds the Pulumi entrypoint, runs one refreshed update against
+`cwchanap/dtxweb-infrastructure/production`, and verifies the production boundary.
 
-## 4. Pre-production Human Checks
-
-On the trusted device with the configured operator identity:
-
-1. enter the pre-production hostname through Access;
-2. complete the current web login flow;
-3. confirm `/app` works behind Access and can use the API;
-4. complete the current Google login/OAuth flow;
-5. from a device that fails the shared posture rule, confirm the hostname is denied before DTXWeb loads.
-
-The application auth mechanism will change during the queued Better Auth cutover; re-run the relevant pre-production auth acceptance after that migration. The Access hostname-wide boundary itself does not change.
-
-If required Access/header/device checks fail, use the rollback section below.
-
-# Phase 2 — Production (Live, Local Backend)
-
-Production Access is already applied and managed from the local Pulumi backend. Its live scope is exactly `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`; public production routes and the API hostname remain outside Access.
-
-A non-mutating preview is allowed after the normal build/preflight:
-
-```bash
-pulumi preview --stack production
-```
-
-It must show exactly one `DTXWeb Production App` with only:
+The desired production shape is exactly:
 
 ```text
 dtx.hapadona.com/app
 dtx.hapadona.com/app/*
 ```
 
-Hard stops include hostname-wide production Access, API/public destinations, posture/list/token resources, or runtime infrastructure.
+Public production routes and `https://api.dtx.hapadona.com/` remain outside Access. Any
+hostname-wide production protection, API/public destination, extra policy/resource, or runtime
+change is a hard stop. A production boundary failure may mean the desired configuration is already
+live; correct the source/configuration and rerun the serial deployment rather than using a
+provider-side rollback.
 
-For a reviewed operator-only change while the state remains local, use the manual apply command:
+## Rollback — Pre-production
 
-```bash
-pulumi up --stack production
-```
+Removing pre-production Access returns `pre-prod.dtx.hapadona.com` to its prior public state.
+Before any separately reviewed rollback, determine which Wrangler environment serves the
+pre-production hostname. In particular, `pre-prod-prod-data` binds the same hostname to an API
+environment using production D1/R2 resources. Removing Access can therefore expose
+production-data-backed content. If that exposure is not acceptable, keep Access in place while
+repairing the deployment or first move pre-production away from production-backed data.
 
-Do not use an automatic workflow before remote state migration. The Better Auth/D1 cutover must still be reconciled with this runbook's final `/app/desktop-auth` Device Authorization flow before its browser and desktop acceptance checks are considered current.
-
-Verify the live production boundary with the committed script:
-
-```bash
-packages/infrastructure/scripts/verify-access.sh production
-```
-
-# Rollback — Pre-production
-
-Destroying pre-production Access returns `pre-prod.dtx.hapadona.com` to its prior public state.
-
-Before destroy, determine which Wrangler environment currently serves the pre-production hostname. In particular, `pre-prod-prod-data` binds the same pre-production hostname to an API environment using production D1/R2 resources. If that mode is active, removing Access can make a production-data-backed web surface public.
-
-If public exposure is not acceptable, keep Access in place while repairing the rollout or first move the pre-production deployment away from production-backed data. Do not treat Access destroy as a neutral cleanup.
-
-There is no automatic rollback. Once the protect bit has been persisted into state (see
-"Establish State-Level Resource Protection" above), a normal destroy path fails closed rather
-than deleting the application. Before that state-level protection step has been run, the
-source-level `{ protect: true }` alone does **not** stop a `pulumi destroy`, because destroy
-operates on state and does not run the program by default:
+The normal automatic path never destroys or rolls back a protected application. If an intentional
+pre-production deletion is separately reviewed and approved, authenticate to Pulumi Cloud,
+unprotect only the exact resource, inspect the destroy preview, and then perform the one-time
+destroy:
 
 ```bash
-pulumi preview --destroy --stack pre-prod
+pulumi state unprotect \
+  'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' \
+  --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi preview --destroy --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi destroy --stack cwchanap/dtxweb-infrastructure/pre-prod --yes
 ```
 
-If that separately reviewed rollback is explicitly approved, unprotect only the exact pre-production
-Access resource immediately before rerunning the preview:
+Confirm the preview contains only `DTXWeb Pre-prod` before the destroy. Unprotecting and deleting
+is a separately reviewed exception to the normal protection guard. The source program still
+declares the application, so a later automatic update will reconcile the desired declaration;
+reconcile source and Pulumi state deliberately before any future deployment.
 
-```bash
-pulumi state unprotect 'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' --stack pre-prod
-pulumi preview --destroy --stack pre-prod
-```
+## Emergency fallback — Pulumi Cloud/state unavailable
 
-Confirm the only deletion is `DTXWeb Pre-prod`, then:
+If immediate Access removal is required but Pulumi Cloud or its state cannot be accessed:
 
-```bash
-pulumi destroy --stack pre-prod --yes
-```
+1. Open **Zero Trust > Access controls > Applications**.
+2. Locate exactly `DTXWeb Pre-prod` or `DTXWeb Production App`.
+3. Disable/delete only that named DTXWeb application.
+4. Do not alter Perseus posture resources or unrelated Access applications.
+5. Do not create a bypass, service token, or wider application.
 
-Unprotecting and destroying is a separately reviewed, one-time exception to the normal deletion
-guard. The source program still declares this application, so a later `pulumi up` will recreate it
-unless the desired source and Pulumi state are deliberately reconciled first. Do not turn this
-exception into an automated rollback.
+This dashboard procedure is an emergency exception, not a deployment path. Before the next
+automated run, reconcile the provider-side change into the Pulumi program and commit the intended
+source change. Every workflow `pulumi up` uses `refresh: true`, so it queries the live provider and
+will otherwise restore the Pulumi program's desired state; reconciling only a Pulumi checkpoint is
+not sufficient. Do not record dashboard screenshots or responses containing security identifiers.
 
-# Emergency Fallback — Pulumi Backend/State Unavailable
+## Final non-sensitive record
 
-If immediate Access removal is required but the local Pulumi backend/state cannot be accessed:
-
-1. open **Zero Trust > Access controls > Applications**;
-2. locate exactly `DTXWeb Pre-prod` or `DTXWeb Production App`;
-3. disable/delete only that DTXWeb application;
-4. do not alter Perseus posture resources or unrelated Access applications;
-5. do not create a bypass/service token/wider application.
-
-When Pulumi state is available again, reconcile the provider-side change before any later `pulumi up`.
-
-# Final Non-sensitive Record
-
-Record only outcomes, for example:
+Record outcomes without values, for example:
 
 ```text
-Infrastructure unit/coverage checks: PASS
-Affected-scope CI contract: PASS
-Private-route boundary test: PASS
-Perseus posture-rule ID matches both DTXWeb stack configs: PASS
-Pre-prod Pulumi preview: PASS
-Pre-prod Access apply + verification: PASS
-Production Pulumi preview: PASS or NOT RUN
-Production Access live boundary: PASS (already applied; local Pulumi backend)
-Production Access changes: manual operator apply only until remote state migration
+Pulumi Cloud stack migration and protected state: PASS
+Pre-production automatic job: PASS or NOT RUN
+Pre-production boundary matrix: PASS or NOT RUN
+Production automatic job: PASS or NOT RUN
+Production boundary matrix: PASS or NOT RUN
+Trusted-device admission: PASS or NOT RUN
+Denied-device rejection: PASS or NOT RUN
+Future Better Auth desktop/browser/session-expiry gate: NOT RUN until migration lands
+Emergency dashboard reconciliation: NOT RUN unless invoked
 ```
 
-Never paste secrets, identities, device serials, Access tokens/cookies/JWTs, or sensitive screenshots.
+Never paste secrets, identities, device serials, account IDs, application IDs, posture-rule IDs,
+Pulumi ciphertext, stack-state contents, Access tokens/cookies/JWTs, or sensitive screenshots.
 
-# References
+## References
 
-- Design: `docs/superpowers/specs/2026-08-17-cloudflare-zero-trust-web-access-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-08-17-cloudflare-zero-trust-web-access.md`
-- Operator precedent: `docs/superpowers/runbooks/2026-05-29-phase-4-preprod-cutover.md`
-- queued Better Auth/D1 migration plan: Task 9 and Task 14
+- Current automation design: `docs/superpowers/specs/2026-08-20-cloudflare-access-automation-design.md`
+- Automation implementation plan: `docs/superpowers/plans/2026-08-20-cloudflare-access-automation.md`
+- Version-controlled verifier: `packages/infrastructure/scripts/verify-access.sh`
+- Historical Zero Trust design: `docs/superpowers/specs/2026-08-17-cloudflare-zero-trust-web-access-design.md`
+- Queued Better Auth/D1 migration plan: Task 9 and Task 14
 - Perseus Access implementation: `packages/infrastructure/src/admin-access.ts` in the Perseus repository

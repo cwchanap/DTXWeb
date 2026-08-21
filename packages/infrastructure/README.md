@@ -3,106 +3,98 @@
 This Pulumi workspace manages the DTXWeb Cloudflare Access applications only. Wrangler
 continues to own Worker, API, D1, R2, and other runtime infrastructure.
 
-## Local backend and supported stacks
+## Pulumi Cloud ownership
 
-Use the local Pulumi backend from this package:
+The Access applications are managed in Pulumi Cloud by these exact stacks:
 
-```bash
-cd packages/infrastructure
-pulumi login --local
+- `cwchanap/dtxweb-infrastructure/pre-prod` — `DTXWeb Pre-prod` over the entire
+  `pre-prod.dtx.hapadona.com` hostname.
+- `cwchanap/dtxweb-infrastructure/production` — `DTXWeb Production App` over only
+  `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`.
+
+The two stack settings files are committed and are the configuration source for deployment:
+
+- `Pulumi.pre-prod.yaml`
+- `Pulumi.production.yaml`
+
+Both use Pulumi Cloud's `default` secrets provider. `accessEmail` is encrypted; the
+`devicePostureRuleId` and `cloudflareAccountId` entries are non-secret stack configuration. Never
+print or copy their values, ciphertext, or Pulumi stack state. Local passphrase state is retired;
+CI does not use `PULUMI_CONFIG_PASSPHRASE`, and these stacks must not be replaced with local
+stacks.
+
+## OIDC and Cloudflare credentials
+
+The deployment workflow exchanges its GitHub Actions OIDC identity for a short-lived Pulumi Cloud
+token. It uses the repository variable `PULUMI_ORG` (`cwchanap`), audience
+`urn:pulumi:org:cwchanap`, and only these environment subjects:
+
+- `repo:cwchanap/DTXWeb:environment:dtx-access-pre-prod`
+- `repo:cwchanap/DTXWeb:environment:dtx-access-production`
+
+The workflow uses the SHA-pinned `pulumi/auth-actions` and `pulumi/actions` actions with the
+personal token type and `user:cwchanap` scope. It does not create or use
+`PULUMI_ACCESS_TOKEN`.
+
+The repository's existing `CLOUDFLARE_ACCOUNT_ID` variable remains available to workflows that
+already use it. The Access workflow does not inject that variable: the non-secret account setting
+is committed in both Pulumi stack files. Each GitHub Environment contains only its own
+`CLOUDFLARE_ACCESS_API_TOKEN` secret:
+
+- `dtx-access-pre-prod`
+- `dtx-access-production`
+
+During the Pulumi update step, the environment secret is exposed only as
+`CLOUDFLARE_API_TOKEN`. The token is limited to account-level Cloudflare `Access: Apps and
+Policies Edit` for the target account; it has no Workers, DNS, D1, R2, token-management, or
+Global API Key privileges. Do not record or print the token, operator email, posture-rule ID,
+account ID, application ID, or ciphertext.
+
+## Automatic deployment
+
+The workflow in `.github/workflows/deploy-cloudflare-access.yml` has two normal entry points:
+
+1. A relevant change pushed to `main` (`packages/infrastructure/**`, the lockfile, root package
+   or TypeScript configuration, or the workflow itself).
+2. `workflow_dispatch` started from `main` for a recovery rerun. The jobs guard the `main` ref;
+   dispatching another ref skips the deployment jobs.
+
+Both entry points run the same serial path:
+
+```text
+pre-production check/test/coverage/build -> Pulumi up --refresh -> pre-production boundary verification
+  -> production check/test/coverage/build -> Pulumi up --refresh -> production boundary verification
 ```
 
-The only supported stacks are `pre-prod` and `production`:
+The production job requires `deploy-pre-prod`, so a pre-production check, update, or boundary
+failure prevents production from starting. Each job builds and verifies `dist/index.js` on its own
+runner, authenticates with OIDC, runs exactly one refreshed Pulumi update, suppresses stack
+outputs, and invokes the version-controlled boundary verifier. There is no pull-request deploy,
+automatic rollback, or automatic destroy. Workflow/ref concurrency uses `cancel-in-progress: false`,
+so a newer run waits for an active deployment instead of interrupting it.
+
+## Resource protection
+
+Both Access resources are declared with `protect: true`, and the protection bit is persisted in
+their Pulumi Cloud state. Normal updates remain possible, but Pulumi refuses deletion or
+replacement. An intentional replacement or deletion requires a separately reviewed unprotect
+operation; the automatic workflow never performs that exception.
+
+## Verification and human admission
+
+The exact unauthenticated boundary matrices are owned by the version-controlled verifier:
 
 ```bash
-pulumi stack select pre-prod || {
-  echo 'FAIL: expected the existing local pre-prod stack; refusing to initialize a new stack' >&2
-  exit 1
-}
-pulumi stack select production || {
-  echo 'FAIL: expected the existing local production stack; refusing to initialize a new stack' >&2
-  exit 1
-}
-
-for stack in pre-prod production; do
-  access_application_id="$(pulumi stack output accessApplicationId --stack "$stack")" || exit 1
-  if [ -z "$access_application_id" ]; then
-    echo "FAIL: $stack has no accessApplicationId output; refusing preview/apply" >&2
-    exit 1
-  fi
-done
-unset access_application_id stack
+packages/infrastructure/scripts/verify-access.sh pre-prod
+packages/infrastructure/scripts/verify-access.sh production
 ```
 
-The Pulumi program rejects every other stack name. Stack configuration files are local
-operator state and are ignored by git. Both existing stack selections and non-empty
-`accessApplicationId` outputs are required before preview or apply; the captured identifiers are
-not printed in evidence. Never initialize a replacement stack when selection fails.
+It fails closed on network or malformed responses and accepts only the strict Cloudflare Access
+redirect or the required `403` Access-header contract. It never prints Access header values or
+cookies. The verifier proves edge interception only; it does not prove identity, posture, browser
+login, desktop authorization, or session expiry.
 
-## Configuration
-
-Each supported stack requires these keys:
-
-- `cloudflareAccountId` — the Cloudflare account ID, stored as plain config.
-- `accessEmail` — the operator email, stored with Pulumi secret config.
-- `devicePostureRuleId` — the existing Perseus-managed posture-rule ID, stored as plain
-  config.
-
-`accessSessionDuration` is optional and defaults to `12h`.
-
-Configure values from uncommitted shell variables; never put credentials or identities in
-source files or logs:
-
-```bash
-pulumi config set cloudflareAccountId "$DTX_CLOUDFLARE_ACCOUNT_ID" --stack pre-prod
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack pre-prod
-pulumi config set devicePostureRuleId "$DTX_DEVICE_POSTURE_RULE_ID" --stack pre-prod
-
-pulumi config set cloudflareAccountId "$DTX_CLOUDFLARE_ACCOUNT_ID" --stack production
-pulumi config set --secret accessEmail "$DTX_ACCESS_EMAIL" --stack production
-pulumi config set devicePostureRuleId "$DTX_DEVICE_POSTURE_RULE_ID" --stack production
-```
-
-Obtain the current posture-rule output from the Perseus infrastructure package using its
-correct backend and production stack:
-
-```bash
-: "${PERSEUS_INFRA_DIR:?set PERSEUS_INFRA_DIR to Perseus packages/infrastructure}"
-(
-  cd "$PERSEUS_INFRA_DIR"
-  pulumi stack output adminAccessDevicePostureRuleId
-)
-```
-
-Use that output for `devicePostureRuleId` in both DTXWeb stacks. The required comparison
-against both configured stack values is defined in the [operator runbook](../../docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md).
-
-## Build and preview
-
-Build the Pulumi program before every preview because `Pulumi.yaml` executes
-`dist/index.js`:
-
-```bash
-bun run --filter=@dtx/infrastructure build
-```
-
-From this package, use explicit stack names for non-mutating previews:
-
-```bash
-pulumi preview --stack pre-prod
-pulumi preview --stack production
-```
-
-Do not add or use unscoped Pulumi package scripts. Both DTXWeb Access applications are
-already live and managed from the local Pulumi backend. Reviewed, operator-only
-`pulumi up --stack production` changes remain permitted until the Pulumi Cloud migration
-gate; automatic deployment automation stays disabled until that migration completes. The
-Better Auth/D1 cutover is a separate, queued migration whose identity/desktop acceptance
-checks must be re-run after it lands — it does not block manual production applies.
-
-## Operator procedures
-
-The [Cloudflare Zero Trust Web Access Runbook](../../docs/superpowers/runbooks/2026-08-17-cloudflare-zero-trust-web-access.md)
-is the sole source of truth for live route matrices, posture comparison, apply and destroy,
-browser/device acceptance, and rollback. Follow it for all operator-only `pulumi up`,
-`pulumi destroy`, browser, and device operations.
+After any change to the configured identity, posture rule, Access policy, or relevant Cloudflare
+tenant settings, a human must enter the protected application on a trusted device and confirm it
+works, then use a device that fails the posture rule to confirm Access denies the request before
+DTXWeb loads. The runbook contains the full current and future acceptance procedure.

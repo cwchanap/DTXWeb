@@ -469,6 +469,20 @@ unset app_id resp actual_name actual_domain expected_name expected_domain stack
 
 Do not print `app_id` or the full response in evidence; print only the match/mismatch outcome. A mismatch is a hard stop — the imported state must point at the exact named live application, not a stale or wrong ID.
 
+**Detect provider drift before export.** The identity check above confirms only the application ID maps to the expected name and domain. It does not verify destinations, policies, cookie flags, session duration, or other Access fields. An ordinary `pulumi preview` compares the program against the stored checkpoint — it does not query the live Cloudflare provider, so out-of-band dashboard changes would not be detected and stale local state could be exported and falsely certified as agreeing with Cloudflare. Run `pulumi refresh --preview-only --expect-no-changes` on both local stacks while they are still authoritative and the dedicated Cloudflare token is exposed as `CLOUDFLARE_API_TOKEN`. The `--expect-no-changes` flag makes the command exit non-zero if any drift is detected; combined with `--preview-only` the checkpoint is never mutated. Require zero drift before proceeding to state protection and export:
+
+```bash
+for stack in pre-prod production; do
+  pulumi refresh --preview-only --expect-no-changes --stack "$stack" || {
+    echo "FAIL: $stack has provider drift — reconcile before migration" >&2
+    exit 1
+  }
+done
+unset stack
+```
+
+`pulumi refresh --preview-only` queries the live Cloudflare provider and reports drift without modifying the checkpoint. Any drift (session duration, policy, cookie settings, destinations, or any other field changed out-of-band) is a hard stop — reconcile it deliberately before migration rather than importing stale state. This uses Pulumi's built-in drift detection instead of hand-comparing every Cloudflare field in the curl block.
+
 **Establish state-level protection before export.** `pulumi destroy` does not run the program by default; it operates on state. The source-level `{ protect: true }` from PR A is not active in these pre-existing local stacks until it is persisted into state. Run `pulumi state protect` on both Access application URNs so the protect bit is in state before export, then verify the exported state carries it:
 
 ```bash
@@ -511,9 +525,10 @@ For each fully qualified stack:
 rtk pulumi stack change-secrets-provider default --stack <fully-qualified-stack>
 rtk pulumi config set --secret accessEmail "$DTX_MIGRATION_ACCESS_EMAIL" --stack <fully-qualified-stack>
 rtk pulumi config set devicePostureRuleId "$PERSEUS_POSTURE_RULE_ID" --stack <fully-qualified-stack>
+rtk pulumi config set cloudflareAccountId "$CLOUDFLARE_ACCOUNT_ID" --stack <fully-qualified-stack>
 ```
 
-Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final files before PR B. Verify the files contain `secretsprovider: default`, an `accessEmail` `secure:` value, the posture ID, and no `encryptionsalt`.
+`pulumi stack import` migrates deployment state only; stack configuration lives separately in `Pulumi.<stack>.yaml` and must be repopulated on the remote stacks. `src/index.ts` calls `config.require('cloudflareAccountId')`, so without this set the Step 6 preview cannot run. Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final files before PR B (Step 7). Verify the files contain `secretsprovider: default`, an `accessEmail` `secure:` value, the posture ID, the account ID, and no `encryptionsalt`.
 
 - [ ] **Step 6: Preview, confirm protection agreement, and preview cleanly**
 

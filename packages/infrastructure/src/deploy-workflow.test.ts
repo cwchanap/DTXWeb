@@ -7,6 +7,9 @@ const workflowPath = new URL(
 );
 
 const countOccurrences = (text: string, value: string): number => text.split(value).length - 1;
+const checkoutAction = 'uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0';
+const setupBunAction = 'uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2';
+const mainRefGuard = "if: github.ref == 'refs/heads/main'";
 
 describe('committed Pulumi stack settings', () => {
 	it.each(['Pulumi.pre-prod.yaml', 'Pulumi.production.yaml'])(
@@ -59,6 +62,7 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 		expect(productionJob).toContain('environment: dtx-access-production');
 		expect(preProdJob).toContain('cwchanap/dtxweb-infrastructure/pre-prod');
 		expect(productionJob).toContain('cwchanap/dtxweb-infrastructure/production');
+		expect(countOccurrences(text, mainRefGuard)).toBe(2);
 
 		for (const command of [
 			'bun run --filter=@dtx/infrastructure check',
@@ -70,6 +74,11 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 		}
 
 		for (const job of [preProdJob, productionJob]) {
+			expect(countOccurrences(job, checkoutAction)).toBe(1);
+			expect(countOccurrences(job, setupBunAction)).toBe(1);
+			expect(job).not.toContain('uses: actions/checkout@v');
+			expect(job).not.toContain('uses: oven-sh/setup-bun@v');
+			expect(countOccurrences(job, mainRefGuard)).toBe(1);
 			expect(
 				countOccurrences(
 					job,

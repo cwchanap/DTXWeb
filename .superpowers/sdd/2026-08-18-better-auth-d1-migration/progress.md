@@ -686,9 +686,13 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   pre-production. A fresh API deployment followed by the matching web
   deployment, service-binding verification, and the complete current
   pre-production acceptance matrix are explicit remaining gates. The exact
-  Google callback registration is externally unverified, no real sanitized
-  identity export plus complete owner-ID inventory was available, and no
-  import SQL was fabricated or applied.
+  Google callback registration is externally unverified. A protected
+  second-operator-approved import artifact now covers 2 Supabase users, 3
+  supported identities, and the sole production owner UUID (SHA-256
+  `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`), but
+  it has not been applied. Isolated pre-production data has 3 owner UUIDs and
+  one unmatched legacy owner with 3 simfiles and 1 profile, so pre-production
+  import is blocked on an explicit remap-or-remove operator decision.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
@@ -740,3 +744,19 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Focused desktop E2E typecheck and Prettier pass. The existing target-e2e
   executable reran `auth-session.e2e.ts` successfully: 2/2 scenarios passed in
   663ms; no rebuild or remote operation was performed.
+
+## Pre-production operator discovery
+
+- Supabase connector read-only counts: 2 users, 2 email identities, and 1
+  Google identity. No password hashes, sessions, or tokens were exported.
+- Production D1 contains 1 distinct application owner UUID, exactly covered by
+  the sanitized export. Pre-production D1 contains 3 distinct owner UUIDs;
+  only 2 are covered. The unmatched owner is not a repository fixture and owns
+  3 simfiles plus 1 profile dating from March 2026.
+- The protected generated SQL was independently approved: 2 `user` inserts, 2
+  credential and 1 Google `account` inserts, transaction boundaries, no other
+  tables, verified replacement hashes, and matching checksum
+  `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`.
+- Pre-production migrations are current through `0008`; Better Auth user,
+  account, and session tables remain empty. No import, deploy, data remap, or
+  data deletion was performed.

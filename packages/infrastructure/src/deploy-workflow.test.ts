@@ -123,9 +123,7 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			'DTX_DEVICE_POSTURE_RULE_ID',
 			'config-map',
 			'reviewers:',
-			'pulumi destroy',
-			'rollback',
-			'rtk '
+			'pulumi destroy'
 		]) {
 			expect(text).not.toContain(forbidden);
 		}

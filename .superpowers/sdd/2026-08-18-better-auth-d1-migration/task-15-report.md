@@ -142,16 +142,20 @@ pre-production. This is not a production go decision.
   deny, and upload/download all passed. Temporary upload test objects were
   removed.
 - The user confirmed the Google callbacks are registered. Cloudflare Access
-  returned 403 during the remaining protected checks, so the internal `/app`
-  guard, manual Google completion, explicit account linking, Device
-  Authorization expiry, manual OS-browser handoff, and the desktop candidate
-  remain unproven. WDIO coverage is automated evidence only.
+  returned 403, blocking the app-internal `/app` redirect, Google
+  completion/explicit-linking UI, and OS-browser approval handoff. Remote
+  Device Authorization expiry has not been run independently because the
+  five-second expiry override is local-only and prohibited remotely. The
+  broader desktop pre-production candidate matrix has not been run separately;
+  only its browser-approval leg is Access-dependent. WDIO coverage is
+  automated evidence only.
 - The pre-production legacy `SUPABASE_SERVICE_ROLE_KEY` secret remains and was
   not deleted.
 
 Accordingly, pre-production deployment, import, and the listed live smoke
-checks are GREEN, with the Access-blocked checks above still open. This does
-not authorize production mutation. The runbook's five-second expiry override
+checks are GREEN, with the Access-blocked checks, remote Device Authorization
+expiry, and broader desktop candidate matrix still open. This does not
+authorize production mutation. The runbook's five-second expiry override
 remains local-only and is prohibited in remote environments.
 
 ## Production read-only preview and boundary

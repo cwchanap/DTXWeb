@@ -1,5 +1,12 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+
+const workflowPath = new URL(
+	'../../../.github/workflows/deploy-cloudflare-access.yml',
+	import.meta.url
+);
+
+const countOccurrences = (text: string, value: string): number => text.split(value).length - 1;
 
 describe('committed Pulumi stack settings', () => {
 	it.each(['Pulumi.pre-prod.yaml', 'Pulumi.production.yaml'])(
@@ -14,4 +21,101 @@ describe('committed Pulumi stack settings', () => {
 			expect(text).not.toContain('encryptionsalt:');
 		}
 	);
+});
+
+describe('automatic Cloudflare Access deployment workflow', () => {
+	it('keeps the serial deployment and CI contract', () => {
+		const workflowExists = existsSync(workflowPath);
+
+		expect(workflowExists).toBe(true);
+		if (!workflowExists) return;
+
+		const text = readFileSync(workflowPath, 'utf8');
+		const preProdJobStart = text.indexOf('  deploy-pre-prod:');
+		const productionJobStart = text.indexOf('  deploy-production:');
+		const preProdJob = text.slice(preProdJobStart, productionJobStart);
+		const productionJob = text.slice(productionJobStart);
+
+		expect(text).toContain('name: Deploy Cloudflare Access');
+		expect(text).toContain('branches: [main]');
+		expect(text).toContain("'packages/infrastructure/**'");
+		expect(text).toContain("'bun.lock'");
+		expect(text).toContain("'package.json'");
+		expect(text).toContain("'tsconfig.base.json'");
+		expect(text).toContain("'.github/workflows/deploy-cloudflare-access.yml'");
+		expect(text).toContain('workflow_dispatch:');
+		expect(text).not.toContain('pull_request:');
+
+		expect(text).toContain('contents: read');
+		expect(text).toContain('id-token: write');
+		expect(text).toContain('group: ${{ github.workflow }}-${{ github.ref }}');
+		expect(text).toContain('cancel-in-progress: false');
+
+		expect(text.match(/^\s{2}deploy-[^:]+:/gm)).toHaveLength(2);
+		expect(preProdJobStart).toBeGreaterThan(-1);
+		expect(productionJobStart).toBeGreaterThan(preProdJobStart);
+		expect(productionJob).toContain('needs: deploy-pre-prod');
+		expect(preProdJob).toContain('environment: dtx-access-pre-prod');
+		expect(productionJob).toContain('environment: dtx-access-production');
+		expect(preProdJob).toContain('cwchanap/dtxweb-infrastructure/pre-prod');
+		expect(productionJob).toContain('cwchanap/dtxweb-infrastructure/production');
+
+		for (const command of [
+			'bun run --filter=@dtx/infrastructure check',
+			'bun run --filter=@dtx/infrastructure test:coverage',
+			'bun run --filter=@dtx/infrastructure build',
+			'test -f packages/infrastructure/dist/index.js'
+		]) {
+			expect(countOccurrences(text, command)).toBe(2);
+		}
+
+		for (const job of [preProdJob, productionJob]) {
+			expect(
+				countOccurrences(
+					job,
+					'uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640'
+				)
+			).toBe(1);
+			expect(
+				countOccurrences(
+					job,
+					'uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58'
+				)
+			).toBe(1);
+			expect(countOccurrences(job, 'command: up')).toBe(1);
+			expect(countOccurrences(job, 'refresh: true')).toBe(1);
+			expect(countOccurrences(job, 'work-dir: packages/infrastructure')).toBe(1);
+			expect(
+				countOccurrences(
+					job,
+					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}'
+				)
+			).toBe(1);
+			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');
+			expect(job).toContain(
+				'requested-token-type: urn:pulumi:token-type:access_token:personal'
+			);
+			expect(job).toContain('scope: user:cwchanap');
+		}
+
+		expect(preProdJob).toContain('packages/infrastructure/scripts/verify-access.sh pre-prod');
+		expect(productionJob).toContain(
+			'packages/infrastructure/scripts/verify-access.sh production'
+		);
+
+		for (const forbidden of [
+			'PULUMI_ACCESS_TOKEN',
+			'PULUMI_CONFIG_PASSPHRASE',
+			'command: preview',
+			'DTX_ACCESS_EMAIL',
+			'DTX_DEVICE_POSTURE_RULE_ID',
+			'config-map',
+			'reviewers:',
+			'pulumi destroy',
+			'rollback',
+			'rtk '
+		]) {
+			expect(text).not.toContain(forbidden);
+		}
+	});
 });

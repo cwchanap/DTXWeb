@@ -51,6 +51,9 @@ jobs:
       - name: Test affected-scope detector
         run: .github/scripts/ci-affected-scope.test.sh
 
+      - name: Test infrastructure contracts
+        run: bun run --filter=@dtx/infrastructure test
+
       - name: Generate SvelteKit types
         if: steps.scope.outputs.run_expensive == 'true'
         run: |

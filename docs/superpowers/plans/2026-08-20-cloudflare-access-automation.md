@@ -24,7 +24,7 @@
 - GitHub Environment secret name is `CLOUDFLARE_ACCESS_API_TOKEN`; expose it only as `CLOUDFLARE_API_TOKEN` during Pulumi execution.
 - The Cloudflare token has only account-level `Access: Apps and Policies Edit` for the target account; no Workers, DNS, D1, R2, token-management, or global-key privileges.
 - Never create `PULUMI_ACCESS_TOKEN` or `PULUMI_CONFIG_PASSPHRASE` in GitHub.
-- Keep `CLOUDFLARE_ACCOUNT_ID` as the existing repository variable; do not duplicate it in committed stack settings.
+- Commit the non-secret `cloudflareAccountId` in both Pulumi stack settings files and never pass a `config-map` to `pulumi/actions`: it is implemented with `stack.setAllConfig`, which replaces — not merges with — the committed stack configuration. The existing `CLOUDFLARE_ACCOUNT_ID` repository variable stays for workflows that still read it.
 - Commit `accessEmail` only as Pulumi Cloud ciphertext and `devicePostureRuleId` as non-secret stack config. Never commit `encryptionsalt` or a local-passphrase stack file.
 - `pulumi up` performs the recurring preview and update; do not add a preceding recurring `pulumi preview` action. The recurring `pulumi up` must run with `refresh: true` (via the `pulumi/actions` input, which maps to `pulumi up --refresh`) so out-of-band Cloudflare dashboard changes are reconciled forward on every automated run.
 - Do not push, open/merge a PR, mutate GitHub/Pulumi Cloud/Cloudflare, or remove migration exports without the coordinator handling the external-action gate.
@@ -404,7 +404,7 @@ Create `dtx-access-pre-prod` and `dtx-access-production` with no reviewers or wa
 CLOUDFLARE_ACCESS_API_TOKEN
 ```
 
-Do not create `DTX_ACCESS_EMAIL`, `DTX_DEVICE_POSTURE_RULE_ID`, `PULUMI_ACCESS_TOKEN`, or `PULUMI_CONFIG_PASSPHRASE`. Confirm repository variables `PULUMI_ORG=cwchanap` and `CLOUDFLARE_ACCOUNT_ID` exist.
+Do not create `DTX_ACCESS_EMAIL`, `DTX_DEVICE_POSTURE_RULE_ID`, `PULUMI_ACCESS_TOKEN`, or `PULUMI_CONFIG_PASSPHRASE`. Confirm the repository variable `PULUMI_ORG=cwchanap` exists.
 
 - [ ] **Step 2: Configure exact Pulumi Cloud OIDC trust**
 
@@ -425,7 +425,13 @@ Issue `urn:pulumi:token-type:access_token:personal` with `scope: user:cwchanap`.
 
 - [ ] **Step 3: Capture local config securely, reconfirm live identity, establish state protection, and export state**
 
-From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d`. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend. Populate the local `CLOUDFLARE_ACCOUNT_ID` from the existing stack config (the exact state being validated) and confirm both stacks agree before any live Cloudflare lookup — repository variables are not automatically available to this operator shell:
+From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d` and capture its path before doing anything else — every later export, import, and cleanup command consumes `$DTX_MIGRATION_DIR`:
+
+```bash
+DTX_MIGRATION_DIR="$(rtk mktemp -d)"
+```
+
+Do not export it; this shell needs the variable only for pathname expansion. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend. Populate the local `CLOUDFLARE_ACCOUNT_ID` from the existing stack config (the exact state being validated) and confirm both stacks agree before any live Cloudflare lookup — repository variables are not automatically available to this operator shell:
 
 ```bash
 rtk pulumi login --local
@@ -528,7 +534,7 @@ rtk pulumi config set devicePostureRuleId "$PERSEUS_POSTURE_RULE_ID" --stack <fu
 rtk pulumi config set cloudflareAccountId "$CLOUDFLARE_ACCOUNT_ID" --stack <fully-qualified-stack>
 ```
 
-`pulumi stack import` migrates deployment state only; stack configuration lives separately in `Pulumi.<stack>.yaml` and must be repopulated on the remote stacks. `src/index.ts` calls `config.require('cloudflareAccountId')`, so without this set the Step 6 preview cannot run. Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final files before PR B (Step 7). Verify the files contain `secretsprovider: default`, an `accessEmail` `secure:` value, the posture ID, the account ID, and no `encryptionsalt`.
+`pulumi stack import` migrates deployment state only; stack configuration lives separately in `Pulumi.<stack>.yaml` and must be repopulated on the remote stacks. `src/index.ts` calls `config.require('cloudflareAccountId')`, so without this set the Step 6 preview cannot run. The account ID stays in both final files as permanent non-secret stack config (Step 7 keeps it). Verify the files contain `secretsprovider: default`, an `accessEmail` `secure:` value, the posture ID, the account ID, and no `encryptionsalt`.
 
 - [ ] **Step 6: Preview, confirm protection agreement, and preview cleanly**
 
@@ -538,14 +544,9 @@ Run one reviewed `pulumi up` per stack to confirm source and state agree end-to-
 
 - [ ] **Step 7: Prepare PR B inputs and remove private exports**
 
-Remove `cloudflareAccountId` from both settings files, leaving the existing repository variable as its source:
+Keep the non-secret `cloudflareAccountId` in both settings files — committed stack configuration is its only source, and the workflow injects no runtime config.
 
-```bash
-rtk pulumi config rm cloudflareAccountId --stack cwchanap/dtxweb-infrastructure/pre-prod
-rtk pulumi config rm cloudflareAccountId --stack cwchanap/dtxweb-infrastructure/production
-```
-
-Reconfirm encrypted email, matching posture IDs, `secretsprovider: default`, and no passphrase salt. Only after both imports, protected updates, output comparisons, and clean previews pass, remove the two files in the private temporary migration directory and the directory itself.
+Reconfirm encrypted email, matching posture IDs, `secretsprovider: default`, the plain account ID, and no passphrase salt. Only after both imports, protected updates, output comparisons, and clean previews pass, remove the two files in the private temporary migration directory and the directory itself.
 
 This task is an external/security-sensitive gate. Do not begin PR B if any check is incomplete.
 
@@ -575,9 +576,11 @@ Read both files as text from `deploy-workflow.test.ts`. For each file assert:
 expect(text).toContain('secretsprovider: default');
 expect(text).toMatch(/dtxweb-infrastructure:accessEmail:\s*\n\s+secure:/);
 expect(text).toMatch(/dtxweb-infrastructure:devicePostureRuleId:/);
+expect(text).toContain('dtxweb-infrastructure:cloudflareAccountId:');
 expect(text).not.toContain('encryptionsalt:');
-expect(text).not.toContain('dtxweb-infrastructure:cloudflareAccountId:');
 ```
+
+The account ID is deliberately plain (non-secret) stack config in both files; no runtime injection supplies it.
 
 Do not snapshot or print ciphertext or posture values.
 
@@ -647,7 +650,7 @@ cancel-in-progress: false
 refresh: true
 ```
 
-Assert `PULUMI_ACCESS_TOKEN`, `PULUMI_CONFIG_PASSPHRASE`, `command: preview`, `DTX_ACCESS_EMAIL`, and `DTX_DEVICE_POSTURE_RULE_ID` are absent. Assert `deploy-production` appears after and depends on `deploy-pre-prod`.
+Assert `PULUMI_ACCESS_TOKEN`, `PULUMI_CONFIG_PASSPHRASE`, `command: preview`, `DTX_ACCESS_EMAIL`, `DTX_DEVICE_POSTURE_RULE_ID`, and `config-map` are absent. Assert `deploy-production` appears after and depends on `deploy-pre-prod`. `config-map` must stay absent because `pulumi/actions` implements it with `setAllConfig`, which replaces — not merges with — the committed stack configuration; a one-key map would erase `accessEmail` and `devicePostureRuleId` before `up`.
 
 The `refresh: true` assertion pins drift reconciliation into the workflow contract. `pulumi/actions` maps `refresh: true` on `command: up` to `pulumi up --refresh`, which queries the live Cloudflare provider before applying so out-of-band dashboard changes to the allow policy, posture requirement, session/cookie flags, or any other Access field are reconciled forward on every automated run. Without it, `pulumi up` compares only against the stored checkpoint and the HTTP boundary verifier cannot detect field-level drift (for example, removing the posture requirement still leaves an unauthenticated request returning Access interception). Dropping this assertion later would silently revert the automation to checkpoint-only comparison, so the contract test must prevent it.
 
@@ -701,13 +704,7 @@ test -f packages/infrastructure/dist/index.js
 
 These are workflow contents, so they omit `rtk`; RTK is an agent-shell requirement, not a runner dependency.
 
-Authenticate with the exact pinned `pulumi/auth-actions` action, `organization: ${{ vars.PULUMI_ORG }}`, personal token type, and `scope: user:cwchanap`. Run the pinned `pulumi/actions` once with `command: up`, `refresh: true`, the exact fully qualified stack, `work-dir: packages/infrastructure`, and only this config map:
-
-```yaml
-config-map: |
-    cloudflareAccountId:
-      value: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-```
+Authenticate with the exact pinned `pulumi/auth-actions` action, `organization: ${{ vars.PULUMI_ORG }}`, personal token type, and `scope: user:cwchanap`. Run the pinned `pulumi/actions` once with `command: up`, `refresh: true`, the exact fully qualified stack, `work-dir: packages/infrastructure`, and no `config-map`. `pulumi/actions` implements `config-map` with `stack.setAllConfig`, which replaces the stack configuration instead of merging with it — passing `cloudflareAccountId` alone would erase the committed `accessEmail` and `devicePostureRuleId` before `up`, and `src/index.ts` requires all three. Every config value comes from the committed stack settings files.
 
 Map the environment secret only for Pulumi execution:
 

@@ -171,7 +171,13 @@ describe('NotationView', () => {
 		render(NotationView, { props: { chart: twoMeasureChart } });
 		await tick();
 
-		expect(measureLabelCalls.map(({ text }) => text)).toEqual(['0', '1']);
+		// Each label sits 10px above its stave (y = staveY - 10) and 4px right of
+		// the stave's left edge (x = staveX + 4). Both staves share row 0 (y=30)
+		// since two 160px-wide measures fit within the 880px usable width.
+		expect(measureLabelCalls).toEqual([
+			{ text: '0', x: 14, y: 20 },
+			{ text: '1', x: 174, y: 20 }
+		]);
 	});
 
 	it('clamps aria-valuemax to 0 for an empty-measures chart (never -1)', async () => {

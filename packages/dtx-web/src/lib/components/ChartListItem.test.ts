@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -18,10 +18,10 @@ const mockPlayingAudio = vi.hoisted(() => ({
 	set: vi.fn()
 }));
 const createAudioPreviewMock = vi.hoisted(() =>
-	vi.fn((_getUrl: () => string | null) => ({
+	vi.fn((getUrl: () => string | null) => ({
 		isPlaying: false,
 		isLoading: false,
-		available: false,
+		available: getUrl() !== null,
 		toggle: vi.fn()
 	}))
 );
@@ -58,9 +58,10 @@ vi.mock('$lib/api', () => ({
 	bulkDownloadHeaders: vi.fn().mockResolvedValue({ 'Content-Type': 'application/json' })
 }));
 
-vi.mock('$lib/components/ImageAudio.svelte', () => ({
-	default: () => ({})
-}));
+vi.mock('$lib/components/ImageAudio.svelte', async () => {
+	const { default: ImageAudioStub } = await import('../../tests/stubs/ImageAudioStub.svelte');
+	return { default: ImageAudioStub };
+});
 
 vi.mock('$lib/utils', () => ({
 	formatLevelDisplay: (dtxFiles: unknown) => {
@@ -268,11 +269,29 @@ describe('ChartListItem Component Logic', () => {
 		});
 
 		it('keeps audio off the owner menu so it remains an image control', () => {
-			render(ChartListItem, { props: renderProps });
+			const { container } = render(ChartListItem, { props: renderProps });
 
+			const popoverContent = container.querySelector('.py-2');
+			expect(popoverContent).not.toBeNull();
 			expect(
-				screen.queryByRole('button', { name: 'chart_actions.play_audio' })
+				within(popoverContent!).queryByRole('button', { name: 'chart_actions.play_audio' })
 			).not.toBeInTheDocument();
+		});
+
+		it('renders the image-cover control and exposes the model preview URL when available', () => {
+			const previewUrl = 'https://example.com/preview.mp3';
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					item: { ...mockItem, previewUrl }
+				}
+			});
+
+			expect(screen.getByTestId('image-cover')).toBeInTheDocument();
+
+			const getAudioUrl = createAudioPreviewMock.mock.calls.at(-1)?.[0] as
+				(() => string | null) | undefined;
+			expect(getAudioUrl?.()).toBe(previewUrl);
 		});
 
 		it('leads the owner menu with Open in Editor', () => {

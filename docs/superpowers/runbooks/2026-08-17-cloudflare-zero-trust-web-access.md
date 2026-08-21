@@ -45,7 +45,7 @@ Use `accessEmail` as Pulumi secret config. `devicePostureRuleId` is a non-secret
 
 ## Cloudflare API Credential
 
-Set `CLOUDFLARE_API_TOKEN` in the operator shell with the least privilege needed for the Access application lifecycle. Use the Cloudflare Access apps/policies write permission required by the selected provider/API; do not use a Global API Key.
+Set `CLOUDFLARE_API_TOKEN` in the operator shell to an account-scoped token whose only permission is account-level `Access: Apps and Policies Edit` for the target account. The token must not carry Workers, DNS, D1, R2, or API-token-management permissions, and a Global API Key must never be used.
 
 ## Select Existing Stacks And Verify Live IDs
 

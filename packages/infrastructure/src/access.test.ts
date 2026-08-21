@@ -95,7 +95,7 @@ describe('buildAccessApplicationArgs', () => {
 			allowAuthenticateViaWarp: false,
 			enableBindingCookie: true,
 			httpOnlyCookieAttribute: true,
-			pathCookieAttribute: false
+			pathCookieAttribute: true
 		});
 
 		expect(args.policies).toHaveLength(1);

@@ -101,7 +101,8 @@ assert_public() {
 		return 1
 	fi
 	print_response_summary
-	if has_access_interception; then
+	if has_access_interception ||
+		[[ "$HTTP_HAS_ACCESS_AUD" -eq 1 || "$HTTP_HAS_ACCESS_DOMAIN" -eq 1 ]]; then
 		printf 'unexpected Access interception for public URL %s\n' "$url" >&2
 		return 1
 	fi

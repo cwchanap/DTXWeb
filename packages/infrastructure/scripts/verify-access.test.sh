@@ -31,6 +31,14 @@ Location: https://tenant.cloudflareaccess.com:443@evil.example/login
 RESPONSE
 }
 
+emit_malformed_port_cloudflare_redirect() {
+	cat <<'RESPONSE'
+HTTP/2 302
+Location: https://tenant.cloudflareaccess.com:bad/login
+
+RESPONSE
+}
+
 emit_generic_redirect() {
 	cat <<'RESPONSE'
 HTTP/2 302
@@ -55,6 +63,15 @@ emit_access_forbidden_missing_domain() {
 HTTP/2 403
 Cf-Access-Aud: super-secret-audience
 Set-Cookie: CF_Authorization=super-secret-cookie
+
+RESPONSE
+}
+
+emit_access_forbidden_aud_only() {
+	cat <<'RESPONSE'
+HTTP/2 403
+Cf-Access-Aud: super-secret-audience
+Content-Type: text/plain
 
 RESPONSE
 }
@@ -161,6 +178,13 @@ case "${FAKE_CURL_SCENARIO:-}" in
 			emit_public_ok
 		fi
 		;;
+	malformed-port-cloudflare-host)
+		if is_pre_prod_protected_url; then
+			emit_malformed_port_cloudflare_redirect
+		else
+			emit_public_ok
+		fi
+		;;
 	generic-redirect)
 		if is_pre_prod_protected_url || is_production_protected_url; then
 			emit_generic_redirect
@@ -216,6 +240,15 @@ case "${FAKE_CURL_SCENARIO:-}" in
 	public-intercepted)
 		if [[ "$url" == https://api.pre-prod.dtx.hapadona.com/ || "$url" == https://api.dtx.hapadona.com/ ]]; then
 			emit_access_forbidden
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_cloudflare_redirect
+		else
+			emit_public_ok
+		fi
+		;;
+	public-single-access-header)
+		if [[ "$url" == https://api.pre-prod.dtx.hapadona.com/ || "$url" == https://api.dtx.hapadona.com/ ]]; then
+			emit_access_forbidden_aud_only
 		elif is_pre_prod_protected_url || is_production_protected_url; then
 			emit_cloudflare_redirect
 		else
@@ -297,6 +330,7 @@ assert_urls() {
 
 run_case 'cloudflare-host redirect accepted' 0 cloudflare-redirect pre-prod
 run_case 'Cloudflare host userinfo spoof rejected' 1 spoofed-cloudflare-host pre-prod
+run_case 'Cloudflare host malformed port redirect rejected' 1 malformed-port-cloudflare-host pre-prod
 run_case 'generic redirect rejected for protected route' 1 generic-redirect pre-prod
 run_case '403 with both Access headers accepted' 0 access-403-both pre-prod
 run_case '403 missing either Access header rejected' 1 access-403-missing-domain pre-prod
@@ -304,6 +338,7 @@ run_case 'earlier Access headers ignored for final 403' 1 multi-block-final-403 
 run_case 'earlier Access Location ignored for final 303' 1 multi-block-final-303 pre-prod
 run_case 'public 200, 303, and 404 accepted' 0 public-matrix production
 run_case 'Access interception on a public route rejected' 1 public-intercepted pre-prod
+run_case 'public API root with a single Access header rejected' 1 public-single-access-header pre-prod
 run_case 'network failure rejected' 1 network-failure pre-prod
 run_case 'unsupported environment rejected before curl' 1 cloudflare-redirect development
 if [[ -s "$FAKE_CURL_LOG" ]]; then

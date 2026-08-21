@@ -190,6 +190,7 @@ Use a `run_case <name> <expected-status> <scenario> <environment>` helper and co
 ```text
 cloudflare-host redirect accepted
 generic redirect rejected for protected route
+cloudflare-host redirect with a malformed port rejected
 403 with both Access headers accepted
 403 missing either Access header rejected
 public 200, 303, and 404 accepted
@@ -220,7 +221,7 @@ Create `verify-access.sh` with `set -euo pipefail` and these functions:
 http_headers()              # curl -sS --max-time 15 -o /dev/null -D - URL; fail on transport/no status
 has_access_interception()   # exact Cloudflare redirect OR 403 plus both Access headers
 assert_access_intercepted() # fail when has_access_interception is false
-assert_public()             # fail when has_access_interception is true
+assert_public()             # fail when Access interception or either Access header is present
 verify_pre_prod()           # run the exact pre-production matrix
 verify_production()         # run the exact production matrix
 ```
@@ -228,8 +229,11 @@ verify_production()         # run the exact production matrix
 Classify a redirect only when the final status is `3xx` and `Location` matches this case-insensitive Bash/grep ERE:
 
 ```text
-^https://([[:alnum:]-]+\.)+cloudflareaccess\.com([/:?#]|$)
+^https://([[:alnum:]-]+\.)+cloudflareaccess\.com(:[0-9]+)?([/?#]|$)
 ```
+
+A `Location` whose host continues with a non-numeric suffix after a colon (for example
+`https://tenant.cloudflareaccess.com:bad`) is therefore not an Access redirect.
 
 Classify the header form only when final status is exactly `403` and both header names occur case-insensitively at line start:
 

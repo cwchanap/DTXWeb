@@ -174,7 +174,9 @@ default secrets provider. Each file is the version-controlled source of truth fo
 - `devicePostureRuleId`, recorded as a non-secret identifier;
 - an optional explicit `accessSessionDuration` only if it differs from the code default.
 
-Remove `Pulumi.*.yaml` from `packages/infrastructure/.gitignore`. Never commit a stack file while it
+Keep the broad `Pulumi.*.yaml` ignore in `packages/infrastructure/.gitignore` and unignore exactly
+`Pulumi.pre-prod.yaml` and `Pulumi.production.yaml`; unknown `Pulumi.*.yaml` stack files stay
+untrackable. Never commit a stack file while it
 still contains the local passphrase provider or its encryption salt. A pull request must reject a
 plain-text `accessEmail`.
 

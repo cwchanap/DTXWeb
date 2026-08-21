@@ -10,7 +10,7 @@ export const ACCESS_APPLICATION_FLAGS = {
 	allowAuthenticateViaWarp: false,
 	enableBindingCookie: true,
 	httpOnlyCookieAttribute: true,
-	pathCookieAttribute: false
+	pathCookieAttribute: true
 } as const;
 
 export interface AccessDestination {

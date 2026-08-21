@@ -50,13 +50,13 @@ test.describe('Blog page', () => {
 
 	test('opens a published uploaded chart in the public notation preview', async ({ page }) => {
 		// The card title links to /preview/[id] for previewable charts, and the
-		// card's [⋮] menu also carries an explicit Preview entry. The Preview
-		// entry appears only for a published chart with an uploaded file
-		// (ChartList.helpers.ts isPreviewable) — seeded CHART_B_ID is both.
+		// card's [⋮] menu also carries an explicit entry (labeled "Open in Music
+		// Tab"). The entry appears only for a published chart with an uploaded
+		// file (ChartList.helpers.ts isPreviewable) — seeded CHART_B_ID is both.
 		const card = page.locator('.music-card').filter({ hasText: CHART_B_TITLE }).first();
 		await card.getByRole('button', { name: 'Actions' }).click();
 
-		const previewEntry = page.getByRole('menuitem', { name: 'Open in Preview' });
+		const previewEntry = page.getByRole('menuitem', { name: 'Open in Music Tab' });
 		await expect(previewEntry).toHaveAttribute('href', `/preview/${CHART_B_ID}`);
 		await previewEntry.click();
 		await expect(page).toHaveURL(PAGES.PREVIEW(CHART_B_ID));

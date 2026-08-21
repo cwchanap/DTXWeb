@@ -62,6 +62,7 @@ jobs:
           stack-name: cwchanap/dtxweb-infrastructure/pre-prod
           work-dir: packages/infrastructure
           refresh: true
+          suppress-outputs: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
 
@@ -111,6 +112,7 @@ jobs:
           stack-name: cwchanap/dtxweb-infrastructure/production
           work-dir: packages/infrastructure
           refresh: true
+          suppress-outputs: true
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
 

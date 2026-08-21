@@ -93,8 +93,12 @@ pulumi preview --stack pre-prod
 pulumi preview --stack production
 ```
 
-Do not add or use unscoped Pulumi package scripts. Production live apply remains on hold
-until the Better Auth/D1 cutover is complete and the operator runbook has been reconciled.
+Do not add or use unscoped Pulumi package scripts. Both DTXWeb Access applications are
+already live and managed from the local Pulumi backend. Reviewed, operator-only
+`pulumi up --stack production` changes remain permitted until the Pulumi Cloud migration
+gate; automatic deployment automation stays disabled until that migration completes. The
+Better Auth/D1 cutover is a separate, queued migration whose identity/desktop acceptance
+checks must be re-run after it lands — it does not block manual production applies.
 
 ## Operator procedures
 

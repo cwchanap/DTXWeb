@@ -54,7 +54,13 @@ Reuse these browser application flags from the Perseus implementation:
 - `allowAuthenticateViaWarp: false`;
 - `enableBindingCookie: true`;
 - `httpOnlyCookieAttribute: true`;
-- `pathCookieAttribute: false`.
+- `pathCookieAttribute: true`.
+
+`pathCookieAttribute` was changed from `false` to `true` by the 2026-08-20 Access
+hardening (commit `f912e38a`, "close remaining Access verification edge cases") to scope
+Access cookies to the application path. The implementation in
+`packages/infrastructure/src/access.ts` and its test assert `true`; this spec previously
+recorded the older `false` value and is corrected here to match the live contract.
 
 Do not copy Perseus service-token, CLI, Worker, storage, or deployment resources.
 

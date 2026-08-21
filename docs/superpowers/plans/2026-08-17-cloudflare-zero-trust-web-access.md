@@ -234,7 +234,9 @@ Mirror only the browser Access shape used by Perseus:
 - `allowAuthenticateViaWarp: false`;
 - `enableBindingCookie: true`;
 - `httpOnlyCookieAttribute: true`;
-- `pathCookieAttribute: false`.
+- `pathCookieAttribute: true` (superseded `false` on 2026-08-20 by the Access hardening
+  in commit `f912e38a` to scope Access cookies to the application path; the implemented
+  `packages/infrastructure/src/access.ts` and its test assert `true`).
 
 Do not add posture/list/service-token/CLI resources.
 

@@ -29,6 +29,7 @@ const begBarTypes = vi.hoisted(() => [] as number[]);
 // Captures StaveTempo constructor args so tests can assert BPM markings are
 // drawn at the expected x position without joining the rhythmic Voice.
 const tempoCalls = vi.hoisted(() => [] as Array<{ x: number; bpm?: number; duration?: string }>);
+const measureLabelCalls = vi.hoisted(() => [] as Array<{ text: string; x: number; y: number }>);
 vi.mock('vexflow', () => {
 	class Stave {
 		addClef() {
@@ -66,7 +67,14 @@ vi.mock('vexflow', () => {
 			constructor(_el: unknown, _b: unknown) {}
 			resize() {}
 			getContext() {
-				return {};
+				return {
+					save() {},
+					setFont() {},
+					fillText(text: string, x: number, y: number) {
+						measureLabelCalls.push({ text, x, y });
+					},
+					restore() {}
+				};
 			}
 		},
 		Stave,
@@ -141,6 +149,7 @@ describe('NotationView', () => {
 		tupletDraw.mockClear();
 		begBarTypes.length = 0;
 		tempoCalls.length = 0;
+		measureLabelCalls.length = 0;
 	});
 
 	it('renders a container and draws at least one stave', async () => {
@@ -151,6 +160,18 @@ describe('NotationView', () => {
 		expect(container.querySelector('[data-testid="notation-container"]')).toBeTruthy();
 		expect(setContext).toHaveBeenCalled();
 		expect(draw).toHaveBeenCalled();
+	});
+
+	it('renders the DTX measure number above each stave', async () => {
+		const twoMeasureChart: NotationChart = {
+			measures: [chart.measures[0], { ...chart.measures[0], index: 1 }],
+			tempoEvents: []
+		};
+
+		render(NotationView, { props: { chart: twoMeasureChart } });
+		await tick();
+
+		expect(measureLabelCalls.map(({ text }) => text)).toEqual(['0', '1']);
 	});
 
 	it('clamps aria-valuemax to 0 for an empty-measures chart (never -1)', async () => {

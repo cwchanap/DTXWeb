@@ -19,7 +19,7 @@
 		imageError = false;
 	});
 
-	const controlVisible = $derived(audio.available && (audio.isPlaying || audio.isLoading));
+	const controlVisible = $derived(audio.available);
 	const controlLabel = $derived($_(audioToggleLabelKey(audio)));
 </script>
 

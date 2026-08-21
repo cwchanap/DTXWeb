@@ -48,7 +48,12 @@ vi.mock('vexflow', () => {
 			constructor(_el: unknown, _b: unknown) {}
 			resize() {}
 			getContext() {
-				return {};
+				return {
+					save() {},
+					setFont() {},
+					fillText() {},
+					restore() {}
+				};
 			}
 		},
 		Stave,

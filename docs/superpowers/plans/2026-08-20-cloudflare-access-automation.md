@@ -26,7 +26,7 @@
 - Never create `PULUMI_ACCESS_TOKEN` or `PULUMI_CONFIG_PASSPHRASE` in GitHub.
 - Keep `CLOUDFLARE_ACCOUNT_ID` as the existing repository variable; do not duplicate it in committed stack settings.
 - Commit `accessEmail` only as Pulumi Cloud ciphertext and `devicePostureRuleId` as non-secret stack config. Never commit `encryptionsalt` or a local-passphrase stack file.
-- `pulumi up` performs the recurring preview and update; do not add a preceding recurring `pulumi preview` action.
+- `pulumi up` performs the recurring preview and update; do not add a preceding recurring `pulumi preview` action. The recurring `pulumi up` must run with `refresh: true` (via the `pulumi/actions` input, which maps to `pulumi up --refresh`) so out-of-band Cloudflare dashboard changes are reconciled forward on every automated run.
 - Do not push, open/merge a PR, mutate GitHub/Pulumi Cloud/Cloudflare, or remove migration exports without the coordinator handling the external-action gate.
 - Do not run the monorepo-wide build. Build only `@dtx/infrastructure`; `@dtx/common` is unchanged.
 
@@ -644,9 +644,12 @@ pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640
 pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58
 CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}
 cancel-in-progress: false
+refresh: true
 ```
 
 Assert `PULUMI_ACCESS_TOKEN`, `PULUMI_CONFIG_PASSPHRASE`, `command: preview`, `DTX_ACCESS_EMAIL`, and `DTX_DEVICE_POSTURE_RULE_ID` are absent. Assert `deploy-production` appears after and depends on `deploy-pre-prod`.
+
+The `refresh: true` assertion pins drift reconciliation into the workflow contract. `pulumi/actions` maps `refresh: true` on `command: up` to `pulumi up --refresh`, which queries the live Cloudflare provider before applying so out-of-band dashboard changes to the allow policy, posture requirement, session/cookie flags, or any other Access field are reconciled forward on every automated run. Without it, `pulumi up` compares only against the stored checkpoint and the HTTP boundary verifier cannot detect field-level drift (for example, removing the posture requirement still leaves an unauthenticated request returning Access interception). Dropping this assertion later would silently revert the automation to checkpoint-only comparison, so the contract test must prevent it.
 
 - [ ] **Step 2: Observe RED**
 
@@ -698,7 +701,7 @@ test -f packages/infrastructure/dist/index.js
 
 These are workflow contents, so they omit `rtk`; RTK is an agent-shell requirement, not a runner dependency.
 
-Authenticate with the exact pinned `pulumi/auth-actions` action, `organization: ${{ vars.PULUMI_ORG }}`, personal token type, and `scope: user:cwchanap`. Run the pinned `pulumi/actions` once with `command: up`, the exact fully qualified stack, `work-dir: packages/infrastructure`, and only this config map:
+Authenticate with the exact pinned `pulumi/auth-actions` action, `organization: ${{ vars.PULUMI_ORG }}`, personal token type, and `scope: user:cwchanap`. Run the pinned `pulumi/actions` once with `command: up`, `refresh: true`, the exact fully qualified stack, `work-dir: packages/infrastructure`, and only this config map:
 
 ```yaml
 config-map: |
@@ -714,6 +717,8 @@ env:
 ```
 
 Run `packages/infrastructure/scripts/verify-access.sh pre-prod` after the first update and `production` after the second. Set `deploy-production.needs: deploy-pre-prod`. Do not add reviewer gates, rollback, destroy, or a standalone preview.
+
+`refresh: true` makes each automated `pulumi up` query the live Cloudflare provider before applying, so out-of-band dashboard changes to the allow policy, posture requirement, session/cookie flags, or any other Access field are reconciled forward on every run. This is what makes the Pulumi program authoritative for the Access security policy, not merely for the checkpoint. The HTTP boundary verifier only proves interception presence/absence — it cannot detect field-level drift such as a removed posture requirement (which still leaves an unauthenticated request returning Access interception). The migration's one-time `pulumi refresh --preview-only --expect-no-changes` proves the initial checkpoint is current; `refresh: true` extends that drift reconciliation to every recurring update.
 
 - [ ] **Step 5: Add the unconditional PR contract hook**
 

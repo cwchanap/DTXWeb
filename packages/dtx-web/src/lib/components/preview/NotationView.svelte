@@ -216,6 +216,10 @@
 			stave.setContext(context).draw();
 
 			try {
+				context.save();
+				context.setFont('Arial', 10);
+				context.fillText(`${measure.index}`, x + 4, y - 10);
+				context.restore();
 				const notes = toStaveNotes(measure);
 				const tuplets = measure.tuplets.map((tuplet) => {
 					// Guard against a malformed tuplet whose startIndex + count

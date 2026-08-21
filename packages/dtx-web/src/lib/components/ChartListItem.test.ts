@@ -17,12 +17,23 @@ const mockPlayingAudio = vi.hoisted(() => ({
 	}),
 	set: vi.fn()
 }));
+const createAudioPreviewMock = vi.hoisted(() =>
+	vi.fn((_getUrl: () => string | null) => ({
+		isPlaying: false,
+		isLoading: false,
+		available: false,
+		toggle: vi.fn()
+	}))
+);
 
 // ChartListItem now creates its own audio preview unit (via createAudioPreview),
 // which subscribes to the shared playingAudio store. Mock $lib/store directly
 // rather than relying on the auto-mocked @dtx/common (which doesn't export `store`).
 vi.mock('$lib/store', () => ({
 	default: { playingAudio: mockPlayingAudio }
+}));
+vi.mock('$lib/audioPreview.svelte', () => ({
+	createAudioPreview: createAudioPreviewMock
 }));
 
 vi.mock('svelte-i18n');
@@ -256,28 +267,21 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
-		it('places the audio entry first in the owner menu', () => {
+		it('keeps audio off the owner menu so it remains an image control', () => {
 			render(ChartListItem, { props: renderProps });
 
-			// PopoverStub always renders its content; no trigger click required.
-			// The audio entry is a Button rendered when audio.available.
 			expect(
-				screen.getByRole('button', { name: 'chart_actions.play_audio' })
-			).toBeInTheDocument();
+				screen.queryByRole('button', { name: 'chart_actions.play_audio' })
+			).not.toBeInTheDocument();
 		});
 
-		it('leads the owner menu with the audio entry, then Open in Editor', () => {
+		it('leads the owner menu with Open in Editor', () => {
 			render(ChartListItem, { props: renderProps });
 
-			// A plain <button> (ButtonStub has no role="menuitem" override) still carries
-			// the implicit ARIA role "button", so getAllByRole('button') already returns
-			// every menu entry in DOM order. Excluding the Popover trigger (aria-label
-			// "Actions") isolates the menu entries themselves.
 			const menuButtons = screen
 				.getAllByRole('button')
 				.filter((button) => button.getAttribute('aria-label') !== 'Actions');
-			expect(menuButtons[0]).toHaveAccessibleName('chart_actions.play_audio');
-			expect(menuButtons[1]).toHaveAccessibleName('Open in Editor');
+			expect(menuButtons[0]).toHaveAccessibleName('Open in Editor');
 		});
 
 		it('renders the action menu in blog mode when entries apply', () => {
@@ -285,12 +289,9 @@ describe('ChartListItem Component Logic', () => {
 			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
 		});
 
-		it('offers Play/Pause audio and Open in Preview on a blog card, never Open in Editor', () => {
+		it('offers Open in Editor and the music tab on a blog card', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
 
-			// Every menu entry, in DOM order: Button-rendered entries carry the
-			// implicit role "button", anchors carry an explicit role="menuitem".
-			// Excluding the Popover trigger leaves the entries themselves.
 			const entries = [
 				...screen
 					.getAllByRole('button')
@@ -298,7 +299,25 @@ describe('ChartListItem Component Logic', () => {
 				...screen.getAllByRole('menuitem')
 			].map((element) => element.textContent?.trim());
 
-			expect(entries).toEqual(['chart_actions.play_audio', 'preview.open']);
+			expect(entries).toEqual(['Open in Editor', 'preview.open']);
+		});
+
+		it('labels the preview destination as the music tab in English', () => {
+			const locale = JSON.parse(
+				readFileSync(path.resolve(process.cwd(), 'src/lib/i18n/locales/en.json'), 'utf-8')
+			) as { preview: { open: string } };
+
+			expect(locale.preview.open).toBe('Open in Music Tab');
+		});
+
+		it('does not invent an audio URL when the model has no preview asset', () => {
+			render(ChartListItem, {
+				props: { ...renderProps, item: { ...mockItem, previewUrl: null } }
+			});
+			const getAudioUrl = createAudioPreviewMock.mock.calls.at(-1)?.[0] as
+				(() => string | null) | undefined;
+
+			expect(getAudioUrl?.()).toBeNull();
 		});
 
 		it('renders no action menu on a blog card with no id', () => {
@@ -576,11 +595,10 @@ describe('ChartListItem Component Logic', () => {
 			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
-		it('"Open in Editor" menu item is not shown in blog mode', () => {
+		it('clicking "Open in Editor" from the blog menu navigates to the editor', async () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
-			).not.toBeInTheDocument();
+			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
 		it('"Open in Editor" menu item is not shown when item.id is undefined', () => {

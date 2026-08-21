@@ -10,7 +10,7 @@
 	import { goto } from '$app/navigation';
 	import toastStore from '$lib/toaster';
 	import { isPreviewable, chartTitleHref } from '$lib/components/ChartList.helpers';
-	import { createAudioPreview, audioToggleLabelKey } from '$lib/audioPreview.svelte';
+	import { createAudioPreview } from '$lib/audioPreview.svelte';
 
 	type ChartListItemData = Partial<SimfileModel>;
 
@@ -37,10 +37,8 @@
 	const previewable = $derived(isPreviewable(item));
 	const titleHref = $derived(chartTitleHref(item, isBlog));
 
-	const audio = createAudioPreview(() =>
-		item.id === undefined ? null : buildPreviewUrl(simfileBucketUrl, item.id, 'mp3')
-	);
-	const blogMenuVisible = $derived(isBlog && (previewable || audio.available));
+	const audio = createAudioPreview(() => item.previewUrl ?? null);
+	const blogMenuVisible = $derived(isBlog && (previewable || hasUploadedChart));
 
 	const handleDeleteConfirm = () => {
 		if (item.id !== undefined) {
@@ -61,11 +59,6 @@
 			console.error('Failed to navigate to editor:', error);
 			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
 		}
-	};
-
-	const handleAudioToggle = () => {
-		popoverOpen = false;
-		audio.toggle();
 	};
 </script>
 
@@ -107,49 +100,7 @@
 					{/snippet}
 					{#snippet content()}
 						<div class="py-2">
-							{#if audio.available}
-								<Button
-									onclick={handleAudioToggle}
-									variant="menuItem"
-									fullWidth
-									justify="start"
-									class="text-slate-300 hover:bg-purple-600/20 hover:text-purple-200"
-								>
-									{#snippet children()}
-										{#if audio.isPlaying}
-											<svg
-												class="mr-3 h-4 w-4"
-												fill="none"
-												stroke="currentColor"
-												viewBox="0 0 24 24"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"
-												></path>
-											</svg>
-										{:else}
-											<svg
-												class="mr-3 h-4 w-4"
-												fill="none"
-												stroke="currentColor"
-												viewBox="0 0 24 24"
-											>
-												<path
-													stroke-linecap="round"
-													stroke-linejoin="round"
-													stroke-width="2"
-													d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-												></path>
-											</svg>
-										{/if}
-										{$_(audioToggleLabelKey(audio))}
-									{/snippet}
-								</Button>
-							{/if}
-							{#if !isBlog && hasUploadedChart}
+							{#if hasUploadedChart}
 								<Button
 									onclick={handleOpenInEditor}
 									variant="menuItem"

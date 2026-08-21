@@ -1,4 +1,6 @@
 Pulumi.*.yaml
+!Pulumi.pre-prod.yaml
+!Pulumi.production.yaml
 .pulumi/
 node_modules/
 dist/

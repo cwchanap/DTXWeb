@@ -1,0 +1,6 @@
+secretsprovider: default
+config:
+  dtxweb-infrastructure:accessEmail:
+    secure: AAABAMyT+8Z1mkzt7UqMq3EuF5NFPkATM6LjZt3xoxipWZqmlMyIxEn23F/1jvNVf5ywMaff9Q==
+  dtxweb-infrastructure:cloudflareAccountId: 91ee89a03a31b5354a25c49228e4ab85
+  dtxweb-infrastructure:devicePostureRuleId: 414d3bb6-4927-43fd-94a9-d5c2e171d5b5

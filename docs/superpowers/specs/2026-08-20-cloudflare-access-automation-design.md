@@ -97,9 +97,18 @@ The workflow has two jobs:
 
 Each job checks out the same commit, installs the locked Bun dependencies, runs the infrastructure
 package check and coverage suite, builds `dist/index.js`, authenticates to Pulumi Cloud, runs
-`pulumi up` for the environment's stack, and runs the environment's live boundary verification.
-`pulumi up` computes and logs its own preview before applying; do not add a separate duplicate
-preview step to the recurring workflow.
+`pulumi up --refresh` for the environment's stack, and runs the environment's live boundary
+verification. `pulumi up` computes and logs its own preview before applying; do not add a separate
+duplicate preview step to the recurring workflow. The `--refresh` flag (set via the `pulumi/actions`
+`refresh: true` input) makes each automated update query the live Cloudflare provider before
+applying, so out-of-band dashboard changes to the allow policy, posture requirement, session/cookie
+flags, or any other Access field are reconciled forward on every run. Without it, `pulumi up`
+compares only against the stored checkpoint and the HTTP boundary verifier cannot detect field-level
+drift — for example, removing the posture requirement still leaves an unauthenticated request
+returning Access interception. The migration's one-time `pulumi refresh --preview-only
+--expect-no-changes` proves the initial checkpoint is current; `--refresh` on every recurring
+`pulumi up` extends that drift reconciliation to the automated path. This is what makes the Pulumi
+program authoritative for the Access security policy, not merely for the checkpoint.
 
 The production job therefore cannot run after any pre-production failure. Rebuilding in each job
 is intentional: the compiled Pulumi entrypoint is produced and checked in the same runner that
@@ -190,32 +199,80 @@ destinations as configuration. `PULUMI_CONFIG_PASSPHRASE` is absent from GitHub.
 ## One-Time State Migration
 
 State migration is a prerequisite to merging or enabling the deployment workflow. It is an
-operator operation, not a recurring workflow step.
+operator operation, not a recurring workflow step. Every step below is a hard stop on any
+mismatch — the imported state must point at the exact named live applications with zero provider
+drift, and protection must be persisted into state before export so the exported checkpoint carries
+it.
 
 1. Stop local Pulumi applies for both DTXWeb stacks.
-2. Confirm the local `pre-prod` and `production` stacks refer to the two current live Cloudflare
-   applications and record a non-sensitive resource summary.
-3. Export each stack through Pulumi's supported backend-migration procedure into a private
-   temporary location. The export may contain sensitive state and must never enter git, logs, chat,
-   or a shared artifact store.
-4. Log in to Pulumi Cloud, initialize the two fully qualified remote stacks, and import the
-   matching local state into each one.
-5. Change each imported stack from the inherited local passphrase secrets provider to Pulumi
+2. Log in to the local backend with `PULUMI_CONFIG_PASSPHRASE` set to the empty string. Populate
+   the local `CLOUDFLARE_ACCOUNT_ID` from the existing stack config (the exact state being
+   validated) and confirm both stacks agree before any live Cloudflare lookup — repository
+   variables are not automatically available to the operator shell. Confirm both stack outputs are
+   non-empty without printing the application IDs.
+3. **Reconfirm each stored application ID identifies the expected named live application before
+   export.** For each stack, call the Cloudflare Access API with the dedicated token exposed only
+   as `CLOUDFLARE_API_TOKEN` and verify the response `name` and `domain` match the expected values
+   — `DTXWeb Pre-prod` over `pre-prod.dtx.hapadona.com` for pre-prod, `DTXWeb Production App` over
+   `dtx.hapadona.com/app` for production. Print only the match/mismatch outcome, never the
+   application ID or full response. A mismatch is a hard stop — the imported state must point at
+   the exact named live application, not a stale or wrong ID. This is stronger than recording a
+   non-sensitive summary: it proves the stored ID resolves to the expected name and domain in the
+   live Cloudflare account.
+4. **Detect provider drift before export.** The identity check above confirms only the application
+   ID maps to the expected name and domain. It does not verify destinations, policies, cookie
+   flags, session duration, or other Access fields. An ordinary `pulumi preview` compares the
+   program against the stored checkpoint — it does not query the live Cloudflare provider, so
+   out-of-band dashboard changes would not be detected and stale local state could be exported and
+   falsely certified as agreeing with Cloudflare. Run `pulumi refresh --preview-only --expect-no-changes`
+   on both local stacks while they are still authoritative and the dedicated Cloudflare token is
+   exposed as `CLOUDFLARE_API_TOKEN`. The `--expect-no-changes` flag makes the command exit non-zero
+   if any drift is detected; combined with `--preview-only` the checkpoint is never mutated. Require
+   zero drift before proceeding to state protection and export. Any drift (session duration, policy,
+   cookie settings, destinations, or any other field changed out-of-band) is a hard stop — reconcile
+   it deliberately before migration rather than importing stale state.
+5. **Establish state-level protection before export.** `pulumi destroy` does not run the program by
+   default; it operates on state. The source-level `{ protect: true }` from PR A is not active in
+   these pre-existing local stacks until it is persisted into state. Run `pulumi state protect` on
+   both Access application URNs so the protect bit is in state before export, then export each
+   stack through Pulumi's supported backend-migration procedure into a private temporary location
+   and verify the exported state carries the protect bit. The export may contain sensitive state
+   and must never enter git, logs, chat, or a shared artifact store. A missing or false `protect`
+   bit in the exported state is a hard stop. Because PR A already sets `protect: true` in source,
+   the state-level bit is durable — a subsequent `pulumi up` will not clear it.
+6. Capture `accessEmail`, `devicePostureRuleId`, and `cloudflareAccountId` into shell variables
+   without printing them. Compare the current Perseus `adminAccessDevicePostureRuleId` output with
+   the `devicePostureRuleId` in both DTXWeb stacks. Any mismatch is a hard stop.
+7. Log in to Pulumi Cloud, initialize the two fully qualified remote stacks, and import the
+   matching local state into each one. If either stack already exists, select it and verify it is
+   empty before import; never overwrite non-empty remote state.
+8. Change each imported stack from the inherited local passphrase secrets provider to Pulumi
    Cloud's managed default secrets provider. The empty passphrase is used only on the operator
    machine while reading the old state.
-6. Reapply `accessEmail` as secret config, confirm it remains encrypted/redacted in Pulumi output,
-   and generate the two stack settings files. Confirm that neither file contains an
-   `encryptionsalt`, then make those files version-controlled.
-7. Compare the current Perseus `adminAccessDevicePostureRuleId` output with the
-   `devicePostureRuleId` in both DTXWeb stack settings files. Any mismatch is a hard stop.
-8. Build the current infrastructure program and run a remote preview for each stack with the
-   dedicated Cloudflare credential.
-9. Require zero resource creates, replacements, or deletes. Config-only secrets-provider and
-   `protect` metadata changes are acceptable. Any provider CRUD operation is a hard stop until the
-   state, URNs, provider identity, and live application IDs agree.
-10. Apply the reviewed metadata-only update once so both application resources are protected, then
-    rerun preview and require no unintended operation.
-11. Remove the temporary exports after both imports and previews are verified.
+9. Repopulate stack configuration on each remote stack: set `accessEmail` as secret config,
+   `devicePostureRuleId` as non-secret config, and `cloudflareAccountId` as non-secret config.
+   `pulumi stack import` migrates deployment state only; stack configuration lives separately in
+   `Pulumi.<stack>.yaml` and must be repopulated on the remote stacks. `src/index.ts` calls
+   `config.require('cloudflareAccountId')`, so without this set the next step's preview cannot run.
+   Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final
+   files before PR B. Confirm `accessEmail` remains encrypted/redacted in Pulumi output and
+   generate the two stack settings files. Verify each file contains `secretsprovider: default`, an
+   `accessEmail` `secure:` value, the posture ID, the account ID, and no `encryptionsalt`.
+10. Build the current infrastructure program and run a remote preview for each stack with the
+    dedicated Cloudflare credential. Require zero provider creates, updates, replacements, or
+    deletes — any provider CRUD operation is a hard stop until the state, URNs, provider identity,
+    and live application IDs agree. The only acceptable diff is Pulumi state metadata such as
+    `protect` or `secrets-provider` changes; since step 5 already persisted the protect bit into
+    state via `pulumi state protect`, even that metadata diff should be absent.
+11. Run one reviewed `pulumi up` per stack to confirm source and state agree end-to-end (protection
+    was already established in state by step 5), then rerun preview. The final previews must
+    propose no provider operation whatsoever. Verify both `accessApplicationId` outputs still equal
+    their pre-migration values.
+12. Remove `cloudflareAccountId` from both settings files, leaving the existing repository variable
+    as its source. Reconfirm encrypted email, matching posture IDs, `secretsprovider: default`, and
+    no passphrase salt. Only after both imports, protected updates, output comparisons, and clean
+    previews pass, remove the two files in the private temporary migration directory and the
+    directory itself. Then make the settings files version-controlled.
 
 The workflow must not exist on `main` until this sequence and the GitHub Environment/OIDC setup are
 complete. Otherwise its first automatic run could start without the state or credentials needed to
@@ -313,11 +370,13 @@ absence of hostname-wide production Access, single policy, and posture `Require`
 
 Also add a focused workflow contract test under the infrastructure package. It reads the workflow
 as repository text and asserts the two environment names, serial `needs` edge, exact stack names,
-`id-token: write`, SHA-pinned Pulumi actions, dedicated Cloudflare secret mapping, and absence of
-`PULUMI_ACCESS_TOKEN` and `PULUMI_CONFIG_PASSPHRASE`. Use focused text assertions; do not add a
-YAML-parser dependency. The same contract suite reads the two committed stack settings as text and
-asserts the default secrets provider, encrypted `accessEmail`, absence of `encryptionsalt`, and
-absence of a duplicated `cloudflareAccountId`.
+`id-token: write`, SHA-pinned Pulumi actions, dedicated Cloudflare secret mapping, `refresh: true`
+on the `pulumi/actions` `up` step, and absence of `PULUMI_ACCESS_TOKEN` and
+`PULUMI_CONFIG_PASSPHRASE`. Use focused text assertions; do not add a YAML-parser dependency. The
+`refresh: true` assertion pins drift reconciliation into the workflow contract so a later change
+cannot silently revert the automation to checkpoint-only comparison. The same contract suite reads
+the two committed stack settings as text and asserts the default secrets provider, encrypted
+`accessEmail`, absence of `encryptionsalt`, and absence of a duplicated `cloudflareAccountId`.
 
 Do not add a standing preview-JSON rule that rejects every future replacement. The one-time
 migration preview keeps its zero-operation gate, while Pulumi's engine-level resource protection is
@@ -367,8 +426,11 @@ next apply; ordinary commits do not add a reviewer gate.
 
 If Pulumi Cloud or its state is unavailable and immediate provider-side intervention is required,
 the existing runbook's exact-application Cloudflare dashboard procedure remains the emergency path.
-The operator must reconcile the provider-side change with Pulumi state before the next automated
-apply.
+Because every automated `pulumi up` runs with `--refresh`, the next automated run will detect the
+dashboard drift and reconcile forward to the Pulumi program's desired state — which will revert the
+emergency change if it is not reflected in the program. The operator must therefore commit the
+emergency change to the Pulumi program before the next automated run; merely reconciling Pulumi
+state is not sufficient because `--refresh` queries the live provider, not just the checkpoint.
 
 ## Delivery And Activation Order
 
@@ -381,10 +443,13 @@ Use two pull requests with an out-of-band migration gate between them:
    `403` plus Access-header presence before merging PR A. Do not add the deployment workflow or
    commit stack settings yet.
 2. **Operator migration gate.** Create the two GitHub Environments with only their Cloudflare
-   secrets, verify the two exact GitHub OIDC subjects, configure Pulumi Cloud trust, import both live
-   stack states, change secrets providers, generate the reviewable stack settings, compare the
-   Perseus posture ID, establish resource protection, and obtain clean final previews for both
-   remote stacks.
+   secrets, verify the two exact GitHub OIDC subjects, configure Pulumi Cloud trust, reconfirm each
+   stored application ID against the expected named live application, detect provider drift with
+   `pulumi refresh --preview-only --expect-no-changes`, establish state-level resource protection
+   before export, import both live stack states, change secrets providers, repopulate remote stack
+   configuration (including a temporary `cloudflareAccountId` for preview), generate the reviewable
+   stack settings, compare the Perseus posture ID, and obtain clean final previews for both remote
+   stacks.
 3. **PR B — automation activation.** Commit the two migrated stack settings, remove their ignore
    rule, add the deployment workflow and its contract test, add the unconditional infrastructure
    test step to `lint-and-format.yml`, and finalize the README/runbook reconciliation. Merge only

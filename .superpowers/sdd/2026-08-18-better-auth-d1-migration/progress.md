@@ -698,17 +698,21 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   logout/revocation, Device Authorization approve/revoke/deny, and
   upload/download passed; temporary upload test objects were removed. The user
   confirmed the Google callbacks are registered. Cloudflare Access returned
-  403 for the remaining protected checks, so the internal `/app` guard, manual
-  Google completion, explicit account linking, Device Authorization expiry,
-  manual OS-browser handoff, and desktop candidate remain unproven. The legacy
-  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
+  403, blocking the app-internal `/app` redirect, Google completion/explicit-
+  linking UI, and OS-browser approval handoff. Remote Device Authorization
+  expiry has not been run independently because the five-second expiry
+  override is local-only and prohibited remotely. The broader desktop
+  pre-production candidate matrix has not been run separately; only its
+  browser-approval leg is Access-dependent. The legacy pre-production
+  `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
   desktop publication, or credential removal.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
 - Task 15 local verification and the deploy/import smoke gate are complete.
-  The Access-blocked pre-production checks remain open; production remains a
+  Access-blocked checks, remote Device Authorization expiry, and the broader
+  desktop pre-production candidate matrix remain open; production remains a
   separate hold.
 
 ## Task 15 review decision
@@ -716,7 +720,8 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Scoped Task 15 re-review approved the verification changes and corrected
   evidence with no remaining Critical, Important, or Minor findings.
 - Final-cutover pre-production deployment/import and core live smoke are
-  complete. Access-blocked checks remain unproven; production remains out of
+  complete. Access-blocked checks, remote Device Authorization expiry, and the
+  broader desktop candidate matrix remain unproven; production remains out of
   scope and separately held.
 
 ## Final whole-branch native review fixes
@@ -774,10 +779,13 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   Google-start exact callback, invalid-session, logout/revocation, Device
   Authorization approve/revoke/deny, and upload/download smoke passed; upload
   test objects were removed. The user confirmed callbacks are registered.
-- Access returned 403 for internal `/app` guard and the remaining manual
-  Google completion, explicit linking, Device Authorization expiry, OS-browser
-  handoff, and desktop-candidate checks, so those remain unproven. The legacy
-  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
+- Access returned 403, blocking the app-internal `/app` redirect,
+  Google completion/explicit-linking UI, and OS-browser approval handoff.
+  Remote Device Authorization expiry has not been run independently because
+  the five-second expiry override is local-only and prohibited remotely. The
+  broader desktop pre-production candidate matrix has not been run separately;
+  only its browser-approval leg is Access-dependent. The legacy pre-production
+  `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
 
 ## Production read-only preview
 

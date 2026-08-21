@@ -75,6 +75,36 @@ proves each existing local stack exposes a non-empty `accessApplicationId` befor
 apply; the identifier is captured for the check and is not printed in evidence. Never replace a
 failed selection with `pulumi stack init`.
 
+## Establish State-Level Resource Protection
+
+`pulumi destroy` does not run the program by default — it operates on the resources already
+recorded in state. The source-level `{ protect: true }` added in PR A is not active for these
+pre-existing local stacks until the protect bit is persisted into state. Without this step there
+is an interim window where a `pulumi destroy` would not fail closed.
+
+After PR A has merged (so the source program sets `protect: true`), run `pulumi state protect`
+on both Access application URNs to write the protect bit directly into state:
+
+```bash
+pulumi state protect 'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' --stack pre-prod -y
+pulumi state protect 'urn:pulumi:production::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-production-access' --stack production -y
+```
+
+Verify the protect bit is present in both stack states:
+
+```bash
+for stack in pre-prod production; do
+  pulumi stack export --stack "$stack" --file /dev/stdout \
+    | jq -e '.deployment.resources[] | select(.type == "cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication") | .protect == true' >/dev/null \
+    || { echo "FAIL: $stack protect bit is not in state" >&2; exit 1; }
+done
+unset stack
+```
+
+Because the source program also sets `protect: true`, the state-level bit is durable — a
+subsequent `pulumi up` will not clear it. Do not run `pulumi state unprotect` outside of the
+separately reviewed rollback exception below.
+
 Configure both stacks from local shell variables:
 
 ```bash
@@ -253,8 +283,11 @@ Before destroy, determine which Wrangler environment currently serves the pre-pr
 
 If public exposure is not acceptable, keep Access in place while repairing the rollout or first move the pre-production deployment away from production-backed data. Do not treat Access destroy as a neutral cleanup.
 
-There is no automatic rollback. Because the Access application resource is registered with
-`{ protect: true }`, a normal destroy path fails closed rather than deleting it:
+There is no automatic rollback. Once the protect bit has been persisted into state (see
+"Establish State-Level Resource Protection" above), a normal destroy path fails closed rather
+than deleting the application. Before that state-level protection step has been run, the
+source-level `{ protect: true }` alone does **not** stop a `pulumi destroy`, because destroy
+operates on state and does not run the program by default:
 
 ```bash
 pulumi preview --destroy --stack pre-prod

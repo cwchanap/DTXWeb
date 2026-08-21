@@ -423,17 +423,56 @@ repo:cwchanap/DTXWeb:environment:dtx-access-production
 
 Issue `urn:pulumi:token-type:access_token:personal` with `scope: user:cwchanap`. Reject `repo:cwchanap/DTXWeb:*` or any branch-wide subject.
 
-- [ ] **Step 3: Capture local config securely and export state**
+- [ ] **Step 3: Capture local config securely, reconfirm live identity, establish state protection, and export state**
 
-From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d`. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend, confirm both stack outputs are non-empty, and export each stack to a separate file in the temporary directory:
+From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d`. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend and confirm both stack outputs are non-empty:
 
 ```bash
 rtk pulumi login --local
 rtk pulumi stack output accessApplicationId --stack pre-prod
 rtk pulumi stack output accessApplicationId --stack production
+```
+
+**Reconfirm each stored application ID identifies the expected named live application before import.** For each stack, call the Cloudflare Access API with the dedicated token exposed only as `CLOUDFLARE_API_TOKEN` and verify the response `name` and `domain` match the expected values — `DTXWeb Pre-prod` over `pre-prod.dtx.hapadona.com` for pre-prod, `DTXWeb Production App` over `dtx.hapadona.com/app` for production:
+
+```bash
+for stack in pre-prod production; do
+  app_id="$(pulumi stack output accessApplicationId --stack "$stack")"
+  resp="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+    "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/access/apps/$app_id")"
+  case "$stack" in
+    pre-prod)   expected_name='DTXWeb Pre-prod';         expected_domain='pre-prod.dtx.hapadona.com' ;;
+    production) expected_name='DTXWeb Production App';   expected_domain='dtx.hapadona.com/app' ;;
+  esac
+  actual_name="$(printf '%s' "$resp" | jq -r '.result.name')"
+  actual_domain="$(printf '%s' "$resp" | jq -r '.result.domain')"
+  if [ "$actual_name" != "$expected_name" ] || [ "$actual_domain" != "$expected_domain" ]; then
+    echo "FAIL: $stack accessApplicationId ($app_id) resolves to '$actual_name' / '$actual_domain', expected '$expected_name' / '$expected_domain'" >&2
+    exit 1
+  fi
+done
+unset app_id resp actual_name actual_domain expected_name expected_domain stack
+```
+
+Do not print `app_id` or the full response in evidence; print only the match/mismatch outcome. A mismatch is a hard stop — the imported state must point at the exact named live application, not a stale or wrong ID.
+
+**Establish state-level protection before export.** `pulumi destroy` does not run the program by default; it operates on state. The source-level `{ protect: true }` from PR A is not active in these pre-existing local stacks until it is persisted into state. Run `pulumi state protect` on both Access application URNs so the protect bit is in state before export, then verify the exported state carries it:
+
+```bash
+rtk pulumi state protect 'urn:pulumi:pre-prod::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-pre-prod-access' --stack pre-prod -y
+rtk pulumi state protect 'urn:pulumi:production::dtxweb-infrastructure::cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication::dtxweb-production-access' --stack production -y
+```
+
+Verify the protect bit is present in each exported state file:
+
+```bash
 rtk pulumi stack export --stack pre-prod --file "$DTX_MIGRATION_DIR/pre-prod.json"
 rtk pulumi stack export --stack production --file "$DTX_MIGRATION_DIR/production.json"
+jq -e '.deployment.resources[] | select(.type == "cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication") | .protect == true' "$DTX_MIGRATION_DIR/pre-prod.json" >/dev/null
+jq -e '.deployment.resources[] | select(.type == "cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication") | .protect == true' "$DTX_MIGRATION_DIR/production.json" >/dev/null
 ```
+
+The `jq` checks must exit 0; a missing or false `protect` bit is a hard stop. Because PR A already sets `protect: true` in source, the state-level bit is durable — a subsequent `pulumi up` will not clear it.
 
 Capture `accessEmail`, `devicePostureRuleId`, and `cloudflareAccountId` into shell variables without printing them. Confirm the two posture values equal the current Perseus `adminAccessDevicePostureRuleId` output. A mismatch stops migration.
 
@@ -463,11 +502,11 @@ rtk pulumi config set devicePostureRuleId "$PERSEUS_POSTURE_RULE_ID" --stack <fu
 
 Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final files before PR B. Verify the files contain `secretsprovider: default`, an `accessEmail` `secure:` value, the posture ID, and no `encryptionsalt`.
 
-- [ ] **Step 6: Preview, establish protection, and preview cleanly**
+- [ ] **Step 6: Preview, confirm protection agreement, and preview cleanly**
 
-Build once, then for each stack run a preview with the dedicated token exposed only as `CLOUDFLARE_API_TOKEN`. Require zero creates, replacements, or deletes. A metadata-only protection/secrets-provider change is acceptable.
+Build once, then for each stack run a preview with the dedicated token exposed only as `CLOUDFLARE_API_TOKEN`. Require zero provider creates, updates, replacements, or deletes — any provider CRUD operation is a hard stop until the state, URNs, provider identity, and live application IDs agree. The only acceptable diff is Pulumi state metadata such as `protect` or `secrets-provider` changes; since Step 3 already persisted the protect bit into state via `pulumi state protect`, even that metadata diff should be absent.
 
-Run one reviewed `pulumi up` per stack to persist `{ protect: true }`, then rerun preview. The final previews must propose no unintended operation. Verify both `accessApplicationId` outputs still equal their pre-migration values.
+Run one reviewed `pulumi up` per stack to confirm source and state agree end-to-end (protection was already established in state by Step 3), then rerun preview. The final previews must propose no provider operation whatsoever. Verify both `accessApplicationId` outputs still equal their pre-migration values.
 
 - [ ] **Step 7: Prepare PR B inputs and remove private exports**
 

@@ -682,33 +682,42 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   final migration work. The earlier web build used Foundation-era Supabase
   public variables, so those artifacts do not prove the final Better-Auth-only
   API/web cutover.
-- The final reviewed API and web artifacts have not been deployed or proven in
-  pre-production. A fresh API deployment followed by the matching web
-  deployment, service-binding verification, and the complete current
-  pre-production acceptance matrix are explicit remaining gates. The exact
-  Google callback registration is externally unverified. A protected
-  second-operator-approved import artifact now covers 2 Supabase users, 3
-  supported identities, and the sole production owner UUID (SHA-256
-  `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`), but
-  it has not been applied. Isolated pre-production data has 3 owner UUIDs and
-  one unmatched legacy owner with 3 simfiles and 1 profile, so pre-production
-  import is blocked on an explicit remap-or-remove operator decision.
+- The final reviewed API and web artifacts were subsequently deployed to
+  pre-production. The unmatched legacy owner removal was user-approved after
+  a protected D1 backup with SHA-256 prefix `bff977...`; the approved atomic
+  cleanup file was applied with R2 objects left untouched. Importer transaction
+  compatibility was corrected in commit `22f3c27f`; focused importer
+  verification passed 6/6.
+- The protected pre-production import artifact with SHA-256 prefix `51af...`
+  was independently approved and applied. Final D1 counts are 2 Better Auth
+  users, 3 accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
+  Active Workers are API `839e...` and web `255a...`; the web `API` service
+  binding is present and verified.
+- Live password/cookie authentication, GraphQL, CORS, Google authorization
+  start with the exact pre-production callback, invalid sessions,
+  logout/revocation, Device Authorization approve/revoke/deny, and
+  upload/download passed; temporary upload test objects were removed. The user
+  confirmed the Google callbacks are registered. Cloudflare Access returned
+  403 for the remaining protected checks, so the internal `/app` guard, manual
+  Google completion, explicit account linking, Device Authorization expiry,
+  manual OS-browser handoff, and desktop candidate remain unproven. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
   desktop publication, or credential removal.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
-- Task 15 local verification is complete; current pre-production acceptance and
-  production go/no-go remain blocked on final API/web deployment, the complete
-  acceptance matrix, external Google callback registration, exact owner
-  reconciliation/import inputs, and manual OS-browser handoff evidence.
+- Task 15 local verification and the deploy/import smoke gate are complete.
+  The Access-blocked pre-production checks remain open; production remains a
+  separate hold.
 
 ## Task 15 review decision
 
 - Scoped Task 15 re-review approved the verification changes and corrected
   evidence with no remaining Critical, Important, or Minor findings.
-- Final-cutover pre-production deployment and acceptance remain blocked on the
-  explicit gates above; production remains out of scope until those gates pass.
+- Final-cutover pre-production deployment/import and core live smoke are
+  complete. Access-blocked checks remain unproven; production remains out of
+  scope and separately held.
 
 ## Final whole-branch native review fixes
 
@@ -745,7 +754,7 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   executable reran `auth-session.e2e.ts` successfully: 2/2 scenarios passed in
   663ms; no rebuild or remote operation was performed.
 
-## Pre-production operator discovery
+## Pre-production operator evidence
 
 - Supabase connector read-only counts: 2 users, 2 email identities, and 1
   Google identity. No password hashes, sessions, or tokens were exported.
@@ -753,10 +762,30 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   the sanitized export. Pre-production D1 contains 3 distinct owner UUIDs;
   only 2 are covered. The unmatched owner is not a repository fixture and owns
   3 simfiles plus 1 profile dating from March 2026.
-- The protected generated SQL was independently approved: 2 `user` inserts, 2
-  credential and 1 Google `account` inserts, transaction boundaries, no other
-  tables, verified replacement hashes, and matching checksum
-  `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`.
-- Pre-production migrations are current through `0008`; Better Auth user,
-  account, and session tables remain empty. No import, deploy, data remap, or
-  data deletion was performed.
+- The protected pre-production backup was recorded with SHA-256 prefix
+  `bff977...`; the user-approved unmatched-owner removal used the approved
+  atomic cleanup file and left R2 objects untouched. Importer transaction
+  compatibility was fixed in `22f3c27f`, with focused verification 6/6.
+- The protected pre-production import artifact with SHA-256 prefix `51af...`
+  was independently approved and applied. Final D1 counts are 2 users, 3
+  accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
+- Active pre-production Workers are API `839e...` and web `255a...`, with the
+  web `API` service binding verified. Password/cookie, GraphQL, CORS,
+  Google-start exact callback, invalid-session, logout/revocation, Device
+  Authorization approve/revoke/deny, and upload/download smoke passed; upload
+  test objects were removed. The user confirmed callbacks are registered.
+- Access returned 403 for internal `/app` guard and the remaining manual
+  Google completion, explicit linking, Device Authorization expiry, OS-browser
+  handoff, and desktop-candidate checks, so those remain unproven. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
+
+## Production read-only preview
+
+- Production preview was read-only: `0008` is pending, Better Auth auth tables
+  are empty, D1 has 1 owner, and only `SUPABASE_SERVICE_ROLE_KEY` is present.
+- Rollback versions remain API `8104...` and web `f68b...`. A protected
+  independent production Better Auth secret was generated, and the protected
+  production artifact with SHA-256 prefix `135d...` was independently approved
+  for 1/1 owner coverage; no artifact or secret was applied.
+- Absolutely no production mutation occurred: no migration, import, secret
+  update/removal, deploy, publication, or credential change.

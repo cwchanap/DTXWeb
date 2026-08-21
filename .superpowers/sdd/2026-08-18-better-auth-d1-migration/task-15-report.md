@@ -7,10 +7,10 @@ Base: `7d9a9cbd`
 ## Scope
 
 Task 15 ran the repository verification gates, generated-artifact checks,
-Better Auth residue audit, and full local web and desktop E2E suites. It also
-audited the historical, non-secret Foundation pre-production rehearsal, which
-is not current final cutover proof. Production was deliberately out of scope:
-no production migration, identity import, secret update, deploy, desktop
+Better Auth residue audit, and full local web and desktop E2E suites. The
+operator then completed the pre-production import/deploy and live smoke
+evidence recorded below. Production was limited to a read-only preview: no
+production migration, identity import, secret update, deploy, desktop
 publication, or Supabase credential change was run.
 
 ## RED evidence and verification-driven corrections
@@ -117,58 +117,56 @@ ledger, but it is not current Tasks 4–15 cutover proof:
 - The remote rehearsal state also recorded D1 migrations through
   `0008_better_auth.sql`, pre-production secret presence without values,
   `DTX_WEB_URL=https://pre-prod.dtx.hapadona.com`, and cookie prefix
-  `dtx-preprod`. The final reviewed API and web artifacts still require a fresh
-  pre-production deployment and live verification.
+  `dtx-preprod`. Those results are historical only; the current final
+  deployment and acceptance evidence is recorded below.
 
-## Pre-production blockers and go/no-go
+## Pre-production operator evidence and remaining gaps
 
-Pre-production is not a production go decision, and the current final
-cutover has not been deployed or proven in pre-production:
+The current final API/web cutover and identity import are deployed in
+pre-production. This is not a production go decision.
 
-1. Deploy the final reviewed Tasks 4–15 API artifact to pre-production, then
-   deploy the matching final web artifact built without Foundation-era
-   Supabase public variables. Verify the web `API` service binding and record
-   the resulting API and web Worker versions.
-2. Execute and record the complete current pre-production acceptance matrix:
-   password sign-in, Google sign-in, explicit linking, `/app` guard,
-   GraphQL/score, upload/download, logout, invalid sessions, Device
-   Authorization approve/deny/expiry, cookie/origin isolation, CORS, and the
-   desktop candidate flows. The Foundation rehearsal smoke is not a substitute
-   for this matrix.
-3. Google Console registration of
-   `https://api.pre-prod.dtx.hapadona.com/api/auth/callback/google` could not
-   be independently verified from the available local tooling. The deployed
-   Google start flow emits that exact callback, but completion must remain
-   blocked until the client registration is externally confirmed.
-4. An authenticated read-only Supabase export now covers 2 users and 3
-   supported identities, and the production D1 owner inventory contains 1
-   UUID covered by that export. The protected importer artifact was
-   second-operator approved with 2 user rows, 2 credential accounts, 1 Google
-   account, no sessions/tokens, and SHA-256
-   `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`.
-   It has not been applied. The isolated pre-production application data has 3
-   owner UUIDs, only 2 of which exist in the Supabase export; the unmatched
-   owner still owns 3 simfiles and 1 profile. Pre-production import therefore
-   remains blocked until that legacy owner is explicitly remapped or its data
-   is removed by an approved operator decision. No identity was fabricated.
-5. The manual OS-browser Device Authorization handoff has not been recorded;
-   WDIO coverage is automated evidence only.
+- The unmatched pre-production owner removal was user-approved after a
+  protected D1 backup with SHA-256 prefix `bff977...`; the approved atomic
+  cleanup file was applied. R2 objects were left untouched.
+- Importer transaction compatibility was corrected in commit `22f3c27f`;
+  focused importer verification passed 6/6.
+- The pre-production import artifact with SHA-256 prefix `51af...` was
+  independently approved and applied. Final D1 counts are 2 Better Auth users,
+  3 accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
+- The active pre-production API is version `839e...`; the active web version is
+  `255a...`, with the web `API` service binding verified.
+- Live password/cookie authentication, GraphQL, CORS, Google authorization
+  start with the exact callback
+  `https://api.pre-prod.dtx.hapadona.com/api/auth/callback/google`, invalid
+  session handling, logout/revocation, Device Authorization approve/revoke/
+  deny, and upload/download all passed. Temporary upload test objects were
+  removed.
+- The user confirmed the Google callbacks are registered. Cloudflare Access
+  returned 403 during the remaining protected checks, so the internal `/app`
+  guard, manual Google completion, explicit account linking, Device
+  Authorization expiry, manual OS-browser handoff, and the desktop candidate
+  remain unproven. WDIO coverage is automated evidence only.
+- The pre-production legacy `SUPABASE_SERVICE_ROLE_KEY` secret remains and was
+  not deleted.
 
-Accordingly, local repository and automated E2E verification is GREEN, while
-current pre-production acceptance and the production go/no-go status are
-BLOCKED on the final API/web deployments, the complete current acceptance
-matrix, external callback registration, the pre-production legacy-owner
-decision and exact reconciliation, and manual handoff evidence. The runbook now records the corrected
-five-second local E2E expiry override and continues to prohibit that override
-in remote environments.
+Accordingly, pre-production deployment, import, and the listed live smoke
+checks are GREEN, with the Access-blocked checks above still open. This does
+not authorize production mutation. The runbook's five-second expiry override
+remains local-only and is prohibited in remote environments.
 
-## Production boundary
+## Production read-only preview and boundary
 
-No production `0008` migration, identity import, Better Auth/Google secret
-operation, API or web deploy, desktop publication, or credential removal was
-run. Production remains for a separately approved operator change window after
-the blockers above and the runbook's backup, rollback, callback, ownership,
-Access, and acceptance gates are complete.
+- Read-only production preview: migration `0008` is pending; Better Auth user,
+  account, and session tables are empty; D1 has 1 application owner; and the
+  only Wrangler secret is `SUPABASE_SERVICE_ROLE_KEY`.
+- The active rollback versions are API `8104...` and web `f68b...`. A protected
+  independent production Better Auth secret was generated, and the protected
+  production import artifact with SHA-256 prefix `135d...` was independently
+  approved for 1/1 owner coverage; neither was applied.
+- Absolutely no production mutation was performed: no migration, identity
+  import, secret update/removal, API or web deploy, desktop publication, or
+  credential change. Production remains held for a separately approved change
+  window.
 
 ## Final whole-branch native review fixes
 

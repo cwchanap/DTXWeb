@@ -425,12 +425,25 @@ Issue `urn:pulumi:token-type:access_token:personal` with `scope: user:cwchanap`.
 
 - [ ] **Step 3: Capture local config securely, reconfirm live identity, establish state protection, and export state**
 
-From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d`. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend and confirm both stack outputs are non-empty:
+From `packages/infrastructure`, create a private temporary directory with `rtk mktemp -d`. With `PULUMI_CONFIG_PASSPHRASE` set to the empty string, log in to the local backend. Populate the local `CLOUDFLARE_ACCOUNT_ID` from the existing stack config (the exact state being validated) and confirm both stacks agree before any live Cloudflare lookup — repository variables are not automatically available to this operator shell:
 
 ```bash
 rtk pulumi login --local
-rtk pulumi stack output accessApplicationId --stack pre-prod
-rtk pulumi stack output accessApplicationId --stack production
+CLOUDFLARE_ACCOUNT_ID="$(pulumi config get cloudflareAccountId --stack pre-prod)"
+test "$(pulumi config get cloudflareAccountId --stack production)" = "$CLOUDFLARE_ACCOUNT_ID" || {
+  echo 'FAIL: stack Cloudflare account IDs differ' >&2
+  exit 1
+}
+```
+
+Confirm both stack outputs are non-empty without printing the application IDs:
+
+```bash
+for stack in pre-prod production; do
+  app_id="$(pulumi stack output accessApplicationId --stack "$stack")"
+  test -n "$app_id" || { echo "FAIL: $stack has no accessApplicationId" >&2; exit 1; }
+done
+unset app_id stack
 ```
 
 **Reconfirm each stored application ID identifies the expected named live application before import.** For each stack, call the Cloudflare Access API with the dedicated token exposed only as `CLOUDFLARE_API_TOKEN` and verify the response `name` and `domain` match the expected values — `DTXWeb Pre-prod` over `pre-prod.dtx.hapadona.com` for pre-prod, `DTXWeb Production App` over `dtx.hapadona.com/app` for production:
@@ -447,7 +460,7 @@ for stack in pre-prod production; do
   actual_name="$(printf '%s' "$resp" | jq -r '.result.name')"
   actual_domain="$(printf '%s' "$resp" | jq -r '.result.domain')"
   if [ "$actual_name" != "$expected_name" ] || [ "$actual_domain" != "$expected_domain" ]; then
-    echo "FAIL: $stack accessApplicationId ($app_id) resolves to '$actual_name' / '$actual_domain', expected '$expected_name' / '$expected_domain'" >&2
+    echo "FAIL: $stack Access application identity does not match expected name/domain" >&2
     exit 1
   fi
 done

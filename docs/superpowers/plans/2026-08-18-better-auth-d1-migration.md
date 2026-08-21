@@ -110,48 +110,48 @@ The package named `auth` is the Better Auth CLI.
 const trustedWebOrigin = new URL(config.webURL).origin;
 
 return {
-  baseURL: config.baseURL,
-  secret: config.secret,
-  trustedOrigins: [trustedWebOrigin],
-  emailAndPassword: {
-    enabled: true,
-    disableSignUp: true,
-  },
-  socialProviders: {
-    google: {
-      clientId: config.googleClientId,
-      clientSecret: config.googleClientSecret,
-      disableSignUp: true,
-      disableImplicitSignUp: true,
-    },
-  },
-  account: {
-    accountLinking: {
-      enabled: true,
-      disableImplicitLinking: true,
-    },
-  },
-  advanced: {
-    cookiePrefix: config.cookiePrefix,
-    crossSubDomainCookies: config.cookieDomain
-      ? { enabled: true, domain: config.cookieDomain }
-      : { enabled: false },
-    ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
-  },
-  rateLimit: {
-    enabled: true,
-    storage: 'database',
-    customRules: {
-      '/get-session': false,
-    },
-  },
-  plugins: [
-    deviceAuthorization({
-      verificationUri: `${config.webURL}/app/desktop-auth`,
-      validateClient: (clientId) => clientId === 'dtx-desktop',
-    }),
-    bearer(),
-  ],
+	baseURL: config.baseURL,
+	secret: config.secret,
+	trustedOrigins: [trustedWebOrigin],
+	emailAndPassword: {
+		enabled: true,
+		disableSignUp: true
+	},
+	socialProviders: {
+		google: {
+			clientId: config.googleClientId,
+			clientSecret: config.googleClientSecret,
+			disableSignUp: true,
+			disableImplicitSignUp: true
+		}
+	},
+	account: {
+		accountLinking: {
+			enabled: true,
+			disableImplicitLinking: true
+		}
+	},
+	advanced: {
+		cookiePrefix: config.cookiePrefix,
+		crossSubDomainCookies: config.cookieDomain
+			? { enabled: true, domain: config.cookieDomain }
+			: { enabled: false },
+		ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] }
+	},
+	rateLimit: {
+		enabled: true,
+		storage: 'database',
+		customRules: {
+			'/get-session': false
+		}
+	},
+	plugins: [
+		deviceAuthorization({
+			verificationUri: `${config.webURL}/app/desktop-auth`,
+			validateClient: (clientId) => clientId === 'dtx-desktop'
+		}),
+		bearer()
+	]
 };
 ```
 
@@ -165,9 +165,9 @@ Add scripts using the selected exact CLI:
 
 ```json
 {
-  "auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
-  "auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",
-  "auth:schema:check": "bun run auth:schema:generate && git diff --exit-code -- src/auth/schema.ts"
+	"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
+	"auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",
+	"auth:schema:check": "bun run auth:schema:generate && git diff --exit-code -- src/auth/schema.ts"
 }
 ```
 
@@ -294,20 +294,20 @@ If the supported Workers test runtime proves cardinality is lost, implement the 
 
 ```ts
 export const createAuth = (env: Env) =>
-  betterAuth({
-    ...createAuthOptions({
-      baseURL: env.BETTER_AUTH_URL,
-      webURL: env.DTX_WEB_URL,
-      cookieDomain: env.AUTH_COOKIE_DOMAIN,
-      cookiePrefix: env.AUTH_COOKIE_PREFIX,
-      googleClientId: env.GOOGLE_AUTH_CLIENT_ID,
-      googleClientSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
-      secret: env.BETTER_AUTH_SECRET,
-    }),
-    database: drizzleAdapter(drizzle(env.DB, { schema: authSchema }), {
-      provider: 'sqlite',
-    }),
-  });
+	betterAuth({
+		...createAuthOptions({
+			baseURL: env.BETTER_AUTH_URL,
+			webURL: env.DTX_WEB_URL,
+			cookieDomain: env.AUTH_COOKIE_DOMAIN,
+			cookiePrefix: env.AUTH_COOKIE_PREFIX,
+			googleClientId: env.GOOGLE_AUTH_CLIENT_ID,
+			googleClientSecret: env.GOOGLE_AUTH_CLIENT_SECRET,
+			secret: env.BETTER_AUTH_SECRET
+		}),
+		database: drizzleAdapter(drizzle(env.DB, { schema: authSchema }), {
+			provider: 'sqlite'
+		})
+	});
 ```
 
 - [ ] **Step 5: Mount handler before GraphQL/REST.**
@@ -370,12 +370,12 @@ const hasBearer = request.headers.get('authorization')?.startsWith('Bearer ') ==
 const hasCookie = request.headers.has('cookie');
 
 if (
-  !hasBearer &&
-  hasCookie &&
-  UNSAFE_METHODS.has(request.method) &&
-  request.headers.get('origin') !== trustedWebOrigin
+	!hasBearer &&
+	hasCookie &&
+	UNSAFE_METHODS.has(request.method) &&
+	request.headers.get('origin') !== trustedWebOrigin
 ) {
-  return null;
+	return null;
 }
 ```
 
@@ -680,10 +680,10 @@ Assert browser GraphQL uses `credentials: 'include'` and no Authorization header
 
 ```ts
 export type ClientCtx = {
-  fetch?: typeof fetch;
-  platform?: App.Platform;
-  cookieHeader?: string | null;
-  origin?: string | null;
+	fetch?: typeof fetch;
+	platform?: App.Platform;
+	cookieHeader?: string | null;
+	origin?: string | null;
 };
 ```
 
@@ -896,8 +896,8 @@ Store one neutral object:
 
 ```ts
 {
-  sessionToken: string;
-  user: DesktopAuthUser;
+	sessionToken: string;
+	user: DesktopAuthUser;
 }
 ```
 

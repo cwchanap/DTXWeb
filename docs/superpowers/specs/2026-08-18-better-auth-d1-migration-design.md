@@ -103,7 +103,7 @@ Follow the Better Auth 1.6.x Cloudflare pattern:
 const db = drizzle(env.DB, { schema: authSchema });
 
 database: drizzleAdapter(db, {
-  provider: 'sqlite',
+	provider: 'sqlite'
 });
 ```
 
@@ -152,11 +152,11 @@ Better Auth's default SameSite cookie behavior remains defense in depth, not the
 
 ### 5. Use cross-subdomain cookies with environment-specific prefixes
 
-| Environment | API base URL | Web origin | Cookie domain | Cookie prefix |
-| --- | --- | --- | --- | --- |
-| Production | `https://api.dtx.hapadona.com` | `https://dtx.hapadona.com` | `dtx.hapadona.com` | `dtx` |
+| Environment    | API base URL                            | Web origin                          | Cookie domain               | Cookie prefix |
+| -------------- | --------------------------------------- | ----------------------------------- | --------------------------- | ------------- |
+| Production     | `https://api.dtx.hapadona.com`          | `https://dtx.hapadona.com`          | `dtx.hapadona.com`          | `dtx`         |
 | Pre-production | `https://api.pre-prod.dtx.hapadona.com` | `https://pre-prod.dtx.hapadona.com` | `pre-prod.dtx.hapadona.com` | `dtx-preprod` |
-| Local | `http://localhost:8787` | `http://localhost:5173` | omitted | `dtx-local` |
+| Local          | `http://localhost:8787`                 | `http://localhost:5173`             | omitted                     | `dtx-local`   |
 
 The production domain cookie is intentionally shared with `api.dtx.hapadona.com`, but that domain also covers nested pre-production hostnames. Without distinct names, a browser can send production and pre-production cookies with the same Better Auth cookie name to pre-production hosts.
 
@@ -220,7 +220,7 @@ Add the root binding:
 
 ```json
 {
-  "services": [{ "binding": "API", "service": "dtx-api" }]
+	"services": [{ "binding": "API", "service": "dtx-api" }]
 }
 ```
 
@@ -337,7 +337,7 @@ After the magic-link mutation is removed, GraphQL/REST authorization only needs 
 
 ```ts
 type ApiAuthUser = {
-  id: string;
+	id: string;
 };
 ```
 

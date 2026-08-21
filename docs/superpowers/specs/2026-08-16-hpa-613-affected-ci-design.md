@@ -94,17 +94,17 @@ Therefore:
 
 ## Reuse decisions
 
-| Proposed work | Decision |
-| --- | --- |
-| Affected workspace calculation | Reuse Turborepo `turbo ls --affected --output=json` |
-| Root config invalidation | Extend existing `turbo.json` `globalDependencies` with `tsconfig.base.json` |
-| Non-required workflow filtering | Reuse native `pull_request.paths`; desktop E2E already demonstrates the pattern |
-| Root unit coverage | Reuse `bun run test:coverage`; do not split |
-| Required-job routing | New only if PR B proceeds: one small `.github/scripts/ci-affected-scope.sh` |
-| Scope regression coverage | New only with PR B: `.github/scripts/ci-affected-scope.test.sh` plus small fixtures |
-| Packaging reduction | Reuse existing release triggers; delete ordinary PR packaging branches |
-| CodeQL | PR A uses native `paths`; PR C adds language selection using the proven scope seam |
-| Coverage aggregation | Extend existing three Codecov uploads with flags/carryforward |
+| Proposed work                   | Decision                                                                            |
+| ------------------------------- | ----------------------------------------------------------------------------------- |
+| Affected workspace calculation  | Reuse Turborepo `turbo ls --affected --output=json`                                 |
+| Root config invalidation        | Extend existing `turbo.json` `globalDependencies` with `tsconfig.base.json`         |
+| Non-required workflow filtering | Reuse native `pull_request.paths`; desktop E2E already demonstrates the pattern     |
+| Root unit coverage              | Reuse `bun run test:coverage`; do not split                                         |
+| Required-job routing            | New only if PR B proceeds: one small `.github/scripts/ci-affected-scope.sh`         |
+| Scope regression coverage       | New only with PR B: `.github/scripts/ci-affected-scope.test.sh` plus small fixtures |
+| Packaging reduction             | Reuse existing release triggers; delete ordinary PR packaging branches              |
+| CodeQL                          | PR A uses native `paths`; PR C adds language selection using the proven scope seam  |
+| Coverage aggregation            | Extend existing three Codecov uploads with flags/carryforward                       |
 
 ## Goals
 
@@ -346,8 +346,8 @@ Keep the selector output simple and hardcode:
 
 ```yaml
 with:
-  languages: ${{ matrix.language }}
-  build-mode: none
+    languages: ${{ matrix.language }}
+    build-mode: none
 ```
 
 Do not rely on `matrix.build-mode` after replacing the current `matrix.include` shape.
@@ -423,18 +423,18 @@ Codecov is intentionally different: HPA-613 requires upload transport failure to
 
 ## Resulting ready-PR matrix after all HPA-613 phases
 
-| Change | Unit coverage | ESLint/Prettier | Heavy lint/codegen | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| docs only | skip | run | skip | skip | skip | skip | skip | skip |
-| `dtx-web` | run | run | run | run | skip | skip | skip | JS/TS |
-| `dtx-api` | run | run | run | run | skip | skip | skip | JS/TS |
-| `common` | run | run | run | run | run | skip | skip | JS/TS |
-| `ui-components` | run | run | run | run | run | skip | skip | JS/TS |
-| desktop renderer | run | run | run | skip | run | run | skip | JS/TS |
-| desktop Rust | run | run | run | skip | run | run | skip | Rust |
-| web E2E only | skip | run | run | run | skip | skip | skip | JS/TS when source matches |
-| desktop E2E only | skip | run | run | skip | run | run | skip | JS/TS when source matches |
-| `tsconfig.base.json` | run | run | run | run | run | skip | skip | JS/TS |
+| Change               | Unit coverage | ESLint/Prettier | Heavy lint/codegen | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL                    |
+| -------------------- | ------------- | --------------- | ------------------ | ------- | ----------- | ------- | --------- | ------------------------- |
+| docs only            | skip          | run             | skip               | skip    | skip        | skip    | skip      | skip                      |
+| `dtx-web`            | run           | run             | run                | run     | skip        | skip    | skip      | JS/TS                     |
+| `dtx-api`            | run           | run             | run                | run     | skip        | skip    | skip      | JS/TS                     |
+| `common`             | run           | run             | run                | run     | run         | skip    | skip      | JS/TS                     |
+| `ui-components`      | run           | run             | run                | run     | run         | skip    | skip      | JS/TS                     |
+| desktop renderer     | run           | run             | run                | skip    | run         | run     | skip      | JS/TS                     |
+| desktop Rust         | run           | run             | run                | skip    | run         | run     | skip      | Rust                      |
+| web E2E only         | skip          | run             | run                | run     | skip        | skip    | skip      | JS/TS when source matches |
+| desktop E2E only     | skip          | run             | run                | skip    | run         | run     | skip      | JS/TS when source matches |
+| `tsconfig.base.json` | run           | run             | run                | run     | run         | skip    | skip      | JS/TS                     |
 
 ## Decision
 

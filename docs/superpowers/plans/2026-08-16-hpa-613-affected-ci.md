@@ -53,6 +53,7 @@ Commit: `ci: stop packaging desktop apps on pull requests`
 ## A3. Path-filter non-required validation
 
 **Modify:**
+
 - `.github/workflows/e2e-test.yml`
 - `.github/workflows/desktop-e2e-test.yml`
 - `.github/workflows/tauri-rust-ci.yml`
@@ -124,6 +125,7 @@ Commit: `ci: skip codeql for non-source pull requests`
 ## A6. Add Codecov flags + carryforward
 
 **Modify:**
+
 - `codecov.yml`
 - `.github/workflows/unit-test.yml`
 - `.github/workflows/tauri-rust-ci.yml`
@@ -145,13 +147,13 @@ Commit: `ci: carry forward partial coverage streams`
 
 Expected after PR A:
 
-| Change | Result |
-| --- | --- |
-| docs only | required unit/lint still full; packaging/E2E/Rust/CodeQL skip |
-| web-only | web E2E runs; desktop/Rust/packaging skip |
+| Change           | Result                                                                   |
+| ---------------- | ------------------------------------------------------------------------ |
+| docs only        | required unit/lint still full; packaging/E2E/Rust/CodeQL skip            |
+| web-only         | web E2E runs; desktop/Rust/packaging skip                                |
 | desktop renderer | desktop E2E + Rust CI run; web E2E skips unless shared/web input changed |
-| desktop Rust | Rust CI + desktop E2E run; packaging skips |
-| common/shared | web E2E + desktop E2E run; Rust CI stays skipped without native changes |
+| desktop Rust     | Rust CI + desktop E2E run; packaging skips                               |
+| common/shared    | web E2E + desktop E2E run; Rust CI stays skipped without native changes  |
 
 **Decision rule:** measurement can justify editing HPA-613, but do not silently mark the issue done. As written, the ticket still requires cheap docs-only required jobs and relevant-language PR CodeQL.
 
@@ -162,6 +164,7 @@ Expected after PR A:
 ## B1. Add one tested fail-open detector
 
 **Create:**
+
 - `.github/scripts/ci-affected-scope.sh`
 - `.github/scripts/ci-affected-scope.test.sh`
 - minimal Turbo JSON fixtures under `.github/scripts/fixtures/`
@@ -278,8 +281,8 @@ Commit: `ci: add codeql language scope mode`
 
 ```yaml
 with:
-  languages: ${{ matrix.language }}
-  build-mode: none
+    languages: ${{ matrix.language }}
+    build-mode: none
 ```
 
 Do not leave `build-mode: ${{ matrix.build-mode }}` after removing the current `matrix.include` structure.
@@ -299,14 +302,14 @@ Commit: `ci: scope codeql by changed language`
 
 Document the final matrix and invariants:
 
-| Change | Unit | ESLint/Prettier | Heavy lint | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| docs only | skip | run | skip | skip | skip | skip | skip | skip |
-| web/API | run | run | run | run | skip | skip | skip | JS/TS |
-| common/ui | run | run | run | run | run | skip | skip | JS/TS |
-| desktop renderer | run | run | run | skip | run | run | skip | JS/TS |
-| desktop Rust | run | run | run | skip | run | run | skip | Rust |
-| `tsconfig.base.json` | run | run | run | run | run | skip | skip | JS/TS |
+| Change               | Unit | ESLint/Prettier | Heavy lint | Web E2E | Desktop E2E | Rust CI | Packaging | CodeQL |
+| -------------------- | ---- | --------------- | ---------- | ------- | ----------- | ------- | --------- | ------ |
+| docs only            | skip | run             | skip       | skip    | skip        | skip    | skip      | skip   |
+| web/API              | run  | run             | run        | run     | skip        | skip    | skip      | JS/TS  |
+| common/ui            | run  | run             | run        | run     | run         | skip    | skip      | JS/TS  |
+| desktop renderer     | run  | run             | run        | skip    | run         | run     | skip      | JS/TS  |
+| desktop Rust         | run  | run             | run        | skip    | run         | run     | skip      | Rust   |
+| `tsconfig.base.json` | run  | run             | run        | run     | run         | skip    | skip      | JS/TS  |
 
 Also document:
 

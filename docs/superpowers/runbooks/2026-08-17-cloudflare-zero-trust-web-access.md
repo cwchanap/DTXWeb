@@ -102,15 +102,17 @@ the resource protection or turn this exception into an automated workflow step.
 
 The committed `devicePostureRuleId` values must continue to match the current Perseus production
 `adminAccessDevicePostureRuleId` output. Before applying a change to identity, posture, policy, or
-tenant settings, use an authenticated Pulumi Cloud CLI session and compare both remote stacks
-without printing either value:
+tenant settings, use an authenticated Pulumi Cloud CLI session and explicitly query the canonical
+`cwchanap/perseus-infrastructure/production` stack while comparing both remote stacks without
+printing either value:
 
 ```bash
 : "${PERSEUS_INFRA_DIR:?set PERSEUS_INFRA_DIR to Perseus packages/infrastructure}"
 
 PERSEUS_POSTURE_RULE_ID="$({
   cd "$PERSEUS_INFRA_DIR" &&
-    pulumi stack output adminAccessDevicePostureRuleId
+    pulumi stack output adminAccessDevicePostureRuleId \
+      --stack cwchanap/perseus-infrastructure/production
 })" || exit 1
 
 test -n "$PERSEUS_POSTURE_RULE_ID" || {

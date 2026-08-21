@@ -140,18 +140,25 @@ cutover has not been deployed or proven in pre-production:
    be independently verified from the available local tooling. The deployed
    Google start flow emits that exact callback, but completion must remain
    blocked until the client registration is externally confirmed.
-4. No real sanitized Supabase Auth export and complete application owner-ID
-   inventory were supplied for this run. No fabricated identity export or
-   import SQL was generated/applied, and exact owner reconciliation therefore
-   remains a hard gate.
+4. An authenticated read-only Supabase export now covers 2 users and 3
+   supported identities, and the production D1 owner inventory contains 1
+   UUID covered by that export. The protected importer artifact was
+   second-operator approved with 2 user rows, 2 credential accounts, 1 Google
+   account, no sessions/tokens, and SHA-256
+   `7608f9e2ccf0e25c7a1eec129801eeb19c3fdbbc47bd7a7b3f8ab4ede48cbbe4`.
+   It has not been applied. The isolated pre-production application data has 3
+   owner UUIDs, only 2 of which exist in the Supabase export; the unmatched
+   owner still owns 3 simfiles and 1 profile. Pre-production import therefore
+   remains blocked until that legacy owner is explicitly remapped or its data
+   is removed by an approved operator decision. No identity was fabricated.
 5. The manual OS-browser Device Authorization handoff has not been recorded;
    WDIO coverage is automated evidence only.
 
 Accordingly, local repository and automated E2E verification is GREEN, while
 current pre-production acceptance and the production go/no-go status are
 BLOCKED on the final API/web deployments, the complete current acceptance
-matrix, external callback registration, real owner reconciliation/import
-inputs, and manual handoff evidence. The runbook now records the corrected
+matrix, external callback registration, the pre-production legacy-owner
+decision and exact reconciliation, and manual handoff evidence. The runbook now records the corrected
 five-second local E2E expiry override and continues to prohibit that override
 in remote environments.
 

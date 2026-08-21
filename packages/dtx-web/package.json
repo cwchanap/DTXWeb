@@ -63,7 +63,7 @@
 		"graphql": "^16.10.0",
 		"graphql-request": "^7.1.2",
 		"jszip": "^3.10.1",
-		"phaser": "^3.88.2",
+		"phaser": "^4.2.1",
 		"svelte-i18n": "^4.0.1",
 		"uuid": "^11.1.0",
 		"vexflow": "4.2.5",

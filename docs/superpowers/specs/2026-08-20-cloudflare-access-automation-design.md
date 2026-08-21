@@ -162,14 +162,10 @@ contains one independently owned secret:
 | ------ | ----------------------------- | -------------------------------------------------- |
 | Secret | `CLOUDFLARE_ACCESS_API_TOKEN` | Dedicated Cloudflare Access application credential |
 
-Keep these shared values as repository variables:
-
-- `PULUMI_ORG=cwchanap`, matching Perseus;
-- `CLOUDFLARE_ACCOUNT_ID`, reusing the account variable already consumed by the desktop R2 release
-  job.
-
-Keeping the account ID in the existing repository variable is a reuse decision, not a claim that
-the identifier is secret. Do not duplicate it in both stack settings files.
+Keep `PULUMI_ORG=cwchanap` as a repository variable, matching Perseus. `CLOUDFLARE_ACCOUNT_ID` remains
+an existing repository variable for the desktop R2 release job; this workflow does not read it. The
+account ID is not secret, and this design intentionally commits it as plain stack config in both
+settings files rather than injecting it at runtime.
 
 The workflow exposes `CLOUDFLARE_ACCESS_API_TOKEN` to the provider only as
 `CLOUDFLARE_API_TOKEN` within the Pulumi steps. The token has only the Cloudflare account-level
@@ -181,6 +177,7 @@ default secrets provider. Each file is the version-controlled source of truth fo
 
 - `accessEmail`, encrypted with the stack-specific Pulumi Cloud key;
 - `devicePostureRuleId`, recorded as a non-secret identifier;
+- `cloudflareAccountId`, recorded as a non-secret identifier;
 - an optional explicit `accessSessionDuration` only if it differs from the code default.
 
 Keep the broad `Pulumi.*.yaml` ignore in `packages/infrastructure/.gitignore` and unignore exactly
@@ -189,9 +186,11 @@ untrackable. Never commit a stack file while it
 still contains the local passphrase provider or its encryption salt. A pull request must reject a
 plain-text `accessEmail`.
 
-The Pulumi action supplies only this stack config value at runtime:
-
-- `cloudflareAccountId` from `vars.CLOUDFLARE_ACCOUNT_ID`.
+The workflow supplies no runtime stack config. `pulumi/actions`' `config-map` input is implemented with
+`stack.setAllConfig`, which replaces — not merges with — the stack configuration: a map containing
+only `cloudflareAccountId` would erase the committed `accessEmail` and `devicePostureRuleId` before
+`up` while `src/index.ts` requires all three. The committed files own every config value, and the
+workflow contract test pins the absence of `config-map`.
 
 `accessSessionDuration` remains code-defaulted to `12h`. The workflow does not accept hostnames or
 destinations as configuration. `PULUMI_CONFIG_PASSPHRASE` is absent from GitHub.
@@ -254,8 +253,8 @@ it.
    `pulumi stack import` migrates deployment state only; stack configuration lives separately in
    `Pulumi.<stack>.yaml` and must be repopulated on the remote stacks. `src/index.ts` calls
    `config.require('cloudflareAccountId')`, so without this set the next step's preview cannot run.
-   Keep `cloudflareAccountId` only long enough for manual preview/apply; remove it from both final
-   files before PR B. Confirm `accessEmail` remains encrypted/redacted in Pulumi output and
+   `cloudflareAccountId` stays in both final files as permanent non-secret stack config. Confirm
+   `accessEmail` remains encrypted/redacted in Pulumi output and
    generate the two stack settings files. Verify each file contains `secretsprovider: default`, an
    `accessEmail` `secure:` value, the posture ID, the account ID, and no `encryptionsalt`.
 10. Build the current infrastructure program and run a remote preview for each stack with the
@@ -268,9 +267,9 @@ it.
     was already established in state by step 5), then rerun preview. The final previews must
     propose no provider operation whatsoever. Verify both `accessApplicationId` outputs still equal
     their pre-migration values.
-12. Remove `cloudflareAccountId` from both settings files, leaving the existing repository variable
-    as its source. Reconfirm encrypted email, matching posture IDs, `secretsprovider: default`, and
-    no passphrase salt. Only after both imports, protected updates, output comparisons, and clean
+12. Keep the non-secret `cloudflareAccountId` in both settings files; committed stack configuration
+    is its only source, and the workflow injects no runtime config. Reconfirm encrypted email,
+    matching posture IDs, `secretsprovider: default`, the plain account ID, and no passphrase salt. Only after both imports, protected updates, output comparisons, and clean
     previews pass, remove the two files in the private temporary migration directory and the
     directory itself. Then make the settings files version-controlled.
 
@@ -371,12 +370,12 @@ absence of hostname-wide production Access, single policy, and posture `Require`
 Also add a focused workflow contract test under the infrastructure package. It reads the workflow
 as repository text and asserts the two environment names, serial `needs` edge, exact stack names,
 `id-token: write`, SHA-pinned Pulumi actions, dedicated Cloudflare secret mapping, `refresh: true`
-on the `pulumi/actions` `up` step, and absence of `PULUMI_ACCESS_TOKEN` and
-`PULUMI_CONFIG_PASSPHRASE`. Use focused text assertions; do not add a YAML-parser dependency. The
+on the `pulumi/actions` `up` step, and absence of `PULUMI_ACCESS_TOKEN`,
+`PULUMI_CONFIG_PASSPHRASE`, and `config-map`. Use focused text assertions; do not add a YAML-parser dependency. The
 `refresh: true` assertion pins drift reconciliation into the workflow contract so a later change
 cannot silently revert the automation to checkpoint-only comparison. The same contract suite reads
 the two committed stack settings as text and asserts the default secrets provider, encrypted
-`accessEmail`, absence of `encryptionsalt`, and absence of a duplicated `cloudflareAccountId`.
+`accessEmail`, a plain non-secret `cloudflareAccountId`, and absence of `encryptionsalt`.
 
 Do not add a standing preview-JSON rule that rejects every future replacement. The one-time
 migration preview keeps its zero-operation gate, while Pulumi's engine-level resource protection is
@@ -447,7 +446,7 @@ Use two pull requests with an out-of-band migration gate between them:
    stored application ID against the expected named live application, detect provider drift with
    `pulumi refresh --preview-only --expect-no-changes`, establish state-level resource protection
    before export, import both live stack states, change secrets providers, repopulate remote stack
-   configuration (including a temporary `cloudflareAccountId` for preview), generate the reviewable
+   configuration (including the non-secret `cloudflareAccountId`), generate the reviewable
    stack settings, compare the Perseus posture ID, and obtain clean final previews for both remote
    stacks.
 3. **PR B — automation activation.** Commit the two migrated stack settings, remove their ignore

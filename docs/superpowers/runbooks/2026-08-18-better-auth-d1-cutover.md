@@ -246,9 +246,12 @@ records that:
 
 For the pre-production rehearsal, apply the reviewed artifact only after
 `0008_better_auth.sql` has been applied to the isolated pre-production D1 and
-the second operator has checked the target name. These Wrangler commands run
-from the repository root, so they refer to the generated file as
-`tmp/auth-migration/better-auth-import.sql`:
+the second operator has checked the target name. The generated SQL deliberately
+contains no explicit `BEGIN TRANSACTION` or `COMMIT` statements: remote
+`wrangler d1 execute --file` applies the file with all-or-rollback semantics,
+and D1 rejects explicit transaction-control statements in this path. These
+Wrangler commands run from the repository root, so they refer to the generated
+file as `tmp/auth-migration/better-auth-import.sql`:
 
 ```bash
 bunx wrangler d1 execute dtx-web-preprod \

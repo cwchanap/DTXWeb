@@ -60,6 +60,8 @@ describe('Supabase auth export migration', () => {
 		expect(sql).toContain(String(Date.parse('2025-01-03T03:04:05.000Z')));
 		expect(sql).toMatch(/email_verified.*\)\s+VALUES[^(]*\([^,]+,[^,]+,[^,]+,\s*1,/s);
 		expect(sql).toMatch(/INSERT INTO "account"/);
+		expect(sql).not.toContain('BEGIN TRANSACTION;');
+		expect(sql).not.toContain('COMMIT;');
 		expect(sql).not.toMatch(/INSERT INTO "(?:session|verification)"/i);
 		expect(sql).not.toMatch(
 			/(?:access_token|refresh_token|id_token|session_token|password_hash)/i

@@ -325,9 +325,7 @@ export const generateAuthMigrationSql = async (
 	return [
 		'-- Reviewed Better Auth identity import; only user and account rows are emitted.',
 		`-- Reconciled application owner IDs: ${ownerIds.length}`,
-		'BEGIN TRANSACTION;',
-		...statements,
-		'COMMIT;'
+		...statements
 	].join('\n');
 };
 

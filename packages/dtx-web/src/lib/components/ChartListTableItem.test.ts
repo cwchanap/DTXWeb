@@ -209,8 +209,25 @@ describe('ChartListTableItem', () => {
 			expect(goto).toHaveBeenCalledWith(`/editor/${mockItem.id}`);
 		});
 
-		it('"Open in Editor" is not rendered in blog mode', () => {
+		it('renders "Open in Editor" button in blog mode for an uploaded chart', () => {
 			render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
+			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
+		});
+
+		it('clicking "Open in Editor" in blog mode navigates to the chart editor', async () => {
+			render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			expect(goto).toHaveBeenCalledWith(`/editor/${mockItem.id}`);
+		});
+
+		it('"Open in Editor" is not rendered in blog mode when hasUploadedFiles is false', () => {
+			render(ChartListTableItem, {
+				props: {
+					...defaultProps,
+					isBlog: true,
+					item: { ...mockItem, hasUploadedFiles: false }
+				}
+			});
 			expect(
 				screen.queryByRole('button', { name: 'Open in Editor' })
 			).not.toBeInTheDocument();

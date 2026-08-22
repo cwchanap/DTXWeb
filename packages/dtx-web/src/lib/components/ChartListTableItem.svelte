@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { SimfileModel } from '@dtx/common';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
-	import { EllipsisVertical, ExternalLink, Eye } from '@lucide/svelte/icons';
+	import { EllipsisVertical, ExternalLink, Eye, Music } from '@lucide/svelte/icons';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
@@ -114,6 +114,17 @@
 	</Popover>
 {:else}
 	<div class="flex items-center gap-2">
+		{#if canOpenEditor}
+			<button
+				type="button"
+				onclick={handleOpenInEditor}
+				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
+				aria-label="Open in Editor"
+				title="Open in Editor"
+			>
+				<Music size="16" />
+			</button>
+		{/if}
 		{#if previewable}
 			<a
 				href={`/preview/${item.id}`}

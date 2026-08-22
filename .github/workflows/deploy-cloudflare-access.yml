@@ -62,7 +62,7 @@ jobs:
           command: up
           stack-name: cwchanap/dtxweb-infrastructure/pre-prod
           work-dir: packages/infrastructure
-          pulumi-version: '3.144.0'
+          pulumi-version: '3.258.0'
           refresh: true
           suppress-outputs: true
         env:
@@ -118,7 +118,7 @@ jobs:
           command: up
           stack-name: cwchanap/dtxweb-infrastructure/production
           work-dir: packages/infrastructure
-          pulumi-version: '3.144.0'
+          pulumi-version: '3.258.0'
           refresh: true
           suppress-outputs: true
         env:

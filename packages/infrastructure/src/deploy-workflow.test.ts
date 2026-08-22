@@ -96,7 +96,7 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			).toBe(1);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
 			expect(countOccurrences(job, 'refresh: true')).toBe(1);
-			expect(countOccurrences(job, "pulumi-version: '3.144.0'")).toBe(1);
+			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(1);
 			expect(countOccurrences(job, 'work-dir: packages/infrastructure')).toBe(1);
 			expect(
 				countOccurrences(

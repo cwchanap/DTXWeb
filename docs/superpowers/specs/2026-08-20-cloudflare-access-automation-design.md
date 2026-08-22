@@ -155,8 +155,13 @@ The implementation must preserve SHA pinning if either action is upgraded during
 
 ## GitHub Environment Contract
 
-Create `dtx-access-pre-prod` and `dtx-access-production` with no required reviewers. Each environment
-contains one independently owned secret:
+Create `dtx-access-pre-prod` and `dtx-access-production` with no required reviewers. Restrict each
+environment's deployment branches and tags to selected branches with `main` only: because a job
+that references an Environment receives the default OIDC subject
+`repo:cwchanap/DTXWeb:environment:<name>` (no branch ref) and can reference the environment secret,
+the workflow-level `if: github.ref == 'refs/heads/main'` guard is not a credential boundary — the
+deployment-branch restriction is what prevents a modified workflow on another branch from minting
+the Pulumi-trusted environment subject. Each environment contains one independently owned secret:
 
 | Kind   | Name                          | Purpose                                            |
 | ------ | ----------------------------- | -------------------------------------------------- |
@@ -442,7 +447,7 @@ Use two pull requests with an out-of-band migration gate between them:
    `403` plus Access-header presence before merging PR A. Do not add the deployment workflow or
    commit stack settings yet.
 2. **Operator migration gate.** Create the two GitHub Environments with only their Cloudflare
-   secrets, verify the two exact GitHub OIDC subjects, configure Pulumi Cloud trust, reconfirm each
+   secrets and deployment branches and tags restricted to `main`, verify the two exact GitHub OIDC subjects, configure Pulumi Cloud trust, reconfirm each
    stored application ID against the expected named live application, detect provider drift with
    `pulumi refresh --preview-only --expect-no-changes`, establish state-level resource protection
    before export, import both live stack states, change secrets providers, repopulate remote stack
@@ -497,7 +502,8 @@ Automation is ready to enable when:
 - both remote previews show no unintended resource operations;
 - both Access applications are protected against deletion and replacement;
 - Pulumi Cloud OIDC trust permits only the two verified GitHub Environment subjects;
-- both GitHub Environments contain the dedicated Cloudflare secret with no reviewer gate;
+- both GitHub Environments contain the dedicated Cloudflare secret with no reviewer gate and
+  restrict deployment branches and tags to `main` only;
 - both committed stack settings use Pulumi Cloud encryption, contain no passphrase salt, and match
   the current Perseus posture-rule output;
 - the first `main`-triggered workflow run completes pre-production then production successfully;

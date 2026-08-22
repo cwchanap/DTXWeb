@@ -161,7 +161,8 @@ async fn upload_preview_if_present(
 /// `song_path` is contained within `workspace_root`. Returns:
 /// - `Ok(Some(bytes))` when the file exists and is within the workspace,
 /// - `Ok(None)` when the file is absent (no preview to upload, not an error),
-/// - `Err(message)` when containment fails or the workspace root is missing.
+/// - `Err(message)` when containment fails, the workspace root is missing,
+///   or reading the preview file fails.
 async fn read_preview_within_workspace(
     song_path: &str,
     workspace_root: &str,
@@ -209,7 +210,7 @@ async fn read_preview_within_workspace(
     };
     match fs::read(&canonical_preview).await {
         Ok(bytes) => Ok(Some(bytes)),
-        Err(_) => Ok(None),
+        Err(error) => Err(error.to_string()),
     }
 }
 

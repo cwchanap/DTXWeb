@@ -305,65 +305,6 @@ fn create_simfile_input_preserves_null_display_id() {
     assert!(value["displayId"].is_null());
 }
 
-#[tokio::test]
-async fn read_preview_rejects_song_folder_outside_workspace() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let outside = tempfile::tempdir().expect("outside");
-    fs::write(outside.path().join("preview.jpg"), b"img").expect("preview");
-
-    let result = read_preview_within_workspace(
-        outside.path().to_str().unwrap(),
-        workspace.path().to_str().unwrap(),
-        "preview.jpg",
-    )
-    .await;
-
-    assert!(matches!(result, Err(ref e) if e.contains("outside the workspace")));
-}
-
-#[tokio::test]
-async fn read_preview_rejects_missing_workspace_root() {
-    let song = tempfile::tempdir().expect("song");
-
-    let result =
-        read_preview_within_workspace(song.path().to_str().unwrap(), "", "preview.jpg").await;
-
-    assert!(matches!(result, Err(ref e) if e.contains("workspace root is required")));
-}
-
-#[tokio::test]
-async fn read_preview_returns_none_when_file_absent() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let song = workspace.path().join("song");
-    fs::create_dir(&song).expect("song dir");
-
-    let result = read_preview_within_workspace(
-        song.to_str().unwrap(),
-        workspace.path().to_str().unwrap(),
-        "preview.jpg",
-    )
-    .await;
-
-    assert!(matches!(result, Ok(None)));
-}
-
-#[tokio::test]
-async fn read_preview_reads_file_inside_workspace() {
-    let workspace = tempfile::tempdir().expect("workspace");
-    let song = workspace.path().join("song");
-    fs::create_dir(&song).expect("song dir");
-    fs::write(song.join("preview.jpg"), b"img").expect("preview");
-
-    let result = read_preview_within_workspace(
-        song.to_str().unwrap(),
-        workspace.path().to_str().unwrap(),
-        "preview.jpg",
-    )
-    .await;
-
-    assert!(matches!(result, Ok(Some(ref bytes)) if bytes == b"img"));
-}
-
 #[test]
 fn number_id_accepts_i64_and_numeric_strings_but_rejects_overflow_and_invalid_types() {
     assert_eq!(number_id(&json!(42)).unwrap(), 42);

@@ -6,6 +6,9 @@ import {
 	beginLocalSongAction,
 	finishLocalSongAction,
 	isSelectionCurrent,
+	computeDriveFieldMerge,
+	getCachedDisplayId,
+	shouldSkipAutoPopulate,
 	type LocalSongAction
 } from './songDetailsActions';
 
@@ -147,5 +150,62 @@ describe('isSelectionCurrent', () => {
 				targetPath: '/ws/song'
 			})
 		).toBe(false);
+	});
+});
+
+describe('computeDriveFieldMerge', () => {
+	it('returns null when the upload failed', () => {
+		expect(computeDriveFieldMerge({ status: 'failed', errorCode: 'NETWORK' })).toBeNull();
+	});
+
+	it('returns null when skipped', () => {
+		expect(computeDriveFieldMerge({ status: 'skipped' })).toBeNull();
+	});
+
+	it('returns null on success with no relevant fields present', () => {
+		expect(computeDriveFieldMerge({ status: 'success' })).toBeNull();
+	});
+
+	it('returns only the defined fields on success', () => {
+		expect(
+			computeDriveFieldMerge({
+				status: 'success',
+				fileId: 'drive-id',
+				downloadUrl: 'https://drive.example/file'
+			})
+		).toEqual({
+			googleDriveFileId: 'drive-id',
+			downloadUrl: 'https://drive.example/file'
+		});
+	});
+
+	it('omits an undefined downloadUrl while keeping the fileId', () => {
+		expect(computeDriveFieldMerge({ status: 'success', fileId: 'drive-id' })).toEqual({
+			googleDriveFileId: 'drive-id'
+		});
+	});
+});
+
+describe('getCachedDisplayId', () => {
+	it('returns the cached value for a known path', () => {
+		const cache = new Map([['/ws/song', 42]]);
+		expect(getCachedDisplayId(cache, '/ws/song')).toBe(42);
+	});
+
+	it('returns undefined for an unknown path', () => {
+		const cache = new Map<string, number>();
+		expect(getCachedDisplayId(cache, '/ws/song')).toBeUndefined();
+	});
+});
+
+describe('shouldSkipAutoPopulate', () => {
+	it('is true when the path is already in flight', () => {
+		const inFlight = new Set(['/ws/song']);
+		expect(shouldSkipAutoPopulate(inFlight, '/ws/song')).toBe(true);
+	});
+
+	it('is false when the path is neither cached nor in flight', () => {
+		const inFlight = new Set<string>();
+		expect(shouldSkipAutoPopulate(inFlight, '/ws/song')).toBe(false);
 	});
 });

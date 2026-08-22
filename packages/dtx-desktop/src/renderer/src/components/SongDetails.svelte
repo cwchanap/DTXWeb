@@ -29,6 +29,9 @@
 		beginLocalSongAction as beginLocalSongActionInMap,
 		finishLocalSongAction as finishLocalSongActionInMap,
 		isSelectionCurrent,
+		computeDriveFieldMerge,
+		getCachedDisplayId,
+		shouldSkipAutoPopulate,
 		type LocalSongAction
 	} from '$lib/services/songDetailsActions';
 
@@ -307,19 +310,13 @@
 		simfileId: string,
 		outcome: SongSaveOutcome['driveUpload']
 	): void => {
-		if (outcome.status !== 'success') return;
-
-		const fields = {
-			...(outcome.fileId === undefined ? {} : { googleDriveFileId: outcome.fileId }),
-			...(outcome.downloadUrl === undefined ? {} : { downloadUrl: outcome.downloadUrl })
-		};
-		if (Object.keys(fields).length === 0) return;
+		const fields = computeDriveFieldMerge(outcome);
+		if (!fields) return;
 
 		if (targetSong.linkedSimFile && targetSong.linkedSimFileId === simfileId) {
 			targetSong.linkedSimFile = {
 				...targetSong.linkedSimFile,
-				...(outcome.fileId === undefined ? {} : { googleDriveFileId: outcome.fileId }),
-				...(outcome.downloadUrl === undefined ? {} : { downloadUrl: outcome.downloadUrl })
+				...fields
 			};
 		}
 		workspaceStore.mergeGoogleDriveFields(targetPath, simfileId, fields);
@@ -567,12 +564,12 @@
 	};
 
 	const populateNextDisplayId = async (currentPath: string) => {
-		if (autoPopulateInFlightPaths.has(currentPath)) {
+		if (shouldSkipAutoPopulate(autoPopulateInFlightPaths, currentPath)) {
 			return;
 		}
 
 		// Restore cached value on revisit without re-fetching
-		const cachedId = autoPopulatedForPaths.get(currentPath);
+		const cachedId = getCachedDisplayId(autoPopulatedForPaths, currentPath);
 		if (cachedId !== undefined) {
 			if (displayId === 0) {
 				displayId = cachedId;

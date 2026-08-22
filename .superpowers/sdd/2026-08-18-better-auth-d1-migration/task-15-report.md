@@ -1,6 +1,6 @@
 # Task 15 report: full verification and pre-production cutover proof
 
-Date: 2026-08-20
+Date: 2026-08-22
 
 Base: `7d9a9cbd`
 
@@ -93,9 +93,10 @@ publication, or Supabase credential change was run.
 - Full desktop WDIO/Tauri suite: all seven spec files passed. The native
   filesystem spec recorded nine passing cases and one Windows-only skip. The
   Tauri candidate built successfully and the relaunch smoke passed.
-- The runbook's manual OS-browser Device Authorization handoff remains a
-  separate manual evidence item. The automated desktop suite does not claim
-  that physical-browser handoff.
+- The runbook's manual OS-browser Device Authorization handoff is separate
+  from automated coverage; today's browser-approval evidence is recorded
+  below. The automated desktop suite does not claim that physical-browser
+  handoff.
 
 ## Pre-production evidence boundary
 
@@ -133,30 +134,48 @@ pre-production. This is not a production go decision.
 - The pre-production import artifact with SHA-256 prefix `51af...` was
   independently approved and applied. Final D1 counts are 2 Better Auth users,
   3 accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
-- The active pre-production API is version `839e...`; the active web version is
-  `255a...`, with the web `API` service binding verified.
+- The earlier active pre-production cutover versions were API `839e...` and web
+  `255a...`, with the web `API` service binding verified. During today's
+  browser acceptance, a later pre-prod-prod-data API deploy (`42e1e0c8` at
+  06:39) and web deploy (`7a5396c4` at 06:41) reclaimed the same public custom
+  domains; public API auth routes and `/app/desktop-auth` on the web returned
+  404. The isolated pre-production services were restored as API
+  `d4fac270-7bd0-411f-b4c7-94ebe7e2cdd3` and web
+  `2478f4a7-ad6d-494a-bdca-d207565e1d59`.
+- The restored web build required explicit
+  `PUBLIC_DTX_API_URL=https://api.pre-prod.dtx.hapadona.com` and
+  `PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev`;
+  the build passed and the deploy succeeded.
 - Live password/cookie authentication, GraphQL, CORS, Google authorization
   start with the exact callback
   `https://api.pre-prod.dtx.hapadona.com/api/auth/callback/google`, invalid
   session handling, logout/revocation, Device Authorization approve/revoke/
   deny, and upload/download all passed. Temporary upload test objects were
   removed.
-- The user confirmed the Google callbacks are registered. Cloudflare Access
-  returned 403, blocking the app-internal `/app` redirect, Google
-  completion/explicit-linking UI, and OS-browser approval handoff. Remote
-  Device Authorization expiry has not been run independently because the
-  five-second expiry override is local-only and prohibited remotely. The
-  broader desktop pre-production candidate matrix has not been run separately;
-  only its browser-approval leg is Access-dependent. WDIO coverage is
+- Cloudflare Access initially returned 403; after WARP/user authentication it
+  cleared. Today's browser acceptance then passed: the app guard/login redirect
+  preserved the device path, real Better Auth Google sign-in completed, the
+  Account provider UI showed Google already connected, and `/app/desktop-auth`
+  code claim plus Approve UI passed.
+- The native/public follow-up passed: the Device Authorization poll returned
+  200 with a Bearer token, `get-session` returned 200 for the migrated user,
+  sign-out returned 200, and the revoked `get-session` returned 200 with
+  `null`.
+- Explicit Connect Google linking UI was not exercised because the migrated
+  user was already linked; the account was not unlinked. Remote Device
+  Authorization expiry has not been run independently because the five-second
+  expiry override is local-only and prohibited remotely. The broader desktop
+  pre-production candidate matrix has not been run separately. WDIO coverage is
   automated evidence only.
 - The pre-production legacy `SUPABASE_SERVICE_ROLE_KEY` secret remains and was
   not deleted.
 
-Accordingly, pre-production deployment, import, and the listed live smoke
-checks are GREEN, with the Access-blocked checks, remote Device Authorization
-expiry, and broader desktop candidate matrix still open. This does not
-authorize production mutation. The runbook's five-second expiry override
-remains local-only and is prohibited in remote environments.
+Accordingly, pre-production deployment, import, the listed live smoke checks,
+and today's browser/native approval acceptance are GREEN. The distinct
+remaining gaps are explicit Connect Google linking, remote Device
+Authorization expiry, and the broader desktop pre-production candidate matrix.
+This does not authorize production mutation. The runbook's five-second expiry
+override remains local-only and is prohibited in remote environments.
 
 ## Production read-only preview and boundary
 

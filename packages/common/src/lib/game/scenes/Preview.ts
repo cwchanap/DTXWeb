@@ -151,15 +151,18 @@ export class Preview extends BaseGame {
 		// Start preview only once after everything is set up
 		this.startPreview();
 
-		// Defer store subscription until after initial setup
-		setTimeout(() => {
-			if (this.scene.isActive()) {
-				this.storeUnsubscribe = store.currentSoundChip.subscribe(async () => {
-					// Only reload sounds, don't restart preview
-					await this.setupSoundsAsync();
-				});
+		// Subscribe to currentSoundChip changes so sounds reload when the chip
+		// changes after scene creation. Svelte stores invoke the subscriber
+		// immediately with the current value on subscribe; skip that initial
+		// replay so we don't redundantly reload sounds we just set up above.
+		let skipInitialSoundChipReplay = true;
+		this.storeUnsubscribe = store.currentSoundChip.subscribe(async () => {
+			if (skipInitialSoundChipReplay) {
+				skipInitialSoundChipReplay = false;
+				return;
 			}
-		}, 100);
+			await this.setupSoundsAsync();
+		});
 
 		this.isInitialized = true;
 		EventBus.emit(EventType.SCENE_READY, this);

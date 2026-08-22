@@ -14,13 +14,16 @@ const mockStore = vi.hoisted(() => ({
 	playSpeed: {
 		subscribe: vi.fn((callback) => {
 			callback(1);
-			return { unsubscribe: vi.fn() };
+			return vi.fn();
 		})
 	},
 	currentSoundChip: {
+		// Real Svelte stores return the unsubscribe function directly (not an
+		// { unsubscribe } object) — Preview.ts calls this return value as a
+		// function in shutdown(), so the mock must match that contract.
 		subscribe: vi.fn((callback) => {
 			callback([]);
-			return { unsubscribe: vi.fn() };
+			return vi.fn();
 		})
 	}
 }));
@@ -1031,7 +1034,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: null) => void) => {
 					callback(null);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 			await expect(previewScene['setupSoundsAsync']()).resolves.toBeUndefined();
@@ -1042,7 +1045,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: typeof mockSoundChips) => void) => {
 					callback(mockSoundChips);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 
@@ -1064,7 +1067,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: typeof mockSoundChips) => void) => {
 					callback(mockSoundChips);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 
@@ -1099,7 +1102,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: typeof mockSoundChips) => void) => {
 					callback(mockSoundChips);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 
@@ -1135,7 +1138,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: typeof mockSoundChips) => void) => {
 					callback(mockSoundChips);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 
@@ -1155,7 +1158,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (v: typeof mockSoundChips) => void) => {
 					callback(mockSoundChips);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 
@@ -1177,40 +1180,89 @@ describe('Preview Scene', () => {
 		});
 	});
 
-	describe('create() setTimeout subscription', () => {
-		afterEach(() => {
-			vi.runAllTimers();
-			vi.useRealTimers();
-		});
-
-		it('should subscribe to currentSoundChip after 100ms when scene is active', async () => {
-			vi.useFakeTimers();
+	describe('create() sound-chip subscription', () => {
+		// The store subscription is now created synchronously inside create()
+		// (no setTimeout/isActive() gate). Svelte stores invoke the subscriber
+		// immediately with the current value on subscribe; skipInitialSoundChipReplay
+		// guards against that initial replay triggering a redundant sound reload.
+		// startPreview() is mocked in all three tests (matching the pattern used
+		// elsewhere in this file) so its own real setupSoundsAsync().then(...) chain
+		// doesn't fire asynchronously against a panelContainer-less scene later.
+		it('should subscribe to currentSoundChip synchronously within create()', async () => {
+			const drawPanelSpy = vi
+				.spyOn(previewScene as any, 'drawPanel')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
 
 			await previewScene.create();
 
-			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(true);
+			expect(previewScene['storeUnsubscribe']).toBeDefined();
+			expect(mockStore.currentSoundChip.subscribe).toHaveBeenCalled();
+
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+		});
+
+		it('should not reload sounds for the subscription initial replay', async () => {
+			const drawPanelSpy = vi
+				.spyOn(previewScene as any, 'drawPanel')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
 			const setupSoundsAsyncSpy = vi
 				.spyOn(previewScene as any, 'setupSoundsAsync')
 				.mockResolvedValue(undefined);
 
-			// Advance past the 100ms setTimeout
-			vi.advanceTimersByTime(200);
+			await previewScene.create();
 
-			expect(previewScene['storeUnsubscribe']).toBeDefined();
+			// create() itself triggers setupSoundsAsync via its own direct call
+			// (startPreview is mocked here, so its internal call doesn't count);
+			// the store's immediate replay on subscribe() must not add a
+			// redundant second reload on top of that one.
+			expect(setupSoundsAsyncSpy).toHaveBeenCalledTimes(1);
 
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			startPreviewSpy.mockRestore();
 			setupSoundsAsyncSpy.mockRestore();
 		});
 
-		it('should not subscribe when scene is not active after 100ms', async () => {
-			vi.useFakeTimers();
+		it('should reload sounds when currentSoundChip changes after scene creation', async () => {
+			const drawPanelSpy = vi
+				.spyOn(previewScene as any, 'drawPanel')
+				.mockImplementation(() => {});
+			const drawNotesSpy = vi
+				.spyOn(previewScene as any, 'drawNotes')
+				.mockImplementation(() => {});
+			const startPreviewSpy = vi
+				.spyOn(previewScene as any, 'startPreview')
+				.mockImplementation(() => {});
+			const setupSoundsAsyncSpy = vi
+				.spyOn(previewScene as any, 'setupSoundsAsync')
+				.mockResolvedValue(undefined);
 
 			await previewScene.create();
+			const callsAfterCreate = setupSoundsAsyncSpy.mock.calls.length;
 
-			(previewScene['scene'] as any).isActive = vi.fn().mockReturnValue(false);
+			const subscribeCallback = mockStore.currentSoundChip.subscribe.mock.calls[0][0];
+			await subscribeCallback([]);
 
-			vi.advanceTimersByTime(200);
+			expect(setupSoundsAsyncSpy.mock.calls.length).toBe(callsAfterCreate + 1);
 
-			expect(previewScene['storeUnsubscribe']).toBeFalsy();
+			drawPanelSpy.mockRestore();
+			drawNotesSpy.mockRestore();
+			startPreviewSpy.mockRestore();
+			setupSoundsAsyncSpy.mockRestore();
 		});
 	});
 
@@ -1710,7 +1762,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (chips: any[]) => void) => {
 					callback([mockSoundChip]);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(mockAudio);
@@ -1758,7 +1810,7 @@ describe('Preview Scene', () => {
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
 				(callback: (chips: any[]) => void) => {
 					callback([mockSoundChip]);
-					return { unsubscribe: vi.fn() };
+					return vi.fn();
 				}
 			);
 			(previewScene.sound.get as ReturnType<typeof vi.fn>).mockReturnValue(mockAudio);

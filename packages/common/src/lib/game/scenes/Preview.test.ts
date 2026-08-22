@@ -302,7 +302,10 @@ describe('Preview Scene', () => {
 		it('should cache results and not recompute on repeated calls', () => {
 			previewScene.init(baseData);
 			const firstCall = previewScene.getTimeElapsed(2);
-			const cache = (previewScene as any)['timeElapsedCache'] as Map<number, number>;
+			const cache = (previewScene as any)['calculations']['timeElapsedCache'] as Map<
+				number,
+				number
+			>;
 			expect(cache.has(2)).toBe(true);
 			const cacheSizeAfterFirst = cache.size;
 			const secondCall = previewScene.getTimeElapsed(2);
@@ -320,7 +323,10 @@ describe('Preview Scene', () => {
 			previewScene.init(baseData);
 			// Prime the hash so validateCache won't call clear() during the spied call
 			previewScene.getTimeElapsed(0);
-			const cache = (previewScene as any)['timeElapsedCache'] as Map<number, number>;
+			const cache = (previewScene as any)['calculations']['timeElapsedCache'] as Map<
+				number,
+				number
+			>;
 			const getSpy = vi.spyOn(cache, 'get');
 			const setSpy = vi.spyOn(cache, 'set');
 
@@ -388,7 +394,10 @@ describe('Preview Scene', () => {
 				startMeasure: 0
 			});
 			const first = previewScene.getTotalMesaureOffest(2);
-			const cache = (previewScene as any)['measureOffsetCache'] as Map<number, number>;
+			const cache = (previewScene as any)['calculations']['measureOffsetCache'] as Map<
+				number,
+				number
+			>;
 			expect(cache.has(2)).toBe(true);
 			const cacheSizeAfterFirst = cache.size;
 			const second = previewScene.getTotalMesaureOffest(2);
@@ -584,46 +593,8 @@ describe('Preview Scene', () => {
 		});
 	});
 
-	describe('audioBufferToWavBlob', () => {
-		it('should return a Blob of type audio/wav', () => {
-			const mockAudioBuffer = {
-				numberOfChannels: 1,
-				length: 4,
-				sampleRate: 44100,
-				getChannelData: vi.fn().mockReturnValue(new Float32Array([0, 0.5, -0.5, 1]))
-			} as unknown as AudioBuffer;
-
-			const result = previewScene['audioBufferToWavBlob'](mockAudioBuffer);
-			expect(result).toBeInstanceOf(Blob);
-			expect(result.type).toBe('audio/wav');
-		});
-
-		it('should produce correct WAV byte size for stereo audio', () => {
-			const frames = 10;
-			const channels = 2;
-			const mockAudioBuffer = {
-				numberOfChannels: channels,
-				length: frames,
-				sampleRate: 44100,
-				getChannelData: vi.fn().mockReturnValue(new Float32Array(frames).fill(0))
-			} as unknown as AudioBuffer;
-
-			const result = previewScene['audioBufferToWavBlob'](mockAudioBuffer);
-			// Expected size = frames * channels * 2 (bytes per sample) + 44 (header)
-			expect(result.size).toBe(frames * channels * 2 + 44);
-		});
-
-		it('should clamp audio samples to [-1, 1] range without throwing', () => {
-			const mockAudioBuffer = {
-				numberOfChannels: 1,
-				length: 3,
-				sampleRate: 44100,
-				getChannelData: vi.fn().mockReturnValue(new Float32Array([2.0, -2.0, 0.5]))
-			} as unknown as AudioBuffer;
-
-			expect(() => previewScene['audioBufferToWavBlob'](mockAudioBuffer)).not.toThrow();
-		});
-	});
+	// audioBufferToWavBlob moved verbatim to game/audio/soundChipPreparation.ts;
+	// see soundChipPreparation.test.ts for its coverage.
 
 	describe('drawNote', () => {
 		beforeEach(() => {
@@ -685,6 +656,9 @@ describe('Preview Scene', () => {
 	});
 
 	describe('cache management', () => {
+		// The cache bookkeeping (lastDataHash/calculationsValid/validateCache/
+		// invalidateCache) now lives on the Phaser-free PreviewCalculations
+		// helper (previewScene['calculations']) rather than directly on Preview.
 		it('should validate cache and update lastDataHash', () => {
 			previewScene.init({
 				measureCount: 5,
@@ -694,12 +668,12 @@ describe('Preview Scene', () => {
 				startMeasure: 0
 			});
 			// Initially no hash stored
-			expect(previewScene['lastDataHash']).toBe('');
+			expect(previewScene['calculations']['lastDataHash']).toBe('');
 
 			// validateCache should update the hash
-			previewScene['validateCache']();
-			expect(previewScene['lastDataHash']).not.toBe('');
-			expect(previewScene['calculationsValid']).toBe(true);
+			previewScene['calculations']['validateCache']();
+			expect(previewScene['calculations']['lastDataHash']).not.toBe('');
+			expect(previewScene['calculations']['calculationsValid']).toBe(true);
 		});
 
 		it('should invalidate cache when called', () => {
@@ -711,12 +685,12 @@ describe('Preview Scene', () => {
 				startMeasure: 0
 			});
 
-			previewScene['validateCache']();
-			expect(previewScene['calculationsValid']).toBe(true);
+			previewScene['calculations']['validateCache']();
+			expect(previewScene['calculations']['calculationsValid']).toBe(true);
 
-			previewScene['invalidateCache']();
-			expect(previewScene['calculationsValid']).toBe(false);
-			expect(previewScene['lastDataHash']).toBe('');
+			previewScene['calculations'].invalidate();
+			expect(previewScene['calculations']['calculationsValid']).toBe(false);
+			expect(previewScene['calculations']['lastDataHash']).toBe('');
 		});
 
 		it('should reinvalidate cache when data hash changes', () => {
@@ -728,14 +702,14 @@ describe('Preview Scene', () => {
 				startMeasure: 0
 			});
 
-			previewScene['validateCache']();
-			const firstHash = previewScene['lastDataHash'];
+			previewScene['calculations']['validateCache']();
+			const firstHash = previewScene['calculations']['lastDataHash'];
 
 			// Change BPM (which changes the hash)
-			previewScene['bpm'] = 200;
+			previewScene['calculations']['bpm'] = 200;
 
-			previewScene['validateCache']();
-			const secondHash = previewScene['lastDataHash'];
+			previewScene['calculations']['validateCache']();
+			const secondHash = previewScene['calculations']['lastDataHash'];
 
 			expect(firstHash).not.toBe(secondHash);
 		});

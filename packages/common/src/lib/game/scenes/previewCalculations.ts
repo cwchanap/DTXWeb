@@ -55,7 +55,6 @@ export class PreviewCalculations {
 	private timeElapsedCache = new Map<number, number>();
 	private measureOffsetCache = new Map<number, number>();
 	private lastDataHash = '';
-	private calculationsValid = false;
 
 	constructor(config: PreviewCalculationsConfig) {
 		this.bpm = config.bpm;
@@ -86,7 +85,6 @@ export class PreviewCalculations {
 	invalidate(): void {
 		this.timeElapsedCache.clear();
 		this.measureOffsetCache.clear();
-		this.calculationsValid = false;
 		this.lastDataHash = '';
 	}
 
@@ -99,7 +97,6 @@ export class PreviewCalculations {
 			this.invalidate();
 			this.lastDataHash = currentHash;
 		}
-		this.calculationsValid = true;
 	}
 
 	generateDataHash(): string {

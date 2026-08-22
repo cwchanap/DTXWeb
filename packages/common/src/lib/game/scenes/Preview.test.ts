@@ -659,8 +659,8 @@ describe('Preview Scene', () => {
 	});
 
 	describe('cache management', () => {
-		// The cache bookkeeping (lastDataHash/calculationsValid/validateCache/
-		// invalidateCache) now lives on the Phaser-free PreviewCalculations
+		// The cache bookkeeping (lastDataHash/validateCache/invalidateCache)
+		// now lives on the Phaser-free PreviewCalculations
 		// helper (previewScene['calculations']) rather than directly on Preview.
 		it('should validate cache and update lastDataHash', () => {
 			previewScene.init({
@@ -676,7 +676,6 @@ describe('Preview Scene', () => {
 			// validateCache should update the hash
 			previewScene['calculations']['validateCache']();
 			expect(previewScene['calculations']['lastDataHash']).not.toBe('');
-			expect(previewScene['calculations']['calculationsValid']).toBe(true);
 		});
 
 		it('should invalidate cache when called', () => {
@@ -689,10 +688,9 @@ describe('Preview Scene', () => {
 			});
 
 			previewScene['calculations']['validateCache']();
-			expect(previewScene['calculations']['calculationsValid']).toBe(true);
+			expect(previewScene['calculations']['lastDataHash']).not.toBe('');
 
 			previewScene['calculations'].invalidate();
-			expect(previewScene['calculations']['calculationsValid']).toBe(false);
 			expect(previewScene['calculations']['lastDataHash']).toBe('');
 		});
 

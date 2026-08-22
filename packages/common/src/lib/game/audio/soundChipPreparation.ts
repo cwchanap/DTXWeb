@@ -1,11 +1,11 @@
 import { XAaudioContext } from '../../browser/audioDecoder';
 import type { SoundChip } from '../../chart/dtx';
 
-export function getSoundCacheKey(soundChip: SoundChip): string {
+export const getSoundCacheKey = (soundChip: SoundChip): string => {
 	return `soundchip_${soundChip.fileName.toLowerCase()}`;
-}
+};
 
-export function audioBufferToWavBlob(audioBuffer: AudioBuffer): Blob {
+export const audioBufferToWavBlob = (audioBuffer: AudioBuffer): Blob => {
 	const numberOfChannels = audioBuffer.numberOfChannels;
 	const length = audioBuffer.length * numberOfChannels * 2 + 44;
 	const arrayBuffer = new ArrayBuffer(length);
@@ -60,7 +60,7 @@ export function audioBufferToWavBlob(audioBuffer: AudioBuffer): Blob {
 	}
 
 	return new Blob([arrayBuffer], { type: 'audio/wav' });
-}
+};
 
 export interface PreparedSoundChipAudioSource {
 	cacheKey: string;
@@ -77,11 +77,11 @@ export interface PreparedSoundChipAudioSource {
  * URL.createObjectURL/XAaudioContext.decodeAudioData calls — no Phaser
  * dependency. Errors are not caught here; callers decide how to handle them.
  */
-export async function prepareSoundChipAudioSource(
+export const prepareSoundChipAudioSource = async (
 	file: File,
 	soundChip: SoundChip,
 	cachedBlob?: Blob
-): Promise<PreparedSoundChipAudioSource> {
+): Promise<PreparedSoundChipAudioSource> => {
 	const cacheKey = getSoundCacheKey(soundChip);
 
 	if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
@@ -103,4 +103,4 @@ export async function prepareSoundChipAudioSource(
 
 	const objectUrl = URL.createObjectURL(file);
 	return { cacheKey, objectUrl };
-}
+};

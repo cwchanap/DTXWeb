@@ -673,7 +673,8 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   feature modes pass with `-D warnings`.
 - Full local E2E is green: web Playwright 36/36; desktop WDIO/Tauri all seven
   spec files pass, with nine native-filesystem cases passing and one
-  Windows-only skip. The manual OS-browser handoff remains separate evidence.
+  Windows-only skip. The manual OS-browser handoff is separate from automated
+  coverage; today's browser-approval evidence is recorded below.
 - Earlier pre-production facts are Foundation rehearsal artifacts, not current
   Tasks 4–15 cutover proof: D1 migrations through 0008, API version
   `44d96dc8-51a2-47c3-bcad-adecdd794efa`, web version
@@ -691,38 +692,58 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - The protected pre-production import artifact with SHA-256 prefix `51af...`
   was independently approved and applied. Final D1 counts are 2 Better Auth
   users, 3 accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
-  Active Workers are API `839e...` and web `255a...`; the web `API` service
-  binding is present and verified.
+  The earlier active cutover Workers were API `839e...` and web `255a...`; the
+  web `API` service binding was present and verified. During today's browser
+  acceptance, a later pre-prod-prod-data API deploy (`42e1e0c8` at 06:39) and
+  web deploy (`7a5396c4` at 06:41) reclaimed the same public custom domains;
+  public API auth routes and `/app/desktop-auth` returned 404. The isolated
+  pre-production services were restored as API
+  `d4fac270-7bd0-411f-b4c7-94ebe7e2cdd3` and web
+  `2478f4a7-ad6d-494a-bdca-d207565e1d59`.
+- The restored web build required explicit
+  `PUBLIC_DTX_API_URL=https://api.pre-prod.dtx.hapadona.com` and
+  `PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev`;
+  the build passed and the deploy succeeded.
 - Live password/cookie authentication, GraphQL, CORS, Google authorization
   start with the exact pre-production callback, invalid sessions,
   logout/revocation, Device Authorization approve/revoke/deny, and
   upload/download passed; temporary upload test objects were removed. The user
-  confirmed the Google callbacks are registered. Cloudflare Access returned
-  403, blocking the app-internal `/app` redirect, Google completion/explicit-
-  linking UI, and OS-browser approval handoff. Remote Device Authorization
-  expiry has not been run independently because the five-second expiry
-  override is local-only and prohibited remotely. The broader desktop
-  pre-production candidate matrix has not been run separately; only its
-  browser-approval leg is Access-dependent. The legacy pre-production
-  `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
+  confirmed the Google callbacks are registered. Cloudflare Access initially
+  returned 403; after WARP/user authentication it cleared. Today's browser
+  acceptance passed: the app guard/login redirect preserved the device path,
+  real Better Auth Google sign-in completed, the Account provider UI showed
+  Google already connected, and `/app/desktop-auth` code claim plus Approve UI
+  passed.
+- The native/public follow-up passed: the Device Authorization poll returned
+  200 with a Bearer token, `get-session` returned 200 for the migrated user,
+  sign-out returned 200, and the revoked `get-session` returned 200 with
+  `null`.
+- Explicit Connect Google linking UI was not exercised because the migrated
+  user was already linked; the account was not unlinked. Remote Device
+  Authorization expiry has not been run independently because the five-second
+  expiry override is local-only and prohibited remotely. The broader desktop
+  pre-production candidate matrix has not been run separately. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not
+  deleted.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
   desktop publication, or credential removal.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
-- Task 15 local verification and the deploy/import smoke gate are complete.
-  Access-blocked checks, remote Device Authorization expiry, and the broader
-  desktop pre-production candidate matrix remain open; production remains a
-  separate hold.
+- Task 15 local verification, deploy/import smoke, and browser/native approval
+  acceptance are complete. Explicit Connect Google linking, remote Device
+  Authorization expiry, and the broader desktop pre-production candidate
+  matrix remain open; production remains a separate hold.
 
 ## Task 15 review decision
 
 - Scoped Task 15 re-review approved the verification changes and corrected
   evidence with no remaining Critical, Important, or Minor findings.
-- Final-cutover pre-production deployment/import and core live smoke are
-  complete. Access-blocked checks, remote Device Authorization expiry, and the
-  broader desktop candidate matrix remain unproven; production remains out of
-  scope and separately held.
+- Final-cutover pre-production deployment/import, core live smoke, and today's
+  browser/native approval acceptance are complete. Explicit Connect Google
+  linking, remote Device Authorization expiry, and the broader desktop
+  candidate matrix remain unproven; production remains out of scope and
+  separately held.
 
 ## Final whole-branch native review fixes
 
@@ -774,18 +795,36 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - The protected pre-production import artifact with SHA-256 prefix `51af...`
   was independently approved and applied. Final D1 counts are 2 users, 3
   accounts, 0 sessions, 2 application owners, and 0 uncovered owners.
-- Active pre-production Workers are API `839e...` and web `255a...`, with the
-  web `API` service binding verified. Password/cookie, GraphQL, CORS,
+- The earlier active pre-production Workers were API `839e...` and web
+  `255a...`, with the web `API` service binding verified. During today's
+  browser acceptance, a later pre-prod-prod-data API deploy (`42e1e0c8` at
+  06:39) and web deploy (`7a5396c4` at 06:41) reclaimed the same public custom
+  domains; public API auth routes and `/app/desktop-auth` returned 404. The
+  isolated pre-production services were restored as API
+  `d4fac270-7bd0-411f-b4c7-94ebe7e2cdd3` and web
+  `2478f4a7-ad6d-494a-bdca-d207565e1d59`.
+- The restored web build required explicit
+  `PUBLIC_DTX_API_URL=https://api.pre-prod.dtx.hapadona.com` and
+  `PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev`;
+  the build passed and the deploy succeeded. Password/cookie, GraphQL, CORS,
   Google-start exact callback, invalid-session, logout/revocation, Device
   Authorization approve/revoke/deny, and upload/download smoke passed; upload
   test objects were removed. The user confirmed callbacks are registered.
-- Access returned 403, blocking the app-internal `/app` redirect,
-  Google completion/explicit-linking UI, and OS-browser approval handoff.
-  Remote Device Authorization expiry has not been run independently because
-  the five-second expiry override is local-only and prohibited remotely. The
-  broader desktop pre-production candidate matrix has not been run separately;
-  only its browser-approval leg is Access-dependent. The legacy pre-production
-  `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
+- Cloudflare Access initially returned 403; after WARP/user authentication it
+  cleared. Today's browser acceptance passed: the app guard/login redirect
+  preserved the device path, real Better Auth Google sign-in completed, the
+  Account provider UI showed Google already connected, and
+  `/app/desktop-auth` code claim plus Approve UI passed. The native/public
+  follow-up passed: the Device Authorization poll returned 200 with a Bearer
+  token, `get-session` returned 200 for the migrated user, sign-out returned
+  200, and the revoked `get-session` returned 200 with `null`.
+- Explicit Connect Google linking UI was not exercised because the migrated
+  user was already linked; the account was not unlinked. Remote Device
+  Authorization expiry has not been run independently because the five-second
+  expiry override is local-only and prohibited remotely. The broader desktop
+  pre-production candidate matrix has not been run separately. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not
+  deleted.
 
 ## Production read-only preview
 

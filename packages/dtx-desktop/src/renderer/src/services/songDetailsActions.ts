@@ -1,3 +1,5 @@
+import type { SongSaveOutcome } from './googleDriveService';
+
 export type LocalSongAction = {
 	kind: 'create' | 'update' | 'drive';
 };
@@ -50,3 +52,23 @@ export const isSelectionCurrent = (params: {
 	currentPath: string;
 	targetPath: string;
 }): boolean => params.generation === params.token && params.currentPath === params.targetPath;
+
+export const computeDriveFieldMerge = (
+	outcome: SongSaveOutcome['driveUpload']
+): { googleDriveFileId?: string; downloadUrl?: string } | null => {
+	if (outcome.status !== 'success') return null;
+
+	const fields = {
+		...(outcome.fileId === undefined ? {} : { googleDriveFileId: outcome.fileId }),
+		...(outcome.downloadUrl === undefined ? {} : { downloadUrl: outcome.downloadUrl })
+	};
+	if (Object.keys(fields).length === 0) return null;
+
+	return fields;
+};
+
+export const getCachedDisplayId = (cache: Map<string, number>, path: string): number | undefined =>
+	cache.get(path);
+
+export const shouldSkipAutoPopulate = (inFlightPaths: Set<string>, path: string): boolean =>
+	inFlightPaths.has(path);

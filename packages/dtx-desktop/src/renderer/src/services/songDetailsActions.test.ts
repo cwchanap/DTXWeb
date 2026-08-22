@@ -10,7 +10,7 @@ import {
 	getCachedDisplayId,
 	shouldSkipAutoPopulate,
 	type LocalSongAction
-} from './songDetailsActions';
+} from '$lib/services/songDetailsActions';
 
 const nulByte = String.fromCharCode(0);
 

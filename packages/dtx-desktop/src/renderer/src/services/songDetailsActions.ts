@@ -1,4 +1,4 @@
-import type { SongSaveOutcome } from './googleDriveService';
+import type { SongSaveOutcome } from '$lib/services/googleDriveService';
 
 export type LocalSongAction = {
 	kind: 'create' | 'update' | 'drive';

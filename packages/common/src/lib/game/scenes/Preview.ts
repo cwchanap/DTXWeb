@@ -4,13 +4,14 @@ import EventType from '../EventType';
 import { get } from 'svelte/store';
 import store from '../../store';
 import { getFileProvider } from '../../services/fileProvider';
-import { XAaudioContext } from '../../browser/audioDecoder';
 import type { LaneMeasureNote } from '../../chart/note';
 import type { SoundChip } from '../../chart/dtx';
 import { BaseGame } from './BaseGame';
 import { AssetName, type LaneConfig } from '../interface';
 import { getAssetPath } from '../utils';
 import { calculateHighResolutionPosition } from '../utils/notePositioning';
+import { PreviewCalculations } from './previewCalculations';
+import { getSoundCacheKey, prepareSoundChipAudioSource } from '../audio/soundChipPreparation';
 
 interface Data {
 	measureCount: number;
@@ -55,11 +56,18 @@ export class Preview extends BaseGame {
 	private static animationsCreated = false;
 	private static soundCacheMap = new Map<string, { blob: Blob; processed: boolean }>();
 
-	// Performance caches for expensive calculations
-	private timeElapsedCache = new Map<number, number>();
-	private measureOffsetCache = new Map<number, number>();
-	private lastDataHash: string = '';
-	private calculationsValid = false;
+	// Phaser-free timing/measure-offset calculations, kept in sync with this
+	// scene's chart data at the same points it was previously updated directly
+	// (init() and updateData()).
+	private calculations: PreviewCalculations = new PreviewCalculations({
+		bpm: this.bpm,
+		notes: this.notes,
+		bpmNotes: this.bpmNotes,
+		measureCount: this.measureCount,
+		measureLength: this.measureLength,
+		cellHeight: this.cellHeight,
+		cellsPerMeasure: this.cellsPerMeasure
+	});
 
 	constructor() {
 		super({ key: Preview.key });
@@ -78,6 +86,14 @@ export class Preview extends BaseGame {
 		this.bpm = data.bpm;
 		this.bpmNotes = data.bpmNotes;
 		this.startMeasure = data.startMeasure;
+
+		this.calculations.update({
+			bpm: this.bpm,
+			notes: this.notes,
+			bpmNotes: this.bpmNotes,
+			measureCount: this.measureCount,
+			measureLength: this.measureLength
+		});
 
 		store.playSpeed.subscribe((value) => {
 			const seekTime =
@@ -201,8 +217,14 @@ export class Preview extends BaseGame {
 		this.measureCount = data.measureCount;
 		this.startMeasure = data.startMeasure;
 
-		// Invalidate caches since data changed
-		this.invalidateCache();
+		// Sync the calculations helper with the new data (also invalidates its caches)
+		this.calculations.update({
+			bpm: this.bpm,
+			notes: this.notes,
+			bpmNotes: this.bpmNotes,
+			measureCount: this.measureCount,
+			measureLength: this.measureLength
+		});
 
 		// Parse measure lengths with new data
 		this.parseMesaureLength();
@@ -228,40 +250,6 @@ export class Preview extends BaseGame {
 
 		// Restart preview with new data
 		this.startPreview();
-	}
-
-	/**
-	 * Generate hash of current data for cache validation
-	 */
-	private generateDataHash(): string {
-		return JSON.stringify({
-			bpm: this.bpm,
-			measureCount: this.measureCount,
-			measureLength: this.measureLength,
-			bpmNotes: this.bpmNotes
-		});
-	}
-
-	/**
-	 * Invalidate performance caches when data changes
-	 */
-	private invalidateCache(): void {
-		this.timeElapsedCache.clear();
-		this.measureOffsetCache.clear();
-		this.calculationsValid = false;
-		this.lastDataHash = '';
-	}
-
-	/**
-	 * Validate cache and update if needed
-	 */
-	private validateCache(): void {
-		const currentHash = this.generateDataHash();
-		if (this.lastDataHash !== currentHash) {
-			this.invalidateCache();
-			this.lastDataHash = currentHash;
-		}
-		this.calculationsValid = true;
 	}
 
 	private async setupSoundsAsync(): Promise<void> {
@@ -350,33 +338,21 @@ export class Preview extends BaseGame {
 		return new Promise<void>((resolve) => {
 			const setupListenersAndLoad = async () => {
 				try {
-					// Load the audio file into cache
-					if (soundChip.fileName.toLowerCase().endsWith('.xa')) {
-						// Use cached blob if available, otherwise process XA file
-						let wavBlob: Blob;
-						if (cachedBlob) {
-							wavBlob = cachedBlob;
-						} else {
-							// Process XA file and cache result
-							const arrayBuffer = await actualFile.arrayBuffer();
-							const audioBuffer = await XAaudioContext.decodeAudioData(arrayBuffer);
-							wavBlob = this.audioBufferToWavBlob(audioBuffer);
-							// Cache the processed blob
-							Preview.soundCacheMap.set(cacheKey, { blob: wavBlob, processed: true });
-						}
-						const objectUrl = URL.createObjectURL(wavBlob);
+					const { objectUrl, wavBlob } = await prepareSoundChipAudioSource(
+						actualFile,
+						soundChip,
+						cachedBlob
+					);
 
-						// Add listeners and load
-						this.setupAudioListeners(cacheKey, resolve);
-						this.load.audio(cacheKey, objectUrl);
-						this.load.start();
-					} else {
-						// For other formats, load as usual
-						this.setupAudioListeners(cacheKey, resolve);
-						const objectUrl = URL.createObjectURL(actualFile);
-						this.load.audio(cacheKey, objectUrl);
-						this.load.start();
+					// A freshly-decoded XA file produces a wavBlob; cache it for reuse
+					if (wavBlob) {
+						Preview.soundCacheMap.set(cacheKey, { blob: wavBlob, processed: true });
 					}
+
+					// Add listeners and load
+					this.setupAudioListeners(cacheKey, resolve);
+					this.load.audio(cacheKey, objectUrl);
+					this.load.start();
 				} catch (error) {
 					console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
 					resolve();
@@ -561,169 +537,18 @@ export class Preview extends BaseGame {
 	}
 
 	getTimeElapsed(measure: number, noteChipPosition: number = 0) {
-		this.validateCache();
-
-		// Use cache for measure-level calculations (when noteChipPosition is 0)
-		if (noteChipPosition === 0) {
-			const cached = this.timeElapsedCache.get(measure);
-			if (cached !== undefined) {
-				return cached;
-			}
-		}
-
-		let elapsedTime = 0;
-		let currentBPM = this.bpm;
-
-		// Calculate time for completed measures (up to but not including the current measure)
-		for (let i = 0; i < measure; i++) {
-			const measureLength = this.measureLength[i] || 1;
-			const bpmNotes =
-				this.notes[Preview.bpmNoteID]?.filter((note) => note.measure === i) || [];
-			if (bpmNotes.length === 0) {
-				// No BPM changes in this measure, use the current BPM for the whole measure
-				elapsedTime += (60 / currentBPM) * 4 * measureLength;
-			} else {
-				// Calculate time for each segment within the measure
-				let lastPosition = 0;
-				bpmNotes.forEach((bpmNote) => {
-					// Set the measureLength for the note
-					if (bpmNote.measureLength === 1) {
-						bpmNote.measureLength = measureLength;
-					}
-					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
-						const position = note.position;
-						elapsedTime +=
-							(60 / currentBPM) * 4 * (position - lastPosition) * measureLength;
-						currentBPM = this.bpmNotes[note.noteID];
-						lastPosition = position;
-					});
-				});
-				// Add the remaining time in the measure after the last BPM change
-				elapsedTime += (60 / currentBPM) * 4 * (1 - lastPosition) * measureLength;
-			}
-		}
-
-		// Calculate time within the current measure up to the noteChipPosition
-		if (noteChipPosition > 0) {
-			const measureLength = this.measureLength[measure] || 1;
-			const bpmNotes =
-				this.notes[Preview.bpmNoteID]?.filter((note) => note.measure === measure) || [];
-
-			if (bpmNotes.length === 0) {
-				// No BPM changes in this measure
-				elapsedTime += (60 / currentBPM) * 4 * noteChipPosition;
-			} else {
-				// Calculate time for each segment within the measure up to noteChipPosition
-				let lastPosition = 0;
-				bpmNotes.forEach((bpmNote) => {
-					// Set the measureLength for the note
-					if (bpmNote.measureLength === 1) {
-						bpmNote.measureLength = measureLength;
-					}
-					bpmNote.notes.forEach((note: { noteID: string; position: number }) => {
-						const position = note.position;
-						if (position > noteChipPosition) {
-							// Past the noteChipPosition, stop calculating
-							return;
-						}
-						const noteId = note.noteID;
-						if (noteId !== '00') {
-							elapsedTime += (60 / currentBPM) * 4 * (position - lastPosition);
-							currentBPM = this.bpmNotes[noteId];
-							lastPosition = position;
-						}
-					});
-				});
-
-				// Add time from last BPM change to noteChipPosition
-				if (noteChipPosition > lastPosition) {
-					elapsedTime += (60 / currentBPM) * 4 * (noteChipPosition - lastPosition);
-				}
-			}
-		}
-
-		// Cache the result for measure-level calculations (when noteChipPosition is 0)
-		if (noteChipPosition === 0) {
-			this.timeElapsedCache.set(measure, elapsedTime);
-		}
-
-		return elapsedTime;
+		return this.calculations.getTimeElapsed(measure, noteChipPosition);
 	}
 
 	// Override getTotalMesaureOffest with caching for performance
 	override getTotalMesaureOffest(measure: number): number {
-		this.validateCache();
-
-		const cached = this.measureOffsetCache.get(measure);
-		if (cached !== undefined) {
-			return cached;
-		}
-
-		// Use parent implementation but cache the result
-		const result = super.getTotalMesaureOffest(measure);
-		this.measureOffsetCache.set(measure, result);
-		return result;
+		return this.calculations.getCachedMeasureOffset(measure, () =>
+			super.getTotalMesaureOffest(measure)
+		);
 	}
 
 	getCacheKey(soundChip: SoundChip) {
-		return `soundchip_${soundChip.fileName.toLowerCase()}`;
-	}
-
-	private audioBufferToWavBlob(audioBuffer: AudioBuffer): Blob {
-		const numberOfChannels = audioBuffer.numberOfChannels;
-		const length = audioBuffer.length * numberOfChannels * 2 + 44;
-		const arrayBuffer = new ArrayBuffer(length);
-		const view = new DataView(arrayBuffer);
-		const channels = [];
-		let pos = 0;
-
-		// Collect audio data from all channels
-		for (let i = 0; i < numberOfChannels; i++) {
-			channels.push(audioBuffer.getChannelData(i));
-		}
-
-		// Write WAV header
-		const writeString = (str: string) => {
-			for (let i = 0; i < str.length; i++) {
-				view.setUint8(pos + i, str.charCodeAt(i));
-			}
-			pos += str.length;
-		};
-
-		const writeUint32 = (data: number) => {
-			view.setUint32(pos, data, true);
-			pos += 4;
-		};
-
-		const writeUint16 = (data: number) => {
-			view.setUint16(pos, data, true);
-			pos += 2;
-		};
-
-		writeString('RIFF');
-		writeUint32(length - 8);
-		writeString('WAVE');
-		writeString('fmt ');
-		writeUint32(16);
-		writeUint16(1);
-		writeUint16(numberOfChannels);
-		writeUint32(audioBuffer.sampleRate);
-		writeUint32(audioBuffer.sampleRate * 2 * numberOfChannels);
-		writeUint16(numberOfChannels * 2);
-		writeUint16(16);
-		writeString('data');
-		writeUint32(length - pos - 4);
-
-		// Write interleaved audio data
-		for (let i = 0; i < audioBuffer.length; i++) {
-			for (let channel = 0; channel < numberOfChannels; channel++) {
-				const sample = Math.max(-1, Math.min(1, channels[channel][i]));
-				view.setInt16(pos, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-				pos += 2;
-			}
-		}
-
-		return new Blob([arrayBuffer], { type: 'audio/wav' });
+		return getSoundCacheKey(soundChip);
 	}
 
 	override setCameraBounds() {
@@ -859,58 +684,7 @@ export class Preview extends BaseGame {
 	}
 
 	getCellHeight(measure: number, cell: number): number {
-		// For given measure and cell, calculate the height of the cell based on the BPM
-		const referenceBPM = 120;
-
-		// Find all BPM notes that apply to this measure
-		const measureBpmNotes = this.notes[Preview.bpmNoteID]
-			?.filter((note) => note.measure <= measure)
-			.sort((a, b) => {
-				// Sort by measure (ascending)
-				if (a.measure !== b.measure) return a.measure - b.measure;
-				// For notes in the same measure, we'll handle them later
-				return 0;
-			});
-
-		if (!measureBpmNotes || measureBpmNotes.length === 0) {
-			// No BPM changes, use the default BPM
-			return (this.cellHeight / this.bpm) * referenceBPM;
-		}
-
-		// Find the most recent BPM change before or at our current cell position
-		const lastBpmNote = measureBpmNotes[measureBpmNotes.length - 1];
-		let currentBPM = this.bpm; // Default to the initial BPM
-
-		if (lastBpmNote.measure < measure) {
-			// BPM change in a previous measure, need to find the last BPM in that measure
-			const bpmNotes = lastBpmNote.notes;
-
-			// Find the last BPM change in the notes array
-			for (const note of bpmNotes) {
-				if (note.noteID !== '00') {
-					currentBPM = this.bpmNotes[note.noteID];
-				}
-			}
-		} else if (lastBpmNote.measure === measure) {
-			// BPM change in the current measure
-			const bpmNotes = lastBpmNote.notes;
-
-			// Find the last BPM change before or at our cell position
-			for (const note of bpmNotes) {
-				const cellPosition = Math.floor(note.position * this.cellsPerMeasure);
-				if (cellPosition > cell) {
-					break; // This BPM change is after our current cell
-				}
-
-				if (note.noteID !== '00') {
-					currentBPM = this.bpmNotes[note.noteID];
-				}
-			}
-		}
-
-		// Calculate the adjusted cell height based on the BPM
-		// Slower BPM = taller cells, faster BPM = shorter cells
-		return (this.cellHeight / currentBPM) * referenceBPM;
+		return this.calculations.getCellHeight(measure, cell);
 	}
 
 	drawFooterLane(laneConfig: LaneConfig, currentX: number) {

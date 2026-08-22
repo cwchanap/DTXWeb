@@ -22,6 +22,15 @@
 		googleDriveStore
 	} from '$lib/stores/googleDriveStore';
 	import GoogleDriveUploadStatus from '$lib/components/GoogleDriveUploadStatus.svelte';
+	import {
+		getPrimaryOutcomeKey,
+		getLocalSongActionKey,
+		withoutMapKey,
+		beginLocalSongAction as beginLocalSongActionInMap,
+		finishLocalSongAction as finishLocalSongActionInMap,
+		isSelectionCurrent,
+		type LocalSongAction
+	} from '$lib/services/songDetailsActions';
 
 	interface Props {
 		song: TreeNode;
@@ -62,10 +71,6 @@
 	type PrimarySaveSuccess = {
 		simfileId: string;
 		messageKey: 'googleDrive.songDetails.draftSaved' | 'googleDrive.songDetails.published';
-	};
-
-	type LocalSongAction = {
-		kind: 'create' | 'update' | 'drive';
 	};
 
 	type TimedPrimaryError = {
@@ -259,12 +264,6 @@
 	let selectionGeneration = 0;
 	let primaryOutcomeSequence = 0;
 	const currentSimfileId = $derived(song.linkedSimFileId || undefined);
-	const getPrimaryOutcomeKey = (targetSong: TreeNode, workspacePath: string): string =>
-		`workspace:${workspacePath}\u0000song:${targetSong.path || targetSong.name}`;
-	const getLocalSongActionKey = (targetSong: TreeNode, workspacePath: string): string => {
-		if (targetSong.linkedSimFileId) return `simfile:${targetSong.linkedSimFileId}`;
-		return getPrimaryOutcomeKey(targetSong, workspacePath);
-	};
 	const currentPrimaryOutcomeKey = $derived(
 		getPrimaryOutcomeKey(song, $workspaceStore.path || '')
 	);
@@ -292,23 +291,14 @@
 		key: string,
 		kind: LocalSongAction['kind']
 	): LocalSongAction | undefined => {
-		if (localSongActions.has(key)) return undefined;
-		const action = { kind };
-		localSongActions = new Map(localSongActions).set(key, action);
-		return action;
+		const result = beginLocalSongActionInMap(localSongActions, key, kind);
+		if (!result) return undefined;
+		localSongActions = result.actions;
+		return result.action;
 	};
 
 	const finishLocalSongAction = (key: string, action: LocalSongAction): void => {
-		if (localSongActions.get(key) !== action) return;
-		const nextActions = new Map(localSongActions);
-		nextActions.delete(key);
-		localSongActions = nextActions;
-	};
-
-	const withoutMapKey = <T,>(source: Map<string, T>, key: string): Map<string, T> => {
-		const next = new Map(source);
-		next.delete(key);
-		return next;
+		localSongActions = finishLocalSongActionInMap(localSongActions, key, action);
 	};
 
 	const mergeSuccessfulDriveFields = (
@@ -493,7 +483,14 @@
 					targetSong.linkedSimFileId = savedSimfileId;
 					targetSong.linkedSimFile = linkedSimfile;
 					workspaceStore.linkSimFileToFolder(targetPath, linkedSimfile);
-					if (selectionGeneration === selectionToken && song.path === targetPath) {
+					if (
+						isSelectionCurrent({
+							generation: selectionGeneration,
+							token: selectionToken,
+							currentPath: song.path,
+							targetPath
+						})
+					) {
 						song = { ...targetSong };
 						primarySaveSuccess = {
 							simfileId: savedSimfileId,
@@ -524,8 +521,12 @@
 			const savedSimfileId = targetSong.linkedSimFileId || '';
 			if (
 				savedSimfileId &&
-				selectionGeneration === selectionToken &&
-				song.path === targetPath &&
+				isSelectionCurrent({
+					generation: selectionGeneration,
+					token: selectionToken,
+					currentPath: song.path,
+					targetPath
+				}) &&
 				song.linkedSimFileId === savedSimfileId
 			) {
 				driveOutcome = {
@@ -744,7 +745,14 @@
 					};
 					targetSong.linkedSimFile = updatedSimfile;
 					workspaceStore.linkSimFileToFolder(targetPath, updatedSimfile);
-					if (selectionGeneration === selectionToken && song.path === targetPath) {
+					if (
+						isSelectionCurrent({
+							generation: selectionGeneration,
+							token: selectionToken,
+							currentPath: song.path,
+							targetPath
+						})
+					) {
 						primarySaveSuccess = {
 							simfileId,
 							messageKey: published
@@ -763,8 +771,12 @@
 				throw new Error(outcome.simfileSave.error || 'Failed to update simfile');
 			}
 			if (
-				selectionGeneration === selectionToken &&
-				song.path === targetPath &&
+				isSelectionCurrent({
+					generation: selectionGeneration,
+					token: selectionToken,
+					currentPath: song.path,
+					targetPath
+				}) &&
 				song.linkedSimFileId === simfileId
 			) {
 				driveOutcome = {
@@ -873,8 +885,12 @@
 				...(forceCreateReplacement ? { forceCreateReplacement: true } : {})
 			});
 			if (
-				selectionGeneration === selectionToken &&
-				song.path === targetPath &&
+				isSelectionCurrent({
+					generation: selectionGeneration,
+					token: selectionToken,
+					currentPath: song.path,
+					targetPath
+				}) &&
 				song.linkedSimFileId === simfileId
 			) {
 				driveOutcome = {

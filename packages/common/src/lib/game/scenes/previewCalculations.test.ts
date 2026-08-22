@@ -283,24 +283,22 @@ describe('PreviewCalculations.getCachedMeasureOffset', () => {
 });
 
 describe('PreviewCalculations cache management', () => {
-	it('validateCache updates lastDataHash and calculationsValid', () => {
+	it('validateCache updates lastDataHash', () => {
 		const calc = makeCalculations();
 		expect((calc as any)['lastDataHash']).toBe('');
 
 		(calc as any)['validateCache']();
 
 		expect((calc as any)['lastDataHash']).not.toBe('');
-		expect((calc as any)['calculationsValid']).toBe(true);
 	});
 
-	it('invalidate resets calculationsValid and lastDataHash', () => {
+	it('invalidate resets lastDataHash', () => {
 		const calc = makeCalculations();
 		(calc as any)['validateCache']();
-		expect((calc as any)['calculationsValid']).toBe(true);
+		expect((calc as any)['lastDataHash']).not.toBe('');
 
 		calc.invalidate();
 
-		expect((calc as any)['calculationsValid']).toBe(false);
 		expect((calc as any)['lastDataHash']).toBe('');
 	});
 

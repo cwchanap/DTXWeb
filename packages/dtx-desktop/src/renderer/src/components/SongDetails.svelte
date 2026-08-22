@@ -5,7 +5,7 @@
 	import { settingsStore } from '$lib/stores/settingsStore';
 	import { editorMappingStore } from '$lib/stores/editorMappingStore';
 	import { authStore } from '$lib/stores/authStore';
-	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
+	import { ChartDetail } from '@dtx/common/components';
 	import { isValidDtxFile } from '@dtx/common';
 	import type { SimfileModel, SimfileDtxFile } from '@dtx/common';
 	import { onMount } from 'svelte';
@@ -22,6 +22,7 @@
 		googleDriveStore
 	} from '$lib/stores/googleDriveStore';
 	import GoogleDriveUploadStatus from '$lib/components/GoogleDriveUploadStatus.svelte';
+	import LocalAssetFilesSection from '$lib/components/LocalAssetFilesSection.svelte';
 	import {
 		getPrimaryOutcomeKey,
 		getLocalSongActionKey,
@@ -1243,37 +1244,18 @@
 			{/snippet}
 
 			{#snippet local_files()}
-				<!-- Local Asset Files Section -->
-				<div class="bg-surface-2 rounded-lg">
-					{#if isLoadingFiles}
-						<div class="flex justify-center p-4">
-							<p class="text-dim">Loading files...</p>
-						</div>
-					{:else if fileLoadError}
-						<div class="text-red p-4">
-							<p>{fileLoadError}</p>
-							<button
-								class="bg-magenta mt-2 rounded-sm px-3 py-1 text-sm text-[#16001a] hover:opacity-90"
-								onclick={loadLocalFiles}
-							>
-								Retry
-							</button>
-						</div>
-					{:else}
-						<!-- Use UploadedAssetFiles component for local files display -->
-						<UploadedAssetFiles
-							simfileId={song.linkedSimFileId?.toString() || ''}
-							userFiles={localFiles}
-							simfileBucketUrl=""
-							loadAssetFiles={loadAssetFilesForDesktop}
-							uploadFile={(fileName, songFolderPath, simfileId) =>
-								desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
-							isDesktop={true}
-							songFolderPath={song.path || ''}
-							disableUploads={!$authStore.isAuthenticated}
-						/>
-					{/if}
-				</div>
+				<LocalAssetFilesSection
+					{isLoadingFiles}
+					{fileLoadError}
+					onRetry={loadLocalFiles}
+					simfileId={song.linkedSimFileId?.toString() || ''}
+					userFiles={localFiles}
+					loadAssetFiles={loadAssetFilesForDesktop}
+					uploadFile={(fileName, songFolderPath, simfileId) =>
+						desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
+					songFolderPath={song.path || ''}
+					disableUploads={!$authStore.isAuthenticated}
+				/>
 			{/snippet}
 		</ChartDetail>
 	</div>
@@ -1498,37 +1480,18 @@
 			{/snippet}
 
 			{#snippet local_files()}
-				<!-- Local Asset Files Section -->
-				<div class="bg-surface-2 rounded-lg">
-					{#if isLoadingFiles}
-						<div class="flex justify-center p-4">
-							<p class="text-dim">Loading files...</p>
-						</div>
-					{:else if fileLoadError}
-						<div class="text-red p-4">
-							<p>{fileLoadError}</p>
-							<button
-								class="bg-magenta mt-2 rounded-sm px-3 py-1 text-sm text-[#16001a] hover:opacity-90"
-								onclick={loadLocalFiles}
-							>
-								Retry
-							</button>
-						</div>
-					{:else}
-						<!-- Use UploadedAssetFiles component for local files display -->
-						<UploadedAssetFiles
-							simfileId={song.linkedSimFileId?.toString() || ''}
-							userFiles={localFiles}
-							simfileBucketUrl=""
-							loadAssetFiles={loadAssetFilesForDesktop}
-							uploadFile={(fileName, songFolderPath, simfileId) =>
-								desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
-							isDesktop={true}
-							songFolderPath={song.path || ''}
-							disableUploads={!$authStore.isAuthenticated}
-						/>
-					{/if}
-				</div>
+				<LocalAssetFilesSection
+					{isLoadingFiles}
+					{fileLoadError}
+					onRetry={loadLocalFiles}
+					simfileId={song.linkedSimFileId?.toString() || ''}
+					userFiles={localFiles}
+					loadAssetFiles={loadAssetFilesForDesktop}
+					uploadFile={(fileName, songFolderPath, simfileId) =>
+						desktopHost.uploadFile(fileName, songFolderPath, simfileId)}
+					songFolderPath={song.path || ''}
+					disableUploads={!$authStore.isAuthenticated}
+				/>
 			{/snippet}
 
 			{#snippet save()}

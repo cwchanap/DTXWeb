@@ -3,6 +3,7 @@ mod macros;
 
 mod api;
 mod api_contracts;
+mod simfile;
 // Auth tests deliberately hold a process-global environment lock across async
 // requests so no parallel test can observe partially updated configuration.
 #[cfg_attr(test, allow(clippy::await_holding_lock))]
@@ -180,12 +181,12 @@ pub fn run() {
             auth::get_current_session,
             auth::logout_session,
             auth::drain_pending_auth_events,
-            api::fetch_user_simfiles,
-            api::get_next_display_id,
+            simfile::fetch_user_simfiles,
+            simfile::get_next_display_id,
             api::search_cloud_songs,
-            api::fetch_cloud_song,
-            api::update_simfile_record,
-            api::create_simfile_record,
+            simfile::fetch_cloud_song,
+            simfile::update_simfile_record,
+            simfile::create_simfile_record,
             api::load_asset_files,
             api::get_preview_url,
             api::get_sound_preview_url,

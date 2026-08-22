@@ -44,6 +44,11 @@ Each job uses its own GitHub Environment, with only the dedicated secret
 - `dtx-access-pre-prod`
 - `dtx-access-production`
 
+Both environments restrict deployment branches and tags to selected branches with `main` only.
+Because an Environment job's default OIDC subject is
+`repo:cwchanap/DTXWeb:environment:<name>` without a branch ref, the workflow-level `main` guard is
+not a credential boundary; the deployment-branch restriction is.
+
 The secret is exposed to the Pulumi provider only as `CLOUDFLARE_API_TOKEN`. It must have only
 account-level Cloudflare `Access: Apps and Policies Edit` for the target account, with no Workers,
 DNS, D1, R2, token-management, or Global API Key privileges. Never print or record the token,

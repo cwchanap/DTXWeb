@@ -46,6 +46,13 @@ is committed in both Pulumi stack files. Each GitHub Environment contains only i
 - `dtx-access-pre-prod`
 - `dtx-access-production`
 
+Both environments restrict deployment branches and tags to selected branches with `main` only.
+A job that references an Environment receives the default OIDC subject
+`repo:cwchanap/DTXWeb:environment:<name>` without a branch ref and can reference the environment
+secret, so the workflow-level `main` guard is not a credential boundary; the deployment-branch
+restriction is what prevents a modified workflow on another branch from minting the Pulumi-trusted
+environment subject.
+
 During the Pulumi update step, the environment secret is exposed only as
 `CLOUDFLARE_API_TOKEN`. The token is limited to account-level Cloudflare `Access: Apps and
 Policies Edit` for the target account; it has no Workers, DNS, D1, R2, token-management, or

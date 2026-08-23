@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockEnv = vi.hoisted(() => ({ PUBLIC_DTX_API_URL: 'https://api.test' }));
 
-vi.mock('$env/static/public', () => mockEnv);
+vi.mock('$env/dynamic/public', () => ({ env: mockEnv }));
 
 import { fetchAuthSession } from './session';
 

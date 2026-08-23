@@ -862,3 +862,42 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   release packaging/publication was not performed. Explicit Connect Google and
   remote Device Authorization expiry remain separate gaps. Production remained
   untouched.
+
+## Natural expiry closeout and refreshed production preflight
+
+- A fresh Device Authorization code was requested from the isolated
+  pre-production API and deliberately left unapproved. The server returned its
+  normal `expires_in: 1800` lifetime; after waiting for that full lifetime, the
+  first token poll returned HTTP 400 with `expired_token`. The opaque code was
+  kept only in process memory and was not logged. This closes the remote natural
+  expiry acceptance gap without changing the remote expiry configuration.
+- Explicit Connect Google was waived: the migrated account is already linked to
+  Google, successful Google sign-in and the connected-provider Account UI were
+  already observed, and unlinking a working identity solely to replay the link
+  control would add account-recovery risk. No identity was unlinked.
+- The refreshed production preflight was read-only. Wrangler 4.123.0 now lists
+  only `0008_better_auth.sql` as pending. Production has 0 Better Auth tables,
+  320 simfiles, 1 user profile, 0 chart scores, and 1 distinct application
+  owner. The D1 inventory reported `rows_written: 0` and `changed_db: false`.
+- The protected production import artifact still has SHA-256
+  `135d4c91aece00871fc7c9dc0dbe36976925d86a6c61b8c3a02e2deb0c294a7f`.
+  It contains 2 user inserts and 3 account inserts, with no session,
+  verification, device-code, delete, or update statements. A live identifier
+  comparison found 1 owner, 0 uncovered owners, and exact owner coverage; no
+  identifier was printed.
+- Current production rollback versions are API
+  `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
+  `eaac7dee-661c-4869-bb62-59dbfba618ab`. Both production hostnames return 200,
+  while the legacy API returns 404 for `/api/auth/get-session`. The active API
+  secret list contains only `SUPABASE_SERVICE_ROLE_KEY`; neither
+  `BETTER_AUTH_SECRET` nor `GOOGLE_AUTH_CLIENT_SECRET` is installed. The active
+  web version also lacks the planned `API` service binding.
+- The supplied Google OAuth JSON has the configured production client ID and a
+  non-empty client secret. Its downloaded callback metadata predates the
+  operator's console changes; pre-production Google authentication already
+  proves the pre-production callback, while the production callback remains an
+  explicit post-API-deploy smoke assertion.
+- Production remains held for a separately explicit change-window go decision.
+  No production backup, migration, import, secret operation, Worker deploy,
+  desktop publication, credential change, or other production mutation was
+  performed.

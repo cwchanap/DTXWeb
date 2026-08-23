@@ -278,3 +278,30 @@ scenarios passing in 663ms; no rebuild or remote operation was run.
 - Desktop packaging/publication and production mutation were not performed.
   Explicit Connect Google linking and remote Device Authorization expiry remain
   open.
+
+## Follow-up acceptance and production hold
+
+- Remote natural expiry is GREEN. A fresh, never-approved pre-production device
+  code advertised `expires_in: 1800`; after the full lifetime, its first token
+  poll returned HTTP 400 with `expired_token`. No remote expiry override was
+  configured and the opaque code was not logged.
+- Explicit Connect Google is waived because the migrated user is already linked,
+  Google sign-in and the connected-provider Account UI passed, and unlinking a
+  working identity only to replay the control would introduce avoidable recovery
+  risk.
+- The production preflight was refreshed without writes. Wrangler lists only
+  `0008_better_auth.sql` pending; Better Auth tables are absent; D1 contains 320
+  simfiles, 1 user profile, 0 chart scores, and 1 owner. The protected production
+  SQL still has SHA-256 `135d4c91aece00871fc7c9dc0dbe36976925d86a6c61b8c3a02e2deb0c294a7f`,
+  contains only 2 user and 3 account inserts, and covers the live owner exactly.
+- Active rollback versions are API `c8d63e54-38af-40ba-9189-4d62d45bf911`
+  and web `eaac7dee-661c-4869-bb62-59dbfba618ab`. Production health is 200,
+  the legacy `/api/auth/get-session` is 404, only the legacy Supabase service
+  secret is present, and the active web version lacks the planned API service
+  binding.
+- The supplied Google JSON contains the expected client ID and a non-empty
+  secret. Its downloaded callback list predates the user's console update;
+  production callback acceptance remains a post-API-deploy smoke check.
+- Production is not changed or implicitly approved. The final backup, new
+  Better Auth and Google secret installation, migration/import, API deployment
+  and smoke, then web deployment and smoke require a separate explicit go.

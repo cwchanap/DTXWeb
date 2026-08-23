@@ -965,3 +965,26 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   `eaac7dee-661c-4869-bb62-59dbfba618ab`. No D1 down-migration, desktop
   publication, Supabase credential removal, pull-request publication, or merge
   was performed.
+
+## Production desktop runtime acceptance
+
+- Launched a fresh debug Tauri candidate from the migration branch with explicit
+  production API/web URLs and production desktop/Google Drive build modes. The
+  running app reported Tauri 2.11.5 and the debug-only
+  `com.hapadona.drumery.dev` identifier; this was runtime acceptance, not a
+  packaged release artifact.
+- The native Device Authorization UI pointed to
+  `https://dtx.hapadona.com/app/desktop-auth`. Real browser approval installed
+  the migrated user session, and the authenticated desktop shell rendered.
+- Cloud loaded 320 production SimFiles (10 on page 1 of 32). Scores rendered
+  chart history, clears, and best-score data.
+- A full process termination and fresh launch restored the authenticated native
+  session without another browser approval. Cloud immediately reloaded the same
+  320 production SimFiles.
+- Native logout returned `get_current_session` to null and the renderer to the
+  Login shell. Browser logout returned the web app to `/login`. Final read-only
+  D1 reconciliation remained clean at 0 sessions, 0 pending device codes,
+  2 users, and 3 accounts.
+- Production desktop runtime acceptance is complete for this production-targeted
+  debug candidate. Desktop packaging/publication remains unperformed; no release
+  artifact was uploaded or published.

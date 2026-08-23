@@ -342,3 +342,31 @@ scenarios passing in 663ms; no rebuild or remote operation was run.
   `eaac7dee-661c-4869-bb62-59dbfba618ab`. The legacy Supabase credential remains
   installed for observation/rollback. No D1 down-migration, desktop publication,
   pull-request publication, or merge was performed.
+
+## Production desktop runtime acceptance
+
+- A fresh Tauri debug candidate was launched from this branch with production
+  compile-time topology: `VITE_DTX_API_URL=https://api.dtx.hapadona.com`,
+  `VITE_DTX_WEB_URL=https://dtx.hapadona.com`,
+  `DTX_DESKTOP_BUILD_ENV=production`, and
+  `GOOGLE_DRIVE_OAUTH_CLIENT_ENV=production`. It used Tauri 2.11.5 and the
+  debug-only `com.hapadona.drumery.dev` identifier/MCP bridge; it was not a
+  packaged release artifact.
+- The native Login flow displayed the production verification host, and the
+  real OS-browser Device Authorization handoff completed through the production
+  web app. The desktop installed the migrated user session and rendered the
+  authenticated shell without exposing credentials in the acceptance log.
+- Cloud loaded 320 production SimFiles (10 on page 1 of 32). Scores rendered
+  local chart history together with linked production data, including recorded
+  clears and best scores.
+- After terminating the full Tauri/Vite process and launching a fresh process
+  with the same production topology, the native session restored without a new
+  browser approval. The authenticated shell appeared immediately, and Cloud
+  reloaded the same 320 production SimFiles.
+- Native Logout cleared the Rust session and returned the renderer to the Login
+  shell. Browser Logout returned the production web app to `/login`. Final
+  read-only D1 reconciliation again found 0 sessions, 0 pending device codes,
+  2 users, and 3 accounts.
+- This closes production desktop runtime acceptance for the production-targeted
+  debug candidate. Desktop packaging/publication remains unperformed; no release
+  artifact was uploaded or published.

@@ -305,3 +305,31 @@ scenarios passing in 663ms; no rebuild or remote operation was run.
 - Production is not changed or implicitly approved. The final backup, new
   Better Auth and Google secret installation, migration/import, API deployment
   and smoke, then web deployment and smoke require a separate explicit go.
+
+## Production cutover execution
+
+- The user explicitly approved the production change window on 2026-08-23.
+  Production D1 was backed up before mutation to the protected local backup at
+  `/Users/chanwaichan/.drumery/backups/2026-08-23-better-auth-cutover/dtx-web-pre-cutover.sql`.
+  Its SHA-256 is
+  `d6d64f30c90e4e9d026acb71e25ca4ba62d40dc1128dc0014e6156d55add12ed`,
+  and an in-memory restore reproduced the expected pre-cutover table counts.
+- Fresh production Better Auth and Google client secrets were installed without
+  exposing their values. Migration `0008_better_auth.sql` applied once; the
+  API deploy's repeated migration check reported `No migrations to apply!`.
+- The exact approved import artifact, SHA-256
+  `135d4c91aece00871fc7c9dc0dbe36976925d86a6c61b8c3a02e2deb0c294a7f`,
+  imported 2 users and 3 accounts. All application owners remain covered.
+- API version `862d9119-937c-4ee3-a492-0083d203def6` and web version
+  `c96ea66d-4e66-4654-a8a3-c2dbec0afc3f` are active. API health, GraphQL,
+  anonymous session, exact-origin CORS, Google authorization start/callback,
+  web routes, service binding, and sampled error-tail checks passed.
+- Production Google sign-in succeeded and created a valid Better Auth session.
+  Full authenticated app, Device Authorization, bearer-session/revoke, and
+  logout acceptance remain pending Cloudflare Access sign-in. Password
+  acceptance also remains pending because no replacement plaintext password is
+  available; no reset was attempted.
+- Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
+  `eaac7dee-661c-4869-bb62-59dbfba618ab`. The legacy Supabase credential remains
+  installed for observation/rollback. No D1 down-migration, desktop publication,
+  pull-request publication, or merge was performed.

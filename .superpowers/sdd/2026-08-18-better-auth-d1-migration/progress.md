@@ -901,3 +901,55 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   No production backup, migration, import, secret operation, Worker deploy,
   desktop publication, credential change, or other production mutation was
   performed.
+
+## Production cutover — deployed, authenticated acceptance pending
+
+- The user gave an explicit production change-window go on 2026-08-23. The
+  cutover used reviewed commit `59022cd8213b6040fdb9cf3e290e96bc021bfe13`
+  with Better Auth and its CLI pinned to 1.6.30 from a clean worktree.
+- Ruling: apply only the approved
+  `tmp/auth-migration/better-auth-import-prod-preview.sql` artifact at its full
+  SHA-256. Cost if wrong: identities could be imported into the wrong
+  environment or from an unreviewed artifact.
+- Ruling: provide explicit production `PUBLIC_DTX_API_URL` and
+  `PUBLIC_SIMFILE_BUCKET_URL` values to the web build. Cost if wrong: the
+  production bundle could target stale or pre-production resources.
+- Ruling: allow the API deploy script's repeated migration step only after it
+  reports `No migrations to apply!`. Cost if wrong: deployment could introduce
+  an unexpected second schema mutation.
+- Before mutation, production D1 was exported to
+  `/Users/chanwaichan/.drumery/backups/2026-08-23-better-auth-cutover/dtx-web-pre-cutover.sql`
+  with owner-only permissions and SHA-256
+  `d6d64f30c90e4e9d026acb71e25ca4ba62d40dc1128dc0014e6156d55add12ed`.
+  An in-memory SQLite restore verified 320 simfiles, 1 user profile, 0 chart
+  scores, and 7 migrations.
+- The fresh Supabase source aggregate remained 2 users and 3 identities (2
+  email and 1 Google). The user-identifier checksum matched the approved
+  artifact; post-artifact audit activity contained only login, logout, token
+  refresh, and token revoke lifecycle events.
+- Fresh values were installed for production `BETTER_AUTH_SECRET` and
+  `GOOGLE_AUTH_CLIENT_SECRET` without printing or storing either value. The
+  legacy `SUPABASE_SERVICE_ROLE_KEY` remains for observation and rollback.
+- Migration `0008_better_auth.sql` applied successfully. Importing the exact
+  approved artifact wrote 2 Better Auth users and 3 accounts, with 0 sessions,
+  0 device codes, and 0 verifications. The sole application owner remained
+  covered, with 0 uncovered owners.
+- Production API version `862d9119-937c-4ee3-a492-0083d203def6` is active.
+  Health, GraphQL health, anonymous session, exact-origin CORS/preflight, and
+  Google authorization-start checks passed. The callback URL was exactly
+  `https://api.dtx.hapadona.com/api/auth/callback/google`, and the sampled error
+  tail was empty.
+- Production web version `c96ea66d-4e66-4654-a8a3-c2dbec0afc3f` is active with
+  the production API service binding and public API URL. `/`, `/login`, `/app`,
+  and `/app/desktop-auth` returned the expected public or Cloudflare Access
+  responses, and the sampled error tail was empty.
+- A production Google sign-in completed through the callback and created one
+  valid Better Auth session. Cloudflare Access still gates the authenticated
+  `/app` checks; authenticated cloud/scores/account UI, Device Authorization,
+  bearer-session validation, revoke, and logout remain pending operator sign-in.
+- Password acceptance remains pending because no replacement plaintext password
+  is available in this session. No password reset was performed.
+- Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
+  `eaac7dee-661c-4869-bb62-59dbfba618ab`. No D1 down-migration, desktop
+  publication, Supabase credential removal, pull-request publication, or merge
+  was performed.

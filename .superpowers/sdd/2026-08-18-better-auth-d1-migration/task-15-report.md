@@ -164,18 +164,18 @@ pre-production. This is not a production go decision.
 - Explicit Connect Google linking UI was not exercised because the migrated
   user was already linked; the account was not unlinked. Remote Device
   Authorization expiry has not been run independently because the five-second
-  expiry override is local-only and prohibited remotely. The broader desktop
-  pre-production candidate matrix has not been run separately. WDIO coverage is
-  automated evidence only.
+  expiry override is local-only and prohibited remotely. The later MCP-driven
+  desktop pre-production runtime matrix is recorded below. WDIO coverage remains
+  separate automated evidence.
 - The pre-production legacy `SUPABASE_SERVICE_ROLE_KEY` secret remains and was
   not deleted.
 
 Accordingly, pre-production deployment, import, the listed live smoke checks,
-and today's browser/native approval acceptance are GREEN. The distinct
-remaining gaps are explicit Connect Google linking, remote Device
-Authorization expiry, and the broader desktop pre-production candidate matrix.
-This does not authorize production mutation. The runbook's five-second expiry
-override remains local-only and is prohibited in remote environments.
+today's browser/native approval acceptance, and the later MCP-driven native
+desktop runtime matrix are GREEN. The distinct remaining gaps are explicit
+Connect Google linking and remote Device Authorization expiry. This does not
+authorize production mutation. The runbook's five-second expiry override
+remains local-only and is prohibited in remote environments.
 
 ## Production read-only preview and boundary
 
@@ -253,3 +253,28 @@ deterministic native session, so a failed UI logout cannot be hidden by teardown
 or race native IPC completion. Desktop E2E typecheck and Prettier passed. The
 existing target-e2e executable ran `auth-session.e2e.ts` successfully with 2/2
 scenarios passing in 663ms; no rebuild or remote operation was run.
+
+## MCP-driven desktop pre-production runtime acceptance
+
+- RED: the existing app exposed no MCP endpoint; after adding the bridge, DOM
+  automation remained blocked by the renderer's duplicate hard-coded
+  production CSP meta tag.
+- The debug-only bridge uses `tauri-plugin-mcp-bridge` 0.12, registers only for
+  debug assertions, and binds only to `127.0.0.1`. `withGlobalTauri` and the
+  inline-script development CSP are confined to `tauri.dev.conf.json`. Removing
+  the duplicate renderer CSP makes Tauri the single policy source; the release
+  `csp` remains unchanged.
+- GREEN: MCP connected to `com.hapadona.drumery.dev`, returned the live
+  accessibility tree, and drove the real Login control. Cloudflare Access and
+  the fresh Device Authorization approval completed, the desktop displayed the
+  migrated Better Auth user, Cloud read two pre-production SimFiles, and Scores
+  rendered existing native data.
+- A full app restart restored the authenticated session without browser
+  approval and fetched the same two pre-production SimFiles immediately.
+- Verification passed: 58 desktop renderer test files / 1,011 tests; 928 Rust
+  tests passed, 2 ignored, 0 failed; desktop typecheck reported zero errors and
+  warnings; Rust format, focused Prettier, and diff checks passed. The existing
+  ts-rs serde warnings remain non-failing.
+- Desktop packaging/publication and production mutation were not performed.
+  Explicit Connect Google linking and remote Device Authorization expiry remain
+  open.

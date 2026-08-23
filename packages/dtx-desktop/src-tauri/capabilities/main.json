@@ -10,6 +10,7 @@
 		"core:app:default",
 		"core:resources:default",
 		"dialog:default",
+		"mcp-bridge:default",
 		"opener:default",
 		"updater:default",
 		"process:default"

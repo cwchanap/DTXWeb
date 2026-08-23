@@ -127,6 +127,136 @@ describe('/app/desktop-auth page', () => {
 		});
 	});
 
+	it('shows the fallback when claiming returns an unrecognized error', async () => {
+		mocks.device.mockResolvedValueOnce({
+			data: null,
+			error: { code: 'SERVER_ERROR', message: 'backend unavailable' }
+		});
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'We could not verify that authorization code.'
+			);
+		});
+	});
+
+	it('requires an authorization code before claiming', async () => {
+		render(DesktopAuthPage);
+		await fireEvent.submit(screen.getByRole('button', { name: 'Continue' }).closest('form')!);
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'Enter the authorization code shown in the desktop app.'
+			);
+		});
+		expect(mocks.device).not.toHaveBeenCalled();
+	});
+
+	it('shows approved status returned by the claim request', async () => {
+		mocks.device.mockResolvedValueOnce({
+			data: { user_code: 'ABCD', status: 'approved' },
+			error: null
+		});
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await waitFor(() =>
+			expect(screen.getByText('Desktop access approved.')).toBeInTheDocument()
+		);
+	});
+
+	it('shows denied status returned by the claim request', async () => {
+		mocks.device.mockResolvedValueOnce({
+			data: { user_code: 'ABCD', status: 'denied' },
+			error: null
+		});
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await waitFor(() => expect(screen.getByText('Desktop access denied.')).toBeInTheDocument());
+	});
+
+	it('shows an unavailable-request error for an unknown claim status', async () => {
+		mocks.device.mockResolvedValueOnce({
+			data: { user_code: 'ABCD', status: 'revoked' },
+			error: null
+		});
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'That authorization request is no longer available.'
+			);
+		});
+	});
+
+	it('shows the fallback when claiming throws', async () => {
+		mocks.device.mockRejectedValueOnce(new Error('network unreachable'));
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'We could not verify that authorization code.'
+			);
+		});
+	});
+
+	it('shows a decision error without hiding the approval action', async () => {
+		mocks.device.mockResolvedValueOnce(pendingResponse());
+		mocks.approve.mockResolvedValueOnce({ data: null, error: { message: 'request gone' } });
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+		await screen.findByRole('button', { name: 'Approve' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'We could not update this authorization request.'
+			);
+			expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+		});
+	});
+
+	it('shows the fallback when denying throws', async () => {
+		mocks.device.mockResolvedValueOnce(pendingResponse());
+		mocks.deny.mockRejectedValueOnce(new Error('deny failed'));
+		render(DesktopAuthPage);
+		await fireEvent.input(await screen.findByLabelText('Authorization code'), {
+			target: { value: 'abcd' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+		await screen.findByRole('button', { name: 'Deny' });
+		await fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'We could not update this authorization request.'
+			);
+		});
+	});
+
 	it('prevents double submission while a claim is in flight', async () => {
 		let resolveVerify: (response: ReturnType<typeof pendingResponse>) => void = () => {};
 		mocks.device.mockReturnValueOnce(

@@ -324,11 +324,20 @@ scenarios passing in 663ms; no rebuild or remote operation was run.
   `c96ea66d-4e66-4654-a8a3-c2dbec0afc3f` are active. API health, GraphQL,
   anonymous session, exact-origin CORS, Google authorization start/callback,
   web routes, service binding, and sampled error-tail checks passed.
-- Production Google sign-in succeeded and created a valid Better Auth session.
-  Full authenticated app, Device Authorization, bearer-session/revoke, and
-  logout acceptance remain pending Cloudflare Access sign-in. Password
-  acceptance also remains pending because no replacement plaintext password is
-  available; no reset was attempted.
+- Production Google sign-in succeeded. After Cloudflare Access sign-in, the
+  authenticated dashboard, production My Charts data, Scores empty state, and
+  Account's migrated email plus connected Google provider all rendered.
+- Production Device Authorization passed code request, browser claim/approval,
+  Bearer exchange, matching session validation, authenticated GraphQL `me`, and
+  an owned chart download returning HTTP 200 `application/zip`. Bearer sign-out
+  returned HTTP 200 and the revoked token subsequently resolved to null.
+- Browser logout was captured as HTTP 200 `POST /api/auth/sign-out` followed by
+  `/get-session`, and redirected to `/login`. Better Auth's supported
+  `/revoke-sessions` endpoint removed the acceptance sessions. Final read-only
+  D1 reconciliation returned 0 sessions, 0 pending device codes, 2 users, and 3
+  accounts; revisiting `/app` redirected to `/login`.
+- Password acceptance remains pending because no replacement plaintext password
+  is available; no reset was attempted.
 - Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
   `eaac7dee-661c-4869-bb62-59dbfba618ab`. The legacy Supabase credential remains
   installed for observation/rollback. No D1 down-migration, desktop publication,

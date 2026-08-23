@@ -902,7 +902,7 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   desktop publication, credential change, or other production mutation was
   performed.
 
-## Production cutover — deployed, authenticated acceptance pending
+## Production cutover — deployed and authenticated acceptance complete
 
 - The user gave an explicit production change-window go on 2026-08-23. The
   cutover used reviewed commit `59022cd8213b6040fdb9cf3e290e96bc021bfe13`
@@ -943,10 +943,22 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   the production API service binding and public API URL. `/`, `/login`, `/app`,
   and `/app/desktop-auth` returned the expected public or Cloudflare Access
   responses, and the sampled error tail was empty.
-- A production Google sign-in completed through the callback and created one
-  valid Better Auth session. Cloudflare Access still gates the authenticated
-  `/app` checks; authenticated cloud/scores/account UI, Device Authorization,
-  bearer-session validation, revoke, and logout remain pending operator sign-in.
+- A production Google sign-in completed through the callback. After the operator
+  cleared Cloudflare Access, the authenticated dashboard rendered Profile and
+  Logout controls, My Charts loaded production chart data, Scores rendered the
+  expected empty state, and Account showed the migrated email with Google
+  connected.
+- Production Device Authorization passed end to end: code request, browser
+  claim and approval, Bearer token exchange, matching `/get-session`,
+  authenticated GraphQL `me`, and an owned chart download returning HTTP 200
+  `application/zip`. Bearer sign-out returned HTTP 200 and the revoked token's
+  subsequent `/get-session` response was null.
+- Browser logout was captured live as HTTP 200
+  `POST /api/auth/sign-out`, immediately followed by `/get-session`; the app
+  redirected to `/login`. The acceptance sessions were then removed through
+  Better Auth's supported `/revoke-sessions` endpoint. Final read-only D1
+  reconciliation found 0 sessions, 0 pending device codes, 2 users, and 3
+  accounts, and `/app` redirected to `/login` after revocation.
 - Password acceptance remains pending because no replacement plaintext password
   is available in this session. No password reset was performed.
 - Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web

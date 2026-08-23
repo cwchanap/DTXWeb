@@ -336,8 +336,8 @@ scenarios passing in 663ms; no rebuild or remote operation was run.
   `/revoke-sessions` endpoint removed the acceptance sessions. Final read-only
   D1 reconciliation returned 0 sessions, 0 pending device codes, 2 users, and 3
   accounts; revisiting `/app` redirected to `/login`.
-- Password acceptance remains pending because no replacement plaintext password
-  is available; no reset was attempted.
+- Password acceptance is explicitly waived by the user because production uses
+  Google login rather than password login. No reset was attempted.
 - Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
   `eaac7dee-661c-4869-bb62-59dbfba618ab`. The legacy Supabase credential remains
   installed for observation/rollback. No D1 down-migration, desktop publication,

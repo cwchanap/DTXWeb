@@ -959,8 +959,8 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   Better Auth's supported `/revoke-sessions` endpoint. Final read-only D1
   reconciliation found 0 sessions, 0 pending device codes, 2 users, and 3
   accounts, and `/app` redirected to `/login` after revocation.
-- Password acceptance remains pending because no replacement plaintext password
-  is available in this session. No password reset was performed.
+- Password acceptance is explicitly waived by the user because production uses
+  Google login rather than password login. No password reset was performed.
 - Rollback anchors are API `c8d63e54-38af-40ba-9189-4d62d45bf911` and web
   `eaac7dee-661c-4869-bb62-59dbfba618ab`. No D1 down-migration, desktop
   publication, Supabase credential removal, pull-request publication, or merge

@@ -1,5 +1,23 @@
 {
 	"$schema": "https://schema.tauri.app/config/2",
 	"identifier": "com.hapadona.drumery.dev",
-	"productName": "Drumery Dev"
+	"productName": "Drumery Dev",
+	"app": {
+		"withGlobalTauri": true,
+		"security": {
+			"devCsp": {
+				"default-src": "'self'",
+				"script-src": "'self' 'wasm-unsafe-eval' 'unsafe-inline'",
+				"style-src": "'self' 'unsafe-inline'",
+				"img-src": "'self' data: blob:",
+				"media-src": "'self' blob:",
+				"font-src": "'self' data:",
+				"connect-src": "'self' ipc: http://ipc.localhost",
+				"frame-src": "'none'",
+				"object-src": "'none'",
+				"base-uri": "'self'",
+				"form-action": "'self'"
+			}
+		}
+	}
 }

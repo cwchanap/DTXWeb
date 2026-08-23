@@ -721,29 +721,28 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Explicit Connect Google linking UI was not exercised because the migrated
   user was already linked; the account was not unlinked. Remote Device
   Authorization expiry has not been run independently because the five-second
-  expiry override is local-only and prohibited remotely. The broader desktop
-  pre-production candidate matrix has not been run separately. The legacy
-  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not
-  deleted.
+  expiry override is local-only and prohibited remotely. The later MCP-driven
+  desktop pre-production runtime matrix is recorded below. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
 - Updated the runbook to describe the corrected five-second local E2E device
   expiry override and to prohibit it in remote environments. Production was
   untouched: no migration, identity import, secret operation, deploy,
   desktop publication, or credential removal.
 - Report: `.superpowers/sdd/2026-08-18-better-auth-d1-migration/task-15-report.md`.
 - Task 15 local verification, deploy/import smoke, and browser/native approval
-  acceptance are complete. Explicit Connect Google linking, remote Device
-  Authorization expiry, and the broader desktop pre-production candidate
-  matrix remain open; production remains a separate hold.
+  acceptance are complete. The MCP-driven desktop pre-production runtime matrix
+  is recorded below. Explicit Connect Google linking and remote Device
+  Authorization expiry remain open; production remains a separate hold.
 
 ## Task 15 review decision
 
 - Scoped Task 15 re-review approved the verification changes and corrected
   evidence with no remaining Critical, Important, or Minor findings.
 - Final-cutover pre-production deployment/import, core live smoke, and today's
-  browser/native approval acceptance are complete. Explicit Connect Google
-  linking, remote Device Authorization expiry, and the broader desktop
-  candidate matrix remain unproven; production remains out of scope and
-  separately held.
+  browser/native approval acceptance are complete. The later MCP-driven native
+  desktop runtime matrix also passed. Explicit Connect Google linking and remote
+  Device Authorization expiry remain unproven; production remains out of scope
+  and separately held.
 
 ## Final whole-branch native review fixes
 
@@ -821,10 +820,9 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
 - Explicit Connect Google linking UI was not exercised because the migrated
   user was already linked; the account was not unlinked. Remote Device
   Authorization expiry has not been run independently because the five-second
-  expiry override is local-only and prohibited remotely. The broader desktop
-  pre-production candidate matrix has not been run separately. The legacy
-  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not
-  deleted.
+  expiry override is local-only and prohibited remotely. The later MCP-driven
+  desktop pre-production runtime matrix is recorded below. The legacy
+  pre-production `SUPABASE_SERVICE_ROLE_KEY` secret remains and was not deleted.
 
 ## Production read-only preview
 
@@ -836,3 +834,31 @@ Pre-flight result: no task contradiction or plan-vs-spec conflict found. Foundat
   for 1/1 owner coverage; no artifact or secret was applied.
 - Absolutely no production mutation occurred: no migration, import, secret
   update/removal, deploy, publication, or credential change.
+
+## MCP-driven desktop pre-production runtime acceptance
+
+- RED established two independent tooling failures: the existing desktop app
+  exposed no MCP bridge on `127.0.0.1:9223`, and the first bridge-enabled run
+  connected but could not initialize DOM helpers because the renderer's
+  hard-coded production CSP meta tag intersected with the development CSP.
+- The minimal debug tooling installs `tauri-plugin-mcp-bridge` 0.12, registers
+  it only under `cfg(debug_assertions)`, and binds only to `127.0.0.1`. Global
+  Tauri exposure and the relaxed inline-script policy live only in
+  `tauri.dev.conf.json`. The renderer duplicate CSP tag was removed so Tauri is
+  the single CSP source; the production `csp` in `tauri.conf.json` is unchanged.
+- GREEN: the bridge reported `com.hapadona.drumery.dev` on port 9223 and the
+  accessibility snapshot returned the real native shell. A fresh Device
+  Authorization request completed through Cloudflare Access with user approval;
+  the desktop showed the migrated Better Auth user and authenticated navigation.
+- Authenticated Cloud loaded two SimFiles from the pre-production API. Scores
+  rendered the existing native score database. After a full process restart,
+  the stored session restored without another approval and the app immediately
+  fetched the same two SimFiles again.
+- Verification passed: desktop renderer 58 files / 1,011 tests, Rust 928 passed
+  / 2 ignored / 0 failed, desktop typecheck with 0 errors and 0 warnings, Rust
+  format, focused Prettier, and `git diff --check`. The known ts-rs serde parsing
+  warnings remain non-failing and pre-existing.
+- This closes the broader native desktop pre-production runtime matrix. Desktop
+  release packaging/publication was not performed. Explicit Connect Google and
+  remote Device Authorization expiry remain separate gaps. Production remained
+  untouched.

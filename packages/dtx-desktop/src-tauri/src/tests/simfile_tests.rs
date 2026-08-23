@@ -310,6 +310,10 @@ fn number_id_accepts_i64_and_numeric_strings_but_rejects_overflow_and_invalid_ty
     assert_eq!(number_id(&json!(42)).unwrap(), 42);
     assert_eq!(number_id(&json!(-7)).unwrap(), -7);
     assert_eq!(number_id(&json!("123")).unwrap(), 123);
+    assert_eq!(
+        number_id(&json!(9_223_372_036_854_775_807u64)).unwrap(),
+        i64::MAX
+    );
     assert!(number_id(&json!(u64::MAX)).is_err());
     assert!(number_id(&json!(null)).is_err());
     assert!(number_id(&json!([1, 2])).is_err());

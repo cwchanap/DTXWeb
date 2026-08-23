@@ -45,6 +45,13 @@ pub(crate) async fn restore_seeded_auth_session(
 #[cfg(all(feature = "e2e", debug_assertions))]
 #[tauri::command]
 pub async fn restore_e2e_auth_session(app: AppHandle) -> Result<DesktopAuthSession> {
+    restore_e2e_auth_session_impl(app).await
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+pub(crate) async fn restore_e2e_auth_session_impl<R: tauri::Runtime>(
+    app: AppHandle<R>,
+) -> Result<DesktopAuthSession> {
     let user_id = std::env::var("DTX_E2E_DRUMERY_USER_ID").map_err(|_| {
         DesktopError::Message(
             "DTX_E2E_DRUMERY_USER_ID is required for a desktop E2E build".to_string(),

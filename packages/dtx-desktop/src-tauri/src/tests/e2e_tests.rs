@@ -2,6 +2,7 @@
 mod google_drive_commands_integration_tests;
 
 use std::sync::{Mutex, OnceLock};
+use tauri::Manager;
 
 fn env_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -126,4 +127,60 @@ fn e2e_drive_state_rejects_missing_or_blank_data_dir_before_constructing_fake() 
             "DTX_E2E_DATA_DIR is required for a desktop E2E build"
         );
     }
+}
+
+struct E2eUserEnvGuard {
+    saved: Option<std::ffi::OsString>,
+}
+
+impl E2eUserEnvGuard {
+    fn replace(value: Option<&str>) -> Self {
+        let saved = std::env::var_os("DTX_E2E_DRUMERY_USER_ID");
+        match value {
+            Some(value) => std::env::set_var("DTX_E2E_DRUMERY_USER_ID", value),
+            None => std::env::remove_var("DTX_E2E_DRUMERY_USER_ID"),
+        }
+        Self { saved }
+    }
+}
+
+impl Drop for E2eUserEnvGuard {
+    fn drop(&mut self) {
+        match self.saved.take() {
+            Some(value) => std::env::set_var("DTX_E2E_DRUMERY_USER_ID", value),
+            None => std::env::remove_var("DTX_E2E_DRUMERY_USER_ID"),
+        }
+    }
+}
+
+#[cfg(all(feature = "e2e", debug_assertions))]
+#[tokio::test]
+async fn restore_e2e_auth_session_command_requires_the_env_user_and_restores_it() {
+    let _lock = env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let missing = E2eUserEnvGuard::replace(None);
+    let app = tauri::test::mock_app();
+    app.manage(crate::auth::AuthState::default());
+    let error = crate::e2e::restore_e2e_auth_session_impl(app.handle().clone())
+        .await
+        .expect_err("the E2E user env var is mandatory");
+    assert!(error
+        .to_string()
+        .contains("DTX_E2E_DRUMERY_USER_ID is required"));
+    drop(missing);
+
+    let _restored = E2eUserEnvGuard::replace(Some("fixed-e2e-user"));
+    let session = crate::e2e::restore_e2e_auth_session_impl(app.handle().clone())
+        .await
+        .expect("the seeded session should be restorable");
+    assert_eq!(session.user.id, "fixed-e2e-user");
+    assert_eq!(
+        app.state::<crate::auth::AuthState>()
+            .current_user_id()
+            .await
+            .as_deref(),
+        Some("fixed-e2e-user")
+    );
 }

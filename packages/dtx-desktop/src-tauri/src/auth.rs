@@ -197,7 +197,7 @@ pub(crate) fn e2e_session_matches_user(session: &SessionData, expected_user_id: 
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Serialize, Clone, Copy)]
 #[serde(rename_all = "kebab-case")]
 pub enum SessionValidationStatus {
     Valid,
@@ -336,6 +336,13 @@ pub async fn validate_session(
     app: AppHandle,
     session_data: SessionData,
 ) -> Result<SessionValidationStatus> {
+    validate_session_impl(app, session_data).await
+}
+
+pub(crate) async fn validate_session_impl<R: Runtime>(
+    app: AppHandle<R>,
+    session_data: SessionData,
+) -> Result<SessionValidationStatus> {
     #[cfg(all(feature = "e2e", debug_assertions))]
     {
         let expected_user_id = std::env::var("DTX_E2E_DRUMERY_USER_ID").ok();
@@ -447,9 +454,13 @@ pub(crate) async fn logout_session_impl<R: Runtime>(app: AppHandle<R>) -> Result
 
 #[tauri::command]
 pub async fn open_external_url(app: AppHandle, url: String) -> Result<()> {
-    ensure_allowed_external_url(&url)?;
+    open_external_url_impl(&app, &url)
+}
+
+pub(crate) fn open_external_url_impl<R: Runtime>(app: &AppHandle<R>, raw_url: &str) -> Result<()> {
+    ensure_allowed_external_url(raw_url)?;
     app.opener()
-        .open_url(url, None::<String>)
+        .open_url(raw_url.to_string(), None::<String>)
         .map_err(|error| DesktopError::Message(error.to_string()))
 }
 

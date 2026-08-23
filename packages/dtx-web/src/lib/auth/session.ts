@@ -1,6 +1,6 @@
 import type { Fetcher } from '@cloudflare/workers-types';
 
-import { PUBLIC_DTX_API_URL } from '$env/static/public';
+import { env } from '$env/dynamic/public';
 
 export type AuthUser = {
 	id: string;
@@ -51,7 +51,8 @@ const buildSessionRequest = (event: AuthSessionEvent, url: string): Request => {
 };
 
 const fetchSessionResponse = async (event: AuthSessionEvent): Promise<Response> => {
-	const api = isLoopbackApiUrl(PUBLIC_DTX_API_URL) ? undefined : event.platform?.env?.API;
+	const publicApiUrl = env.PUBLIC_DTX_API_URL ?? '';
+	const api = isLoopbackApiUrl(publicApiUrl) ? undefined : event.platform?.env?.API;
 	if (api) {
 		const url = new URL('/api/auth/get-session', event.url).toString();
 		return (await api.fetch(
@@ -59,7 +60,7 @@ const fetchSessionResponse = async (event: AuthSessionEvent): Promise<Response> 
 		)) as unknown as Response;
 	}
 
-	const apiBase = PUBLIC_DTX_API_URL.replace(/\/$/, '');
+	const apiBase = publicApiUrl.replace(/\/$/, '');
 	const url = `${apiBase}/api/auth/get-session`;
 	const requestFetch = event.fetch ?? fetch;
 	return requestFetch(url, {

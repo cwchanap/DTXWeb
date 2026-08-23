@@ -161,6 +161,39 @@ describe('Login Page', () => {
 		});
 	});
 
+	it('shows a raw password sign-in exception', async () => {
+		envMock.browser = true;
+		authClientMock.signIn.email.mockRejectedValue(new Error('credentials rejected'));
+		render(LoginPage);
+
+		await screen.findByLabelText('Email');
+		await fireEvent.input(screen.getByLabelText('Email'), {
+			target: { value: 'owner@example.com' }
+		});
+		await fireEvent.input(screen.getByLabelText('Password'), {
+			target: { value: 'wrong-password' }
+		});
+		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent('credentials rejected');
+		});
+	});
+
+	it('sanitizes a thrown Google sign-in exception', async () => {
+		envMock.browser = true;
+		authClientMock.signIn.social.mockRejectedValue(new Error('google offline'));
+		render(LoginPage);
+
+		await fireEvent.click(await screen.findByRole('button', { name: 'Continue with Google' }));
+
+		await waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'Google authentication failed. Please try again.'
+			);
+		});
+	});
+
 	it('starts Google sign-in with a safe callback and error callback', async () => {
 		envMock.browser = true;
 		pageMock.url = new URL('http://localhost/login?next=%2Fapp%2Fscore');

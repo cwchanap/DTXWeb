@@ -162,6 +162,18 @@ describe('authService', () => {
 			expect(storeSessionData).toHaveBeenCalledWith(session);
 		});
 
+		it('waits for a pending retry delay before handling an approved session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization
+				.mockResolvedValueOnce({ status: 'pending', retryAfterMs: 1 })
+				.mockResolvedValueOnce({ status: 'approved', session });
+
+			await authService.login();
+
+			expect(host.pollDeviceAuthorization).toHaveBeenCalledTimes(2);
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+		});
+
 		it('reports terminal denial and does not persist a session', async () => {
 			host.beginDeviceAuthorization.mockResolvedValue(attempt);
 			host.pollDeviceAuthorization.mockResolvedValue({ status: 'denied' });
@@ -170,6 +182,72 @@ describe('authService', () => {
 
 			expect(authStore.setError).toHaveBeenCalledWith('Authentication was denied.');
 			expect(storeSessionData).not.toHaveBeenCalled();
+		});
+
+		it('reports an expired authentication code and does not persist a session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'expired' });
+
+			await authService.login();
+
+			expect(authStore.setError).toHaveBeenCalledWith('The authentication code expired.');
+			expect(storeSessionData).not.toHaveBeenCalled();
+		});
+
+		it('reports an invalid authentication grant and does not persist a session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'invalidGrant' });
+
+			await authService.login();
+
+			expect(authStore.setError).toHaveBeenCalledWith(
+				'The authentication code is no longer valid.'
+			);
+			expect(storeSessionData).not.toHaveBeenCalled();
+		});
+
+		it('continues polling after an unrecognized status', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization
+				.mockResolvedValueOnce({ status: 'unknown-status' as never })
+				.mockResolvedValueOnce({ status: 'approved', session });
+
+			await authService.login();
+
+			expect(host.pollDeviceAuthorization).toHaveBeenCalledTimes(2);
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+		});
+
+		it('reports authentication failure for a malformed approved session', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({
+				status: 'approved',
+				session: { sessionToken: '', user: { id: '' } } as never
+			});
+
+			await authService.login();
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+			expect(console.error).toHaveBeenCalledWith('Authentication failed:', expect.any(Error));
+			expect(storeSessionData).not.toHaveBeenCalled();
+		});
+
+		it('reports authentication failure when device authorization cannot begin', async () => {
+			host.beginDeviceAuthorization.mockRejectedValue(new Error('IPC gone'));
+
+			await authService.login();
+
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+			expect(console.error).toHaveBeenCalledWith('Authentication failed:', expect.any(Error));
+		});
+
+		it('reports a canceled sign-in when native cancellation fails', async () => {
+			host.cancelDeviceAuthorization.mockRejectedValue(new Error('cancel failed'));
+
+			await authService.cancelLogin();
+
+			expect(authStore.setError).toHaveBeenCalledWith('Sign-in canceled.');
+			expect(authStore.setLoading).toHaveBeenCalledWith(false);
 		});
 
 		it('cancels a pending flow and allows a later retry', async () => {
@@ -241,6 +319,15 @@ describe('authService', () => {
 			expect(await authService.restoreSession()).toBe(false);
 			expect(clearStoredSessionData).toHaveBeenCalledOnce();
 			expect(validateSession).not.toHaveBeenCalled();
+		});
+
+		it('returns false when session validation rejects', async () => {
+			(getStoredSessionData as ReturnType<typeof vi.fn>).mockReturnValue(session);
+			(validateSession as ReturnType<typeof vi.fn>).mockRejectedValue(
+				new Error('validation failed')
+			);
+
+			expect(await authService.restoreSession()).toBe(false);
 		});
 
 		it('returns false when there is no stored session', async () => {

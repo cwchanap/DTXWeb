@@ -1,9 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, test, vi } from 'vitest';
 import type { Env } from '../env';
 import * as authSchema from './schema';
 
 const authMocks = vi.hoisted(() => ({
-	betterAuth: vi.fn(() => ({ handler: vi.fn() })),
+	betterAuth: vi.fn(() => ({ handler: vi.fn(), api: {} })),
 	drizzle: vi.fn(() => 'request-scoped-drizzle'),
 	drizzleAdapter: vi.fn(() => 'better-auth-adapter')
 }));
@@ -12,6 +12,7 @@ vi.mock('better-auth', () => ({ betterAuth: authMocks.betterAuth }));
 vi.mock('drizzle-orm/d1', () => ({ drizzle: authMocks.drizzle }));
 vi.mock('better-auth/adapters/drizzle', () => ({ drizzleAdapter: authMocks.drizzleAdapter }));
 
+import authCli from './auth.cli';
 import { createAuth } from './auth';
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
@@ -36,6 +37,11 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 describe('createAuth', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	test('creates a usable Better Auth CLI instance', () => {
+		expect(authCli).toBeTruthy();
+		expect(typeof authCli.api).toBe('object');
 	});
 
 	it('creates Better Auth with request-scoped D1 Drizzle storage and the Task 1 options', () => {

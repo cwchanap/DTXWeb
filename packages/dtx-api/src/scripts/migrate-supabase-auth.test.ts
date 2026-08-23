@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { verifyPassword } from 'better-auth/crypto';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { generateAuthMigrationSql } from './migrate-supabase-auth';
 
 const fixture = JSON.parse(
@@ -142,5 +142,322 @@ describe('Supabase auth export migration', () => {
 				}
 			})
 		).rejects.toThrow(/replacement password.*unknown user/i);
+	});
+
+	test('rejects an exported user that is not an object', async () => {
+		await expect(generateAuthMigrationSql({ users: ['not-an-object'] })).rejects.toThrow(
+			/Supabase user 1 must be an object/i
+		);
+	});
+
+	test('rejects a user with no email', async () => {
+		const user = { ...fixture.users[0] };
+		delete user.email;
+
+		await expect(
+			generateAuthMigrationSql({ ...fixture, users: [user], applicationOwnerIds: [] })
+		).rejects.toThrow(/email must be a non-empty string/i);
+	});
+
+	test('rejects a user with a non-string creation timestamp', async () => {
+		await expect(
+			generateAuthMigrationSql({
+				...fixture,
+				users: [{ ...fixture.users[0], created_at: true }],
+				applicationOwnerIds: []
+			})
+		).rejects.toThrow(/created_at must be an ISO timestamp or millisecond number/i);
+	});
+
+	test('rejects a user with an invalid creation timestamp', async () => {
+		await expect(
+			generateAuthMigrationSql({
+				...fixture,
+				users: [{ ...fixture.users[0], created_at: 'garbage' }],
+				applicationOwnerIds: []
+			})
+		).rejects.toThrow(/created_at is not a valid timestamp/i);
+	});
+
+	test('accepts data exports and snake-case application owner IDs', async () => {
+		const sql = await generateAuthMigrationSql({
+			data: [fixture.users[0]],
+			application_owner_ids: [fixture.users[0].id]
+		});
+
+		expect(sql).toContain('-- Reconciled application owner IDs: 1');
+	});
+
+	test('rejects an export without a users array', async () => {
+		await expect(generateAuthMigrationSql({ users: 'nope' })).rejects.toThrow(
+			/Supabase auth export must contain a users array/i
+		);
+	});
+
+	test('rejects non-array application owner IDs', async () => {
+		await expect(
+			generateAuthMigrationSql({ users: [], applicationOwnerIds: 'x' })
+		).rejects.toThrow(/applicationOwnerIds must be an array/i);
+	});
+
+	test('uses the top-level name when user metadata is not an object', async () => {
+		const sql = await generateAuthMigrationSql({
+			users: [
+				{
+					...fixture.users[0],
+					name: 'Top-level Fixture Name',
+					user_metadata: 'x',
+					identities: []
+				}
+			],
+			applicationOwnerIds: []
+		});
+
+		expect(sql).toContain("'Top-level Fixture Name'");
+	});
+
+	test('uses identity_id when a Google identity has no identity data', async () => {
+		const sql = await generateAuthMigrationSql({
+			...fixture,
+			users: [
+				{
+					...fixture.users[0],
+					identities: [{ provider: 'google', identity_id: 'google-fallback-id' }]
+				}
+			],
+			applicationOwnerIds: []
+		});
+
+		expect(firstAccountRow(sql, 'google')).toContain("'account-google-google-fallback-id'");
+	});
+
+	test('rejects a Google identity without a stable provider account ID', async () => {
+		await expect(
+			generateAuthMigrationSql({
+				...fixture,
+				users: [{ ...fixture.users[0], identities: [{ provider: 'google' }] }],
+				applicationOwnerIds: []
+			})
+		).rejects.toThrow(/missing a stable provider account ID/i);
+	});
+
+	test('rejects an owner ID that is not a UUID', async () => {
+		await expect(
+			generateAuthMigrationSql(fixture, { applicationOwnerIds: ['not-a-uuid'] })
+		).rejects.toThrow(/Application owner ID is not a UUID/i);
+	});
+
+	test('rejects an empty replacement password', async () => {
+		await expect(
+			generateAuthMigrationSql(fixture, {
+				replacementPasswords: { [fixture.users[0].id]: '' }
+			})
+		).rejects.toThrow(/must be non-empty/i);
+	});
+
+	test('rejects an identity belonging to another user', async () => {
+		await expect(
+			generateAuthMigrationSql({
+				...fixture,
+				users: [
+					{
+						...fixture.users[0],
+						identities: [
+							{
+								provider: 'google',
+								identity_id: 'google-mismatch-id',
+								user_id: 'other-user'
+							}
+						]
+					}
+				],
+				applicationOwnerIds: []
+			})
+		).rejects.toThrow(/Identity user ID mismatch/i);
+	});
+
+	test('rejects duplicate Google identities for a user', async () => {
+		await expect(
+			generateAuthMigrationSql({
+				...fixture,
+				users: [
+					{
+						...fixture.users[0],
+						identities: [
+							{ provider: 'google', identity_id: 'duplicate-google-id' },
+							{ provider: 'google', identity_id: 'duplicate-google-id' }
+						]
+					}
+				],
+				applicationOwnerIds: []
+			})
+		).rejects.toThrow(/Duplicate google identity/i);
+	});
+
+	test('uses numeric user timestamps for identities without timestamps', async () => {
+		const sql = await generateAuthMigrationSql({
+			...fixture,
+			users: [
+				{
+					...fixture.users[0],
+					created_at: 1234567890,
+					updated_at: 1234567891,
+					identities: [{ provider: 'google', identity_id: 'google-timestamp-id' }]
+				}
+			],
+			applicationOwnerIds: []
+		});
+		const accountRow = firstAccountRow(sql, 'google');
+
+		expect(accountRow).toContain('1234567890');
+		expect(accountRow).toContain('1234567891');
+	});
+
+	test('runs the CLI in-process and writes reviewed SQL', async () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-happy-'));
+		const inputPath = join(inputDir, 'export.json');
+		const ownersPath = join(inputDir, 'owners.json');
+		const passwordsPath = join(inputDir, 'passwords.json');
+		const outputPath = resolve(
+			import.meta.dirname,
+			'../../../..',
+			'tmp/auth-migration',
+			`cli-happy-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}.sql`
+		);
+		writeFileSync(inputPath, JSON.stringify(fixture));
+		writeFileSync(ownersPath, JSON.stringify(fixture.applicationOwnerIds));
+		writeFileSync(
+			passwordsPath,
+			JSON.stringify({ [fixture.users[1].id]: 'cli-replacement-password' })
+		);
+
+		try {
+			const modulePath = resolve(import.meta.dirname, 'migrate-supabase-auth.ts');
+			const originalArgv = process.argv;
+			try {
+				process.argv = [
+					process.execPath,
+					modulePath,
+					inputPath,
+					'--owner-ids',
+					ownersPath,
+					'--replacement-passwords',
+					passwordsPath,
+					'--output',
+					outputPath
+				];
+				vi.resetModules();
+				await import('./migrate-supabase-auth');
+			} finally {
+				process.argv = originalArgv;
+			}
+
+			expect(existsSync(outputPath)).toBe(true);
+			const sql = readFileSync(outputPath, 'utf8');
+			expect(sql).toContain('INSERT INTO "user"');
+			expect(sql).toContain("'credential'");
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+			rmSync(outputPath, { force: true });
+		}
+	});
+
+	test('rejects an unknown in-process CLI argument', async () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-unknown-'));
+		const inputPath = join(inputDir, 'export.json');
+		writeFileSync(inputPath, JSON.stringify(fixture));
+
+		try {
+			const modulePath = resolve(import.meta.dirname, 'migrate-supabase-auth.ts');
+			const originalArgv = process.argv;
+			try {
+				process.argv = [process.execPath, modulePath, inputPath, '--bogus'];
+				vi.resetModules();
+				await expect(import('./migrate-supabase-auth')).rejects.toThrow(
+					/Unknown argument/i
+				);
+			} finally {
+				process.argv = originalArgv;
+			}
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+		}
+	});
+
+	test('rejects an in-process CLI invocation without owner IDs', async () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-owners-'));
+		const inputPath = join(inputDir, 'export.json');
+		writeFileSync(inputPath, JSON.stringify(fixture));
+
+		try {
+			const modulePath = resolve(import.meta.dirname, 'migrate-supabase-auth.ts');
+			const originalArgv = process.argv;
+			try {
+				process.argv = [process.execPath, modulePath, inputPath];
+				vi.resetModules();
+				await expect(import('./migrate-supabase-auth')).rejects.toThrow(/Usage:/i);
+			} finally {
+				process.argv = originalArgv;
+			}
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+		}
+	});
+
+	test('rejects an in-process CLI output outside the reviewed directory', async () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-output-'));
+		const inputPath = join(inputDir, 'export.json');
+		const ownersPath = join(inputDir, 'owners.json');
+		const outputPath = join(inputDir, 'outside.sql');
+		writeFileSync(inputPath, JSON.stringify(fixture));
+		writeFileSync(ownersPath, JSON.stringify(fixture.applicationOwnerIds));
+
+		try {
+			const modulePath = resolve(import.meta.dirname, 'migrate-supabase-auth.ts');
+			const originalArgv = process.argv;
+			try {
+				process.argv = [
+					process.execPath,
+					modulePath,
+					inputPath,
+					'--owner-ids',
+					ownersPath,
+					'--output',
+					outputPath
+				];
+				vi.resetModules();
+				await expect(import('./migrate-supabase-auth')).rejects.toThrow(
+					/Output must be under/i
+				);
+			} finally {
+				process.argv = originalArgv;
+			}
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+		}
+	});
+
+	test('rejects a non-array owner ID file from the CLI', async () => {
+		const inputDir = mkdtempSync(join(tmpdir(), 'better-auth-cli-owner-file-'));
+		const inputPath = join(inputDir, 'export.json');
+		const ownersPath = join(inputDir, 'owners.json');
+		writeFileSync(inputPath, JSON.stringify(fixture));
+		writeFileSync(ownersPath, JSON.stringify({ owner: fixture.users[0].id }));
+
+		try {
+			const modulePath = resolve(import.meta.dirname, 'migrate-supabase-auth.ts');
+			const originalArgv = process.argv;
+			try {
+				process.argv = [process.execPath, modulePath, inputPath, '--owner-ids', ownersPath];
+				vi.resetModules();
+				await expect(import('./migrate-supabase-auth')).rejects.toThrow(
+					/Owner ID file must contain a JSON array/i
+				);
+			} finally {
+				process.argv = originalArgv;
+			}
+		} finally {
+			rmSync(inputDir, { recursive: true, force: true });
+		}
 	});
 });

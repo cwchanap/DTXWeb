@@ -48,7 +48,9 @@ jobs:
     # "inactive" purely because GitHub keeps only one active deployment per
     # environment at a time). The GitHub repository's Environments settings
     # must have "Desktop-Windows" and "Desktop-macOS" environments, each with
-    # the build secret (TAURI_SIGNING_PRIVATE_KEY).
+    # the signing secrets: TAURI_SIGNING_PRIVATE_KEY (required) and
+    # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (optional; only needed if the key
+    # itself is password-protected).
     # The build vars (VITE_DTX_API_URL, PUBLIC_SIMFILE_BUCKET_URL) live at repo
     # level and are inherited by every
     # environment, so they do not need to be duplicated here.

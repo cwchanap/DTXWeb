@@ -161,7 +161,7 @@ describe('Login Page', () => {
 		});
 	});
 
-	it('shows a raw password sign-in exception', async () => {
+	it('sanitizes an unexpected password sign-in exception', async () => {
 		envMock.browser = true;
 		authClientMock.signIn.email.mockRejectedValue(new Error('credentials rejected'));
 		render(LoginPage);
@@ -176,7 +176,10 @@ describe('Login Page', () => {
 		await fireEvent.submit(screen.getByRole('button', { name: 'Login' }).closest('form')!);
 
 		await waitFor(() => {
-			expect(screen.getByRole('alert')).toHaveTextContent('credentials rejected');
+			expect(screen.getByRole('alert')).toHaveTextContent(
+				'Google authentication failed. Please try again.'
+			);
+			expect(screen.queryByText('credentials rejected')).not.toBeInTheDocument();
 		});
 	});
 

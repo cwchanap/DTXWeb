@@ -1,18 +1,34 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import type { Snippet } from 'svelte';
 	import { authClient } from '$lib/auth/client';
 
-	let { children } = $props();
+	interface Props {
+		children?: Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	let isSidebarCollapsed = $state(false);
+	let logoutError = $state('');
 
 	const toggleSidebar = () => {
 		isSidebarCollapsed = !isSidebarCollapsed;
 	};
 
 	const logout = async () => {
-		await authClient.signOut();
-		window.location.assign('/login');
+		logoutError = '';
+		try {
+			const { error } = await authClient.signOut();
+			if (error) {
+				logoutError = 'Logout failed. Please try again.';
+				return;
+			}
+			window.location.assign('/login');
+		} catch (caughtError) {
+			console.error('Logout failed:', caughtError);
+			logoutError = 'Logout failed. Please try again.';
+		}
 	};
 
 	const navigateToProfile = () => {
@@ -261,6 +277,9 @@
 						</svg>
 						<span>Profile</span>
 					</button>
+					{#if logoutError}
+						<span class="text-sm text-red-300" role="alert">{logoutError}</span>
+					{/if}
 					<button
 						onclick={logout}
 						class="flex items-center space-x-2 rounded-lg px-4 py-2 text-slate-300 transition-all duration-200 hover:bg-red-600/20 hover:text-red-300"

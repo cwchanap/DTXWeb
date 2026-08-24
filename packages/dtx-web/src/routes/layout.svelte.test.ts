@@ -31,13 +31,17 @@ describe('+layout.svelte', () => {
 
 	afterEach(() => {
 		vi.unstubAllGlobals();
+		vi.unstubAllEnvs();
 	});
 
-	it('renders without an auth client or subscription', () => {
-		const { container } = render(RootLayout, {
-			props: { children: noopChildren }
-		});
+	it('marks the document as hydrated for e2e runs and renders its children', async () => {
+		vi.stubEnv('DEV', false);
+		vi.stubEnv('VITE_E2E', 'true');
 
-		expect(container).toBeTruthy();
+		render(RootLayout, { props: { children: noopChildren } });
+
+		await vi.waitFor(() => {
+			expect(document.documentElement.dataset.e2eHydrated).toBe('true');
+		});
 	});
 });

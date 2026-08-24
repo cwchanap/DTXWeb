@@ -74,6 +74,31 @@ describe('(app)/+layout.svelte', () => {
 		});
 	});
 
+	it.each([
+		[
+			'a sign-out error',
+			() =>
+				authClientMock.signOut.mockResolvedValueOnce({
+					data: null,
+					error: { message: 'boom' }
+				})
+		],
+		[
+			'a thrown sign-out exception',
+			() => authClientMock.signOut.mockRejectedValueOnce(new Error('network down'))
+		]
+	])('stays on the page with a visible message for %s', async (_label, arrangeFailure) => {
+		arrangeFailure();
+		render(AppLayout, { props: { children: noopChildren } });
+
+		await fireEvent.click(screen.getByText('Logout').closest('button')!);
+
+		await vi.waitFor(() => {
+			expect(screen.getByRole('alert')).toHaveTextContent('Logout failed. Please try again.');
+			expect(assignMock).not.toHaveBeenCalled();
+		});
+	});
+
 	it('navigates to /app/account when Profile is clicked', async () => {
 		render(AppLayout, { props: { children: noopChildren } });
 

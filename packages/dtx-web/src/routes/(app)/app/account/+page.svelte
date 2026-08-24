@@ -4,16 +4,10 @@
 	import { replaceState } from '$app/navigation';
 	import { AlertCircle, CheckCircle2, Loader } from '@lucide/svelte';
 	import { authClient } from '$lib/auth/client';
-	import {
-		GOOGLE_AUTH_ERROR_MESSAGES,
-		safeAppRedirectPath,
-		sanitizeGoogleAuthError
-	} from '$lib/auth/google';
+	import { safeAppRedirectPath, sanitizeGoogleAuthError } from '$lib/auth/google';
 
-	type LinkedAccount = {
-		providerId: string;
-		accountId: string;
-	};
+	type ListAccountsResult = Awaited<ReturnType<typeof authClient.listAccounts>>;
+	type LinkedAccount = NonNullable<ListAccountsResult['data']>[number];
 
 	let { data } = $props();
 	let { user } = $derived(data);
@@ -83,10 +77,7 @@
 		} else {
 			const callbackError = params.get('error_description') ?? params.get('error');
 			if (callbackError) {
-				error =
-					GOOGLE_AUTH_ERROR_MESSAGES.find(
-						(knownMessage) => knownMessage === callbackError
-					) || sanitizeGoogleAuthError(callbackError);
+				error = sanitizeGoogleAuthError(callbackError);
 			}
 		}
 

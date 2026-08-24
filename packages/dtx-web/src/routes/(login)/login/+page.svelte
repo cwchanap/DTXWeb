@@ -6,7 +6,6 @@
 	import { Loader } from '@lucide/svelte';
 	import { authClient } from '$lib/auth/client';
 	import {
-		GOOGLE_AUTH_ERROR_MESSAGES,
 		GOOGLE_AUTH_GENERIC_MESSAGE,
 		safeAppRedirectPath,
 		sanitizeGoogleAuthError
@@ -46,8 +45,9 @@
 			window.location.assign(callbackPath());
 		} catch (caughtError) {
 			console.error('Login failed:', caughtError);
-			error =
-				caughtError instanceof Error ? caughtError.message : GOOGLE_AUTH_GENERIC_MESSAGE;
+			error = sanitizeGoogleAuthError(
+				caughtError instanceof Error ? caughtError.message : undefined
+			);
 		} finally {
 			isLoading = false;
 		}
@@ -83,9 +83,7 @@
 
 		const params = $page.url.searchParams;
 		const rawError = params.get('error_description') ?? params.get('error');
-		error =
-			GOOGLE_AUTH_ERROR_MESSAGES.find((message) => message === rawError) ||
-			(rawError ? sanitizeGoogleAuthError(rawError) : '');
+		error = rawError ? sanitizeGoogleAuthError(rawError) : '';
 
 		if (params.has('error') || params.has('error_description')) {
 			const cleanUrl = new URL($page.url);

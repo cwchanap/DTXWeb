@@ -1,10 +1,15 @@
 <script lang="ts">
 	import '../app.css';
 	import { Toaster } from '@skeletonlabs/skeleton-svelte';
+	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
 	import toastStore from '@/lib/toaster';
 
-	let { children } = $props();
+	interface Props {
+		children?: Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	onMount(() => {
 		if (import.meta.env.DEV || import.meta.env.VITE_E2E === 'true') {

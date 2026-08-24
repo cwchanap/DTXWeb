@@ -3,6 +3,12 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
+	"exports": {
+		"./auth-migration": {
+			"types": "./src/scripts/migrate-supabase-auth.ts",
+			"default": "./src/scripts/migrate-supabase-auth.ts"
+		}
+	},
 	"scripts": {
 		"dev": "wrangler dev",
 		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787",

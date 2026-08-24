@@ -44,18 +44,14 @@ describe('authStore', () => {
 			});
 		});
 
-		it('keeps the login surface open when device authorization is canceled', () => {
+		it('closes the login surface and clears device authorization on closeLogin', () => {
 			authStore.startLogin();
 			authStore.setDeviceAuthorization(authorization);
-			authStore.setLoading(false);
-			authStore.setError('Sign-in canceled.');
+			authStore.closeLogin();
 
-			expect(get(authStore)).toMatchObject({
-				isLoginVisible: true,
-				deviceAuthorization: authorization,
-				isLoading: false,
-				error: 'Sign-in canceled.'
-			});
+			const state = get(authStore);
+			expect(state.isLoginVisible).toBe(false);
+			expect(state.deviceAuthorization).toBeNull();
 		});
 	});
 

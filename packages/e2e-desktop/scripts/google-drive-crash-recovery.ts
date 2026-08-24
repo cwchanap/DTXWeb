@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { E2eDriveControl, E2eDriveSnapshot } from '../support/generated/native-types';
+import type { E2eDriveControl, E2eDriveSnapshot } from '../support/generated/native-types-e2e';
 import {
 	startStandaloneTauriSession,
 	terminateStandaloneTauriSession,

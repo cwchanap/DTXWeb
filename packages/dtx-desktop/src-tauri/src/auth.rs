@@ -1,4 +1,6 @@
-use crate::api_contracts::{DesktopAuthSession, DesktopAuthUser, DeviceAuthorizationAttempt};
+use crate::api_contracts::{
+    DesktopAuthSession, DesktopAuthUser, DeviceAuthorizationAttempt, DeviceAuthorizationPoll,
+};
 use crate::device_auth::{
     api_base_url_from_values, infer_web_origin_from_api_url, web_origin_from_values,
     DeviceAuthClient, DeviceAuthError, DeviceAuthorizationFlow, DevicePollResult,
@@ -203,16 +205,10 @@ pub enum SessionValidationStatus {
     Valid,
     Invalid,
     NotConfigured,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "status", rename_all = "camelCase")]
-pub enum DeviceAuthorizationPoll {
-    Pending { retry_after_ms: u64 },
-    Approved { session: DesktopAuthSession },
-    Denied,
-    Expired,
-    InvalidGrant,
+    /// Verification could not complete (timeout, network failure, server
+    /// error). The stored session is intentionally preserved so the renderer
+    /// can retry later instead of signing the user out.
+    RetryLater,
 }
 
 fn configured_device_auth_client() -> Result<DeviceAuthClient> {
@@ -390,21 +386,30 @@ pub(crate) async fn validate_session_impl<R: Runtime>(
             Ok(client) => client,
             Err(_) => return Ok(SessionValidationStatus::Invalid),
         };
-        let valid_user = client.get_session(token).await.ok().flatten();
-        let Some(user) = valid_user.filter(|user| user.id == expected_user.id) else {
-            app.state::<AuthState>()
-                .set_current_auth_session(None)
-                .await;
-            return Ok(SessionValidationStatus::Invalid);
-        };
-        app.state::<AuthState>()
-            .set_current_auth_session(Some(DesktopAuthSession {
-                session_token: token.to_string(),
-                user,
-            }))
-            .await;
-        spawn_drive_reconciliation_if_available(&app);
-        Ok(SessionValidationStatus::Valid)
+        // A definitive answer is one where verification completed: a present
+        // matching user (valid) or an absent/mismatched user after a
+        // successful check (invalid). Transport-level failures must not sign
+        // the user out, so they map to `RetryLater` and keep the stored
+        // session untouched.
+        match client.get_session(token).await {
+            Ok(Some(user)) if user.id == expected_user.id => {
+                app.state::<AuthState>()
+                    .set_current_auth_session(Some(DesktopAuthSession {
+                        session_token: token.to_string(),
+                        user,
+                    }))
+                    .await;
+                spawn_drive_reconciliation_if_available(&app);
+                Ok(SessionValidationStatus::Valid)
+            }
+            Ok(_) => {
+                app.state::<AuthState>()
+                    .set_current_auth_session(None)
+                    .await;
+                Ok(SessionValidationStatus::Invalid)
+            }
+            Err(_) => Ok(SessionValidationStatus::RetryLater),
+        }
     }
 }
 

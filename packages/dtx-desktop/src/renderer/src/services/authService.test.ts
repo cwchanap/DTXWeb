@@ -29,7 +29,8 @@ vi.mock('../stores/authStore', () => ({
 		setLoading: vi.fn(),
 		setError: vi.fn(),
 		setUser: vi.fn(),
-		logout: vi.fn()
+		logout: vi.fn(),
+		closeLogin: vi.fn()
 	}
 }));
 
@@ -227,7 +228,9 @@ describe('authService', () => {
 
 			await authService.login();
 
-			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+			expect(authStore.setError).toHaveBeenCalledWith(
+				'Authentication failed: Native device authorization returned an invalid session'
+			);
 			expect(console.error).toHaveBeenCalledWith('Authentication failed:', expect.any(Error));
 			expect(storeSessionData).not.toHaveBeenCalled();
 		});
@@ -237,7 +240,7 @@ describe('authService', () => {
 
 			await authService.login();
 
-			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed');
+			expect(authStore.setError).toHaveBeenCalledWith('Authentication failed: IPC gone');
 			expect(console.error).toHaveBeenCalledWith('Authentication failed:', expect.any(Error));
 		});
 
@@ -248,6 +251,7 @@ describe('authService', () => {
 
 			expect(authStore.setError).toHaveBeenCalledWith('Sign-in canceled.');
 			expect(authStore.setLoading).toHaveBeenCalledWith(false);
+			expect(authStore.closeLogin).toHaveBeenCalledOnce();
 		});
 
 		it('cancels a pending flow and allows a later retry', async () => {
@@ -267,6 +271,7 @@ describe('authService', () => {
 
 			expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce();
 			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
+			expect(authStore.closeLogin).toHaveBeenCalledOnce();
 
 			host.beginDeviceAuthorization.mockResolvedValue(attempt);
 			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });

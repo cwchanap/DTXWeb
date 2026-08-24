@@ -13,6 +13,7 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "^1.62.1",
+		"dtx-api": "workspace:*",
 		"typescript": "^5.8.3"
 	}
 }

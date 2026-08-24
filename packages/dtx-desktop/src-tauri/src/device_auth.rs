@@ -197,8 +197,11 @@ impl DeviceAuthClient {
             .verification_uri_complete
             .filter(|uri| !uri.trim().is_empty())
             .ok_or(DeviceAuthError::MalformedResponse)?;
-        let interval =
-            Duration::from_secs(body.interval.unwrap_or(DEFAULT_POLL_INTERVAL.as_secs()));
+        let interval = body
+            .interval
+            .map(Duration::from_secs)
+            .unwrap_or(DEFAULT_POLL_INTERVAL)
+            .max(DEFAULT_POLL_INTERVAL);
         let expires_at = OffsetDateTime::now_utc()
             .checked_add(TimeDuration::seconds(
                 i64::try_from(expires_in).unwrap_or(i64::MAX),

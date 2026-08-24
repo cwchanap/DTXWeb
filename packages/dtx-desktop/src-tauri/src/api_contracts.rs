@@ -78,6 +78,32 @@ pub struct DeviceAuthorizationAttempt {
     pub expires_at: String,
 }
 
+/// Result of a single device authorization poll, as delivered over IPC.
+/// Kept beside the other auth DTOs so the generated renderer contract stays
+/// the single source of truth for the poll wire shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(tag = "status", rename_all = "camelCase")]
+#[ts(
+    export,
+    export_to = "../../src/renderer/src/lib/generated/native-api-contracts.ts"
+)]
+pub enum DeviceAuthorizationPoll {
+    Pending {
+        // Explicit rename keeps the IPC wire shape and the generated contract
+        // aligned; ts-rs does not forward this enum's container-level
+        // camelCase renaming to variant fields.
+        #[serde(rename = "retryAfterMs")]
+        #[ts(type = "number")]
+        retry_after_ms: u64,
+    },
+    Approved {
+        session: DesktopAuthSession,
+    },
+    Denied,
+    Expired,
+    InvalidGrant,
+}
+
 mod f64_as_number {
     use serde::Serializer;
 

@@ -177,7 +177,7 @@ pub struct ListFilesResult {
 #[serde(rename_all = "kebab-case")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub enum E2eExistingFileFailure {
     None,
@@ -190,7 +190,7 @@ pub enum E2eExistingFileFailure {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveOwnerSeed {
     pub simfile_id: String,
@@ -204,7 +204,7 @@ pub struct E2eDriveOwnerSeed {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveControl {
     pub reset: bool,
@@ -219,7 +219,7 @@ pub struct E2eDriveControl {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveZipEntrySnapshot {
     pub name: String,
@@ -233,7 +233,7 @@ pub struct E2eDriveZipEntrySnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveObjectSnapshot {
     pub file_id: String,
@@ -249,7 +249,7 @@ pub struct E2eDriveObjectSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveCallSnapshot {
     pub operation: String,
@@ -262,7 +262,7 @@ pub struct E2eDriveCallSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveMetadataMutationSnapshot {
     pub mutation: String,
@@ -276,7 +276,7 @@ pub struct E2eDriveMetadataMutationSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveProgressSnapshot {
     pub operation_id: String,
@@ -295,7 +295,7 @@ pub struct E2eDriveProgressSnapshot {
 #[serde(rename_all = "camelCase")]
 #[ts(
     export,
-    export_to = "../../../e2e-desktop/support/generated/native-types.ts"
+    export_to = "../../../e2e-desktop/support/generated/native-types-e2e.ts"
 )]
 pub struct E2eDriveSnapshot {
     pub owner: E2eDriveOwnerSeed,

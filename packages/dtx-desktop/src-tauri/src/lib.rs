@@ -194,6 +194,17 @@ pub fn run() {
         .expect("error while running Drumery desktop");
 }
 
+/// Process-wide guard for tests that read or mutate `VITE_DTX_API_URL`.
+/// Auth tests replace that variable via `LogoutApiUrlGuard`, and any other
+/// test that reaches configuration-dependent code paths (for example the
+/// Drive metadata client) must hold this same lock so parallel tests never
+/// observe a partially updated environment.
+#[cfg(test)]
+pub(crate) fn logout_env_lock() -> &'static std::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+}
+
 #[cfg(test)]
 #[path = "tests/lib_tests.rs"]
 mod tests;

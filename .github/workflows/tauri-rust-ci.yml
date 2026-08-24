@@ -190,9 +190,11 @@ jobs:
         run: |
           git ls-files --error-unmatch -- packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts
           git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types.ts
+          git ls-files --error-unmatch -- packages/e2e-desktop/support/generated/native-types-e2e.ts
           git diff --exit-code -- \
             packages/dtx-desktop/src/renderer/src/lib/generated/native-api-contracts.ts \
-            packages/e2e-desktop/support/generated/native-types.ts
+            packages/e2e-desktop/support/generated/native-types.ts \
+            packages/e2e-desktop/support/generated/native-types-e2e.ts
 
       - name: Upload Rust coverage report
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

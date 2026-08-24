@@ -19,6 +19,13 @@ export type DesktopAuthUser = { id: string, name: string, email: string, emailVe
 
 export type DeviceAuthorizationAttempt = { userCode: string, verificationUri: string, verificationUriComplete: string, expiresAt: string, };
 
+/**
+ * Result of a single device authorization poll, as delivered over IPC.
+ * Kept beside the other auth DTOs so the generated renderer contract stays
+ * the single source of truth for the poll wire shape.
+ */
+export type DeviceAuthorizationPoll = { "status": "pending", retryAfterMs: number, } | { "status": "approved", session: DesktopAuthSession, } | { "status": "denied" } | { "status": "expired" } | { "status": "invalidGrant" };
+
 export type FetchCloudSongResult = { success: boolean, cloudSongData?: NativeSimfile, error?: string, };
 
 export type FetchUserSimfilesResult = { success: boolean, data: Array<NativeSimfile>, fromCache: boolean, error?: string, };

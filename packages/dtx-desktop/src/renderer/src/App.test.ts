@@ -271,6 +271,13 @@ describe('App lifecycle', () => {
 	});
 
 	it('still restores the session when a bootstrap call fails', async () => {
+		// Root-id lookup is a reachable bootstrap dependency whose failure must
+		// not abort startup; session restoration still has to happen.
+		mockDesktopHost.getWorkspaceRoot.mockResolvedValue('/native/canonical/workspace');
+		mockDesktopHost.getCurrentWorkspaceRootId.mockRejectedValue(
+			new Error('root-id IPC failed')
+		);
+
 		render(App);
 
 		await waitFor(() => {

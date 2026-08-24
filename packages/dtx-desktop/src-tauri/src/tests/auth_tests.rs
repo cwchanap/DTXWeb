@@ -5,7 +5,7 @@ use crate::google_drive::settings::GoogleDriveSettingsStore;
 use crate::google_drive::{GoogleDriveState, UnavailableDriveMetadataClient};
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Mutex,
 };
 use std::time::Duration;
 use tempfile::tempdir;
@@ -13,8 +13,7 @@ use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, Request, ResponseTemplate};
 
 fn logout_env_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
+    crate::logout_env_lock()
 }
 
 struct LogoutApiUrlGuard {
@@ -525,10 +524,13 @@ async fn poll_maps_oauth_terminal_and_pending_states_to_renderer_results() {
             .expect("mapped poll result");
         match (&poll, assert_terminal) {
             (DeviceAuthorizationPoll::Pending { retry_after_ms }, "pending") => {
-                assert_eq!(*retry_after_ms, 1_000);
+                // The fixture advertises interval 1s; the client floors it at
+                // DEFAULT_POLL_INTERVAL (5s) so a misbehaving server cannot
+                // force faster polling.
+                assert_eq!(*retry_after_ms, 5_000);
             }
             (DeviceAuthorizationPoll::Pending { retry_after_ms }, "slow") => {
-                assert_eq!(*retry_after_ms, 6_000);
+                assert_eq!(*retry_after_ms, 10_000);
             }
             (DeviceAuthorizationPoll::Denied, "denied") => {}
             (DeviceAuthorizationPoll::Expired, "expired") => {}
@@ -561,11 +563,11 @@ async fn polling_before_the_retry_window_elapses_skips_the_network_round_trip() 
     let DeviceAuthorizationPoll::Pending { retry_after_ms } = second else {
         panic!("expected a pending result, got {second:?}");
     };
-    assert!((990..=1_000).contains(&retry_after_ms));
+    assert!((4_990..=5_000).contains(&retry_after_ms));
     assert!(matches!(
         first,
         DeviceAuthorizationPoll::Pending {
-            retry_after_ms: 1_000
+            retry_after_ms: 5_000
         }
     ));
     assert_eq!(token_request_count(&server).await, 1);
@@ -799,6 +801,46 @@ async fn validate_session_accepts_a_matching_remote_user_and_stores_the_session(
     assert_eq!(
         state.current_session_token().await.unwrap(),
         "opaque-restore-token"
+    );
+}
+
+#[cfg(not(all(feature = "e2e", debug_assertions)))]
+#[tokio::test]
+async fn validate_session_keeps_the_stored_session_when_verification_fails() {
+    let _lock = logout_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let server = MockServer::start().await;
+    // A server failure means verification did not complete: the renderer must
+    // be told to retry later instead of silently signing the user out.
+    Mock::given(method("GET"))
+        .and(path("/api/auth/get-session"))
+        .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({
+            "error": "backend unavailable"
+        })))
+        .mount(&server)
+        .await;
+    let _api_url = LogoutApiUrlGuard::replace(&server.uri());
+    let state = AuthState::default();
+    state
+        .set_current_session(Some(serde_json::json!({
+            "sessionToken": "still-valid-locally",
+            "user": { "id": "restore-user" }
+        })))
+        .await;
+    let app = app_with_auth_state(state.clone());
+
+    let status = validate_session_impl(
+        app.handle().clone(),
+        session_data(Some("still-valid-locally"), Some("restore-user")),
+    )
+    .await
+    .expect("validation status");
+
+    assert_eq!(status, SessionValidationStatus::RetryLater);
+    assert_eq!(
+        state.current_session_token().await.unwrap(),
+        "still-valid-locally"
     );
 }
 

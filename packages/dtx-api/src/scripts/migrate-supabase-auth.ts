@@ -38,7 +38,12 @@ export type SupabaseAuthExport = {
 
 export type AuthMigrationOptions = {
 	replacementPasswords?: Record<string, string>;
-	applicationOwnerIds?: readonly string[];
+	/**
+	 * Application owner IDs to reconcile into the imported rows. Required so a
+	 * migration can never silently inherit owner intent from whatever happens
+	 * to be embedded in the export file; an intentional empty list is valid.
+	 */
+	applicationOwnerIds: readonly string[];
 };
 
 type AuthUserRow = {
@@ -177,8 +182,12 @@ const normalizeUser = (
 	};
 };
 
-const normalizeOwnerIds = (ownerIds: readonly string[] | undefined): string[] => {
-	if (ownerIds === undefined) return [];
+const normalizeOwnerIds = (ownerIds: readonly string[]): string[] => {
+	if (!Array.isArray(ownerIds)) {
+		throw new Error(
+			'options.applicationOwnerIds is required and must be an array of application owner UUIDs'
+		);
+	}
 	const unique = new Set<string>();
 	for (const ownerId of ownerIds) {
 		if (typeof ownerId !== 'string' || !UUID_RE.test(ownerId)) {
@@ -209,7 +218,7 @@ const createRows = async (
 	options: AuthMigrationOptions
 ): Promise<{ users: AuthUserRow[]; accounts: AuthAccountRow[]; ownerIds: string[] }> => {
 	const exported = normalizeExport(input);
-	const ownerIds = normalizeOwnerIds(options.applicationOwnerIds ?? exported.applicationOwnerIds);
+	const ownerIds = normalizeOwnerIds(options.applicationOwnerIds);
 	const users = exported.users.map(normalizeUser);
 	const userIds = new Set<string>();
 	const emails = new Set<string>();
@@ -309,7 +318,7 @@ const createRows = async (
 
 export const generateAuthMigrationSql = async (
 	input: unknown,
-	options: AuthMigrationOptions = {}
+	options: AuthMigrationOptions
 ): Promise<string> => {
 	const { users, accounts, ownerIds } = await createRows(input, options);
 	const statements = [

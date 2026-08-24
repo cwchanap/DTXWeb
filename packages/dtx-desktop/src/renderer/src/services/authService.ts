@@ -138,7 +138,11 @@ export const authService = {
 		} catch (error) {
 			if (generation === authFlowGeneration) {
 				console.error('Authentication failed:', error);
-				authStore.setError('Authentication failed');
+				authStore.setError(
+					error instanceof Error && error.message.trim()
+						? `Authentication failed: ${error.message}`
+						: 'Authentication failed'
+				);
 			}
 		} finally {
 			if (generation === authFlowGeneration) authStore.setLoading(false);
@@ -152,6 +156,7 @@ export const authService = {
 		} catch (error) {
 			console.error('Failed to cancel authentication:', error);
 		} finally {
+			authStore.closeLogin();
 			authStore.setLoading(false);
 			authStore.setError('Sign-in canceled.');
 		}
@@ -168,6 +173,11 @@ export const authService = {
 			const status: SessionValidationStatus = await validateSession();
 			if (status === 'not-configured') {
 				authStore.setError('Authentication is not configured on this build.');
+				return false;
+			}
+			if (status === 'retry-later') {
+				// Verification did not complete; keep the stored session so a
+				// later retry can restore it instead of signing the user out.
 				return false;
 			}
 			if (status !== 'valid') {

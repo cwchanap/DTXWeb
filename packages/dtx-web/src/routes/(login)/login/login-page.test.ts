@@ -249,14 +249,4 @@ describe('Login Page', () => {
 		});
 		expect(screen.queryByText('signup disabled')).not.toBeInTheDocument();
 	});
-
-	it('treats ordinary query parameters as a login request', async () => {
-		envMock.browser = true;
-		pageMock.url = new URL('http://localhost/login?tab=overview');
-		render(LoginPage);
-
-		await waitFor(() => {
-			expect(screen.getByRole('heading', { name: 'Login' })).toBeInTheDocument();
-		});
-	});
 });

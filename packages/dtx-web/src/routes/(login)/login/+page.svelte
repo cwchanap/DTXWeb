@@ -18,11 +18,12 @@
 	let nextPath = $state('');
 	let error = $state('');
 
-	const callbackPath = () => safeAppRedirectPath(nextPath || '/app');
+	const callbackPath = (): string => safeAppRedirectPath(nextPath || '/app');
 
-	const socialCallbackPath = () => new URL(callbackPath(), window.location.origin).toString();
+	const socialCallbackPath = (): string =>
+		new URL(callbackPath(), window.location.origin).toString();
 
-	const errorCallbackPath = () => {
+	const errorCallbackPath = (): string => {
 		const callback = new URL('/login', window.location.origin);
 		if (nextPath) {
 			callback.searchParams.set('next', nextPath);

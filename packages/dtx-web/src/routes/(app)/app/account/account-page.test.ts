@@ -28,11 +28,13 @@ vi.mock('@lucide/svelte');
 
 import AccountPage from './+page.svelte';
 
-const makeData = (user = { email: 'owner@example.com' }) => ({
+const makeData = (
+	user: App.PageData['user'] = { id: 'user-1', email: 'owner@example.com' }
+): { data: App.PageData } => ({
 	data: {
 		session: null,
 		user
-	} as any
+	}
 });
 
 describe('/app/account page', () => {

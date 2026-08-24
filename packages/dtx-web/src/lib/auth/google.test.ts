@@ -12,6 +12,7 @@ describe('google auth helpers', () => {
 	it('rejects open redirects outside the app', () => {
 		expect(safeAppRedirectPath('https://evil.example')).toBe('/app/account');
 		expect(safeAppRedirectPath('//evil.example')).toBe('/app/account');
+		expect(safeAppRedirectPath('//evil.example/app/score')).toBe('/app/account');
 		expect(safeAppRedirectPath('/login')).toBe('/app/account');
 		expect(safeAppRedirectPath('/application')).toBe('/app/account');
 		expect(safeAppRedirectPath('/app.evil')).toBe('/app/account');

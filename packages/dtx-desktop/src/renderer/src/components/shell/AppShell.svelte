@@ -17,6 +17,7 @@
 		clampWidth as clampDetailWidth
 	} from '../../stores/preferencesStore';
 	import { resolveShellMode } from '../../lib/shellMode';
+	import { authService } from '../../services/authService';
 	import { onMount, untrack } from 'svelte';
 
 	let width = $state(typeof window !== 'undefined' ? window.innerWidth : 1280);
@@ -68,6 +69,16 @@
 	const clampDetail = clampDetailWidth;
 	let isDraggingDetail = $state(false);
 	let dragDetailWidth = $state(420);
+
+	// Escape dismisses the sign-in surface: cancel any pending device flow and
+	// close the dialog so the keyboard can always escape the modal.
+	const handleShellKeydown = (event: KeyboardEvent) => {
+		if (event.key === 'Escape' && $authStore.isLoginVisible) {
+			event.preventDefault();
+			void authService.cancelLogin();
+		}
+	};
+
 	const detailRenderWidth = $derived(
 		isDraggingDetail ? dragDetailWidth : $preferencesStore.detailPaneWidth
 	);
@@ -130,6 +141,7 @@
 			e.preventDefault();
 			paletteOpen = true;
 		}
+		handleShellKeydown(e);
 	}}
 />
 

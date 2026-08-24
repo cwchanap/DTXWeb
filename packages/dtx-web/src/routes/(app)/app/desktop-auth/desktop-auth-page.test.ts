@@ -74,10 +74,28 @@ describe('/app/desktop-auth page', () => {
 	});
 
 	it.each([
-		['invalid', { code: 'INVALID_USER_CODE', message: 'not found' }, 'invalid'],
-		['expired', { code: 'EXPIRED_USER_CODE', message: 'too old' }, 'expired']
+		[
+			'invalid',
+			{
+				error: 'INVALID_USER_CODE',
+				error_description: 'not found',
+				status: 400,
+				statusText: 'Bad Request'
+			},
+			'invalid'
+		],
+		[
+			'expired',
+			{
+				error: 'EXPIRED_USER_CODE',
+				error_description: 'too old',
+				status: 400,
+				statusText: 'Bad Request'
+			},
+			'expired'
+		]
 	])(
-		'shows a safe %s-code error without rendering approval actions',
+		'shows a safe %s-code error without rendering approval actions or a terminal state',
 		async (_name, error, copy) => {
 			mocks.device.mockResolvedValueOnce({ data: null, error });
 			render(DesktopAuthPage);
@@ -89,6 +107,11 @@ describe('/app/desktop-auth page', () => {
 			await waitFor(() => {
 				expect(screen.getByRole('alert')).toHaveTextContent(copy);
 				expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+				expect(screen.queryByText('Desktop access approved.')).not.toBeInTheDocument();
+				expect(screen.queryByText('Desktop access denied.')).not.toBeInTheDocument();
+				// The claim failure returns the page to idle, so the form is
+				// available again instead of an approve/deny terminal state.
+				expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
 			});
 		}
 	);

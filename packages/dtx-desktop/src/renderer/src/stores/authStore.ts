@@ -54,6 +54,8 @@ function createAuthStore() {
 			})),
 		setDeviceAuthorization: (deviceAuthorization: DeviceAuthorizationInfo | null) =>
 			update((state) => ({ ...state, isLoginVisible: true, deviceAuthorization })),
+		closeLogin: () =>
+			update((state) => ({ ...state, isLoginVisible: false, deviceAuthorization: null })),
 		logout: () =>
 			update((state) => ({
 				...state,

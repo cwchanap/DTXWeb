@@ -223,13 +223,13 @@ describe('sessionStorage', () => {
 			expect(await validateSession()).toBe('not-configured');
 		});
 
-		it('treats a native validation failure as invalid', async () => {
+		it('reports retry-later when native validation fails without an answer', async () => {
 			localStorageMock.getItem.mockImplementation((key: string) =>
 				key === 'auth_session' ? JSON.stringify(session) : null
 			);
 			host.validateSession.mockRejectedValue(new Error('IPC error'));
 
-			expect(await validateSession()).toBe('invalid');
+			expect(await validateSession()).toBe('retry-later');
 		});
 	});
 

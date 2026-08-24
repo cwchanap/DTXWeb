@@ -750,7 +750,16 @@ async fn execute_authorized_request_surfaces_invalid_response_when_the_refreshed
 }
 
 #[tokio::test]
+// The environment lock is deliberately held across the awaited call: the
+// client resolves VITE_DTX_API_URL during that call.
+#[allow(clippy::await_holding_lock)]
 async fn api_drive_metadata_client_fetch_owner_simfile_errors_without_a_session() {
+    // The client reads VITE_DTX_API_URL while resolving its base URL; hold the
+    // shared process-wide lock so parallel auth tests mutating that variable
+    // cannot race this read.
+    let _lock = crate::logout_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let app = tauri::test::mock_app();
     let client = ApiDriveMetadataClient::new(app.handle().clone());
     let auth = AuthState::default();
@@ -760,7 +769,11 @@ async fn api_drive_metadata_client_fetch_owner_simfile_errors_without_a_session(
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn api_drive_metadata_client_update_drive_file_errors_without_a_session() {
+    let _lock = crate::logout_env_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let app = tauri::test::mock_app();
     let client = ApiDriveMetadataClient::new(app.handle().clone());
     let auth = AuthState::default();

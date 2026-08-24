@@ -14,7 +14,7 @@ export const TEST_USER_PASSWORD: string = process.env.E2E_USER_PASSWORD || 'REPL
 export const TEST_USER_ID = '00000000-0000-0000-0000-000000000001';
 
 /** Placeholder sentinel used to detect unset env vars. */
-const PLACEHOLDER = (v: string) => v.includes('REPLACE_ME') || v === '';
+const PLACEHOLDER = (v: string): boolean => v.includes('REPLACE_ME') || v === '';
 
 /**
  * True only when both credential env vars are set to non-placeholder values.

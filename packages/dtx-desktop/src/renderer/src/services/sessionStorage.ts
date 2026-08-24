@@ -81,7 +81,7 @@ export const clearStoredSessionData = (): void => {
 	}
 };
 
-export type SessionValidationStatus = 'valid' | 'invalid' | 'not-configured';
+export type SessionValidationStatus = 'valid' | 'invalid' | 'not-configured' | 'retry-later';
 
 export const validateSession = async (): Promise<SessionValidationStatus> => {
 	try {
@@ -90,7 +90,9 @@ export const validateSession = async (): Promise<SessionValidationStatus> => {
 		return await desktopHost.validateSession<SessionValidationStatus>(session);
 	} catch (error) {
 		console.error('Failed to validate session:', error);
-		return 'invalid';
+		// IPC-level failures mean verification did not complete; keep the
+		// stored session so the app can retry instead of signing out.
+		return 'retry-later';
 	}
 };
 

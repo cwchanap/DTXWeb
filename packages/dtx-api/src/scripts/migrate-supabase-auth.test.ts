@@ -50,7 +50,9 @@ describe('Supabase auth export migration', () => {
 	});
 
 	test('preserves user identity, Google identity, timestamps, and omits sessions and tokens', async () => {
-		const sql = await generateAuthMigrationSql(fixture);
+		const sql = await generateAuthMigrationSql(fixture, {
+			applicationOwnerIds: fixture.applicationOwnerIds
+		});
 
 		expect(sql).toContain("'00000000-0000-0000-0000-000000000001'");
 		expect(sql).toContain("'o''hara@example.test'");
@@ -67,8 +69,12 @@ describe('Supabase auth export migration', () => {
 			/(?:access_token|refresh_token|id_token|session_token|password_hash)/i
 		);
 
-		const first = await generateAuthMigrationSql(fixture);
-		const second = await generateAuthMigrationSql(fixture);
+		const first = await generateAuthMigrationSql(fixture, {
+			applicationOwnerIds: fixture.applicationOwnerIds
+		});
+		const second = await generateAuthMigrationSql(fixture, {
+			applicationOwnerIds: fixture.applicationOwnerIds
+		});
 		expect(first).toBe(second);
 		expect(firstAccountRow(first, 'google')).toContain(
 			"'account-google-google-fixture-sub-001'"
@@ -76,13 +82,16 @@ describe('Supabase auth export migration', () => {
 	});
 
 	test('creates a credential account only for an explicit replacement password', async () => {
-		const withoutReplacement = await generateAuthMigrationSql(fixture);
+		const withoutReplacement = await generateAuthMigrationSql(fixture, {
+			applicationOwnerIds: fixture.applicationOwnerIds
+		});
 		expect(withoutReplacement).not.toContain("'credential'");
 
 		const withReplacement = await generateAuthMigrationSql(fixture, {
 			replacementPasswords: {
 				'00000000-0000-0000-0000-000000000002': 'fixture-replacement-password'
-			}
+			},
+			applicationOwnerIds: fixture.applicationOwnerIds
 		});
 		const row = firstAccountRow(withReplacement, 'credential');
 		const hash = row.match(
@@ -95,42 +104,55 @@ describe('Supabase auth export migration', () => {
 
 	test('rejects duplicate users and duplicate emails before emitting SQL', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [...fixture.users, fixture.users[0]]
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [...fixture.users, fixture.users[0]]
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/duplicate user id/i);
 
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [fixture.users[0], { ...fixture.users[1], email: fixture.users[0].email }]
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [
+						fixture.users[0],
+						{ ...fixture.users[1], email: fixture.users[0].email }
+					]
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/duplicate email/i);
 	});
 
 	test('rejects unsupported providers and owner IDs with no imported user', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				applicationOwnerIds: [fixture.users[0].id],
-				users: [
-					{
-						...fixture.users[0],
-						identities: [{ provider: 'github', identity_id: 'github-fixture' }]
-					}
-				]
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [
+						{
+							...fixture.users[0],
+							identities: [{ provider: 'github', identity_id: 'github-fixture' }]
+						}
+					]
+				},
+				{ applicationOwnerIds: [fixture.users[0].id] }
+			)
 		).rejects.toThrow(/unsupported identity provider.*github/i);
 
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				applicationOwnerIds: [
-					...fixture.applicationOwnerIds,
-					'00000000-0000-0000-0000-000000000099'
-				]
-			})
+			generateAuthMigrationSql(
+				{ ...fixture },
+				{
+					applicationOwnerIds: [
+						...fixture.applicationOwnerIds,
+						'00000000-0000-0000-0000-000000000099'
+					]
+				}
+			)
 		).rejects.toThrow(/owner id.*00000000-0000-0000-0000-000000000099.*not imported/i);
 	});
 
@@ -139,15 +161,16 @@ describe('Supabase auth export migration', () => {
 			generateAuthMigrationSql(fixture, {
 				replacementPasswords: {
 					'00000000-0000-0000-0000-000000000099': 'fixture-password'
-				}
+				},
+				applicationOwnerIds: fixture.applicationOwnerIds
 			})
 		).rejects.toThrow(/replacement password.*unknown user/i);
 	});
 
 	test('rejects an exported user that is not an object', async () => {
-		await expect(generateAuthMigrationSql({ users: ['not-an-object'] })).rejects.toThrow(
-			/Supabase user 1 must be an object/i
-		);
+		await expect(
+			generateAuthMigrationSql({ users: ['not-an-object'] }, { applicationOwnerIds: [] })
+		).rejects.toThrow(/Supabase user 1 must be an object/i);
 	});
 
 	test('rejects a user with no email', async () => {
@@ -155,89 +178,124 @@ describe('Supabase auth export migration', () => {
 		delete user.email;
 
 		await expect(
-			generateAuthMigrationSql({ ...fixture, users: [user], applicationOwnerIds: [] })
+			generateAuthMigrationSql({ ...fixture, users: [user] }, { applicationOwnerIds: [] })
 		).rejects.toThrow(/email must be a non-empty string/i);
 	});
 
 	test('rejects a user with a non-string creation timestamp', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [{ ...fixture.users[0], created_at: true }],
-				applicationOwnerIds: []
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [{ ...fixture.users[0], created_at: true }],
+					applicationOwnerIds: []
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/created_at must be an ISO timestamp or millisecond number/i);
 	});
 
 	test('rejects a user with an invalid creation timestamp', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [{ ...fixture.users[0], created_at: 'garbage' }],
-				applicationOwnerIds: []
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [{ ...fixture.users[0], created_at: 'garbage' }],
+					applicationOwnerIds: []
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/created_at is not a valid timestamp/i);
 	});
 
 	test('accepts data exports and snake-case application owner IDs', async () => {
-		const sql = await generateAuthMigrationSql({
-			data: [fixture.users[0]],
-			application_owner_ids: [fixture.users[0].id]
-		});
+		const sql = await generateAuthMigrationSql(
+			{
+				data: [fixture.users[0]],
+				application_owner_ids: [fixture.users[0].id]
+			},
+			{ applicationOwnerIds: [fixture.users[0].id] }
+		);
 
 		expect(sql).toContain('-- Reconciled application owner IDs: 1');
 	});
 
 	test('rejects an export without a users array', async () => {
-		await expect(generateAuthMigrationSql({ users: 'nope' })).rejects.toThrow(
-			/Supabase auth export must contain a users array/i
-		);
+		await expect(
+			generateAuthMigrationSql({ users: 'nope' }, { applicationOwnerIds: [] })
+		).rejects.toThrow(/Supabase auth export must contain a users array/i);
 	});
 
 	test('rejects non-array application owner IDs', async () => {
 		await expect(
-			generateAuthMigrationSql({ users: [], applicationOwnerIds: 'x' })
+			generateAuthMigrationSql(
+				{ users: [], applicationOwnerIds: 'x' },
+				{
+					applicationOwnerIds: []
+				}
+			)
 		).rejects.toThrow(/applicationOwnerIds must be an array/i);
 	});
 
+	test('requires explicit application owner IDs even when the export embeds them', async () => {
+		// Owner intent must be supplied by the caller; inheriting it from the
+		// export file would let a tampered export silently grant ownership.
+		await expect(generateAuthMigrationSql(fixture, {} as never)).rejects.toThrow(
+			/options\.applicationOwnerIds is required/i
+		);
+
+		await expect(
+			generateAuthMigrationSql(fixture, { applicationOwnerIds: undefined as never })
+		).rejects.toThrow(/options\.applicationOwnerIds is required/i);
+	});
+
 	test('uses the top-level name when user metadata is not an object', async () => {
-		const sql = await generateAuthMigrationSql({
-			users: [
-				{
-					...fixture.users[0],
-					name: 'Top-level Fixture Name',
-					user_metadata: 'x',
-					identities: []
-				}
-			],
-			applicationOwnerIds: []
-		});
+		const sql = await generateAuthMigrationSql(
+			{
+				users: [
+					{
+						...fixture.users[0],
+						name: 'Top-level Fixture Name',
+						user_metadata: 'x',
+						identities: []
+					}
+				],
+				applicationOwnerIds: []
+			},
+			{ applicationOwnerIds: [] }
+		);
 
 		expect(sql).toContain("'Top-level Fixture Name'");
 	});
 
 	test('uses identity_id when a Google identity has no identity data', async () => {
-		const sql = await generateAuthMigrationSql({
-			...fixture,
-			users: [
-				{
-					...fixture.users[0],
-					identities: [{ provider: 'google', identity_id: 'google-fallback-id' }]
-				}
-			],
-			applicationOwnerIds: []
-		});
+		const sql = await generateAuthMigrationSql(
+			{
+				...fixture,
+				users: [
+					{
+						...fixture.users[0],
+						identities: [{ provider: 'google', identity_id: 'google-fallback-id' }]
+					}
+				],
+				applicationOwnerIds: []
+			},
+			{ applicationOwnerIds: [] }
+		);
 
 		expect(firstAccountRow(sql, 'google')).toContain("'account-google-google-fallback-id'");
 	});
 
 	test('rejects a Google identity without a stable provider account ID', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [{ ...fixture.users[0], identities: [{ provider: 'google' }] }],
-				applicationOwnerIds: []
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [{ ...fixture.users[0], identities: [{ provider: 'google' }] }],
+					applicationOwnerIds: []
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/missing a stable provider account ID/i);
 	});
 
@@ -250,63 +308,73 @@ describe('Supabase auth export migration', () => {
 	test('rejects an empty replacement password', async () => {
 		await expect(
 			generateAuthMigrationSql(fixture, {
-				replacementPasswords: { [fixture.users[0].id]: '' }
+				replacementPasswords: { [fixture.users[0].id]: '' },
+				applicationOwnerIds: fixture.applicationOwnerIds
 			})
 		).rejects.toThrow(/must be non-empty/i);
 	});
 
 	test('rejects an identity belonging to another user', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [
-					{
-						...fixture.users[0],
-						identities: [
-							{
-								provider: 'google',
-								identity_id: 'google-mismatch-id',
-								user_id: 'other-user'
-							}
-						]
-					}
-				],
-				applicationOwnerIds: []
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [
+						{
+							...fixture.users[0],
+							identities: [
+								{
+									provider: 'google',
+									identity_id: 'google-mismatch-id',
+									user_id: 'other-user'
+								}
+							]
+						}
+					],
+					applicationOwnerIds: []
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/Identity user ID mismatch/i);
 	});
 
 	test('rejects duplicate Google identities for a user', async () => {
 		await expect(
-			generateAuthMigrationSql({
-				...fixture,
-				users: [
-					{
-						...fixture.users[0],
-						identities: [
-							{ provider: 'google', identity_id: 'duplicate-google-id' },
-							{ provider: 'google', identity_id: 'duplicate-google-id' }
-						]
-					}
-				],
-				applicationOwnerIds: []
-			})
+			generateAuthMigrationSql(
+				{
+					...fixture,
+					users: [
+						{
+							...fixture.users[0],
+							identities: [
+								{ provider: 'google', identity_id: 'duplicate-google-id' },
+								{ provider: 'google', identity_id: 'duplicate-google-id' }
+							]
+						}
+					],
+					applicationOwnerIds: []
+				},
+				{ applicationOwnerIds: [] }
+			)
 		).rejects.toThrow(/Duplicate google identity/i);
 	});
 
 	test('uses numeric user timestamps for identities without timestamps', async () => {
-		const sql = await generateAuthMigrationSql({
-			...fixture,
-			users: [
-				{
-					...fixture.users[0],
-					created_at: 1234567890,
-					updated_at: 1234567891,
-					identities: [{ provider: 'google', identity_id: 'google-timestamp-id' }]
-				}
-			],
-			applicationOwnerIds: []
-		});
+		const sql = await generateAuthMigrationSql(
+			{
+				...fixture,
+				users: [
+					{
+						...fixture.users[0],
+						created_at: 1234567890,
+						updated_at: 1234567891,
+						identities: [{ provider: 'google', identity_id: 'google-timestamp-id' }]
+					}
+				],
+				applicationOwnerIds: []
+			},
+			{ applicationOwnerIds: [] }
+		);
 		const accountRow = firstAccountRow(sql, 'google');
 
 		expect(accountRow).toContain('1234567890');

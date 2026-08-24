@@ -103,6 +103,20 @@ fn e2e_session_validation_accepts_only_the_seeded_user() {
         &different,
         "fixed-e2e-user"
     ));
+
+    for blank_token in [None, Some("   ".to_string())] {
+        let missing_token = crate::auth::SessionData {
+            session_token: blank_token,
+            user: Some(crate::api_contracts::DesktopAuthUser {
+                id: "fixed-e2e-user".to_string(),
+                ..Default::default()
+            }),
+        };
+        assert!(!crate::auth::e2e_session_matches_user(
+            &missing_token,
+            "fixed-e2e-user"
+        ));
+    }
 }
 
 #[test]
@@ -155,6 +169,9 @@ impl Drop for E2eUserEnvGuard {
 
 #[cfg(all(feature = "e2e", debug_assertions))]
 #[tokio::test]
+// The nonce env var must stay pinned for the whole async command, so the
+// process-wide env lock is deliberately held across await points.
+#[allow(clippy::await_holding_lock)]
 async fn restore_e2e_auth_session_command_requires_the_env_user_and_restores_it() {
     let _lock = env_lock()
         .lock()

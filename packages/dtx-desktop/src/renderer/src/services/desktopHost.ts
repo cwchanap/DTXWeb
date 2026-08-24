@@ -6,18 +6,14 @@ import type {
 	CreateSimfileRecordResult,
 	DesktopAuthSession,
 	DeviceAuthorizationAttempt,
+	DeviceAuthorizationPoll,
 	FetchCloudSongResult,
 	FetchUserSimfilesResult,
 	UpdateSimfileRecordInput,
 	UpdateSimfileRecordResult
 } from '$lib/lib/generated/native-api-contracts';
 
-export type DeviceAuthorizationPoll =
-	| { status: 'pending'; retryAfterMs: number }
-	| { status: 'approved'; session: DesktopAuthSession }
-	| { status: 'denied' }
-	| { status: 'expired' }
-	| { status: 'invalidGrant' };
+export type { DeviceAuthorizationPoll };
 
 export type DesktopHostVersions = {
 	app: string | null;

@@ -1,4 +1,4 @@
-import { generateAuthMigrationSql } from '../../dtx-api/src/scripts/migrate-supabase-auth';
+import { generateAuthMigrationSql } from 'dtx-api/auth-migration';
 import { TEST_USER_EMAIL, TEST_USER_ID, TEST_USER_PASSWORD } from '../test-config';
 
 /**
@@ -25,8 +25,10 @@ export const createBetterAuthSeedSql = async (): Promise<string> =>
 						}
 					]
 				}
-			],
-			applicationOwnerIds: [TEST_USER_ID]
+			]
 		},
-		{ replacementPasswords: { [TEST_USER_ID]: TEST_USER_PASSWORD } }
+		{
+			replacementPasswords: { [TEST_USER_ID]: TEST_USER_PASSWORD },
+			applicationOwnerIds: [TEST_USER_ID]
+		}
 	);

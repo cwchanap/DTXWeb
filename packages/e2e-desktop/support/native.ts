@@ -1,14 +1,16 @@
 import { browser } from '@wdio/globals';
 
 import type {
-	E2eDriveControl as GeneratedE2eDriveControl,
-	E2eDriveSnapshot as GeneratedE2eDriveSnapshot,
 	ListFilesResult as GeneratedListFilesResult,
 	ListedFile as GeneratedListedFile,
 	PathExistsResult as GeneratedPathExistsResult,
 	ReadFileResultWire,
 	TreeNode as GeneratedTreeNode
 } from './generated/native-types';
+import type {
+	E2eDriveControl as GeneratedE2eDriveControl,
+	E2eDriveSnapshot as GeneratedE2eDriveSnapshot
+} from './generated/native-types-e2e';
 
 export type PathExistsResult = GeneratedPathExistsResult;
 export type ReadFileResult = ReadFileResultWire;

@@ -155,6 +155,15 @@ export const authService = {
 			await desktopHost.cancelDeviceAuthorization();
 		} catch (error) {
 			console.error('Failed to cancel authentication:', error);
+		}
+		// A poll that won the race installs the native session before the
+		// cancel command observes it (cancel only bumps the device-attempt
+		// generation). Sign-in is only reachable while signed out, so a
+		// follow-up logout clears that orphaned session.
+		try {
+			await desktopHost.logoutSession();
+		} catch (error) {
+			console.error('Failed to clear canceled session:', error);
 		} finally {
 			authStore.closeLogin();
 			authStore.setLoading(false);

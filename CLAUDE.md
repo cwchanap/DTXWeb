@@ -273,6 +273,7 @@ Interactive elements (non-button tags with click handlers) must include `tabinde
 - No direct CSS/style modifications to base.css
 - Dynamic classes with template literals when needed
 - For complex components, use `@apply` in a scoped `<style>` block rather than long inline class strings
+- Tailwind 4 scoped `<style>` blocks using `@apply` must start with `@reference` so utilities resolve at build time — otherwise the build fails with `Cannot apply unknown utility class ...`. In the web app (`packages/dtx-web`) use `@reference 'tailwindcss';` (default colors). In the desktop renderer (`packages/dtx-desktop/src/renderer`) use `@reference '../../assets/base.css';` so `@apply` also resolves custom theme colors (`border-hairline`, `bg-surface-1`, etc.) defined in `base.css`'s `@theme` block
 
 ### Import Patterns
 

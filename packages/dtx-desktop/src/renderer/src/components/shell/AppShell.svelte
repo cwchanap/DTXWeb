@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TopToolbar from './TopToolbar.svelte';
-	import Login from '../Login.svelte';
+	import Login from '$lib/components/Login.svelte';
 	import NavRail from './NavRail.svelte';
 	import DetailPane from './DetailPane.svelte';
 	import CommandPalette from './CommandPalette.svelte';
@@ -192,18 +192,21 @@
 	</div>
 	<CommandPalette open={paletteOpen} onClose={() => (paletteOpen = false)} />
 	{#if $authStore.isLoginVisible}
-		<div
-			class="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh]"
-			role="presentation"
-		>
-			<div
-				class="border-hairline bg-surface-1 w-full max-w-xl overflow-hidden rounded-2xl border"
-				role="dialog"
-				aria-modal="true"
-				aria-label="Sign in"
-			>
+		<div class="sign-in-overlay" role="presentation">
+			<div class="sign-in-dialog" role="dialog" aria-modal="true" aria-label="Sign in">
 				<Login />
 			</div>
 		</div>
 	{/if}
 </div>
+
+<style>
+	@reference '../../assets/base.css';
+
+	.sign-in-overlay {
+		@apply fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[12vh];
+	}
+	.sign-in-dialog {
+		@apply border-hairline bg-surface-1 w-full max-w-xl overflow-hidden rounded-2xl border;
+	}
+</style>

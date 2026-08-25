@@ -302,6 +302,50 @@ describe('authService', () => {
 			await authService.login();
 			expect(storeSessionData).toHaveBeenCalledWith(session);
 		});
+
+		it('leaves a newer login intact when stale cancellations resolve after it', async () => {
+			// Two cancellations whose native cancel calls stay pending so they
+			// observe a newer generation when they resume.
+			let resolveCancel1!: (value: boolean) => void;
+			let resolveCancel2!: (value: boolean) => void;
+			host.cancelDeviceAuthorization
+				.mockReturnValueOnce(
+					new Promise<boolean>((resolve) => {
+						resolveCancel1 = resolve;
+					})
+				)
+				.mockReturnValueOnce(
+					new Promise<boolean>((resolve) => {
+						resolveCancel2 = resolve;
+					})
+				);
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
+
+			const cancel1 = authService.cancelLogin();
+			const cancel2 = authService.cancelLogin();
+			// A new login starts and completes while both cancellations are in flight.
+			await authService.login();
+
+			resolveCancel1(true);
+			resolveCancel2(true);
+			await cancel1;
+			await cancel2;
+
+			// The newer session was installed and surfaced.
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+			expect(authStore.setUser).toHaveBeenCalledWith({
+				id: user.id,
+				email: user.email,
+				name: user.name
+			});
+			// Stale cancellations did not log out the newer native session.
+			expect(host.logoutSession).not.toHaveBeenCalled();
+			// Stale cancellations did not close or reset the newer login surface.
+			expect(authStore.closeLogin).not.toHaveBeenCalled();
+			expect(authStore.setError).not.toHaveBeenCalledWith('Sign-in canceled.');
+			expect(authStore.setLoading).toHaveBeenCalledTimes(2);
+		});
 	});
 
 	describe('restoreSession', () => {

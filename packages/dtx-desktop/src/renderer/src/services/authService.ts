@@ -150,12 +150,16 @@ export const authService = {
 	},
 
 	cancelLogin: async (): Promise<void> => {
-		++authFlowGeneration;
+		const generation = ++authFlowGeneration;
 		try {
 			await desktopHost.cancelDeviceAuthorization();
 		} catch (error) {
 			console.error('Failed to cancel authentication:', error);
 		}
+		// A newer login or cancel has taken over while we were awaiting the
+		// native cancel. Bail before logging out its just-installed session or
+		// closing/resetting its login surface.
+		if (generation !== authFlowGeneration) return;
 		// A poll that won the race installs the native session before the
 		// cancel command observes it (cancel only bumps the device-attempt
 		// generation). Sign-in is only reachable while signed out, so a
@@ -164,11 +168,11 @@ export const authService = {
 			await desktopHost.logoutSession();
 		} catch (error) {
 			console.error('Failed to clear canceled session:', error);
-		} finally {
-			authStore.closeLogin();
-			authStore.setLoading(false);
-			authStore.setError('Sign-in canceled.');
 		}
+		if (generation !== authFlowGeneration) return;
+		authStore.closeLogin();
+		authStore.setLoading(false);
+		authStore.setError('Sign-in canceled.');
 	},
 
 	restoreSession: async (): Promise<boolean> => {

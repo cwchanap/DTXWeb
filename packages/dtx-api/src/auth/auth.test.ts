@@ -12,7 +12,6 @@ vi.mock('better-auth', () => ({ betterAuth: authMocks.betterAuth }));
 vi.mock('drizzle-orm/d1', () => ({ drizzle: authMocks.drizzle }));
 vi.mock('better-auth/adapters/drizzle', () => ({ drizzleAdapter: authMocks.drizzleAdapter }));
 
-import authCli from './auth.cli';
 import { createAuth } from './auth';
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
@@ -39,9 +38,15 @@ describe('createAuth', () => {
 		vi.clearAllMocks();
 	});
 
-	test('creates a usable Better Auth CLI instance', () => {
-		expect(authCli).toBeTruthy();
-		expect(typeof authCli.api).toBe('object');
+	test('creates a usable Better Auth CLI instance', async () => {
+		vi.resetModules();
+		await import('./auth.cli');
+		expect(authMocks.betterAuth).toHaveBeenCalledWith(
+			expect.objectContaining({
+				baseURL: 'http://localhost:8787',
+				advanced: expect.objectContaining({ cookiePrefix: 'dtx-local' })
+			})
+		);
 	});
 
 	it('creates Better Auth with request-scoped D1 Drizzle storage and the Task 1 options', () => {

@@ -22,10 +22,10 @@
 		accounts.find((account) => account.providerId === 'google') ?? null
 	);
 
-	const accountCallbackUrl = (path: string) =>
+	const accountCallbackUrl = (path: string): string =>
 		new URL(safeAppRedirectPath(path), window.location.origin).toString();
 
-	const loadAccounts = async () => {
+	const loadAccounts = async (): Promise<void> => {
 		isLoading = true;
 		try {
 			const { data: accountData, error: accountError } = await authClient.listAccounts();
@@ -45,7 +45,7 @@
 		}
 	};
 
-	const handleConnectGoogle = async () => {
+	const handleConnectGoogle = async (): Promise<void> => {
 		isConnecting = true;
 		error = '';
 		message = '';

@@ -5,11 +5,7 @@
 	import { replaceState } from '$app/navigation';
 	import { Loader } from '@lucide/svelte';
 	import { authClient } from '$lib/auth/client';
-	import {
-		GOOGLE_AUTH_GENERIC_MESSAGE,
-		safeAppRedirectPath,
-		sanitizeGoogleAuthError
-	} from '$lib/auth/google';
+	import { safeAppRedirectPath, sanitizeGoogleAuthError } from '$lib/auth/google';
 
 	let email = $state('');
 	let password = $state('');
@@ -17,6 +13,8 @@
 	let isCheckingAuthState = $state(true);
 	let nextPath = $state('');
 	let error = $state('');
+
+	const CREDENTIAL_AUTH_GENERIC_MESSAGE = 'Sign-in failed. Please try again.';
 
 	const callbackPath = (): string => safeAppRedirectPath(nextPath || '/app');
 
@@ -31,7 +29,7 @@
 		return callback.toString();
 	};
 
-	const handleLogin = async (event: SubmitEvent) => {
+	const handleLogin = async (event: SubmitEvent): Promise<void> => {
 		event.preventDefault();
 		isLoading = true;
 		error = '';
@@ -39,22 +37,20 @@
 		try {
 			const { error: signInError } = await authClient.signIn.email({ email, password });
 			if (signInError) {
-				error = signInError.message || GOOGLE_AUTH_GENERIC_MESSAGE;
+				error = signInError.message || CREDENTIAL_AUTH_GENERIC_MESSAGE;
 				return;
 			}
 
 			window.location.assign(callbackPath());
 		} catch (caughtError) {
 			console.error('Login failed:', caughtError);
-			error = sanitizeGoogleAuthError(
-				caughtError instanceof Error ? caughtError.message : undefined
-			);
+			error = CREDENTIAL_AUTH_GENERIC_MESSAGE;
 		} finally {
 			isLoading = false;
 		}
 	};
 
-	const handleGoogleLogin = async (event: SubmitEvent) => {
+	const handleGoogleLogin = async (event: SubmitEvent): Promise<void> => {
 		event.preventDefault();
 		isLoading = true;
 		error = '';

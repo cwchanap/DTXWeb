@@ -177,8 +177,11 @@ describe('Login Page', () => {
 
 		await waitFor(() => {
 			expect(screen.getByRole('alert')).toHaveTextContent(
-				'Google authentication failed. Please try again.'
+				'Sign-in failed. Please try again.'
 			);
+			expect(
+				screen.queryByText('Google authentication failed. Please try again.')
+			).not.toBeInTheDocument();
 			expect(screen.queryByText('credentials rejected')).not.toBeInTheDocument();
 		});
 	});

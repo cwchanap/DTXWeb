@@ -518,13 +518,18 @@ async fn sign_out_skips_blank_tokens_and_maps_error_statuses() {
 
 #[tokio::test]
 async fn connection_timeouts_are_typed_as_timeouts() {
-    let client = DeviceAuthClient::new_with_timeout(
-        "http://10.255.255.1:1".to_string(),
-        std::time::Duration::from_millis(250),
-    )
-    .expect("test URL is valid");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/api/auth/device/code"))
+        .respond_with(ResponseTemplate::new(200).set_delay(std::time::Duration::from_secs(5)))
+        .mount(&server)
+        .await;
 
-    let error = client.begin().await.expect_err("unroutable endpoint");
+    let client =
+        DeviceAuthClient::new_with_timeout(server.uri(), std::time::Duration::from_millis(250))
+            .expect("mock server URL is valid");
+
+    let error = client.begin().await.expect_err("delayed endpoint");
     assert_eq!(error, DeviceAuthError::Timeout);
 }
 

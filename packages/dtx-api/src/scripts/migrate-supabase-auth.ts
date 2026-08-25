@@ -4,7 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from 'better-auth/crypto';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Domain segments exclude '.', so each backtrack split point has only one way
+// to proceed (linear-time). Quantified dot-adjacent classes backtrack
+// quadratically (CodeQL js/polynomial-redos).
+const EMAIL_RE = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 const SUPPORTED_IDENTITY_PROVIDERS = new Set(['email', 'google']);
 
 export type SupabaseIdentityExport = {

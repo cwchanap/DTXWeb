@@ -254,6 +254,30 @@ describe('authService', () => {
 			expect(authStore.closeLogin).toHaveBeenCalledOnce();
 		});
 
+		it('clears a native session whose poll resolved approved after cancellation began', async () => {
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			let resolvePoll!: (value: unknown) => void;
+			host.pollDeviceAuthorization.mockReturnValue(
+				new Promise((resolve) => {
+					resolvePoll = resolve;
+				})
+			);
+
+			const pendingLogin = authService.login();
+			await vi.waitFor(() => expect(host.pollDeviceAuthorization).toHaveBeenCalledOnce());
+			await authService.cancelLogin();
+			resolvePoll({ status: 'approved', session });
+			await pendingLogin;
+
+			expect(storeSessionData).not.toHaveBeenCalled();
+			expect(authStore.setUser).not.toHaveBeenCalled();
+			// The canceled flow must not leave an installed native session behind.
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+			expect(host.logoutSession.mock.invocationCallOrder[0]).toBeGreaterThan(
+				host.cancelDeviceAuthorization.mock.invocationCallOrder[0]
+			);
+		});
+
 		it('cancels a pending flow and allows a later retry', async () => {
 			host.beginDeviceAuthorization.mockResolvedValue(attempt);
 			let resolvePoll!: (value: unknown) => void;

@@ -12,11 +12,11 @@
 	let isSidebarCollapsed = $state(false);
 	let logoutError = $state('');
 
-	const toggleSidebar = () => {
+	const toggleSidebar = (): void => {
 		isSidebarCollapsed = !isSidebarCollapsed;
 	};
 
-	const logout = async () => {
+	const logout = async (): Promise<void> => {
 		logoutError = '';
 		try {
 			const { error } = await authClient.signOut();
@@ -31,7 +31,7 @@
 		}
 	};
 
-	const navigateToProfile = () => {
+	const navigateToProfile = (): void => {
 		goto('/app/account');
 	};
 </script>

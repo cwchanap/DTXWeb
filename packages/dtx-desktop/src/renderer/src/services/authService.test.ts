@@ -517,5 +517,36 @@ describe('authService', () => {
 				])
 			);
 		});
+
+		it('leaves a newer login intact when logout resolves after it', async () => {
+			let resolveCancel!: (value: boolean) => void;
+			host.cancelDeviceAuthorization.mockReturnValue(
+				new Promise<boolean>((resolve) => {
+					resolveCancel = resolve;
+				})
+			);
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
+
+			const logout = authService.logout();
+			await vi.waitFor(() => expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce());
+
+			// A new login starts and completes while logout's native cancel is in flight.
+			await authService.login();
+
+			// The newer session was installed and surfaced.
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+			expect(authStore.setUser).toHaveBeenCalledWith({
+				id: user.id,
+				email: user.email,
+				name: user.name
+			});
+
+			resolveCancel(true);
+			await logout;
+
+			// Stale logout did not log out the newer native session.
+			expect(host.logoutSession).not.toHaveBeenCalled();
+		});
 	});
 });

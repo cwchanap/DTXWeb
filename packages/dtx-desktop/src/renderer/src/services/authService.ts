@@ -151,6 +151,12 @@ export const authService = {
 
 	cancelLogin: async (): Promise<void> => {
 		const generation = ++authFlowGeneration;
+		// Claim the loading surface before any native await so a retry cannot
+		// start while cleanup is in flight. Without this, a terminal auth
+		// result leaves isLoading=false with the modal visible, so "Try again"
+		// stays clickable and a new login can begin during logoutSession() —
+		// the in-flight native logout would then clobber its device attempt.
+		authStore.setLoading(true);
 		try {
 			await desktopHost.cancelDeviceAuthorization();
 		} catch (error) {

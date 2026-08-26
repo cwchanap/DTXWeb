@@ -217,7 +217,7 @@ export const authService = {
 	},
 
 	logout: async (): Promise<void> => {
-		authFlowGeneration++;
+		const generation = ++authFlowGeneration;
 		authStore.logout();
 		googleDriveStore.reset();
 		// Renderer state is invalidated before any native/network await. A
@@ -232,6 +232,10 @@ export const authService = {
 		} catch (error) {
 			console.error('Failed to cancel authentication during logout:', error);
 		}
+		// A newer login or cancel started while the native cancel was in
+		// flight. Bail before logoutSession() so it cannot clear the session
+		// the newer flow just installed.
+		if (generation !== authFlowGeneration) return;
 		try {
 			await desktopHost.logoutSession();
 		} catch (error) {

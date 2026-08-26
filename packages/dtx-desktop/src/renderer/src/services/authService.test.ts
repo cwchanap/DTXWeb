@@ -344,7 +344,36 @@ describe('authService', () => {
 			// Stale cancellations did not close or reset the newer login surface.
 			expect(authStore.closeLogin).not.toHaveBeenCalled();
 			expect(authStore.setError).not.toHaveBeenCalledWith('Sign-in canceled.');
-			expect(authStore.setLoading).toHaveBeenCalledTimes(2);
+			// Each cancel claims the loading surface (setLoading(true)) before
+			// bailing, plus the newer login's own setLoading(true)/setLoading(false).
+			expect(authStore.setLoading).toHaveBeenCalledTimes(4);
+		});
+
+		it('marks the login surface non-retryable before native logout cleanup', async () => {
+			// Block logoutSession so cancel cleanup stays in flight, simulating the
+			// window where a retry could start after the first generation check.
+			let resolveLogout!: (value: boolean) => void;
+			host.logoutSession.mockReturnValue(
+				new Promise<boolean>((resolve) => {
+					resolveLogout = resolve;
+				})
+			);
+
+			const cancel = authService.cancelLogin();
+			await vi.waitFor(() => expect(host.logoutSession).toHaveBeenCalledOnce());
+
+			// The loading surface must already be claimed before native logout runs,
+			// so "Try again" is hidden and a retry cannot launch during the await.
+			expect(authStore.setLoading).toHaveBeenCalledWith(true);
+			expect(authStore.setLoading.mock.invocationCallOrder[0]).toBeLessThan(
+				host.logoutSession.mock.invocationCallOrder[0]
+			);
+
+			resolveLogout(true);
+			await cancel;
+
+			// Cleanup restores the non-loading state only after native logout finishes.
+			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
 		});
 	});
 

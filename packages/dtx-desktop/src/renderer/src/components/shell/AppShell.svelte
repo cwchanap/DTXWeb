@@ -79,6 +79,18 @@
 		}
 	};
 
+	// The command palette must stay closed while the sign-in modal is active.
+	// Otherwise a keyboard user can Cmd/Ctrl+K past the modal and run the Login
+	// command, which calls authService.login() with no isLoginVisible/isLoading
+	// guard — starting a new device flow while a cancelLogin() is still awaiting
+	// logoutSession(). The generation check protects renderer state but cannot
+	// retract the already-dispatched native logout, which then races the new
+	// beginDeviceAuthorization() at the native layer.
+	const openPalette = () => {
+		if ($authStore.isLoginVisible) return;
+		paletteOpen = true;
+	};
+
 	const detailRenderWidth = $derived(
 		isDraggingDetail ? dragDetailWidth : $preferencesStore.detailPaneWidth
 	);
@@ -139,14 +151,14 @@
 	onkeydown={(e) => {
 		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
 			e.preventDefault();
-			paletteOpen = true;
+			openPalette();
 		}
 		handleShellKeydown(e);
 	}}
 />
 
 <div bind:this={rootEl} class="bg-base text-base-text flex h-screen flex-col">
-	<TopToolbar onOpenPalette={() => (paletteOpen = true)} />
+	<TopToolbar onOpenPalette={openPalette} />
 	<div class="flex min-h-0 flex-1">
 		<NavRail />
 		<div class="flex min-h-0 flex-1">

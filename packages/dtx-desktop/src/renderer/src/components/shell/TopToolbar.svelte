@@ -60,6 +60,9 @@
 				<PanelRight size={14} />
 			</button>
 		{/if}
+		<!-- isLoading marks an auth transition (e.g. a logout whose native
+		     logoutSession() is still settling); keep the Login entry point hidden so
+		     a new device flow cannot race the in-flight native logout. -->
 		{#if $authStore.isAuthenticated}
 			<div class="text-right leading-tight">
 				<p class="text-hi text-xs font-medium">{$authStore.user?.name || 'User'}</p>
@@ -79,7 +82,7 @@
 				onclick={handleLogout}
 				aria-label="Logout"><LogOut size={13} /> Logout</button
 			>
-		{:else if !$authStore.isLoginVisible}
+		{:else if !$authStore.isLoginVisible && !$authStore.isLoading}
 			<button
 				class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
 				style="box-shadow:0 0 22px -6px var(--color-magenta)"

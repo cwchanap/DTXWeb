@@ -51,6 +51,17 @@ describe('TopToolbar', () => {
 		expect(authService.login).toHaveBeenCalled();
 	});
 
+	it('hides Login while an auth transition (logout) is settling', () => {
+		// logout() flips the renderer to signed out before its destructive native
+		// logoutSession() settles; the Login entry point must stay hidden so a new
+		// device flow cannot race the in-flight native logout.
+		authStore.setLoading(true);
+		render(TopToolbar, { onOpenPalette: vi.fn() });
+		expect(
+			screen.queryByRole('button', { name: /Login to access cloud features/i })
+		).toBeNull();
+	});
+
 	it('shows the details toggle in a list section and toggles + persists visibility', async () => {
 		// In the app, AppShell calls preferencesStore.load() on mount before the
 		// toolbar toggle is clickable. Mirror that so the loaded-gate is open.

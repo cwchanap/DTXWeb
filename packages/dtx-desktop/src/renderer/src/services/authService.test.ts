@@ -518,7 +518,7 @@ describe('authService', () => {
 			);
 		});
 
-		it('leaves a newer login intact when logout resolves after it', async () => {
+		it('refuses a new login while logout is still canceling and allows it after', async () => {
 			let resolveCancel!: (value: boolean) => void;
 			host.cancelDeviceAuthorization.mockReturnValue(
 				new Promise<boolean>((resolve) => {
@@ -531,22 +531,91 @@ describe('authService', () => {
 			const logout = authService.logout();
 			await vi.waitFor(() => expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce());
 
-			// A new login starts and completes while logout's native cancel is in flight.
+			// A login attempted while the logout is settling is refused before it
+			// can start a device flow the pending native logout would clobber.
 			await authService.login();
+			expect(host.beginDeviceAuthorization).not.toHaveBeenCalled();
+			expect(authStore.startLogin).not.toHaveBeenCalled();
 
-			// The newer session was installed and surfaced.
+			resolveCancel(true);
+			await logout;
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+
+			// Once the logout has settled, sign-in works again and stays installed.
+			await authService.login();
 			expect(storeSessionData).toHaveBeenCalledWith(session);
 			expect(authStore.setUser).toHaveBeenCalledWith({
 				id: user.id,
 				email: user.email,
 				name: user.name
 			});
+		});
 
-			resolveCancel(true);
+		it('blocks a new login while the native session logout is in flight', async () => {
+			// Block logoutSession so the destructive native window stays open —
+			// the window the renderer generation check cannot protect, since the
+			// native call has already been dispatched.
+			let resolveLogout!: (value: boolean) => void;
+			host.logoutSession.mockReturnValue(
+				new Promise<boolean>((resolve) => {
+					resolveLogout = resolve;
+				})
+			);
+			host.beginDeviceAuthorization.mockResolvedValue(attempt);
+			host.pollDeviceAuthorization.mockResolvedValue({ status: 'approved', session });
+
+			const logout = authService.logout();
+			await vi.waitFor(() => expect(host.logoutSession).toHaveBeenCalledOnce());
+
+			// The loading surface must already be claimed before the native logout
+			// runs, so the toolbar Login button and command palette stay hidden for
+			// the whole destructive window.
+			expect(authStore.setLoading).toHaveBeenCalledWith(true);
+			expect(authStore.setLoading.mock.invocationCallOrder[0]).toBeLessThan(
+				host.logoutSession.mock.invocationCallOrder[0]
+			);
+
+			// A login attempted inside the window is refused before starting a
+			// device flow the in-flight native logout would cancel.
+			await authService.login();
+			expect(host.beginDeviceAuthorization).not.toHaveBeenCalled();
+			expect(authStore.startLogin).not.toHaveBeenCalled();
+
+			resolveLogout(true);
 			await logout;
 
-			// Stale logout did not log out the newer native session.
-			expect(host.logoutSession).not.toHaveBeenCalled();
+			// The surface is released only after the native logout settles.
+			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
+
+			// Sign-in is possible again once the window has closed.
+			await authService.login();
+			expect(host.beginDeviceAuthorization).toHaveBeenCalledOnce();
+			expect(storeSessionData).toHaveBeenCalledWith(session);
+		});
+
+		it('lets an overlapping logout finish cleanup without a stale release', async () => {
+			let resolveCancel1!: (value: boolean) => void;
+			host.cancelDeviceAuthorization.mockReturnValueOnce(
+				new Promise<boolean>((resolve) => {
+					resolveCancel1 = resolve;
+				})
+			);
+			host.cancelDeviceAuthorization.mockResolvedValue(true);
+
+			const logout1 = authService.logout();
+			await vi.waitFor(() => expect(host.cancelDeviceAuthorization).toHaveBeenCalledOnce());
+			// A second logout (e.g. a double-click) runs to completion while the
+			// first is still awaiting its native cancel.
+			await authService.logout();
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+
+			resolveCancel1(true);
+			await logout1;
+
+			// The stale logout bailed before dispatching a second native logout and
+			// did not re-toggle the loading surface the newer logout released.
+			expect(host.logoutSession).toHaveBeenCalledOnce();
+			expect(authStore.setLoading).toHaveBeenLastCalledWith(false);
 		});
 	});
 });

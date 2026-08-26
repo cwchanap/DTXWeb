@@ -71,6 +71,11 @@ const clearCloudLinkages = (): void => {
 };
 
 let authFlowGeneration = 0;
+// True while a logout is settling. The destructive native logoutSession()
+// cancels any active device attempt and clears the installed session, and a
+// renderer generation check cannot retract it once dispatched — so logins are
+// refused until the native logout finishes.
+let isLoggingOut = false;
 
 const handleTerminalPoll = (poll: DeviceAuthorizationPoll): boolean => {
 	switch (poll.status) {
@@ -90,6 +95,10 @@ const handleTerminalPoll = (poll: DeviceAuthorizationPoll): boolean => {
 
 export const authService = {
 	login: async (): Promise<void> => {
+		// Refuse before bumping the generation: a refused login must not
+		// invalidate the in-flight logout's checks, and its device attempt must
+		// not be created just so the pending native logout can clobber it.
+		if (isLoggingOut) return;
 		const generation = ++authFlowGeneration;
 		authStore.startLogin();
 		authStore.setLoading(true);
@@ -218,28 +227,46 @@ export const authService = {
 
 	logout: async (): Promise<void> => {
 		const generation = ++authFlowGeneration;
-		authStore.logout();
-		googleDriveStore.reset();
-		// Renderer state is invalidated before any native/network await. A
-		// delayed native revoke must not leave credentials or cloud-owned
-		// linkages visible while logout is in flight.
-		clearStoredSessionData();
-		simFileService.clearCache();
-		simFileStore.reset();
-		clearCloudLinkages();
+		// Claim the auth surface for the whole logout. authStore.logout() below
+		// flips the renderer to signed out, which re-enables the toolbar Login
+		// button and command palette, but the destructive native logoutSession()
+		// is still pending and would cancel a newer login's device attempt. The
+		// renderer generation check cannot retract an already-dispatched native
+		// call, so new logins are blocked until the native logout settles.
+		isLoggingOut = true;
+		authStore.setLoading(true);
 		try {
-			await desktopHost.cancelDeviceAuthorization();
-		} catch (error) {
-			console.error('Failed to cancel authentication during logout:', error);
-		}
-		// A newer login or cancel started while the native cancel was in
-		// flight. Bail before logoutSession() so it cannot clear the session
-		// the newer flow just installed.
-		if (generation !== authFlowGeneration) return;
-		try {
-			await desktopHost.logoutSession();
-		} catch (error) {
-			console.error('Failed to logout:', error);
+			authStore.logout();
+			googleDriveStore.reset();
+			// Renderer state is invalidated before any native/network await. A
+			// delayed native revoke must not leave credentials or cloud-owned
+			// linkages visible while logout is in flight.
+			clearStoredSessionData();
+			simFileService.clearCache();
+			simFileStore.reset();
+			clearCloudLinkages();
+			try {
+				await desktopHost.cancelDeviceAuthorization();
+			} catch (error) {
+				console.error('Failed to cancel authentication during logout:', error);
+			}
+			// A newer cancel or logout started while the native cancel was in
+			// flight. Bail before logoutSession() so it cannot clear the session
+			// the newer flow just installed.
+			if (generation !== authFlowGeneration) return;
+			try {
+				await desktopHost.logoutSession();
+			} catch (error) {
+				console.error('Failed to logout:', error);
+			}
+		} finally {
+			// Only release the surface when no newer auth flow has claimed it;
+			// an overlapping logout still owns the surface and releases it when
+			// its own native logout settles.
+			if (generation === authFlowGeneration) {
+				isLoggingOut = false;
+				authStore.setLoading(false);
+			}
 		}
 	}
 };

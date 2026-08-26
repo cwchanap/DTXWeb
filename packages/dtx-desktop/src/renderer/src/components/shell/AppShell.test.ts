@@ -253,4 +253,20 @@ describe('AppShell', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /Open command palette/i }));
 		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
 	});
+
+	it('does not open the command palette while an auth transition is settling', async () => {
+		// Regression: logout() flips the renderer to signed out (modal closed,
+		// Login button re-enabled) while its destructive native logoutSession()
+		// is still pending. While isLoading marks that transition, Cmd/Ctrl+K and
+		// the toolbar palette button must not open the palette — its Login command
+		// would start a device flow the in-flight native logout clobbers.
+		authStore.setLoading(true);
+		render(AppShell);
+
+		await fireEvent.keyDown(window, { key: 'k', metaKey: true });
+		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: /Open command palette/i }));
+		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
+	});
 });

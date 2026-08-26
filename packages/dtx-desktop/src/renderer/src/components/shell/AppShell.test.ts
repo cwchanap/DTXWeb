@@ -24,7 +24,12 @@ vi.mock('../Templates.svelte', () => ({ default: vi.fn() }));
 vi.mock('../Settings.svelte', () => ({ default: vi.fn() }));
 vi.mock('../SimFileList.svelte', () => ({ default: vi.fn() }));
 vi.mock('../NewSong.svelte', () => ({ default: vi.fn() }));
-vi.mock('./CommandPalette.svelte', () => ({ default: vi.fn() }));
+vi.mock('./CommandPalette.svelte', async () => {
+	// A real compiled component (not a vi.fn()) so Svelte re-renders it when the
+	// `open` prop flips, letting shell tests assert the palette stayed closed.
+	const Mock = (await import('./CommandPaletteMock.svelte')).default;
+	return { default: Mock };
+});
 
 import AppShell from './AppShell.svelte';
 import Workspace from '../Workspace.svelte';
@@ -206,5 +211,46 @@ describe('AppShell', () => {
 			detailPaneWidth: 440,
 			detailPaneVisible: true
 		});
+	});
+
+	// Positive control for the closed-while-modal test below: confirms the
+	// mocked CommandPalette actually renders when paletteOpen flips to true,
+	// so the "stays closed" assertion is meaningful (not vacuously passing
+	// because the mock never reflects prop updates).
+	it('opens the command palette on Cmd/Ctrl+K when no auth modal is active', async () => {
+		render(AppShell);
+		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
+		await fireEvent.keyDown(window, { key: 'k', metaKey: true });
+		expect(screen.getByRole('dialog', { name: /Command palette/i })).toBeInTheDocument();
+	});
+
+	it('does not open the command palette while the sign-in modal is active', async () => {
+		// Regression: while the sign-in modal is up (e.g. during a
+		// cancel-in-progress that is awaiting logoutSession()), Cmd/Ctrl+K and
+		// the toolbar palette button must not open the palette. Otherwise the
+		// palette's Login command can start a new device flow that races the
+		// in-flight native logout.
+		vi.mocked(authService.login).mockImplementation(() => {
+			authStore.startLogin();
+		});
+		render(AppShell);
+		await fireEvent.click(
+			screen.getByRole('button', { name: /Login to access cloud features/i })
+		);
+		expect(screen.getByRole('dialog', { name: /sign in/i })).toBeInTheDocument();
+
+		// The toolbar Login button must hide while the modal is up so a keyboard
+		// user cannot Tab to it behind the overlay and start a rival device flow.
+		expect(
+			screen.queryByRole('button', { name: /Login to access cloud features/i })
+		).toBeNull();
+
+		// Cmd/Ctrl+K must not open the palette while the modal is up.
+		await fireEvent.keyDown(window, { key: 'k', metaKey: true });
+		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
+
+		// The toolbar callback path is gated too.
+		await fireEvent.click(screen.getByRole('button', { name: /Open command palette/i }));
+		expect(screen.queryByRole('dialog', { name: /Command palette/i })).toBeNull();
 	});
 });

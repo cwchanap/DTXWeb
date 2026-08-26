@@ -79,7 +79,7 @@
 				onclick={handleLogout}
 				aria-label="Logout"><LogOut size={13} /> Logout</button
 			>
-		{:else}
+		{:else if !$authStore.isLoginVisible}
 			<button
 				class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
 				style="box-shadow:0 0 22px -6px var(--color-magenta)"

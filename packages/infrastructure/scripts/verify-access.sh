@@ -52,16 +52,16 @@ http_headers() {
 	HTTP_LOCATION="${HTTP_LOCATION#${HTTP_LOCATION%%[![:space:]]*}}"
 	HTTP_HAS_ACCESS_AUD=0
 	HTTP_HAS_ACCESS_DOMAIN=0
-	if printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Eiq '^cf-access-aud:'; then
+	if grep -Eiq '^cf-access-aud:' <<< "$HTTP_FINAL_HEADERS"; then
 		HTTP_HAS_ACCESS_AUD=1
 	fi
-	if printf '%s\n' "$HTTP_FINAL_HEADERS" | grep -Eiq '^cf-access-domain:'; then
+	if grep -Eiq '^cf-access-domain:' <<< "$HTTP_FINAL_HEADERS"; then
 		HTTP_HAS_ACCESS_DOMAIN=1
 	fi
 }
 
 has_access_interception() {
-	if [[ "$HTTP_STATUS" =~ ^3[0-9][0-9]$ ]] && printf '%s\n' "$HTTP_LOCATION" | grep -Eiq "$CLOUDFLARE_LOCATION_RE"; then
+	if [[ "$HTTP_STATUS" =~ ^3[0-9][0-9]$ ]] && grep -Eiq "$CLOUDFLARE_LOCATION_RE" <<< "$HTTP_LOCATION"; then
 		return 0
 	fi
 

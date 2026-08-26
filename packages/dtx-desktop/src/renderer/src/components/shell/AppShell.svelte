@@ -86,7 +86,7 @@
 	// logoutSession(). The generation check protects renderer state but cannot
 	// retract the already-dispatched native logout, which then races the new
 	// beginDeviceAuthorization() at the native layer.
-	const openPalette = () => {
+	const openPalette = (): void => {
 		if ($authStore.isLoginVisible) return;
 		paletteOpen = true;
 	};

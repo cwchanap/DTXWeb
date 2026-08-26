@@ -106,6 +106,9 @@ export const authService = {
 				await desktopHost.openExternalUrl(attempt.verificationUriComplete);
 			} catch (error) {
 				console.error('Failed to open device authorization URL:', error);
+				// Ignore rejection results from superseded generations so they
+				// cannot overwrite newer login state.
+				if (generation !== authFlowGeneration) return;
 				authStore.setError(
 					manualAuthorizationMessage(attempt.verificationUri, attempt.userCode)
 				);

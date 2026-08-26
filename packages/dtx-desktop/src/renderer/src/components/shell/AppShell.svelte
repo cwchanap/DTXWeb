@@ -79,15 +79,14 @@
 		}
 	};
 
-	// The command palette must stay closed while the sign-in modal is active.
-	// Otherwise a keyboard user can Cmd/Ctrl+K past the modal and run the Login
-	// command, which calls authService.login() with no isLoginVisible/isLoading
-	// guard — starting a new device flow while a cancelLogin() is still awaiting
-	// logoutSession(). The generation check protects renderer state but cannot
-	// retract the already-dispatched native logout, which then races the new
-	// beginDeviceAuthorization() at the native layer.
+	// The command palette must stay closed while the sign-in modal is active or
+	// an auth transition is settling (isLoading — e.g. a logout whose native
+	// logoutSession() has been dispatched). Otherwise a keyboard user can run the
+	// Login command and start a new device flow that races that already-dispatched
+	// native logout. The generation check protects renderer state but cannot
+	// retract the native call, which cancels the newer device attempt natively.
 	const openPalette = (): void => {
-		if ($authStore.isLoginVisible) return;
+		if ($authStore.isLoginVisible || $authStore.isLoading) return;
 		paletteOpen = true;
 	};
 

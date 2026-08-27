@@ -80,6 +80,7 @@ const IN_PROGRESS_STATUSES = new Set([
 ]);
 const TERMINAL_STATUSES = new Set(['complete', 'errored', 'terminated']);
 const FAILED_STATUSES = new Set(['errored', 'terminated']);
+const COMPLETE_STATUSES = new Set(['complete']);
 
 export const PUBLISHED_SIMFILES_QUERY = `query PublishedSimfiles($page: Int!, $pageSize: Int!) {
   simfiles(scope: PUBLISHED, page: $page, pageSize: $pageSize) {
@@ -444,7 +445,7 @@ const reconcileSelected = async (
 				config,
 				instanceId,
 				await getInstance(config, instanceId),
-				FAILED_STATUSES
+				COMPLETE_STATUSES
 			);
 			requireReadyOrCached(terminal, selected.simfileId);
 			return;

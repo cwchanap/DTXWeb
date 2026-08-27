@@ -68,7 +68,8 @@ const webServers = [
 			` --var GOOGLE_AUTH_CLIENT_ID:"${localAuthEnv.GOOGLE_AUTH_CLIENT_ID}"` +
 			` --var GOOGLE_AUTH_CLIENT_SECRET:"${localAuthEnv.GOOGLE_AUTH_CLIENT_SECRET}"` +
 			' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
-			' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"',
+			' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"' +
+			' --var BGM_M4A_GENERATION_ENABLED:false',
 		cwd: packageRoot,
 		url: `${apiURL}/graphql?query=%7B__typename%7D`,
 		reuseExistingServer: false,

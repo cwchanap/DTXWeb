@@ -41,7 +41,8 @@
 		"GRAPHIQL": "false",
 		"CORS_ALLOWED_ORIGINS": "https://dtx.hapadona.com",
 		"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false",
-		"PUBLIC_SIMFILE_BUCKET_URL": "https://chart.hapadona.com"
+		"PUBLIC_SIMFILE_BUCKET_URL": "https://chart.hapadona.com",
+		"BGM_M4A_GENERATION_ENABLED": "true"
 	},
 	"keep_vars": true,
 	"observability": {
@@ -49,6 +50,38 @@
 			"enabled": true
 		}
 	},
+	"dev": {
+		"enable_containers": false
+	},
+	"workflows": [
+		{
+			"name": "dtx-api-bgm-m4a",
+			"binding": "BGM_M4A_WORKFLOW",
+			"class_name": "GenerateBgmM4aWorkflow"
+		}
+	],
+	"containers": [
+		{
+			"class_name": "BgmTranscoderContainer",
+			"image": "./container/bgm-transcoder/Dockerfile",
+			"instance_type": "basic",
+			"max_instances": 1
+		}
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "BGM_TRANSCODER",
+				"class_name": "BgmTranscoderContainer"
+			}
+		]
+	},
+	"migrations": [
+		{
+			"tag": "bgm-transcoder-v1",
+			"new_sqlite_classes": ["BgmTranscoderContainer"]
+		}
+	],
 	"env": {
 		"pre-prod": {
 			"route": {
@@ -87,8 +120,38 @@
 				"GRAPHIQL": "true",
 				"CORS_ALLOWED_ORIGINS": "https://pre-prod.dtx.hapadona.com,http://localhost:5173,http://localhost:8788",
 				"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false",
-				"PUBLIC_SIMFILE_BUCKET_URL": "https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev"
-			}
+				"PUBLIC_SIMFILE_BUCKET_URL": "https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev",
+				"BGM_M4A_GENERATION_ENABLED": "true"
+			},
+			"workflows": [
+				{
+					"name": "dtx-api-bgm-m4a",
+					"binding": "BGM_M4A_WORKFLOW",
+					"class_name": "GenerateBgmM4aWorkflow"
+				}
+			],
+			"containers": [
+				{
+					"class_name": "BgmTranscoderContainer",
+					"image": "./container/bgm-transcoder/Dockerfile",
+					"instance_type": "basic",
+					"max_instances": 1
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{
+						"name": "BGM_TRANSCODER",
+						"class_name": "BgmTranscoderContainer"
+					}
+				]
+			},
+			"migrations": [
+				{
+					"tag": "bgm-transcoder-v1",
+					"new_sqlite_classes": ["BgmTranscoderContainer"]
+				}
+			]
 		},
 		"pre-prod-prod-data": {
 			"route": {
@@ -125,7 +188,8 @@
 				"GRAPHIQL": "true",
 				"CORS_ALLOWED_ORIGINS": "https://pre-prod.dtx.hapadona.com,http://localhost:5173,http://localhost:8788",
 				"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false",
-				"PUBLIC_SIMFILE_BUCKET_URL": "https://chart.hapadona.com"
+				"PUBLIC_SIMFILE_BUCKET_URL": "https://chart.hapadona.com",
+				"BGM_M4A_GENERATION_ENABLED": "false"
 			}
 		}
 	}

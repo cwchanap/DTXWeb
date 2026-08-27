@@ -1,6 +1,43 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import worker from './index';
+import worker, { BgmTranscoderContainer, GenerateBgmM4aWorkflow } from './index';
 import type { Env } from './env';
+
+vi.mock('cloudflare:workers', () => {
+	class WorkerEntrypoint {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	class DurableObject {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	class WorkflowEntrypoint {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	return { WorkerEntrypoint, DurableObject, WorkflowEntrypoint };
+});
+
+vi.mock('cloudflare:workflows', () => ({
+	NonRetryableError: class NonRetryableError extends Error {
+		constructor(message: string, name = 'NonRetryableError') {
+			super(message);
+			this.name = name;
+		}
+	}
+}));
 
 vi.mock('@dtx/common/server', () => ({
 	workerLogger: {
@@ -464,6 +501,11 @@ describe('Phase 2 routes', () => {
 		expect(response.status).toBe(500);
 		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
 		errorSpy.mockRestore();
+	});
+
+	it('exports the BGM Workflow and Container classes without changing fetch routing', () => {
+		expect(GenerateBgmM4aWorkflow).toBeTypeOf('function');
+		expect(BgmTranscoderContainer).toBeTypeOf('function');
 	});
 
 	it('405 on non-POST /upload', async () => {

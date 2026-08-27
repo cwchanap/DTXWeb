@@ -23,6 +23,7 @@
 		"test:watch": "vitest",
 		"test:coverage": "vitest --run --coverage",
 		"check": "tsc --noEmit",
+		"smoke:bgm-transcoder": "bash container/bgm-transcoder/smoke.sh",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
 		"gen-schema": "bun run src/scripts/gen-schema.ts",
 		"auth:migrate": "bun run src/scripts/migrate-supabase-auth.ts",
@@ -31,6 +32,7 @@
 		"auth:schema:check": "bun run auth:schema:generate && prettier --write src/auth/schema.ts && git diff --exit-code -- src/auth/schema.ts"
 	},
 	"dependencies": {
+		"@cloudflare/containers": "^0.3.7",
 		"@dtx/common": "*",
 		"@pothos/core": "^4.13.1",
 		"@pothos/plugin-errors": "^4.9.1",

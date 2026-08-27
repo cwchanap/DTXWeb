@@ -4,6 +4,7 @@ import { resolveAuthSession } from '../auth/session';
 import { uploadSimfileFile, purgeCacheForFile } from '../services/uploads';
 import type { Env } from '../env';
 import { toPublicR2Url } from '../lib/r2Files';
+import { triggerBgmM4aWorkflow } from '../services/bgmM4aWorkflowTrigger';
 
 const jsonError = (status: number, message: string) =>
 	new Response(JSON.stringify({ error: message }), {
@@ -39,6 +40,16 @@ export const routeUpload = async (
 		file,
 		env.DTXFILE_BUCKET
 	);
+
+	if (response.status === 200 && uploadedObject) {
+		ctx.waitUntil(
+			triggerBgmM4aWorkflow(env, uploadedObject).catch((err: unknown) => {
+				workerLogger.error('Unexpected error triggering BGM M4A generation', {
+					error: String(err)
+				});
+			})
+		);
+	}
 
 	if (response.status === 200 && uploadedObject && env.PUBLIC_SIMFILE_BUCKET_URL) {
 		const fileUrl = toPublicR2Url(env.PUBLIC_SIMFILE_BUCKET_URL, uploadedObject.key);

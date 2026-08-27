@@ -55,6 +55,10 @@ vi.mock('./services/uploads', () => ({
 	purgeCacheForFile: vi.fn(async () => true)
 }));
 
+vi.mock('./services/bgmM4aWorkflowTrigger', () => ({
+	triggerBgmM4aWorkflow: vi.fn(async () => 'disabled')
+}));
+
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: {} as Env['DB'],
 	DTXFILE_BUCKET: {} as Env['DTXFILE_BUCKET'],

@@ -19,6 +19,7 @@ export type Env = {
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' | 'false';
 	BGM_M4A_GENERATION_ENABLED?: 'true' | 'false';
 	BGM_M4A_WORKFLOW?: Workflow<GenerateBgmM4aPayload>;
+	BGM_TRANSCODER?: DurableObjectNamespace;
 
 	// Phase 2 — var (committed to wrangler.jsonc)
 	PUBLIC_SIMFILE_BUCKET_URL: string;

@@ -8,8 +8,14 @@ export const isTopLevelR2Key = (key: string, prefix: string): boolean =>
 export const isTopLevelNamedR2Key = (key: string, prefix: string, filename: string): boolean =>
 	isTopLevelR2Key(key, prefix) && r2FileName(key).toLowerCase() === filename.toLowerCase();
 
+const trimTrailingSlashes = (value: string): string => {
+	let end = value.length;
+	while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+	return value.slice(0, end);
+};
+
 export const toPublicR2Url = (base: string, key: string): string =>
-	`${base.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
+	`${trimTrailingSlashes(base)}/${key.split('/').map(encodeURIComponent).join('/')}`;
 
 export const selectTopLevelFullTrackObject = <T extends { key: string }>(
 	objects: readonly T[],

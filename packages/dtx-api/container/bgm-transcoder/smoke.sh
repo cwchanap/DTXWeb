@@ -35,6 +35,8 @@ ffmpeg \
 	-c:a pcm_s16le \
 	"$temporary_directory/source.wav"
 
+printf 'not an audio file' >"$temporary_directory/invalid.bin"
+
 bun "$script_dir/server.ts" &
 server_pid="$!"
 
@@ -105,3 +107,18 @@ verify_transcode() {
 
 verify_transcode 'vorbis-ogg' "$temporary_directory/source.ogg"
 verify_transcode 'pcm-wav' "$temporary_directory/source.wav"
+
+invalid_status="$(
+	curl \
+		--silent \
+		--output /dev/null \
+		--write-out '%{http_code}' \
+		--header 'Content-Type: application/octet-stream' \
+		--data-binary "@$temporary_directory/invalid.bin" \
+		'http://127.0.0.1:8080/transcode/to-m4a'
+)"
+if [[ "$invalid_status" != "422" ]]; then
+	echo "invalid input returned HTTP $invalid_status" >&2
+	exit 1
+fi
+echo 'invalid input -> HTTP 422'

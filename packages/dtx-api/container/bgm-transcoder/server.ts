@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { classifyFfmpegFailure } from './classifyFailure';
 
 const PORT = 8080;
 const TRANSCODE_PATH = '/transcode/to-m4a';
@@ -28,7 +29,7 @@ const serializeTranscode = <T>(operation: () => Promise<T>): Promise<T> => {
 };
 
 const runFfmpeg = async (inputPath: string, outputPath: string): Promise<void> => {
-	let process: Bun.Subprocess;
+	let process: Bun.Subprocess<'ignore', 'ignore', 'pipe'>;
 
 	try {
 		process = Bun.spawn(
@@ -58,7 +59,7 @@ const runFfmpeg = async (inputPath: string, outputPath: string): Promise<void> =
 			{
 				stdin: 'ignore',
 				stdout: 'ignore',
-				stderr: 'ignore'
+				stderr: 'pipe'
 			}
 		);
 	} catch (error) {
@@ -66,14 +67,25 @@ const runFfmpeg = async (inputPath: string, outputPath: string): Promise<void> =
 	}
 
 	let exitCode: number;
+	let stderr: string;
 	try {
-		exitCode = await process.exited;
+		[exitCode, stderr] = await Promise.all([
+			process.exited,
+			new Response(process.stderr).text()
+		]);
 	} catch (error) {
 		throw new TranscoderProcessError('ffmpeg', error);
 	}
 
 	if (exitCode !== 0) {
-		throw new UnprocessableAudioError('FFmpeg could not decode an audio stream');
+		if (classifyFfmpegFailure(stderr) === 'unprocessable') {
+			throw new UnprocessableAudioError('FFmpeg could not decode the input audio');
+		}
+
+		throw new TranscoderProcessError(
+			'ffmpeg',
+			new Error(`FFmpeg exited with code ${exitCode}: ${stderr.trim() || 'no error output'}`)
+		);
 	}
 };
 
@@ -104,23 +116,25 @@ const probeOutputCodec = async (outputPath: string): Promise<string> => {
 		throw new TranscoderProcessError('ffprobe', error);
 	}
 
+	let exitCode: number;
+	let codec: string;
 	try {
-		const [exitCode, codec] = await Promise.all([
+		[exitCode, codec] = await Promise.all([
 			process.exited,
 			new Response(process.stdout).text()
 		]);
-
-		if (exitCode !== 0) {
-			throw new UnprocessableAudioError('FFprobe could not inspect the transcoded audio');
-		}
-
-		return codec.trim();
 	} catch (error) {
-		if (error instanceof UnprocessableAudioError) {
-			throw error;
-		}
 		throw new TranscoderProcessError('ffprobe', error);
 	}
+
+	if (exitCode !== 0) {
+		throw new TranscoderProcessError(
+			'ffprobe',
+			new Error(`FFprobe exited with code ${exitCode} while inspecting transcoded audio`)
+		);
+	}
+
+	return codec.trim();
 };
 
 const transcodeAndValidate = async (inputPath: string, outputPath: string): Promise<void> => {
@@ -128,7 +142,7 @@ const transcodeAndValidate = async (inputPath: string, outputPath: string): Prom
 
 	const codec = await probeOutputCodec(outputPath);
 	if (codec !== 'aac') {
-		throw new UnprocessableAudioError(`Unexpected output codec: ${codec || 'none'}`);
+		throw new Error(`Unexpected output codec: ${codec || 'none'}`);
 	}
 };
 

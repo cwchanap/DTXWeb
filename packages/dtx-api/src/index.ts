@@ -8,6 +8,9 @@ import { handlePreflight, withCors } from './lib/cors';
 import { createAuth } from './auth/auth';
 import type { Env } from './env';
 
+export { BgmTranscoderContainer } from './containers/bgmTranscoder';
+export { GenerateBgmM4aWorkflow } from './workflows/generateBgmM4a';
+
 const downloadSimfilePattern = /^\/downloads\/([^/]+)$/;
 const setDefPattern = /^\/simfiles\/([^/]+)\/set\.def$/;
 

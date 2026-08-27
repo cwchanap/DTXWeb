@@ -10,9 +10,11 @@
 		}
 	},
 	"scripts": {
-		"dev": "wrangler dev",
-		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787",
+		"dev": "wrangler dev --var BGM_M4A_GENERATION_ENABLED:false",
+		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787 --var BGM_M4A_GENERATION_ENABLED:false",
 		"build": "wrangler deploy --dry-run --outdir=dist",
+		"build:preprod": "wrangler deploy --dry-run --outdir=dist --env pre-prod",
+		"build:preprod:prod-data": "wrangler deploy --dry-run --outdir=dist --env pre-prod-prod-data",
 		"migrate:prod": "wrangler d1 migrations apply dtx-web --remote",
 		"migrate:preprod": "wrangler d1 migrations apply dtx-web-preprod --remote --env pre-prod",
 		"migrate:preprod:prod-data": "wrangler d1 migrations apply dtx-web --remote --env pre-prod-prod-data",
@@ -25,6 +27,8 @@
 		"check": "tsc --noEmit",
 		"smoke:bgm-transcoder": "bash container/bgm-transcoder/smoke.sh",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
+		"cf-typegen:preprod": "wrangler types --env pre-prod --env-interface CloudflareBindings",
+		"cf-typegen:preprod:prod-data": "wrangler types --env pre-prod-prod-data --env-interface CloudflareBindings",
 		"gen-schema": "bun run src/scripts/gen-schema.ts",
 		"auth:migrate": "bun run src/scripts/migrate-supabase-auth.ts",
 		"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",

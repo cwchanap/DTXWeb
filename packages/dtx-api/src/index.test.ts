@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker, { BgmTranscoderContainer, GenerateBgmM4aWorkflow } from './index';
 import type { Env } from './env';
@@ -522,5 +524,40 @@ describe('Phase 2 routes', () => {
 		);
 		expect(response.status).toBe(405);
 		expect(response.headers.get('Allow')).toBe('POST');
+	});
+});
+
+describe('wrangler BGM Workflow names', () => {
+	it('uses distinct Workflow names for prod and pre-prod generating workers', () => {
+		const wrangler = JSON.parse(
+			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
+		) as {
+			workflows: Array<{ name: string; binding: string; class_name: string }>;
+			env: Record<
+				string,
+				{
+					workflows?: Array<{ name: string; binding: string; class_name: string }>;
+					vars?: Record<string, string>;
+				}
+			>;
+		};
+
+		expect(wrangler.workflows).toEqual([
+			{
+				name: 'dtx-api-bgm-m4a',
+				binding: 'BGM_M4A_WORKFLOW',
+				class_name: 'GenerateBgmM4aWorkflow'
+			}
+		]);
+		expect(wrangler.env['pre-prod'].workflows).toEqual([
+			{
+				name: 'dtx-api-bgm-m4a-preprod',
+				binding: 'BGM_M4A_WORKFLOW',
+				class_name: 'GenerateBgmM4aWorkflow'
+			}
+		]);
+		expect(wrangler.env['pre-prod'].workflows?.[0]?.name).not.toBe(wrangler.workflows[0].name);
+		expect(wrangler.env['pre-prod-prod-data'].workflows).toBeUndefined();
+		expect(wrangler.env['pre-prod-prod-data'].vars?.BGM_M4A_GENERATION_ENABLED).toBe('false');
 	});
 });

@@ -125,7 +125,7 @@
 			},
 			"workflows": [
 				{
-					"name": "dtx-api-bgm-m4a",
+					"name": "dtx-api-bgm-m4a-preprod",
 					"binding": "BGM_M4A_WORKFLOW",
 					"class_name": "GenerateBgmM4aWorkflow"
 				}

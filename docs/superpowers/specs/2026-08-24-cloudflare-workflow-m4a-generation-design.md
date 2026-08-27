@@ -94,18 +94,9 @@ These are not canonical:
 42/audio/song.ogg
 ```
 
-R2 keys are case-sensitive, so the implementation must preserve the actual uploaded source key in the Workflow payload and metadata. It must not normalize an existing `42/BGM.OGG` object into a nonexistent lower-case source key.
+R2 keys are case-sensitive, so the implementation preserves the actual uploaded source key in the Workflow payload and metadata. It does not normalize an existing `42/BGM.OGG` object into a nonexistent lower-case source key.
 
-One shared helper owns this rule and is reused by:
-
-- upload reservation/generation guards;
-- upload-trigger selection;
-- Workflow payload validation;
-- source inspection;
-- ZIP filtering;
-- backfill selection and catalog audit.
-
-This matches the repository's existing case-insensitive top-level handling for `preview.mp3` and `set.def`, and avoids making uploads from case-insensitive development filesystems silently miss the BGM contract.
+One shared helper owns this rule and is reused by upload guards, trigger selection, payload validation, source inspection, ZIP filtering, and backfill/audit selection. This matches the repository's existing case-insensitive top-level handling for `preview.mp3` and `set.def`.
 
 ### Published derivative identity
 
@@ -115,7 +106,7 @@ The generated destination is always exactly:
 {id}/bgm.m4a
 ```
 
-Direct user uploads whose **top-level basename equals `bgm.m4a` case-insensitively** are rejected with `409 Conflict`. This reserves `bgm.m4a`, `BGM.M4A`, and mixed-case variants for the generator and prevents two logical derivatives differing only by case.
+Direct user uploads whose top-level basename equals `bgm.m4a` case-insensitively are rejected with `409 Conflict`. This reserves every case variant for the generator.
 
 ### Staging identity
 
@@ -173,12 +164,7 @@ export type UploadResult = {
 
 The public HTTP JSON contract remains unchanged.
 
-`routeUpload()` consumes `uploadedObject` directly instead of cloning/reparsing the response body. It keeps the current Better Auth `resolveAuthSession()` behavior intact, then uses `ctx.waitUntil()` for:
-
-- the existing public-R2 cache purge;
-- the BGM Workflow trigger when the uploaded key is a canonical source.
-
-A failed Workflow trigger does not roll back the successful source upload.
+`routeUpload()` consumes `uploadedObject` directly instead of cloning/reparsing the response body. It keeps the current Better Auth `resolveAuthSession()` behavior intact, then uses `ctx.waitUntil()` for the existing public-R2 cache purge and the BGM Workflow trigger when applicable. A failed trigger does not roll back the successful source upload.
 
 ## Optional generation fields in `Env`
 
@@ -223,16 +209,14 @@ Payload:
 ```ts
 type GenerateBgmM4aPayload = {
   simfileId: number;
-  sourceKey: string; // actual case-preserved canonical top-level key
+  sourceKey: string;
   expectedSourceEtag?: string;
   expectedSourceVersion?: string;
   profile: 'aac-lc-192k-v1';
 };
 ```
 
-Zod validates that `sourceKey` satisfies the shared case-insensitive top-level canonical-source helper for `simfileId`.
-
-Normal upload triggers include expected ETag/version. Backfill omits them so Step 1 captures current R2 state.
+Zod validates that `sourceKey` satisfies the shared case-insensitive top-level canonical-source helper. Upload triggers include expected ETag/version; backfill omits them so Step 1 captures current R2 state.
 
 ## Workflow steps
 
@@ -245,8 +229,6 @@ Normal upload triggers include expected ETag/version. Backfill omits them so Ste
 - HEAD lower-case `{id}/bgm.m4a`.
 - Return `cached` if destination custom metadata matches `sourceState.etag` and profile.
 - Otherwise delete stale destination before conversion and best-effort purge its public URL.
-
-Deleting stale destination prevents Virgo from seeing an older backing track while replacement generation is running.
 
 ### 2. Transcode to staging
 
@@ -300,7 +282,7 @@ No `arrayBuffer()`, `bytes()`, `text()`, or equivalent whole-audio buffering is 
 
 Cloudflare Workers' `Request` API accepts `ReadableStream` bodies directly. Do not add Node-specific `duplex: 'half'` unless the actual Workers compiler/runtime requires it; the current Cloudflare runtime documentation does not require that option.
 
-Tests must prove the Container request has a stream body and staging/canonical `put()` receive streams.
+Tests prove the Container request has a stream body and staging/canonical `put()` receive streams.
 
 ## FFmpeg Container
 
@@ -317,13 +299,13 @@ export class BgmTranscoderContainer extends Container {
 Initial Wrangler sizing:
 
 ```text
-instance_type: basic
+instance_type: standard-1
 max_instances: 1
 ```
 
-One stable instance ID is used and the container serializes FFmpeg jobs internally, so at most one FFmpeg process runs at a time.
+Current Cloudflare Containers configuration names the smallest instance type `standard-1` (1/16 vCPU, 256 MiB memory, 2 GB disk). The previous `basic` label is not used by the current Wrangler schema. Start with `standard-1`; the pre-production smoke is the sizing gate. If a real <=50 MiB conversion cannot complete within this resource class, change only the instance type to the next documented size instead of redesigning the architecture.
 
-The Container receives no R2 credentials.
+One stable instance ID is used and the container serializes FFmpeg jobs internally, so at most one FFmpeg process runs at a time. The Container receives no R2 credentials.
 
 HTTP contract:
 
@@ -373,15 +355,9 @@ The service validates one AAC audio stream with `ffprobe` before returning succe
 
 PR #240's current Better Auth/D1 configuration is baseline state, not code to rewrite.
 
-HPA-311 appends Workflow/Container/DO resources and generation flags while preserving:
+HPA-311 appends Workflow/Container/DO resources and generation flags while preserving auth vars, existing D1/R2/KV bindings, Better Auth/Drizzle package dependencies and scripts, the `./auth-migration` package export, `/api/auth/*` routing, and the existing default fetch handler.
 
-- `BETTER_AUTH_URL`, `DTX_WEB_URL`, auth cookie config, and Google client ID;
-- existing D1, R2, and KV bindings;
-- Better Auth/Drizzle package dependencies and scripts;
-- `./auth-migration` package export;
-- `/api/auth/*` routing and the existing default fetch handler.
-
-Wrangler bindings are non-inheritable, so production, `pre-prod`, and `pre-prod-prod-data` each declare the Workflow/Container/DO bindings explicitly.
+Wrangler bindings are non-inheritable, so production, `pre-prod`, and `pre-prod-prod-data` each declare Workflow/Container/DO bindings explicitly.
 
 Generation flags:
 
@@ -399,19 +375,17 @@ Run typecheck and dry-run builds for all three environments.
 
 Publishing lower-case `{id}/bgm.m4a` under the simfile prefix is sufficient for Virgo to see it through the existing `files` field. No GraphQL schema or generated client change is required.
 
-Separately, add `.m4a` after `.ogg` in `r2Enrichment.ts`'s generic `audioExts`:
+Separately, add `.m4a` after `.ogg` in generic `audioExts`:
 
 ```ts
 ['.ogg', '.m4a', '.mp3', '.wav', '.flac']
 ```
 
-That is only a characterization/compatibility improvement for generic full-track fallback discovery. It is **not** the Virgo publication mechanism, and OGG remains first.
+That is only a characterization/compatibility improvement for generic full-track fallback discovery. It is not the Virgo publication mechanism, and OGG remains first.
 
 ## Raw ZIP behavior
 
 Apply one DTX-specific pre-filter inside `collectZipSources()` before calling `createZipSources()`.
-
-The shared case-insensitive canonical helper applies:
 
 ```text
 if a simfile has canonical top-level bgm.ogg and canonical top-level bgm.m4a:
@@ -420,9 +394,7 @@ else:
     retain what is present
 ```
 
-`packages/common/src/lib/server/zipBuilder.ts` remains unchanged.
-
-Tests extend the existing `downloads.test.ts`; they do not replace it. Existing access/concurrency tests stay intact, and BGM assertions inspect the object array passed to the mocked `createZipSources()`.
+The shared case-insensitive canonical helper applies. `packages/common/src/lib/server/zipBuilder.ts` remains unchanged. Tests extend the existing `downloads.test.ts`; existing access/concurrency coverage stays intact.
 
 ## Catalog audit and backfill
 
@@ -434,18 +406,9 @@ packages/dtx-api/src/scripts/backfill-bgm-m4a.ts
 
 It pages public `simfiles(scope: PUBLISHED)` and requests `id` plus `files { key uploaded }`.
 
-### Case-insensitive selection
+For each row it finds the actual case-preserved canonical source key, finds canonical derivative case-insensitively, backfills only when source exists and derivative does not, and sends the actual source key in the Workflow payload.
 
-For each row:
-
-- find the actual case-preserved canonical source key using the shared helper;
-- find canonical derivative case-insensitively;
-- backfill only when source exists and derivative does not;
-- send the actual source key in the Workflow payload.
-
-### Non-vacuous contract measurement
-
-The same audit also measures every top-level non-preview audio basename using the server's current full-track extension set (`ogg`, `m4a`, `mp3`, `wav`, `flac`) and prints a lower-cased filename histogram.
+The same audit measures every top-level non-preview audio basename using the server's current full-track extension set (`ogg`, `m4a`, `mp3`, `wav`, `flac`) and prints a lower-cased filename histogram.
 
 Required counters:
 
@@ -458,35 +421,22 @@ top-level audio without canonical bgm.ogg
 missing bgm.m4a among canonical bgm.ogg
 ```
 
-Dry-run is default.
-
-On `--execute`, start Workflow instances sequentially and poll each to terminal `ready`, `cached`, `superseded`, or `errored` before starting the next.
-
-No permanent admin route, cron, Queue, or job table is added.
+Dry-run is default. On `--execute`, start Workflow instances sequentially and poll each to terminal `ready`, `cached`, `superseded`, or `errored` before starting the next. No permanent admin route, cron, Queue, or job table is added.
 
 ## Virgo HPA-85 release gate
 
-A zero missing-M4A count is not sufficient by itself. Before HPA-85 can merge, production audit must satisfy **both**:
+Before HPA-85 can merge, production audit must satisfy both:
 
 ```text
 top-level audio without canonical bgm.ogg: 0
 missing bgm.m4a among canonical bgm.ogg: 0
 ```
 
-If `with top-level audio > 0`, `with canonical bgm.ogg` must therefore also be nonzero.
-
-This prevents a catalog using `song.ogg`, `music.ogg`, or another historical top-level audio filename from making a vacuous `0 missing` report and shipping Virgo mute. The audit measures the contract; it does not silently rename/migrate those files.
+This prevents historical names such as `song.ogg` or `music.ogg` from making a vacuous `0 missing` report. The audit measures the contract; it does not silently rename/migrate those files.
 
 ## Error handling and observability
 
-Workflow outcomes:
-
-```text
-ready
-cached
-superseded
-errored
-```
+Workflow outcomes: `ready`, `cached`, `superseded`, `errored`.
 
 Structured log fields:
 
@@ -500,30 +450,17 @@ destinationKey
 outcome
 ```
 
-No D1 state is added. Workflow execution state plus R2 metadata are sufficient for this slice.
+No D1 state is added. Workflow execution state plus R2 metadata are sufficient.
 
 ## Testing strategy
 
 Use existing Node Vitest for pure/service behavior. Do not introduce `@cloudflare/vitest-plugin` just for the thin Workflow entrypoint.
 
-Cover:
+Cover case-insensitive canonical matching, upload guards, structured R2 identity, Better Auth upload behavior, deterministic trigger and missing-binding failure, cached/superseded paths, stream-only generation, permanent-vs-retryable error classification, metadata/cache policy, generic `.m4a` characterization, existing ZIP tests plus redundant-M4A filtering, and backfill selection/histogram/non-vacuous counters/REST polling.
 
-- case-insensitive top-level canonical source/derivative matching and nested rejection;
-- reserved derivative upload and disabled-generation source upload;
-- structured R2 upload identity;
-- Better Auth cookie/Bearer upload behavior remains intact;
-- deterministic/idempotent Workflow trigger and enabled-with-missing-binding failure;
-- cached/superseded source paths;
-- stream-only R2 -> Container -> R2 staging/publish;
-- permanent-vs-retryable error classification;
-- output metadata/cache policy;
-- generic `.m4a` characterization with OGG precedence;
-- existing ZIP tests plus case-insensitive redundant-M4A filtering;
-- backfill candidate selection, filename histogram, non-vacuous counters, REST request, polling outcome parsing.
+After Task 2 and after Workflow wiring, run the full `dtx-api` test suite and typecheck. `index.test.ts` is updated when the upload mock changes to `UploadResult`.
 
-After Task 2 and after Workflow wiring, run the **full `dtx-api` test suite and typecheck**, not only focused new tests. `index.test.ts` must be updated when the upload mock changes to `UploadResult`.
-
-The Workers-only Workflow wrapper is verified by Wrangler dry-run builds for all environments; a Node-testable helper classifies `PermanentBgmTranscodeError` as non-retryable so the wrapper's error branch is not uncharacterized.
+The Workers-only Workflow wrapper is verified by Wrangler dry-run builds for all environments; a Node-testable helper classifies permanent transcode failures so the wrapper's error branch is characterized.
 
 Container smoke builds the Docker image, generates a small synthetic OGG fixture, converts it, and requires `ffprobe` to report AAC in M4A/MP4.
 
@@ -539,7 +476,7 @@ Container smoke builds the Docker image, generates a small synthetic OGG fixture
 8. Resolve any non-canonical top-level-audio rows explicitly; do not waive the gate.
 9. Execute backfill sequentially.
 10. Re-run audit until both HPA-85 gates are zero.
-11. Only then merge/deploy the separate Virgo HPA-85 M4A cutover.
+11. Only then merge/deploy the separate Virgo HPA-85 cutover.
 
 ## Acceptance criteria
 
@@ -551,7 +488,7 @@ Container smoke builds the Docker image, generates a small synthetic OGG fixture
 - [ ] Workflow produces valid AAC-LC at lower-case `{id}/bgm.m4a`.
 - [ ] Replacing source during conversion cannot publish stale output.
 - [ ] Invalid media is non-retryable; transient failures retry under the approved policy.
-- [ ] Worker orchestration never buffers full audio; source, Container response, staging, and publish use streams.
+- [ ] Worker orchestration never buffers full audio.
 - [ ] `Simfile.files` exposes generated M4A with no schema/codegen change.
 - [ ] Generic `.m4a` discovery is characterized but is not described as the Virgo publication path.
 - [ ] Raw ZIP omits only redundant canonical generated M4A and existing ZIP/access tests remain intact.
@@ -566,7 +503,7 @@ Container smoke builds the Docker image, generates a small synthetic OGG fixture
 - One logical source contract and one generated derivative.
 - One Workflow and one small Container.
 - One deterministic staging convention.
-- Optional generation-only `Env` fields to avoid unrelated fixture churn, with fail-loud enabled-mode binding checks.
+- Optional generation-only `Env` fields with fail-loud enabled-mode binding checks.
 - No new job database, Queue, public API, client fallback, or media framework.
 - One DTXWeb implementation PR; Virgo remains its own PR.
 
@@ -578,6 +515,8 @@ Container smoke builds the Docker image, generates a small synthetic OGG fixture
 - Workflow REST API: <https://developers.cloudflare.com/api/resources/workflows/subresources/instances/methods/create/>
 - Cloudflare Containers: <https://developers.cloudflare.com/containers/>
 - Container class API: <https://developers.cloudflare.com/containers/container-class/>
+- Containers Wrangler configuration: <https://developers.cloudflare.com/containers/configuration/wrangler/>
+- Containers instance types: <https://developers.cloudflare.com/containers/pricing/>
 - Workers Request streaming: <https://developers.cloudflare.com/workers/runtime-apis/request/>
 - Workers Streams: <https://developers.cloudflare.com/workers/runtime-apis/streams/>
 - R2 Workers API: <https://developers.cloudflare.com/r2/api/workers/workers-api-reference/>

@@ -111,11 +111,11 @@ Expected RED.
 export const FULL_TRACK_AUDIO_EXTENSIONS = ['.ogg', '.m4a', '.mp3', '.wav', '.flac'] as const;
 export const r2FileName = (key: string) => key.split('/').at(-1) ?? '';
 export const isTopLevelR2Key = (key: string, prefix: string) =>
-  key.startsWith(prefix) && !key.slice(prefix.length).includes('/');
+	key.startsWith(prefix) && !key.slice(prefix.length).includes('/');
 export const isTopLevelNamedR2Key = (key: string, prefix: string, filename: string) =>
-  isTopLevelR2Key(key, prefix) && r2FileName(key).toLowerCase() === filename.toLowerCase();
+	isTopLevelR2Key(key, prefix) && r2FileName(key).toLowerCase() === filename.toLowerCase();
 export const toPublicR2Url = (base: string, key: string) =>
-  `${base.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
+	`${base.replace(/\/+$/, '')}/${key.split('/').map(encodeURIComponent).join('/')}`;
 ```
 
 `selectTopLevelFullTrackObject()` preserves current ranking and accepts an `exclude` predicate.
@@ -125,7 +125,7 @@ Refactor `r2Enrichment.ts` preview/set.def/public URL/top-level audio selection 
 Also add a small async service helper (location can be `bgmM4a.ts` or `r2Files.ts` depending on dependency direction):
 
 ```ts
-resolveSelectedAuthoredSource(bucket, simfileId)
+resolveSelectedAuthoredSource(bucket, simfileId);
 ```
 
 It lists `${id}/`, calls the pure selector, and excludes canonical generated `bgm.m4a`.
@@ -139,16 +139,16 @@ export const BGM_DERIVATIVE_FILENAME = 'bgm.m4a';
 export const BGM_TRANSCODE_PROFILE = 'aac-lc-192k-v1' as const;
 export const bgmDerivativeKey = (id: number) => `${id}/bgm.m4a`;
 export const isCanonicalBgmDerivativeKey = (key: string, id: number) =>
-  isTopLevelNamedR2Key(key, `${id}/`, BGM_DERIVATIVE_FILENAME);
+	isTopLevelNamedR2Key(key, `${id}/`, BGM_DERIVATIVE_FILENAME);
 ```
 
 Shared Workflow ID:
 
 ```ts
 export const buildBgmWorkflowInstanceId = (id: number, uploaded: string) => {
-  const epochMs = Date.parse(uploaded);
-  if (!Number.isFinite(epochMs)) throw new Error('Invalid source uploaded timestamp');
-  return `bgm-m4a-v1-${id}-${epochMs}`;
+	const epochMs = Date.parse(uploaded);
+	if (!Number.isFinite(epochMs)) throw new Error('Invalid source uploaded timestamp');
+	return `bgm-m4a-v1-${id}-${epochMs}`;
 };
 ```
 
@@ -180,12 +180,12 @@ Extend current `uploads.test.ts`:
 
 ```ts
 {
-  simfileId: number;
-  key: string;
-  etag: string;
-  version: string;
-  uploaded: string;
-  size: number;
+	simfileId: number;
+	key: string;
+	etag: string;
+	version: string;
+	uploaded: string;
+	size: number;
 }
 ```
 
@@ -275,9 +275,9 @@ Preserve Better Auth/Drizzle package state.
 
 ```ts
 export class BgmTranscoderContainer extends Container {
-  defaultPort = 8080;
-  sleepAfter = '1m';
-  enableInternet = false;
+	defaultPort = 8080;
+	sleepAfter = '1m';
+	enableInternet = false;
 }
 ```
 
@@ -341,7 +341,11 @@ Cover:
 Captured state:
 
 ```ts
-{ etag: string; version: string; uploaded: string }
+{
+	etag: string;
+	version: string;
+	uploaded: string;
+}
 ```
 
 ### 4.2 RED direct stream/race tests
@@ -534,10 +538,16 @@ Query:
 
 ```graphql
 query PublishedSimfiles($page: Int!, $pageSize: Int!) {
-  simfiles(scope: PUBLISHED, page: $page, pageSize: $pageSize) {
-    count
-    data { id files { key uploaded } }
-  }
+	simfiles(scope: PUBLISHED, page: $page, pageSize: $pageSize) {
+		count
+		data {
+			id
+			files {
+				key
+				uploaded
+			}
+		}
+	}
 }
 ```
 
@@ -566,7 +576,7 @@ A selected source is missing/older when derivative is absent or `derivative.uplo
 Upload/backfill both call:
 
 ```ts
-buildBgmWorkflowInstanceId(Number(row.id), source.uploaded)
+buildBgmWorkflowInstanceId(Number(row.id), source.uploaded);
 ```
 
 ### 7.4 RED REST lifecycle tests from Task-5 observed envelope

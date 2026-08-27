@@ -82,11 +82,11 @@ There is **no staging object**. A retry retranscodes. At current project volume 
 Avoid another copy of the repository's case-insensitive top-level-key and public-URL rules. Extract the current `r2Enrichment.ts` behavior into a small dtx-api helper, for example `src/lib/r2Files.ts`:
 
 ```ts
-r2FileName(key)
-isTopLevelR2Key(key, prefix)
-isTopLevelNamedR2Key(key, prefix, filename)
-toPublicR2Url(base, key)
-selectTopLevelFullTrackObject(objects, prefix, options)
+r2FileName(key);
+isTopLevelR2Key(key, prefix);
+isTopLevelNamedR2Key(key, prefix, filename);
+toPublicR2Url(base, key);
+selectTopLevelFullTrackObject(objects, prefix, options);
 ```
 
 `r2Enrichment.ts` reuses these helpers for canonical `preview.mp3`, `set.def`, public URLs, and full-track ranking.
@@ -147,17 +147,17 @@ Extend `uploadSimfileFile()` without changing its public HTTP body:
 
 ```ts
 export type UploadedObject = {
-  simfileId: number;
-  key: string;
-  etag: string;
-  version: string;
-  uploaded: string;
-  size: number;
+	simfileId: number;
+	key: string;
+	etag: string;
+	version: string;
+	uploaded: string;
+	size: number;
 };
 
 export type UploadResult = {
-  response: Response;
-  uploadedObject?: UploadedObject;
+	response: Response;
+	uploadedObject?: UploadedObject;
 };
 ```
 
@@ -220,12 +220,12 @@ Payload:
 
 ```ts
 type GenerateBgmM4aPayload = {
-  simfileId: number;
-  sourceKey: string;
-  sourceUploaded: string;
-  expectedSourceEtag?: string;
-  expectedSourceVersion?: string;
-  profile: 'aac-lc-192k-v1';
+	simfileId: number;
+	sourceKey: string;
+	sourceUploaded: string;
+	expectedSourceEtag?: string;
+	expectedSourceVersion?: string;
+	profile: 'aac-lc-192k-v1';
 };
 ```
 
@@ -300,9 +300,9 @@ Cloudflare Workers accepts `ReadableStream` request bodies directly. Do not add 
 
 ```ts
 export class BgmTranscoderContainer extends Container {
-  defaultPort = 8080;
-  sleepAfter = '1m';
-  enableInternet = false;
+	defaultPort = 8080;
+	sleepAfter = '1m';
+	enableInternet = false;
 }
 ```
 

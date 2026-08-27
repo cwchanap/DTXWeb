@@ -6,17 +6,17 @@ import type { ExecutionContext, R2Bucket } from '@cloudflare/workers-types';
 vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
 vi.mock('../services/uploads', () => ({
-	uploadSimfileFile: vi.fn(
-		async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
-	),
+	uploadSimfileFile: vi.fn(async () => ({
+		response: new Response(JSON.stringify({ ok: true }), { status: 200 })
+	})),
 	purgeCacheForFile: vi.fn(async () => true)
 }));
 
 const { resolveAuthSession } = await import('../auth/session');
 const { uploadSimfileFile, purgeCacheForFile } = await import('../services/uploads');
-const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
-const mockedUpload = vi.mocked(uploadSimfileFile);
-const mockedPurge = vi.mocked(purgeCacheForFile);
+const mockedResolveAuthSession = resolveAuthSession as ReturnType<typeof vi.fn>;
+const mockedUpload = uploadSimfileFile as ReturnType<typeof vi.fn>;
+const mockedPurge = purgeCacheForFile as ReturnType<typeof vi.fn>;
 
 const makeEnv = (): Env => ({
 	DB: {} as Env['DB'],
@@ -117,12 +117,20 @@ describe('POST /upload', () => {
 
 	it('schedules cache purge via ctx.waitUntil', async () => {
 		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
-		mockedUpload.mockResolvedValue(
-			new Response(JSON.stringify({ file: { key: '42/a.dtx' } }), {
+		mockedUpload.mockResolvedValue({
+			response: new Response(JSON.stringify({ file: { key: '42/a.dtx' } }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' }
-			})
-		);
+			}),
+			uploadedObject: {
+				simfileId: 42,
+				key: '42/a.dtx',
+				etag: 'etag-1',
+				version: 'version-1',
+				uploaded: '2026-08-27T05:00:00.123Z',
+				size: 10
+			}
+		});
 		const ctx = makeCtx();
 		await routeUpload(multipartReq(), makeEnv(), ctx);
 		expect(ctx.waitUntil).toHaveBeenCalled();
@@ -130,12 +138,20 @@ describe('POST /upload', () => {
 
 	it('URL-encodes R2 key segments for cache purge', async () => {
 		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
-		mockedUpload.mockResolvedValue(
-			new Response(JSON.stringify({ file: { key: '42/my song file.dtx' } }), {
+		mockedUpload.mockResolvedValue({
+			response: new Response(JSON.stringify({ file: { key: '42/my song file.dtx' } }), {
 				status: 200,
 				headers: { 'content-type': 'application/json' }
-			})
-		);
+			}),
+			uploadedObject: {
+				simfileId: 42,
+				key: '42/my song file.dtx',
+				etag: 'etag-1',
+				version: 'version-1',
+				uploaded: '2026-08-27T05:00:00.123Z',
+				size: 10
+			}
+		});
 		const ctx = makeCtx();
 		await routeUpload(multipartReq(), makeEnv(), ctx);
 		expect(ctx.waitUntil).toHaveBeenCalled();

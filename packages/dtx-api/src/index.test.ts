@@ -2,37 +2,56 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from './index';
 import type { Env } from './env';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
-	return {
-		...actual,
-		getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
-		listAllR2Objects: vi.fn(async () => []),
-		createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
-		validateZipSources: vi.fn(async () => {}),
-		buildZipStream: vi.fn(() => new ReadableStream()),
-		getClientIp: vi.fn(() => null),
-		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 }))
-	};
-});
-
-const authSessionMocks = vi.hoisted(() => ({
-	resolveAuthSession: vi.fn()
+vi.mock('@dtx/common/server', () => ({
+	workerLogger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn()
+	},
+	getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
+	listAllR2Objects: vi.fn(async () => []),
+	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
+	validateZipSources: vi.fn(async () => {}),
+	buildZipStream: vi.fn(() => new ReadableStream()),
+	getClientIp: vi.fn(() => null),
+	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
+	createSimfile: vi.fn(),
+	createDtxFiles: vi.fn(),
+	deleteSimfile: vi.fn(),
+	getChartVisibilityBatch: vi.fn(),
+	upsertChartScoreAndReplaceScores: vi.fn(),
+	getUserProfile: vi.fn(),
+	upsertUserProfile: vi.fn(),
+	getSimfile: vi.fn(),
+	getNextDisplayId: vi.fn(),
+	listSimfiles: vi.fn(),
+	listUserScoredSimfiles: vi.fn(),
+	searchSimfiles: vi.fn(),
+	toSimfileWithDtx: vi.fn(),
+	updateSimfile: vi.fn(),
+	updateSimfileDriveFile: vi.fn(),
+	getUserChartScore: vi.fn(),
+	listUserChartScores: vi.fn()
 }));
 
-vi.mock('./auth/session', () => authSessionMocks);
+vi.mock('./auth/session', () => ({ resolveAuthSession: vi.fn() }));
+vi.mock('./auth/auth', () => ({ createAuth: vi.fn() }));
 
-const authMocks = vi.hoisted(() => ({
-	createAuth: vi.fn(),
+const { resolveAuthSession } = await import('./auth/session');
+const { createAuth } = await import('./auth/auth');
+const authSessionMocks = {
+	resolveAuthSession: resolveAuthSession as ReturnType<typeof vi.fn>
+};
+const authMocks = {
+	createAuth: createAuth as ReturnType<typeof vi.fn>,
 	handler: vi.fn()
-}));
-
-vi.mock('./auth/auth', () => ({ createAuth: authMocks.createAuth }));
+};
 
 vi.mock('./services/uploads', () => ({
-	uploadSimfileFile: vi.fn(
-		async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
-	),
+	uploadSimfileFile: vi.fn(async () => ({
+		response: new Response(JSON.stringify({ ok: true }), { status: 200 })
+	})),
 	purgeCacheForFile: vi.fn(async () => true)
 }));
 
@@ -198,7 +217,7 @@ describe('worker fetch router', () => {
 describe('Phase 2 routes', () => {
 	it('GET /downloads/123 dispatches to downloadSimfile route', async () => {
 		const { getClientIp } = await import('@dtx/common/server');
-		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
+		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', { method: 'GET' }),
@@ -297,7 +316,9 @@ describe('Phase 2 routes', () => {
 
 	it('CORS-wraps 500 when a route handler throws', async () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
-		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 listing failed'));
+		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('R2 listing failed')
+		);
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
@@ -322,7 +343,7 @@ describe('Phase 2 routes', () => {
 		const body = (await response.json()) as { error: string };
 		expect(body.error).toBe('Internal Server Error');
 		expect(errorSpy).toHaveBeenCalledTimes(1);
-		expect(errorSpy.mock.calls[0][1]).instanceof(Error);
+		expect(errorSpy.mock.calls[0][1]).toBeInstanceOf(Error);
 		errorSpy.mockRestore();
 	});
 
@@ -363,7 +384,7 @@ describe('Phase 2 routes', () => {
 
 	it('CORS-wraps 500 when downloadSimfile handler throws', async () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
-		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 error'));
+		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('R2 error'));
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
@@ -371,7 +392,7 @@ describe('Phase 2 routes', () => {
 			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
 		});
 		const { getClientIp } = await import('@dtx/common/server');
-		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
+		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', {
 				method: 'GET',
@@ -393,7 +414,9 @@ describe('Phase 2 routes', () => {
 		});
 
 		const { uploadSimfileFile } = await import('./services/uploads');
-		vi.mocked(uploadSimfileFile).mockRejectedValueOnce(new Error('R2 write failed'));
+		(uploadSimfileFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('R2 write failed')
+		);
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({

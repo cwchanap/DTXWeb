@@ -2,6 +2,7 @@ import { getSimfileOwner, type WorkerLogger } from '@dtx/common/server';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { sanitizeFilename } from '../lib/sanitizeFilename';
 import type { Env } from '../env';
+import { BGM_DERIVATIVE_FILENAME, isCanonicalBgmDerivativeKey } from './bgmM4a';
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 
@@ -10,6 +11,20 @@ const json = (status: number, body: Record<string, unknown>) =>
 		status,
 		headers: { 'content-type': 'application/json' }
 	});
+
+export type UploadedObject = {
+	simfileId: number;
+	key: string;
+	etag: string;
+	version: string;
+	uploaded: string;
+	size: number;
+};
+
+export type UploadResult = {
+	response: Response;
+	uploadedObject?: UploadedObject;
+};
 
 export const purgeCacheForFile = async (
 	env: Env,
@@ -56,27 +71,34 @@ export const uploadSimfileFile = async (
 	simfileIdRaw: string,
 	file: File,
 	bucket: R2Bucket
-): Promise<Response> => {
-	if (!user) return json(401, { error: 'Unauthorized' });
+): Promise<UploadResult> => {
+	if (!user) return { response: json(401, { error: 'Unauthorized' }) };
 
 	if (!/^\d+$/.test(simfileIdRaw)) {
-		return json(400, { error: 'Invalid SimFile ID' });
+		return { response: json(400, { error: 'Invalid SimFile ID' }) };
 	}
 	const simfileId = Number(simfileIdRaw);
 	if (!Number.isSafeInteger(simfileId)) {
-		return json(400, { error: 'Invalid SimFile ID' });
+		return { response: json(400, { error: 'Invalid SimFile ID' }) };
 	}
 
 	if (file.size > MAX_FILE_SIZE) {
-		return json(400, { error: 'File too large (max 50MB)' });
+		return { response: json(400, { error: 'File too large (max 50MB)' }) };
 	}
 
 	const owner = await getSimfileOwner(env.DB, simfileId);
-	if (!owner) return json(404, { error: 'Simfile not found' });
-	if (owner.user_id !== user.id) return json(403, { error: 'Forbidden' });
+	if (!owner) return { response: json(404, { error: 'Simfile not found' }) };
+	if (owner.user_id !== user.id) return { response: json(403, { error: 'Forbidden' }) };
 
 	const sanitized = sanitizeFilename(file.name);
 	const key = `${simfileId}/${sanitized}`;
+	if (isCanonicalBgmDerivativeKey(key, simfileId)) {
+		return {
+			response: json(409, {
+				error: `${BGM_DERIVATIVE_FILENAME} is reserved for generated audio`
+			})
+		};
+	}
 
 	// Pass the file's ReadableStream directly to R2 to avoid buffering
 	// the entire file into memory (50 MB file would consume the Workers memory budget).
@@ -91,17 +113,40 @@ export const uploadSimfileFile = async (
 	});
 
 	if (!result) {
-		return json(500, { error: 'Failed to upload file' });
+		return { response: json(500, { error: 'Failed to upload file' }) };
 	}
 
-	return json(200, {
-		message: 'File uploaded successfully',
-		file: {
-			fileName: file.name,
-			key,
-			size: file.size,
-			contentType: file.type || 'application/octet-stream',
-			status: 'Uploaded'
+	const { etag, version, uploaded, size } = result;
+	if (
+		typeof result.key !== 'string' ||
+		typeof etag !== 'string' ||
+		typeof version !== 'string' ||
+		!(uploaded instanceof Date) ||
+		!Number.isFinite(uploaded.getTime()) ||
+		typeof size !== 'number' ||
+		!Number.isFinite(size)
+	) {
+		return { response: json(500, { error: 'Failed to read uploaded file identity' }) };
+	}
+
+	return {
+		response: json(200, {
+			message: 'File uploaded successfully',
+			file: {
+				fileName: file.name,
+				key,
+				size: file.size,
+				contentType: file.type || 'application/octet-stream',
+				status: 'Uploaded'
+			}
+		}),
+		uploadedObject: {
+			simfileId,
+			key: result.key,
+			etag,
+			version,
+			uploaded: uploaded.toISOString(),
+			size
 		}
-	});
+	};
 };

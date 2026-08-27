@@ -7,6 +7,8 @@ import {
 	buildZipStream,
 	type ZipSource
 } from '@dtx/common/server';
+import { selectTopLevelFullTrackObject } from '../lib/r2Files';
+import { isCanonicalBgmDerivativeKey } from './bgmM4a';
 
 export type AccessResult = {
 	accessible: number[];
@@ -109,14 +111,25 @@ export const collectZipSources = async (
 		);
 	}
 
-	const sourcesBySimfile = simfileIds.map((id, i) => ({
-		simfileId: id,
-		sources: createZipSources(
-			objectsPerSimfile[i],
-			`${id}/`,
-			opts.flatSingle && simfileIds.length === 1 ? '' : `chart-${id}`
-		)
-	}));
+	const sourcesBySimfile = simfileIds.map((id, i) => {
+		const prefix = `${id}/`;
+		const objects = objectsPerSimfile[i] ?? [];
+		const authoredSource = selectTopLevelFullTrackObject(objects, prefix, (object) =>
+			isCanonicalBgmDerivativeKey(object.key, id)
+		);
+		const zipObjects = authoredSource
+			? objects.filter((object) => !isCanonicalBgmDerivativeKey(object.key, id))
+			: objects;
+
+		return {
+			simfileId: id,
+			sources: createZipSources(
+				zipObjects,
+				prefix,
+				opts.flatSingle && simfileIds.length === 1 ? '' : `chart-${id}`
+			)
+		};
+	});
 
 	const sources = sourcesBySimfile.flatMap(({ sources }) => sources);
 

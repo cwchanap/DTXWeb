@@ -401,7 +401,8 @@ describe('execute REST lifecycle', () => {
 						if (method === 'GET') {
 							gets += 1;
 							if (gets === 1) return cfOk({ status, output: null });
-							if (gets === 2) return cfOk({ status: 'running', output: null });
+							if (gets === 2) return cfOk({ status, output: null });
+							if (gets === 3) return cfOk({ status: 'running', output: null });
 							return cfOk({ status: 'complete', output: '{"status":"ready"}' });
 						}
 						throw new Error(`${method} ${url}`);
@@ -410,7 +411,7 @@ describe('execute REST lifecycle', () => {
 			);
 
 			expect(result.exitCode).toBe(0);
-			expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET', 'GET']);
+			expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET', 'GET', 'GET']);
 			expect(methods.filter((method) => method === 'POST')).toHaveLength(1);
 		}
 	);
@@ -473,6 +474,119 @@ describe('execute REST lifecycle', () => {
 
 		expect(result.exitCode).toBe(0);
 		expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET', 'GET']);
+	});
+
+	it('does not treat a stale complete after repair PATCH as success', async () => {
+		const rows = sourceRow([
+			{ key: '42/track.wav', uploaded: SOURCE_UPLOADED },
+			{ key: '42/bgm.m4a', uploaded: OLDER_UPLOADED }
+		]);
+		const id = expectedId();
+		const sleep = vi.fn(async () => undefined);
+		const methods: string[] = [];
+		const statuses: string[] = [];
+		let gets = 0;
+
+		const result = await runBackfill(
+			executeConfig(
+				combineFetch(rows, ({ method, url, body }) => {
+					methods.push(method);
+					if (method === 'POST') return new Response(null, { status: 409 });
+					if (method === 'PATCH') {
+						expect(url).toBe(`${instancesUrl()}/${id}/status`);
+						expect(body).toEqual({ status: 'restart' });
+						return cfOk({ status: 'queued' });
+					}
+					if (method === 'GET') {
+						gets += 1;
+						if (gets === 1) {
+							statuses.push('complete');
+							return cfOk({ status: 'complete', output: '{"status":"ready"}' });
+						}
+						if (gets === 2) {
+							statuses.push('complete');
+							return cfOk({ status: 'complete', output: { status: 'cached' } });
+						}
+						if (gets === 3) {
+							statuses.push('running');
+							return cfOk({ status: 'running', output: null });
+						}
+						statuses.push('complete');
+						return cfOk({ status: 'complete', output: '{"status":"ready"}' });
+					}
+					throw new Error(`${method} ${url}`);
+				}),
+				sleep
+			)
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET', 'GET', 'GET']);
+		expect(statuses).toEqual(['complete', 'complete', 'running', 'complete']);
+		expect(sleep).toHaveBeenCalled();
+	});
+
+	it('fails execute when a repaired complete instance never leaves complete', async () => {
+		const rows = sourceRow([
+			{ key: '42/track.wav', uploaded: SOURCE_UPLOADED },
+			{ key: '42/bgm.m4a', uploaded: OLDER_UPLOADED }
+		]);
+		const sleep = vi.fn(async () => undefined);
+		let gets = 0;
+		let patches = 0;
+
+		const result = await runBackfill(
+			executeConfig(
+				combineFetch(rows, ({ method, body }) => {
+					if (method === 'POST') return new Response(null, { status: 409 });
+					if (method === 'PATCH') {
+						patches += 1;
+						expect(body).toEqual({ status: 'restart' });
+						return cfOk({ status: 'queued' });
+					}
+					if (method === 'GET') {
+						gets += 1;
+						return cfOk({ status: 'complete', output: '{"status":"ready"}' });
+					}
+					throw new Error(method);
+				}),
+				sleep
+			)
+		);
+
+		expect(result.exitCode).toBe(1);
+		expect(patches).toBe(1);
+		expect(result.stderr).toMatch(/did not reach a terminal status/);
+		expect(gets).toBeGreaterThan(2);
+		expect(sleep).toHaveBeenCalled();
+	});
+
+	it('treats complete after failed-instance restart as the new successful run', async () => {
+		const rows = sourceRow([{ key: '42/song.flac', uploaded: SOURCE_UPLOADED }]);
+		const methods: string[] = [];
+		let gets = 0;
+
+		const result = await runBackfill(
+			executeConfig(
+				combineFetch(rows, ({ method, body }) => {
+					methods.push(method);
+					if (method === 'POST') return new Response(null, { status: 409 });
+					if (method === 'PATCH') {
+						expect(body).toEqual({ status: 'restart' });
+						return cfOk({ status: 'queued' });
+					}
+					if (method === 'GET') {
+						gets += 1;
+						if (gets === 1) return cfOk({ status: 'errored', output: null });
+						return cfOk({ status: 'complete', output: '{"status":"ready"}' });
+					}
+					throw new Error(method);
+				})
+			)
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET']);
 	});
 
 	it('fails execute on superseded output without treating it as ready or cached', async () => {

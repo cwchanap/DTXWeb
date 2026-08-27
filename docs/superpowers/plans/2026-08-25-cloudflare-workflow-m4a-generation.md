@@ -14,26 +14,25 @@
 
 ## Global Constraints
 
-- Deliver HPA-311 production code/tests/config/backfill in **one implementation PR**.
-- Canonical source identity is top-level basename `bgm.ogg`, **case-insensitive**, while preserving the actual R2 source key.
+- One HPA-311 implementation PR.
+- Canonical source is top-level basename `bgm.ogg`, case-insensitive; preserve the actual R2 source key.
 - Generated destination is always lower-case `{simfileId}/bgm.m4a`.
 - Reject direct top-level `bgm.m4a` uploads case-insensitively.
 - Missing/false `BGM_M4A_GENERATION_ENABLED` means disabled; canonical source upload is rejected when disabled.
 - Generation-only `Env` bindings are optional so unrelated test fixtures do not need fake Workflow/Container objects; explicitly enabled generation with a missing binding fails loudly.
 - Trigger only canonical top-level BGM, never nested/sample OGG files.
-- Profile is `aac-lc-192k-v1`: AAC-LC, 192 kbps, no video, preserve source sample rate/channels, `+faststart`.
+- Profile `aac-lc-192k-v1`: AAC-LC, 192 kbps, no video, preserve sample rate/channels, `+faststart`.
 - Stage at `_generated/bgm-m4a-v1/{simfileId}/{sha256(sourceEtag)[0..23]}.m4a`.
-- Publish `audio/mp4` with `Cache-Control: public, max-age=300, must-revalidate` and source/profile custom metadata.
-- Keep audio stream-only in Worker orchestration; no whole-audio `arrayBuffer()`/`bytes()`/`text()` calls.
-- Use one-item `createBatch()` with deterministic upload identity; success retention `1 day`, error retention `7 days`.
-- Retry transient transcode failures twice, 30-second exponential delay, 30-minute step timeout; invalid media is non-retryable.
+- Publish `audio/mp4` with `public, max-age=300, must-revalidate` plus source/profile metadata.
+- Worker orchestration is stream-only; no whole-audio buffering.
+- One-item `createBatch()`, deterministic upload identity, success retention `1 day`, error retention `7 days`.
+- Retry transient transcode failures twice with 30-second exponential delay and 30-minute timeout; invalid media is non-retryable.
 - One `basic` Container, `max_instances: 1`, one-minute idle sleep, internet disabled, one FFmpeg process at a time.
-- Preserve current Better Auth request/session behavior, Wrangler auth vars, package exports/scripts/dependencies, and `/api/auth/*` dispatch.
-- Keep GraphQL schema/codegen unchanged; `Simfile.files` already exposes R2 keys.
-- Keep `packages/common/src/lib/server/zipBuilder.ts` unchanged.
+- Preserve current Better Auth behavior/config/package scripts and `/api/auth/*` routing.
+- Keep GraphQL schema/codegen and `packages/common/src/lib/server/zipBuilder.ts` unchanged.
 - `pre-prod-prod-data` cannot mutate canonical source/derivative keys.
 - No Queue, R2 event notification, D1 job state, public job API, generic media framework, iOS package endpoint, client transcoder, or OGG decoder.
-- Virgo HPA-85 remains a separate PR blocked on both production catalog gates.
+- Virgo HPA-85 remains separate and blocked on both production catalog gates.
 
 ---
 
@@ -41,14 +40,14 @@
 
 ### Create
 
-- `packages/dtx-api/src/services/bgmM4a.ts` — canonical identity, profile, keys, payload schema, deterministic IDs, public URL helper.
-- `packages/dtx-api/src/services/bgmM4a.test.ts` — case/identity/schema/helper tests.
-- `packages/dtx-api/src/services/bgmM4aWorkflowTrigger.ts` — enabled/binding guard + one-item `createBatch()`.
-- `packages/dtx-api/src/services/bgmM4aWorkflowTrigger.test.ts` — trigger/idempotency/config tests.
-- `packages/dtx-api/src/services/bgmM4aGeneration.ts` — inspect/transcode/publish/cleanup/error classification.
-- `packages/dtx-api/src/services/bgmM4aGeneration.test.ts` — R2/Container stream and stale-source tests.
-- `packages/dtx-api/src/workflows/generateBgmM4a.ts` — thin Workers-only Workflow wrapper.
-- `packages/dtx-api/src/containers/bgmTranscoder.ts` — Cloudflare Container class.
+- `packages/dtx-api/src/services/bgmM4a.ts`
+- `packages/dtx-api/src/services/bgmM4a.test.ts`
+- `packages/dtx-api/src/services/bgmM4aWorkflowTrigger.ts`
+- `packages/dtx-api/src/services/bgmM4aWorkflowTrigger.test.ts`
+- `packages/dtx-api/src/services/bgmM4aGeneration.ts`
+- `packages/dtx-api/src/services/bgmM4aGeneration.test.ts`
+- `packages/dtx-api/src/workflows/generateBgmM4a.ts`
+- `packages/dtx-api/src/containers/bgmTranscoder.ts`
 - `packages/dtx-api/container/bgm-transcoder/Dockerfile`
 - `packages/dtx-api/container/bgm-transcoder/server.ts`
 - `packages/dtx-api/container/bgm-transcoder/smoke.sh`
@@ -67,7 +66,7 @@
 - `packages/dtx-api/src/services/r2Enrichment.ts`
 - `packages/dtx-api/src/services/r2Enrichment.test.ts`
 - `packages/dtx-api/src/services/downloads.ts`
-- `packages/dtx-api/src/services/downloads.test.ts` — **existing file; extend, never replace**.
+- `packages/dtx-api/src/services/downloads.test.ts` — existing file; extend it.
 - `packages/dtx-api/package.json`
 - `packages/dtx-api/wrangler.jsonc`
 - `bun.lock`
@@ -85,7 +84,7 @@
 
 **Files:** create `bgmM4a.ts`, `bgmM4a.test.ts`; modify `env.ts`, `uploads.ts`, `uploads.test.ts`.
 
-**Produces:** shared canonical helpers; `GenerateBgmM4aPayload`; `UploadedObject`; `UploadResult`; optional generation flag.
+**Produces:** canonical key helpers, profile/schema/ID helpers, `UploadedObject`, `UploadResult`, optional generation flag.
 
 - [ ] **Step 1: Write RED canonical-identity tests**
 
@@ -113,21 +112,22 @@ describe('BGM identity', () => {
   });
 
   it('validates the actual case-preserved source key', () => {
-    expect(bgmM4aPayloadSchema.parse({
+    const parsed = bgmM4aPayloadSchema.parse({
       simfileId: 42,
       sourceKey: '42/BGM.OGG',
       profile: BGM_TRANSCODE_PROFILE
-    }).sourceKey).toBe('42/BGM.OGG');
+    });
+    expect(parsed.sourceKey).toBe('42/BGM.OGG');
   });
 
-  it('always publishes lower-case derivative and stages by ETag', async () => {
+  it('publishes lower-case derivative and stages by ETag', async () => {
     expect(bgmDerivativeKey(42)).toBe('42/bgm.m4a');
     expect(await bgmStagingKey(42, 'etag-1')).toMatch(
       /^_generated\/bgm-m4a-v1\/42\/[0-9a-f]{24}\.m4a$/
     );
   });
 
-  it('builds encoded public URLs and deterministic upload IDs', async () => {
+  it('builds encoded URLs and deterministic upload IDs', async () => {
     expect(buildPublicR2Url('https://files.example/', '42/My Song.ogg')).toBe(
       'https://files.example/42/My%20Song.ogg'
     );
@@ -145,7 +145,7 @@ cd packages/dtx-api
 bun test src/services/bgmM4a.test.ts
 ```
 
-Expected: FAIL because the module does not exist.
+Expected: FAIL because `bgmM4a.ts` does not exist.
 
 - [ ] **Step 2: Implement the shared contract**
 
@@ -201,19 +201,13 @@ export const bgmM4aPayloadSchema = z.object({
 export type GenerateBgmM4aPayload = z.infer<typeof bgmM4aPayloadSchema>;
 ```
 
-- [ ] **Step 3: Make only the generation flag optional in `Env`**
-
-Add without changing Better Auth fields:
+- [ ] **Step 3: Add optional generation flag without rewriting unrelated fixtures**
 
 ```ts
 BGM_M4A_GENERATION_ENABLED?: 'true' | 'false';
 ```
 
-Do **not** edit unrelated `makeEnv()` fixtures just to add the flag. Missing means disabled.
-
 - [ ] **Step 4: Write RED upload contract tests**
-
-Extend current `uploads.test.ts` and its Better Auth-era `makeEnv()` as-is:
 
 ```ts
 it('rejects generated derivative names case-insensitively', async () => {
@@ -253,15 +247,15 @@ it('returns R2 identity without changing the public JSON body', async () => {
 });
 ```
 
-Run and verify RED on the current bare `Response` API:
+Run:
 
 ```bash
 bun test src/services/bgmM4a.test.ts src/services/uploads.test.ts
 ```
 
-- [ ] **Step 5: Refactor `uploadSimfileFile()` minimally**
+Expected: helper tests PASS, upload tests FAIL because the service still returns `Response` and has no guards.
 
-Add:
+- [ ] **Step 5: Refactor upload result and guards**
 
 ```ts
 export type UploadedObject = {
@@ -274,7 +268,7 @@ export type UploadedObject = {
 export type UploadResult = { response: Response; uploadedObject?: UploadedObject };
 ```
 
-Build `key = `${simfileId}/${sanitized}``, then before `bucket.put`:
+Before `bucket.put`:
 
 ```ts
 if (isCanonicalBgmDerivativeKey(key, simfileId)) {
@@ -285,25 +279,19 @@ if (isCanonicalBgmSourceKey(key, simfileId) && env.BGM_M4A_GENERATION_ENABLED !=
 }
 ```
 
-Wrap every existing error response as `{ response }`. On success return the existing JSON response plus `uploadedObject` from the R2 `put()` result.
+Wrap existing error responses as `{ response }`. On successful R2 PUT return the unchanged JSON response plus `uploadedObject` from the R2 result.
 
-- [ ] **Step 6: Verify Task 1**
+- [ ] **Step 6: Verify and commit Task 1**
 
 ```bash
 bun test src/services/bgmM4a.test.ts src/services/uploads.test.ts
 bun run check
-```
-
-Expected: PASS.
-
-Commit:
-
-```bash
-git add packages/dtx-api/src/env.ts packages/dtx-api/src/services/bgmM4a.ts \
-  packages/dtx-api/src/services/bgmM4a.test.ts packages/dtx-api/src/services/uploads.ts \
-  packages/dtx-api/src/services/uploads.test.ts
+git add src/env.ts src/services/bgmM4a.ts src/services/bgmM4a.test.ts \
+  src/services/uploads.ts src/services/uploads.test.ts
 git commit -m "feat(api): lock BGM derivative upload contract"
 ```
+
+Expected: tests/typecheck PASS.
 
 ---
 
@@ -311,15 +299,11 @@ git commit -m "feat(api): lock BGM derivative upload contract"
 
 **Files:** create trigger service/tests; modify `env.ts`, `rest/upload.ts`, `rest/upload.test.ts`, `index.test.ts`.
 
-**Produces:** optional Workflow binding and `triggerBgmM4aGeneration()`.
-
 - [ ] **Step 1: Add optional Workflow binding and RED trigger tests**
 
 ```ts
 BGM_M4A_WORKFLOW?: Workflow<GenerateBgmM4aPayload>;
 ```
-
-Test:
 
 ```ts
 it('starts canonical mixed-case source with actual key/identity', async () => {
@@ -328,9 +312,10 @@ it('starts canonical mixed-case source with actual key/identity', async () => {
     BGM_M4A_GENERATION_ENABLED: 'true',
     BGM_M4A_WORKFLOW: { createBatch }
   } as unknown as Env;
-  expect(await triggerBgmM4aGeneration(env, {
+  const outcome = await triggerBgmM4aGeneration(env, {
     simfileId: 42, key: '42/BGM.OGG', etag: 'e1', version: 'v1', size: 10
-  })).toBe('started');
+  });
+  expect(outcome).toBe('started');
   expect(createBatch.mock.calls[0][0][0]).toMatchObject({
     params: {
       simfileId: 42,
@@ -343,7 +328,19 @@ it('starts canonical mixed-case source with actual key/identity', async () => {
   });
 });
 
-it('does not trigger nested OGG', async () => { /* pass 42/assets/bgm.ogg; expect not-bgm */ });
+it('does not trigger nested OGG', async () => {
+  const createBatch = vi.fn();
+  const env = {
+    BGM_M4A_GENERATION_ENABLED: 'true',
+    BGM_M4A_WORKFLOW: { createBatch }
+  } as unknown as Env;
+  const outcome = await triggerBgmM4aGeneration(env, {
+    simfileId: 42, key: '42/assets/bgm.ogg', etag: 'e', version: 'v', size: 1
+  });
+  expect(outcome).toBe('not-bgm');
+  expect(createBatch).not.toHaveBeenCalled();
+});
+
 it('fails loudly when enabled but Workflow binding is missing', async () => {
   await expect(triggerBgmM4aGeneration(
     { BGM_M4A_GENERATION_ENABLED: 'true' } as Env,
@@ -352,13 +349,7 @@ it('fails loudly when enabled but Workflow binding is missing', async () => {
 });
 ```
 
-Run:
-
-```bash
-bun test src/services/bgmM4aWorkflowTrigger.test.ts
-```
-
-Expected: FAIL because the service does not exist.
+Run `bun test src/services/bgmM4aWorkflowTrigger.test.ts`; expected RED because the service does not exist.
 
 - [ ] **Step 2: Implement trigger helper**
 
@@ -387,11 +378,11 @@ export const triggerBgmM4aGeneration = async (
 };
 ```
 
-- [ ] **Step 3: Update route tests around the current Better Auth fixture**
+- [ ] **Step 3: Update current Better Auth upload-route tests**
 
-Keep all current `resolveAuthSession()` tests, including trusted cookie `Origin`, Bearer-without-Origin, and unsafe-cookie Origin rejection. Do not add `verifyToken`/Supabase mocks.
+Keep the existing `resolveAuthSession()` mock, `validAuthSession()` helper, trusted cookie+Origin test, Bearer-without-Origin test, and unsafe-cookie Origin rejection tests.
 
-Change `uploadSimfileFile` mock to `UploadResult`, mock `triggerBgmM4aGeneration`, and add:
+Change only the upload mock/result shape and add trigger assertions:
 
 ```ts
 mockedUpload.mockResolvedValue({
@@ -406,9 +397,9 @@ expect(mockedTrigger).toHaveBeenCalledWith(
 );
 ```
 
-Also keep the existing cache-purge URL-encoding assertion, now driven by `uploadedObject.key` rather than response parsing.
+Keep cache-purge URL encoding, now driven by `uploadedObject.key`.
 
-- [ ] **Step 4: Update `routeUpload()` to consume structured metadata**
+- [ ] **Step 4: Consume structured upload metadata in `routeUpload()`**
 
 ```ts
 const { response, uploadedObject } = await uploadSimfileFile(
@@ -417,24 +408,27 @@ const { response, uploadedObject } = await uploadSimfileFile(
 
 if (uploadedObject) {
   const fileUrl = buildPublicR2Url(env.PUBLIC_SIMFILE_BUCKET_URL, uploadedObject.key);
-  ctx.waitUntil(purgeCacheForFile(env, fileUrl, workerLogger).catch(/* existing logging */));
-  ctx.waitUntil(triggerBgmM4aGeneration(env, uploadedObject).catch((error: unknown) => {
-    workerLogger.error('Failed to trigger BGM M4A generation', {
-      simfileId: uploadedObject.simfileId,
-      sourceKey: uploadedObject.key,
-      error: String(error)
-    });
-    return 'not-bgm' as const;
-  }));
+  ctx.waitUntil(
+    purgeCacheForFile(env, fileUrl, workerLogger).catch((error: unknown) => {
+      workerLogger.error('Unexpected error in cache purge', { error: String(error) });
+      return false;
+    })
+  );
+  ctx.waitUntil(
+    triggerBgmM4aGeneration(env, uploadedObject).catch((error: unknown) => {
+      workerLogger.error('Failed to trigger BGM M4A generation', {
+        simfileId: uploadedObject.simfileId,
+        sourceKey: uploadedObject.key,
+        error: String(error)
+      });
+      return 'not-bgm' as const;
+    })
+  );
 }
 return response;
 ```
 
-No response-body cloning/parsing remains.
-
-- [ ] **Step 5: Update `index.test.ts` upload mock**
-
-Its current mock also returns a bare `Response`. Change only that mock to:
+- [ ] **Step 5: Update `index.test.ts` mock to the new return type**
 
 ```ts
 uploadSimfileFile: vi.fn(async () => ({
@@ -443,19 +437,22 @@ uploadSimfileFile: vi.fn(async () => ({
 }))
 ```
 
-Do not change Better Auth router tests.
+Do not change Better Auth router assertions.
 
-- [ ] **Step 6: Run focused then full package gates**
+- [ ] **Step 6: Run focused + full package gates and commit**
 
 ```bash
-bun test src/services/bgmM4aWorkflowTrigger.test.ts src/services/uploads.test.ts src/rest/upload.test.ts src/index.test.ts
+bun test src/services/bgmM4aWorkflowTrigger.test.ts src/services/uploads.test.ts \
+  src/rest/upload.test.ts src/index.test.ts
 bun run test
 bun run check
+git add src/env.ts src/services/bgmM4aWorkflowTrigger.ts \
+  src/services/bgmM4aWorkflowTrigger.test.ts src/rest/upload.ts src/rest/upload.test.ts \
+  src/index.test.ts
+git commit -m "feat(api): trigger BGM conversion workflow"
 ```
 
-Expected: all PASS. This full package run catches every caller/mock affected by the `UploadResult` return type.
-
-Commit Task 2.
+Expected: all `dtx-api` tests and typecheck PASS.
 
 ---
 
@@ -463,14 +460,14 @@ Commit Task 2.
 
 **Files:** create Container class/Docker/server/smoke; modify `package.json`, `bun.lock`.
 
-- [ ] **Step 1: Add only the Container dependency**
+- [ ] **Step 1: Add dependency without replacing current package state**
 
 ```bash
 cd packages/dtx-api
 bun add @cloudflare/containers
 ```
 
-Preserve current Better Auth/Drizzle dependencies, scripts, and `./auth-migration` export.
+Preserve Better Auth/Drizzle dependencies, auth scripts, and `./auth-migration` export.
 
 - [ ] **Step 2: Add Container class**
 
@@ -496,42 +493,30 @@ EXPOSE 8080
 CMD ["bun", "run", "server.ts"]
 ```
 
-- [ ] **Step 4: Implement serialized Container HTTP service**
+- [ ] **Step 4: Implement serialized streaming HTTP service**
 
-`POST /transcode/ogg-to-m4a` must:
+Implement `POST /transcode/ogg-to-m4a` so it streams request body to a unique temp `input.ogg`, runs the spec FFmpeg command, validates `ffprobe` codec output equals `aac`, streams `output.m4a` back as `audio/mp4`, and cleans temp files after response close/cancel. Invalid media returns 422; internal/transient failures return 5xx. Serialize requests through a promise tail so only one FFmpeg process executes at a time. Do not read audio files into JS buffers.
 
-1. reject other method/path with 404/405;
-2. create a unique temp directory;
-3. stream request body to `input.ogg` using Node stream `pipeline()`;
-4. run the exact FFmpeg profile from the spec;
-5. return 422 when FFmpeg/ffprobe says invalid/no AAC audio;
-6. validate output with `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name -of default=nw=1:nk=1` and require `aac`;
-7. return the output as a streamed `Response` with `audio/mp4`;
-8. clean the temp directory after the response stream closes/cancels;
-9. serialize work through a promise tail so only one FFmpeg process runs at a time.
+- [ ] **Step 5: Add deterministic Docker smoke**
 
-Do not load input/output files into JS buffers.
+`smoke.sh` must build the image, start one test container, create a 1-second synthetic Vorbis OGG with that image's FFmpeg, POST it to port 8080, validate the returned file with `ffprobe`, require `aac`, and clean container/temp files via `trap`.
 
-- [ ] **Step 5: Add deterministic local smoke**
-
-`smoke.sh` builds the image, starts one container, creates a 1-second synthetic Vorbis OGG with the image's FFmpeg, POSTs it to port 8080, then runs host/container `ffprobe` against the returned M4A and requires `aac`. Use `trap` to stop/remove the test container and temp directory.
-
-Add:
+Add package script:
 
 ```json
 "smoke:bgm-transcoder": "bash container/bgm-transcoder/smoke.sh"
 ```
 
-- [ ] **Step 6: Verify Container boundary**
+- [ ] **Step 6: Verify and commit Task 3**
 
 ```bash
 bun run smoke:bgm-transcoder
 bun run check
+git add package.json ../../bun.lock src/containers/bgmTranscoder.ts container/bgm-transcoder
+git commit -m "feat(api): add BGM transcoder container"
 ```
 
-Expected: smoke prints/validates `aac`; typecheck PASS.
-
-Commit Task 3.
+Expected: smoke validates AAC; typecheck PASS.
 
 ---
 
@@ -539,64 +524,67 @@ Commit Task 3.
 
 **Files:** create `bgmM4aGeneration.ts` + tests; modify `env.ts`.
 
-**Produces:** inspect/transcode/publish/cleanup functions and Node-testable permanent-error classification.
-
 - [ ] **Step 1: Add optional Container binding**
 
 ```ts
 BGM_TRANSCODER?: DurableObjectNamespace;
 ```
 
-Do not update unrelated `makeEnv()` fixtures.
-
 - [ ] **Step 2: Write RED inspect tests**
 
-Cover:
+Add tests that assert the actual key `42/BGM.OGG` is HEADed unchanged; missing/expected-identity mismatch returns `superseded`; matching derivative metadata returns `cached`; stale lower-case derivative is deleted/purged before returning `generate`.
 
-```text
-actual source key 42/BGM.OGG is HEADed as-is
-missing source -> superseded
-expected ETag/version mismatch -> superseded
-matching derivative metadata -> cached
-stale derivative -> delete lower-case 42/bgm.m4a + purge, then generate
-```
-
-Source state type:
+- [ ] **Step 3: Implement inspect using actual source key**
 
 ```ts
-type BgmSourceState = { etag: string; version: string };
+export type BgmSourceState = { etag: string; version: string };
+
+const source = await env.DTXFILE_BUCKET.head(payload.sourceKey);
+if (!source) return { status: 'superseded' } as const;
+if (payload.expectedSourceEtag && source.etag !== payload.expectedSourceEtag) {
+  return { status: 'superseded' } as const;
+}
+if (payload.expectedSourceVersion && source.version !== payload.expectedSourceVersion) {
+  return { status: 'superseded' } as const;
+}
 ```
 
-- [ ] **Step 3: Implement inspect**
+Inspect destination with `bgmDerivativeKey(payload.simfileId)`; compare custom metadata source ETag/profile for cache hit.
 
-Use `env.DTXFILE_BUCKET.head(payload.sourceKey)` and `bgmDerivativeKey(payload.simfileId)`. Never reconstruct a lower-case source key.
-
-- [ ] **Step 4: Write RED stream/permanent-error tests**
+- [ ] **Step 4: Write RED stream/error tests**
 
 ```ts
-it('passes R2 source as a stream and stages a stream without buffering', async () => {
+it('streams source to Container and Container output to staging', async () => {
   const sourceBody = new ReadableStream<Uint8Array>();
   const forbiddenArrayBuffer = vi.fn(async () => { throw new Error('must not buffer'); });
-  // mock R2 get() object with body + forbiddenArrayBuffer
-  // mock getContainer(...).fetch() to assert request.body is a ReadableStream
-  // return Response with a ReadableStream body
-  // assert bucket.put(stagingKey, expect.any(ReadableStream), ...)
+  mockedBucket.get.mockResolvedValue({
+    etag: 'e1', version: 'v1', body: sourceBody, arrayBuffer: forbiddenArrayBuffer
+  });
+  mockedContainer.fetch.mockImplementation(async (request: Request) => {
+    expect(request.body).toBeInstanceOf(ReadableStream);
+    return new Response(new ReadableStream<Uint8Array>());
+  });
+
+  await transcodeBgmToStaging(env, payload, { etag: 'e1', version: 'v1' });
+
   expect(forbiddenArrayBuffer).not.toHaveBeenCalled();
+  expect(mockedBucket.put).toHaveBeenCalledWith(
+    expect.stringMatching(/^_generated\/bgm-m4a-v1\/42\//),
+    expect.any(ReadableStream),
+    expect.anything()
+  );
 });
 
-it('classifies invalid-media container response as permanent', async () => {
-  // container returns 422; expect PermanentBgmTranscodeError
-});
-
-it('classifies only PermanentBgmTranscodeError as non-retryable', () => {
-  expect(classifyBgmWorkflowError(new PermanentBgmTranscodeError('bad'))).toBe('non-retryable');
-  expect(classifyBgmWorkflowError(new Error('r2'))).toBe('retryable');
+it('classifies permanent media failures', () => {
+  expect(classifyBgmWorkflowError(new PermanentBgmTranscodeError('bad media')))
+    .toBe('non-retryable');
+  expect(classifyBgmWorkflowError(new Error('R2 failed'))).toBe('retryable');
 });
 ```
 
-- [ ] **Step 5: Implement stream-only transcode**
+Also test Container HTTP 422 throws `PermanentBgmTranscodeError`.
 
-Key contract:
+- [ ] **Step 5: Implement stream-only transcode**
 
 ```ts
 const source = await env.DTXFILE_BUCKET.get(payload.sourceKey);
@@ -611,13 +599,18 @@ const response = await container.fetch(new Request(
   'http://bgm-transcoder/transcode/ogg-to-m4a',
   { method: 'POST', headers: { 'content-type': 'audio/ogg' }, body: source.body }
 ));
+if (response.status === 422) throw new PermanentBgmTranscodeError('Invalid BGM media');
+if (!response.ok || !response.body) throw new Error(`BGM transcode failed: ${response.status}`);
+await env.DTXFILE_BUCKET.put(stagingKey, response.body, {
+  httpMetadata: { contentType: 'audio/mp4' }
+});
 ```
 
-Cloudflare Workers accepts `ReadableStream` as `Request.body`; do not add `duplex: 'half'` unless the Workers compiler/runtime requires it. Do not fall back to `arrayBuffer()`.
+Do not add `duplex: 'half'` unless the actual Workers compiler/runtime requires it; current Cloudflare Workers accepts `ReadableStream` request bodies. Never replace streaming with `arrayBuffer()`.
 
 - [ ] **Step 6: Write RED guarded-publish tests**
 
-Cover source changed after staging -> delete staging/no canonical PUT, and success -> canonical PUT receives a stream with exact metadata:
+Assert source change after staging deletes staging and performs no canonical PUT. Success must PUT a `ReadableStream` with:
 
 ```ts
 httpMetadata: {
@@ -632,30 +625,28 @@ customMetadata: {
 }
 ```
 
-- [ ] **Step 7: Implement guarded publish and cleanup**
+- [ ] **Step 7: Implement guarded publish/cleanup, verify, commit**
 
-Re-HEAD actual source key, compare ETag/version, stream staging GET body into lower-case derivative PUT, purge, cleanup staging. Cleanup catches/logs delete failures and never replaces the original error.
-
-- [ ] **Step 8: Verify Task 4**
+Re-HEAD actual source key, compare ETag/version, GET staging, stream to lower-case derivative, purge, clean staging. Cleanup catches/logs delete failure without replacing the primary error.
 
 ```bash
 bun test src/services/bgmM4aGeneration.test.ts
 bun run check
+git add src/env.ts src/services/bgmM4aGeneration.ts src/services/bgmM4aGeneration.test.ts
+git commit -m "feat(api): implement source-safe BGM generation"
 ```
 
 Expected: PASS.
 
-Commit Task 4.
-
 ---
 
-## Task 5: Wire the Workflow and Wrangler resources without breaking current runtime/config
+## Task 5: Wire Workflow and Wrangler resources without breaking Better Auth
 
 **Files:** create Workflow wrapper; modify `index.ts`, `index.test.ts`, `wrangler.jsonc`, `package.json`.
 
-- [ ] **Step 1: Add Wrangler resources for each environment**
+- [ ] **Step 1: Add explicit resources to all environments**
 
-Top-level production:
+Production resource shape:
 
 ```jsonc
 "workflows": [{
@@ -678,39 +669,19 @@ Top-level production:
 }]
 ```
 
-Append `BGM_M4A_GENERATION_ENABLED` to current `vars`:
+Repeat non-inheritable bindings for `pre-prod` and `pre-prod-prod-data` with distinct Workflow names. Append `BGM_M4A_GENERATION_ENABLED` to current vars: prod/pre-prod `true`, prod-data `false`. Preserve every existing Better Auth URL/cookie/Google/D1/R2/KV value.
 
-```text
-prod true
-pre-prod true
-pre-prod-prod-data false
-```
-
-Repeat non-inheritable Workflow/Container/DO bindings under each named environment with distinct Workflow names. Preserve every Better Auth URL/cookie/Google/D1/R2/KV value already in `wrangler.jsonc`.
-
-- [ ] **Step 2: Verify RED dry-run before exports exist**
+- [ ] **Step 2: Run RED production dry-run**
 
 ```bash
 bun run build
 ```
 
-Expected: FAIL because referenced Worker classes are not yet exported.
+Expected: FAIL because Wrangler references classes not yet exported.
 
-- [ ] **Step 3: Add thin Workflow wrapper**
+- [ ] **Step 3: Implement thin Workers-only Workflow wrapper**
 
-Use `WorkflowEntrypoint`, `WorkflowEvent`, `WorkflowStep`, and `NonRetryableError`. Flow:
-
-```text
-validate payload with Zod
-step.do inspect
-return cached/superseded immediately
-step.do transcode with retries/timeout
-  classify PermanentBgmTranscodeError -> throw NonRetryableError
-step.do publish
-on terminal failure, step.do deterministic staging cleanup when staging key exists
-```
-
-The only Workers-specific conversion is:
+Use Zod validation in one `step.do`, inspect in one step, transcode with exact retry/timeout config, publish in one step, and deterministic cleanup on terminal failure. Convert only classified permanent errors:
 
 ```ts
 if (classifyBgmWorkflowError(error) === 'non-retryable') {
@@ -721,29 +692,27 @@ throw error;
 
 Do not add `@cloudflare/vitest-plugin`.
 
-- [ ] **Step 4: Export Worker classes and preserve Better Auth handler**
-
-Add named exports only:
+- [ ] **Step 4: Export classes without restructuring `index.ts`**
 
 ```ts
 export { BgmTranscoderContainer } from './containers/bgmTranscoder';
 export { GenerateBgmM4aWorkflow } from './workflows/generateBgmM4a';
 ```
 
-Do not restructure current default `fetch`, `/api/auth/*`, GraphQL, or REST routing.
+Preserve current default fetch handler and `/api/auth/*` dispatch.
 
 - [ ] **Step 5: Keep Node `index.test.ts` runnable**
 
-Because `index.test.ts` imports the Worker entrypoint, hoist mocks for the Workers-only named-export modules before the import if Node cannot resolve their Cloudflare runtime imports:
+If Workers-only imports are not resolvable under Node Vitest, hoist these mocks before importing `./index`:
 
 ```ts
 vi.mock('./containers/bgmTranscoder', () => ({ BgmTranscoderContainer: class {} }));
 vi.mock('./workflows/generateBgmM4a', () => ({ GenerateBgmM4aWorkflow: class {} }));
 ```
 
-Keep the current Better Auth route tests unchanged.
+Keep existing Better Auth router tests unchanged.
 
-- [ ] **Step 6: Append dry-run scripts to current package scripts**
+- [ ] **Step 6: Append environment dry-run/typegen scripts**
 
 ```json
 "build:preprod": "wrangler deploy --dry-run --env pre-prod --outdir=dist/pre-prod",
@@ -752,9 +721,9 @@ Keep the current Better Auth route tests unchanged.
 "cf-typegen:preprod:prod-data": "wrangler types --env pre-prod-prod-data --env-interface CloudflareBindings"
 ```
 
-Do not replace Better Auth schema/migration scripts or package exports.
+Preserve current auth scripts/exports/dependencies.
 
-- [ ] **Step 7: Run full runtime/package gates now, not in Task 8 only**
+- [ ] **Step 7: Run full package/runtime gates and commit**
 
 ```bash
 bun run test
@@ -765,11 +734,11 @@ bun run build:preprod:prod-data
 bun run cf-typegen >/dev/null
 bun run cf-typegen:preprod >/dev/null
 bun run cf-typegen:preprod:prod-data >/dev/null
+git add src/workflows/generateBgmM4a.ts src/index.ts src/index.test.ts wrangler.jsonc package.json
+git commit -m "feat(api): deploy BGM generation workflow"
 ```
 
-Expected: PASS. Docker must be available for configured Container build resolution.
-
-Commit Task 5.
+Expected: all `dtx-api` tests/checks and all three Wrangler dry-runs/typegens PASS.
 
 ---
 
@@ -777,28 +746,15 @@ Commit Task 5.
 
 **Files:** modify existing `r2Enrichment.ts/test.ts`, `downloads.ts/downloads.test.ts`.
 
-- [ ] **Step 1: Add generic discovery characterization**
-
-Change only:
+- [ ] **Step 1: Characterize generic M4A fallback**
 
 ```ts
 const audioExts = ['.ogg', '.m4a', '.mp3', '.wav', '.flac'];
 ```
 
-Add tests:
+Add tests proving M4A-only top-level audio can populate `discoverCatalogFiles().downloadUrl` and OGG remains ahead of M4A. State in test names/comments that this is generic fallback discovery; Virgo publication is `Simfile.files`.
 
-```text
-M4A-only top-level audio can populate discoverCatalogFiles().downloadUrl
-OGG remains ahead of M4A when both exist
-```
-
-Document in the test/implementation that this is **generic fallback discovery**, not the Virgo publication path. Virgo sees generated M4A through `Simfile.files`.
-
-- [ ] **Step 2: Add RED BGM ZIP assertions to the existing `downloads.test.ts`**
-
-Do not create/overwrite the file. Keep existing access-control/concurrency tests and current mocks.
-
-Use `mockedListAll` + `mockedCreateZipSources` to assert the pre-filtered input:
+- [ ] **Step 2: Add RED ZIP assertions to the existing test file**
 
 ```ts
 it('omits canonical generated M4A when canonical OGG exists regardless of case', async () => {
@@ -811,14 +767,10 @@ it('omits canonical generated M4A when canonical OGG exists regardless of case',
 
   await collectZipSources({} as R2Bucket, [42]);
 
-  expect(mockedCreateZipSources).toHaveBeenCalledWith(
-    [
-      expect.objectContaining({ key: '42/BGM.OGG' }),
-      expect.objectContaining({ key: '42/a.dtx' })
-    ],
-    '42/',
-    'chart-42'
-  );
+  expect(mockedCreateZipSources.mock.calls[0][0]).toEqual([
+    expect.objectContaining({ key: '42/BGM.OGG' }),
+    expect.objectContaining({ key: '42/a.dtx' })
+  ]);
 });
 
 it('retains M4A when canonical OGG is absent', async () => {
@@ -833,9 +785,9 @@ it('retains M4A when canonical OGG is absent', async () => {
 });
 ```
 
-- [ ] **Step 3: Implement DTX-specific pre-filter in `collectZipSources()`**
+Keep all existing access/concurrency tests and mocks.
 
-For each simfile's listed objects:
+- [ ] **Step 3: Filter before existing `createZipSources()`**
 
 ```ts
 const hasCanonicalSource = objects.some((object) =>
@@ -846,52 +798,42 @@ const zipObjects = hasCanonicalSource
   : objects;
 ```
 
-Pass `zipObjects` to existing `createZipSources()`. Do not touch `zipBuilder.ts`.
+Pass `zipObjects` to `createZipSources()`. Do not touch `zipBuilder.ts`.
 
-- [ ] **Step 4: Verify Task 6**
+- [ ] **Step 4: Verify and commit Task 6**
 
 ```bash
 bun test src/services/r2Enrichment.test.ts src/services/downloads.test.ts \
   src/rest/downloadSimfile.test.ts src/rest/downloadBulk.test.ts
 bun run check
+git add src/services/r2Enrichment.ts src/services/r2Enrichment.test.ts \
+  src/services/downloads.ts src/services/downloads.test.ts
+git commit -m "feat(api): expose M4A without duplicating raw ZIP audio"
 ```
 
 Expected: PASS.
 
-Commit Task 6.
-
 ---
 
-## Task 7: Add a non-vacuous public-catalog audit and sequential backfill
+## Task 7: Add non-vacuous catalog audit and sequential backfill
 
-**Files:** create script/tests; modify `package.json`.
+**Files:** create `backfill-bgm-m4a.ts/test.ts`; modify `package.json`.
 
-**Produces:** dry-run audit/histogram, `--execute`, `--check`.
-
-- [ ] **Step 1: Write RED selection and audit tests**
-
-Define:
+- [ ] **Step 1: Write RED selection/audit tests**
 
 ```ts
-export type PublishedSimfile = {
-  id: string;
-  files: Array<{ key: string; uploaded: string }>;
-};
-```
+const rows: PublishedSimfile[] = [
+  { id: '42', files: [{ key: '42/BGM.OGG', uploaded: '2026-08-01T00:00:00Z' }] },
+  { id: '43', files: [
+    { key: '43/bgm.ogg', uploaded: '2026-08-01T00:00:00Z' },
+    { key: '43/bgm.m4a', uploaded: '2026-08-01T00:01:00Z' }
+  ] },
+  { id: '44', files: [{ key: '44/song.ogg', uploaded: '2026-08-01T00:00:00Z' }] },
+  { id: '45', files: [{ key: '45/assets/bgm.ogg', uploaded: '2026-08-01T00:00:00Z' }] }
+];
 
-Test rows including:
-
-```text
-42/BGM.OGG                 -> canonical source
-43/bgm.ogg + 43/bgm.m4a    -> already ready
-44/song.ogg                 -> top-level full-track but non-canonical
-45/assets/bgm.ogg           -> nested sample/asset, not canonical/top-level full-track
-```
-
-Assertions:
-
-```ts
 expect(selectMissingM4a(rows).map((row) => row.id)).toEqual(['42']);
+const audit = auditPublishedCatalog(rows);
 expect(audit.topLevelAudioFilenameHistogram).toMatchObject({
   'bgm.ogg': 2,
   'bgm.m4a': 1,
@@ -901,57 +843,49 @@ expect(audit.topLevelAudioWithoutCanonicalBgmOgg).toBe(1);
 expect(audit.missingM4aAmongCanonicalBgmOgg).toBe(1);
 ```
 
-- [ ] **Step 2: Implement public GraphQL pagination**
-
-Exact query:
+- [ ] **Step 2: Implement complete public GraphQL pagination**
 
 ```graphql
 query PublishedSimfiles($page: Int!, $pageSize: Int!) {
   simfiles(scope: PUBLISHED, page: $page, pageSize: $pageSize) {
     count
-    data {
-      id
-      files { key uploaded }
-    }
+    data { id files { key uploaded } }
   }
 }
 ```
 
-Use `pageSize = 100`, reject non-2xx or GraphQL `errors`, and never operate on a partial catalog. No auth header is required for `PUBLISHED` scope.
+Use page size 100; reject non-2xx/GraphQL errors; never operate on a partial catalog. No auth is required for `PUBLISHED`.
 
-- [ ] **Step 3: Implement case-insensitive source/derivative selection preserving actual key**
+- [ ] **Step 3: Preserve actual source key in backfill selection**
 
-`selectMissingM4a()` finds the actual source file with `isCanonicalBgmSourceKey(file.key, Number(row.id))`; it excludes rows with any case-insensitive canonical derivative. The Workflow payload uses the source file's exact stored key.
+Use `isCanonicalBgmSourceKey(file.key, Number(row.id))` to find the source and the derivative helper to detect any case variant. Backfill only source-present/derivative-absent rows. The Workflow payload uses the exact stored source key.
 
-- [ ] **Step 4: Implement top-level audio histogram and non-vacuous counters**
+- [ ] **Step 4: Implement histogram and counters**
 
-Use lower-cased basenames and extensions:
+Top-level non-preview full-track extensions:
 
 ```ts
 const FULL_TRACK_EXTS = ['.ogg', '.m4a', '.mp3', '.wav', '.flac'];
 ```
 
-Exclude nested keys and `preview.mp3`. Print:
+Print:
 
 ```text
-published total: <n>
-with top-level audio: <n>
-with canonical bgm.ogg: <n>
-with canonical bgm.m4a: <n>
-top-level audio without canonical bgm.ogg: <n>
-missing bgm.m4a among canonical bgm.ogg: <n>
-filename histogram:
-  bgm.ogg: <n>
-  song.ogg: <n>
-  ...
+published total
+audio-bearing published rows
+with canonical bgm.ogg
+with canonical bgm.m4a
+top-level audio without canonical bgm.ogg
+missing bgm.m4a among canonical bgm.ogg
+lower-cased top-level audio filename histogram
 mode: dry-run|execute|check
 ```
 
-The key release counters are row counts, not raw file counts.
+Counters are per simfile row; histogram is per file.
 
-- [ ] **Step 5: Write RED Workflow REST/poll tests**
+- [ ] **Step 5: Write/implement deterministic REST creation and polling**
 
-`buildWorkflowCreateBody(row)` must use a deterministic backfill ID based on simfile ID + canonical source `uploaded` timestamp and send:
+Build backfill instance ID from simfile ID + canonical source `uploaded` timestamp. Params:
 
 ```ts
 {
@@ -961,43 +895,22 @@ The key release counters are row counts, not raw file counts.
 }
 ```
 
-No expected ETag/version for backfill; Workflow Step 1 captures current state.
+POST to Cloudflare Workflows REST, then poll every five seconds until `complete`, `errored`, or `terminated`. Map complete output status to `ready`, `cached`, or `superseded`; errors/termination map to `errored`. Execute sequentially and exit nonzero on first `errored`.
 
-Test terminal mapping:
+- [ ] **Step 6: Implement dry-run and `--check` modes**
 
-```text
-complete + output.ready       -> ready
-complete + output.cached      -> cached
-complete + output.superseded  -> superseded
-errored/terminated            -> errored
-```
-
-- [ ] **Step 6: Implement sequential `--execute`**
-
-POST instance to Cloudflare Workflows REST API, then poll that instance every five seconds until terminal before starting the next candidate. Print `<id>: <outcome>`. Exit nonzero immediately on `errored`.
-
-Require operator env only in execute mode:
+Default dry-run prints audit/histogram and makes no Workflow mutation. `--check` also makes no mutation and exits nonzero unless:
 
 ```text
-CLOUDFLARE_ACCOUNT_ID
-CLOUDFLARE_API_TOKEN
-BGM_WORKFLOW_NAME
+top-level audio without canonical bgm.ogg = 0
+missing bgm.m4a among canonical bgm.ogg = 0
 ```
 
-`DTX_GRAPHQL_URL` is required in all modes.
+If the catalog contains top-level audio but zero canonical BGM sources, the first condition fails rather than reporting vacuous readiness.
 
-- [ ] **Step 7: Implement `--check` release gate**
+- [ ] **Step 7: Verify and commit Task 7**
 
-`--check` makes no Workflow mutations and exits nonzero unless both are zero:
-
-```text
-top-level audio without canonical bgm.ogg
-missing bgm.m4a among canonical bgm.ogg
-```
-
-If any top-level audio exists but canonical BGM count is zero, the first condition necessarily fails. Songs with no top-level audio are not invented into the BGM contract.
-
-- [ ] **Step 8: Append package script and verify**
+Add:
 
 ```json
 "backfill:bgm-m4a": "bun run src/scripts/backfill-bgm-m4a.ts"
@@ -1009,17 +922,15 @@ Run:
 bun test src/scripts/backfill-bgm-m4a.test.ts
 DTX_GRAPHQL_URL=https://api.pre-prod.dtx.hapadona.com/graphql bun run backfill:bgm-m4a
 bun run check
+git add src/scripts/backfill-bgm-m4a.ts src/scripts/backfill-bgm-m4a.test.ts package.json
+git commit -m "feat(api): add BGM M4A backfill tool"
 ```
 
-Expected: tests PASS; default script prints dry-run counts/histogram and creates no Workflow instance.
-
-Commit Task 7.
+Expected: tests PASS; default command prints dry-run audit and creates no Workflow instance.
 
 ---
 
 ## Task 8: Full verification, rollout, backfill, and Virgo gate
-
-**Files:** production files only if verification finds an HPA-311 defect; PR/Linear metadata for evidence.
 
 - [ ] **Step 1: Run complete local/package verification**
 
@@ -1036,7 +947,7 @@ bun run lint
 bun run test
 ```
 
-Expected: PASS. If root verification exposes a pre-existing unrelated failure, reproduce it on current `main` and record exact evidence; do not weaken HPA-311 tests.
+Expected: PASS. If root verification shows an unrelated baseline failure, reproduce it on current `main` and record the exact command/failure without weakening HPA-311 tests.
 
 - [ ] **Step 2: Verify forbidden architecture is absent**
 
@@ -1046,36 +957,29 @@ git diff main...HEAD -- packages/common/src/lib/server/zipBuilder.ts
 git diff main...HEAD -- packages/dtx-api/d1-migrations packages/dtx-api/dist/schema.graphql
 ```
 
-Confirm no Queue/R2 event binding/public generation route/job-state table/GraphQL schema change and `zipBuilder.ts` unchanged.
+Require no Queue/R2 event binding/public generation route/job-state table/GraphQL schema change and no `zipBuilder.ts` change.
 
-- [ ] **Step 3: Deploy and smoke pre-prod**
+- [ ] **Step 3: Deploy/smoke pre-prod**
 
 ```bash
 bun run deploy:api:preprod
 ```
 
-Upload a real canonical source using one current auth path:
-
-- Better Auth cookie + `Origin` exactly equal to pre-prod `DTX_WEB_URL`; or
-- opaque desktop Bearer session without `Origin`.
-
-Use at least one mixed-case source filename (`BGM.OGG`) to prove canonical case handling. Verify upload returns before Workflow completion, Workflow reaches `ready`, lower-case `bgm.m4a` appears, metadata/cache policy match, identical re-upload is idempotent, and a deliberately changed source cannot publish an older staged result.
+Use either Better Auth cookie + exact trusted `Origin`, or current opaque desktop Bearer auth. Upload at least one `BGM.OGG`. Verify upload returns before Workflow completion; Workflow reaches `ready`; lower-case M4A appears with exact metadata/cache policy; identical re-upload is idempotent; replacing source during conversion cannot publish older staging.
 
 - [ ] **Step 4: Validate Apple media compatibility**
-
-Download generated M4A:
 
 ```bash
 afinfo /tmp/bgm.m4a
 ```
 
-Require AAC in M4A/MP4. Initialize the same file with Virgo's existing `AVAudioPlayer(contentsOf:)` smoke path and require `prepareToPlay()` success. Play one representative chart and record synchronization result; do not invent a timing offset without measured evidence.
+Require AAC in M4A/MP4. Exercise Virgo's existing `AVAudioPlayer(contentsOf:)` smoke path and require `prepareToPlay()` success. Play one representative chart and record synchronization; do not add timing offset without measurement.
 
-- [ ] **Step 5: Prove prod-data environment is non-mutating**
+- [ ] **Step 5: Prove prod-data environment cannot mutate canonical BGM**
 
-Build/deploy only as needed. Through authenticated `pre-prod-prod-data` upload, attempts to upload mixed-case canonical source (`BGM.OGG`) and derivative (`BGM.M4A`) must both return 409. Confirm production R2 identities did not change.
+Through authenticated `pre-prod-prod-data`, mixed-case `BGM.OGG` and `BGM.M4A` uploads both return 409. Confirm production R2 identity unchanged.
 
-- [ ] **Step 6: Deploy production and run audit before backfill**
+- [ ] **Step 6: Deploy production and inspect the pre-backfill audit**
 
 ```bash
 bun run deploy:api
@@ -1083,7 +987,7 @@ DTX_GRAPHQL_URL=https://api.dtx.hapadona.com/graphql \
   bun run --filter=dtx-api backfill:bgm-m4a
 ```
 
-Record the complete filename histogram and counters. If `top-level audio without canonical bgm.ogg` is nonzero, stop the Virgo release gate and resolve those catalog/source names explicitly; do not call the M4A gate complete just because canonical-source count is zero.
+Record histogram/counters. If `top-level audio without canonical bgm.ogg` is nonzero, stop the Virgo gate and resolve those source names explicitly; do not waive the contract.
 
 - [ ] **Step 7: Execute sequential backfill**
 
@@ -1095,7 +999,7 @@ BGM_WORKFLOW_NAME=dtx-api-bgm-m4a \
   bun run --filter=dtx-api backfill:bgm-m4a --execute
 ```
 
-Require every candidate to reach `ready`, `cached`, or `superseded`; fix/re-upload any errored source before proceeding.
+Require every candidate to reach `ready`, `cached`, or `superseded`; fix/re-upload an errored source before proceeding.
 
 - [ ] **Step 8: Run the non-vacuous production gate**
 
@@ -1104,27 +1008,20 @@ DTX_GRAPHQL_URL=https://api.dtx.hapadona.com/graphql \
   bun run --filter=dtx-api backfill:bgm-m4a --check
 ```
 
-Release gate is exactly:
+Release gate:
 
 ```text
 top-level audio without canonical bgm.ogg: 0
 missing bgm.m4a among canonical bgm.ogg: 0
 ```
 
-- [ ] **Step 9: Verify production GraphQL and raw ZIP behavior**
+- [ ] **Step 9: Verify GraphQL/raw ZIP**
 
-For a BGM-bearing published simfile:
+For one BGM-bearing published simfile, `Simfile.files` includes actual canonical OGG key + lower-case `bgm.m4a`; raw `/downloads/{id}` contains OGG but not redundant M4A. If an M4A-only row exists, raw ZIP retains it.
 
-```text
-Simfile.files includes actual canonical OGG key and lower-case bgm.m4a
-raw /downloads/{id} ZIP includes OGG but omits redundant canonical M4A
-```
+- [ ] **Step 10: Record evidence and unblock Virgo only when both gates pass**
 
-If an M4A-only row exists, its raw ZIP still retains M4A.
-
-- [ ] **Step 10: Record evidence and unblock Virgo only after both gates pass**
-
-Update the implementation PR and HPA-311 with:
+Record:
 
 ```text
 dtx-api tests/typecheck: PASS
@@ -1135,26 +1032,25 @@ Production non-canonical top-level-audio rows: 0
 Production canonical BGM rows missing M4A: 0
 ```
 
-Keep HPA-311 blocking HPA-85 until both production counters are zero.
+Keep HPA-311 blocking HPA-85 until both production counters are zero. If Task 8 found an HPA-311 defect, commit only that fix in the same implementation PR; otherwise do not create an empty verification commit.
 
 ---
 
 ## Completion Checklist
 
-- [ ] Current Better Auth upload/session and Worker routing behavior remains covered.
-- [ ] Generation-only Env fields do not force unrelated fixture churn.
-- [ ] Canonical top-level BGM matching is case-insensitive everywhere.
-- [ ] Actual source R2 key is preserved in payload/metadata.
-- [ ] Generated destination is stable lower-case `bgm.m4a`.
-- [ ] Upload trigger is idempotent and fail-loud when explicitly enabled but unbound.
-- [ ] Worker orchestration is stream-only; no full audio buffers.
+- [ ] Better Auth upload/session and Worker routing remain covered.
+- [ ] Generation-only `Env` fields avoid unrelated fixture churn.
+- [ ] Canonical BGM matching is case-insensitive everywhere; actual source key is preserved.
+- [ ] Destination is stable lower-case `bgm.m4a`.
+- [ ] Trigger is idempotent and fail-loud when enabled but unbound.
+- [ ] Worker orchestration is stream-only.
 - [ ] Invalid media is non-retryable; transient errors use approved retry policy.
 - [ ] Source identity is checked before transcode and before publish.
 - [ ] Existing `downloads.test.ts` is extended, not replaced.
 - [ ] Generic `.m4a` discovery is characterized but not described as publication.
 - [ ] `Simfile.files` remains the Virgo publication seam.
 - [ ] Raw ZIP omits only redundant canonical generated M4A.
-- [ ] Backfill dry-run prints filename histogram and non-vacuous counters.
-- [ ] Production has zero top-level full-track rows outside the canonical BGM contract.
+- [ ] Backfill prints filename histogram + non-vacuous counters.
+- [ ] Production has zero top-level full-track rows outside canonical BGM naming.
 - [ ] Production canonical BGM rows all have M4A.
-- [ ] Virgo HPA-85 stays separate and blocked until both gates pass.
+- [ ] Virgo HPA-85 stays blocked until both gates pass.

@@ -30,6 +30,7 @@
 		"cf-typegen:preprod": "wrangler types --env pre-prod --env-interface CloudflareBindings",
 		"cf-typegen:preprod:prod-data": "wrangler types --env pre-prod-prod-data --env-interface CloudflareBindings",
 		"gen-schema": "bun run src/scripts/gen-schema.ts",
+		"backfill:bgm-m4a": "bun run src/scripts/backfill-bgm-m4a.ts",
 		"auth:migrate": "bun run src/scripts/migrate-supabase-auth.ts",
 		"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
 		"auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",

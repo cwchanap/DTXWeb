@@ -12,6 +12,18 @@
 
 **Validated against:** `main@9ec68aac5db82e027432841938f92824e8687f80` after Better Auth/D1 PR #240 and Cloudflare platform docs current through 2026-08-26.
 
+## Review corrections incorporated
+
+- Canonical BGM identity is top-level `bgm.ogg` case-insensitively, while the actual R2 source key is preserved.
+- Generation-only `Env` fields are optional to avoid rewriting unrelated Better Auth-era test fixtures; explicitly enabled missing bindings fail loudly.
+- The Better Auth revalidation is folded directly into this plan; there is no sidecar overlay.
+- Existing `downloads.test.ts` is extended rather than recreated, and `index.test.ts` gets the new `UploadResult` mock shape.
+- `Simfile.files` is explicitly the Virgo publication seam; `.m4a` in generic `audioExts` is only characterization.
+- Worker audio I/O is stream-only and tested as such. Current Cloudflare Workers docs do not require Node's `duplex: 'half'`, so it is not added speculatively.
+- Full `dtx-api` tests/typecheck run after the upload-return-type change and again after Workflow wiring.
+- Backfill includes a top-level-audio filename histogram and a non-vacuous two-counter release gate.
+- Current Cloudflare docs still support `instance_type: "basic"` (1/4 vCPU, 1 GiB memory, 4 GB disk); keep it as the initial size.
+
 ## Global Constraints
 
 - One HPA-311 implementation PR.

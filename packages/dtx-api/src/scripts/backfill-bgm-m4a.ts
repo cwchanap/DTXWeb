@@ -66,6 +66,8 @@ type InstanceSnapshot = {
 	output: unknown;
 };
 
+// Production Workflow name. Pre-prod `--execute` must set
+// BGM_WORKFLOW_NAME=dtx-api-bgm-m4a-preprod
 const DEFAULT_WORKFLOW_NAME = 'dtx-api-bgm-m4a';
 const DEFAULT_POLL_DELAY_MS = 2000;
 const DEFAULT_MAX_POLL_ATTEMPTS = 900;
@@ -307,7 +309,11 @@ const createInstance = async (
 				sourceKey: selected.source.key,
 				sourceUploaded: selected.source.uploaded,
 				profile: BGM_TRANSCODE_PROFILE
-			})
+			}),
+			instance_retention: {
+				success_retention: '1 day',
+				error_retention: '7 days'
+			}
 		})
 	});
 	const body = await readJson(response);
@@ -436,21 +442,21 @@ const reconcileSelected = async (
 				`simfile ${selected.simfileId}: Workflow output superseded; rerun after fresh catalog`
 			);
 		}
-		if ((outcome === 'ready' || outcome === 'cached') && !selected.missingOrOlder) {
-			return;
+		if (!selected.missingOrOlder) {
+			if (outcome === 'ready' || outcome === 'cached') {
+				return;
+			}
+			throw new Error(`simfile ${selected.simfileId}: unexpected Workflow output`);
 		}
-		if (outcome === 'ready' || outcome === 'cached') {
-			await restartInstance(config, instanceId);
-			const terminal = await waitForTerminalFrom(
-				config,
-				instanceId,
-				await getInstance(config, instanceId),
-				COMPLETE_STATUSES
-			);
-			requireReadyOrCached(terminal, selected.simfileId);
-			return;
-		}
-		throw new Error(`simfile ${selected.simfileId}: unexpected Workflow output`);
+		await restartInstance(config, instanceId);
+		const terminal = await waitForTerminalFrom(
+			config,
+			instanceId,
+			await getInstance(config, instanceId),
+			COMPLETE_STATUSES
+		);
+		requireReadyOrCached(terminal, selected.simfileId);
+		return;
 	}
 	throw new Error(`simfile ${selected.simfileId}: unexpected Workflow status ${snapshot.status}`);
 };

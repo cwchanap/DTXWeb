@@ -286,7 +286,15 @@ describe('execute REST lifecycle', () => {
 		rest: (call: {
 			method: string;
 			url: string;
-			body: { instance_id?: string; params?: string; status?: string };
+			body: {
+				instance_id?: string;
+				params?: string;
+				status?: string;
+				instance_retention?: {
+					success_retention?: string;
+					error_retention?: string;
+				};
+			};
 			headers: Headers;
 		}) => Response
 	): FetchLike => {
@@ -301,6 +309,10 @@ describe('execute REST lifecycle', () => {
 						instance_id?: string;
 						params?: string;
 						status?: string;
+						instance_retention?: {
+							success_retention?: string;
+							error_retention?: string;
+						};
 					})
 				: {};
 			expect(headers.get('Authorization')).toBe(`Bearer ${API_TOKEN}`);
@@ -332,6 +344,10 @@ describe('execute REST lifecycle', () => {
 						expect(body.params).not.toContain('ETag');
 						expect(params.expectedSourceEtag).toBeUndefined();
 						expect(params.expectedSourceVersion).toBeUndefined();
+						expect(body.instance_retention).toEqual({
+							success_retention: '1 day',
+							error_retention: '7 days'
+						});
 						return cfOk({ id, status: 'queued' });
 					}
 					if (method === 'GET' && url.startsWith(`${instancesUrl()}/${id}`)) {
@@ -437,6 +453,70 @@ describe('execute REST lifecycle', () => {
 		);
 
 		expect(result.exitCode).toBe(0);
+		expect(methods).toEqual(['POST', 'GET']);
+	});
+
+	it.each([null, 'not-json', 1] as const)(
+		'restarts a retained complete instance with unparseable output %j when the derivative is missing or older',
+		async (output) => {
+			const rows = sourceRow([
+				{ key: '42/track.wav', uploaded: SOURCE_UPLOADED },
+				{ key: '42/bgm.m4a', uploaded: OLDER_UPLOADED }
+			]);
+			const id = expectedId();
+			const methods: string[] = [];
+			let gets = 0;
+
+			const result = await runBackfill(
+				executeConfig(
+					combineFetch(rows, ({ method, url, body }) => {
+						methods.push(method);
+						if (method === 'POST') return new Response(null, { status: 409 });
+						if (method === 'PATCH') {
+							expect(url).toBe(`${instancesUrl()}/${id}/status`);
+							expect(body).toEqual({ status: 'restart' });
+							return cfOk({ status: 'queued' });
+						}
+						if (method === 'GET') {
+							gets += 1;
+							if (gets === 1) {
+								return cfOk({ status: 'complete', output });
+							}
+							if (gets === 2) return cfOk({ status: 'running', output: null });
+							return cfOk({ status: 'complete', output: '{"status":"ready"}' });
+						}
+						throw new Error(`${method} ${url}`);
+					})
+				)
+			);
+
+			expect(result.exitCode).toBe(0);
+			expect(methods).toEqual(['POST', 'GET', 'PATCH', 'GET', 'GET']);
+		}
+	);
+
+	it('fails retained complete superseded output without restarting even when the derivative is missing or older', async () => {
+		const rows = sourceRow([
+			{ key: '42/track.wav', uploaded: SOURCE_UPLOADED },
+			{ key: '42/bgm.m4a', uploaded: OLDER_UPLOADED }
+		]);
+		const methods: string[] = [];
+
+		const result = await runBackfill(
+			executeConfig(
+				combineFetch(rows, ({ method }) => {
+					methods.push(method);
+					if (method === 'POST') return new Response(null, { status: 409 });
+					if (method === 'GET') {
+						return cfOk({ status: 'complete', output: { status: 'superseded' } });
+					}
+					throw new Error(method);
+				})
+			)
+		);
+
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toMatch(/superseded/);
 		expect(methods).toEqual(['POST', 'GET']);
 	});
 

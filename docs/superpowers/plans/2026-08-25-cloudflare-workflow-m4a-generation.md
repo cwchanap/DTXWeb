@@ -97,7 +97,11 @@
 
 **Files:** create `bgmM4a.ts`, `bgmM4a.test.ts`; modify `env.ts`, `uploads.ts`, `uploads.test.ts`.
 
-**Produces:** canonical key helpers, profile/schema/ID helpers, `UploadedObject`, `UploadResult`, optional generation flag.
+**Interfaces:**
+- Produces `BGM_SOURCE_FILENAME`, `BGM_DERIVATIVE_FILENAME`, `BGM_TRANSCODE_PROFILE`.
+- Produces `isCanonicalBgmSourceKey(key, simfileId)`, `isCanonicalBgmDerivativeKey(key, simfileId)`, `bgmDerivativeKey(simfileId)`, `bgmStagingKey(simfileId, etag)`, `buildUploadWorkflowInstanceId(simfileId, etag)`, `buildBackfillWorkflowInstanceId(simfileId, uploaded)`, and `buildPublicR2Url(base, key)`.
+- Produces `GenerateBgmM4aPayload`, `UploadedObject`, `UploadResult`.
+- Adds optional `Env.BGM_M4A_GENERATION_ENABLED`.
 
 - [ ] **Step 1: Write RED canonical-identity tests**
 
@@ -312,6 +316,11 @@ Expected: tests/typecheck PASS.
 
 **Files:** create trigger service/tests; modify `env.ts`, `rest/upload.ts`, `rest/upload.test.ts`, `index.test.ts`.
 
+**Interfaces:**
+- Consumes Task 1 `UploadedObject`, `GenerateBgmM4aPayload`, canonical helpers, and instance-ID helper.
+- Adds optional `Env.BGM_M4A_WORKFLOW`.
+- Produces `triggerBgmM4aGeneration(env, uploaded): Promise<'disabled' | 'not-bgm' | 'started' | 'duplicate'>`.
+
 - [ ] **Step 1: Add optional Workflow binding and RED trigger tests**
 
 ```ts
@@ -472,6 +481,11 @@ Expected: all `dtx-api` tests and typecheck PASS.
 ## Task 3: Add the scale-to-zero FFmpeg Container
 
 **Files:** create Container class/Docker/server/smoke; modify `package.json`, `bun.lock`.
+
+**Interfaces:**
+- Produces `BgmTranscoderContainer` on port 8080 with one-minute sleep and internet disabled.
+- Produces internal `POST /transcode/ogg-to-m4a`: `audio/ogg` request -> `200 audio/mp4`, invalid media -> `422`, internal/transient -> `5xx`.
+- Produces package script `smoke:bgm-transcoder`.
 
 - [ ] **Step 1: Add dependency without replacing current package state**
 
@@ -639,6 +653,11 @@ Expected: smoke validates AAC; typecheck PASS.
 
 **Files:** create `bgmM4aGeneration.ts` + tests; modify `env.ts`.
 
+**Interfaces:**
+- Adds optional `Env.BGM_TRANSCODER`.
+- Produces `BgmSourceState`, `PermanentBgmTranscodeError`, `classifyBgmWorkflowError()`.
+- Produces `inspectBgmGeneration()`, `transcodeBgmToStaging()`, `publishBgmFromStaging()`, `cleanupBgmStaging()` for Task 5.
+
 - [ ] **Step 1: Add optional Container binding**
 
 ```ts
@@ -759,6 +778,11 @@ Expected: PASS.
 
 **Files:** create Workflow wrapper; modify `index.ts`, `index.test.ts`, `wrangler.jsonc`, `package.json`.
 
+**Interfaces:**
+- Consumes Task 4 service operations and error classifier.
+- Produces exported `GenerateBgmM4aWorkflow` and `BgmTranscoderContainer` classes.
+- Binds `BGM_M4A_WORKFLOW` and `BGM_TRANSCODER` in every deployed environment.
+
 - [ ] **Step 1: Add explicit resources to all environments**
 
 Production resource shape:
@@ -861,6 +885,10 @@ Expected: all `dtx-api` tests/checks and all three Wrangler dry-runs/typegens PA
 
 **Files:** modify existing `r2Enrichment.ts/test.ts`, `downloads.ts/downloads.test.ts`.
 
+**Interfaces:**
+- `discoverCatalogFiles()` recognizes M4A as generic full-track audio while keeping OGG first.
+- `collectZipSources()` pre-filters redundant canonical M4A before calling unchanged `createZipSources()`.
+
 - [ ] **Step 1: Characterize generic M4A fallback**
 
 ```ts
@@ -933,6 +961,10 @@ Expected: PASS.
 ## Task 7: Add non-vacuous catalog audit and sequential backfill
 
 **Files:** create `backfill-bgm-m4a.ts/test.ts`; modify `package.json`.
+
+**Interfaces:**
+- Consumes public `simfiles(scope: PUBLISHED)` and Task 1 canonical helpers/ID/profile.
+- Produces default dry-run audit, `--execute` sequential backfill, and read-only `--check` release gate.
 
 - [ ] **Step 1: Write RED selection/audit tests**
 
@@ -1046,6 +1078,8 @@ Expected: tests PASS; default command prints dry-run audit and creates no Workfl
 ---
 
 ## Task 8: Full verification, rollout, backfill, and Virgo gate
+
+**Interfaces:** consumes Tasks 1–7 and produces the backend evidence required to unblock HPA-85.
 
 - [ ] **Step 1: Run complete local/package verification**
 

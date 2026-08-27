@@ -120,4 +120,55 @@ describe('collectZipSources', () => {
 		expect(result.estimatedBytes).toBe(0);
 		expect(mockedListAll).not.toHaveBeenCalled();
 	});
+
+	const zipInputKeys = (): string[] =>
+		(mockedCreateZipSources.mock.calls[0][0] as Array<{ key: string }>).map(
+			(object) => object.key
+		);
+
+	it('keeps music.ogg and drops canonical bgm.m4a when both exist', async () => {
+		mockedListAll.mockResolvedValue([
+			{ key: '42/music.ogg', size: 200, uploaded: new Date() },
+			{ key: '42/bgm.m4a', size: 150, uploaded: new Date() },
+			{ key: '42/chart.dtx', size: 50, uploaded: new Date() }
+		]);
+
+		await collectZipSources({} as R2Bucket, [42]);
+
+		expect(zipInputKeys()).toEqual(expect.arrayContaining(['42/music.ogg', '42/chart.dtx']));
+		expect(zipInputKeys()).not.toContain('42/bgm.m4a');
+	});
+
+	it('keeps song.mp3 and drops canonical bgm.m4a when both exist', async () => {
+		mockedListAll.mockResolvedValue([
+			{ key: '42/song.mp3', size: 200, uploaded: new Date() },
+			{ key: '42/bgm.m4a', size: 150, uploaded: new Date() }
+		]);
+
+		await collectZipSources({} as R2Bucket, [42]);
+
+		expect(zipInputKeys()).toContain('42/song.mp3');
+		expect(zipInputKeys()).not.toContain('42/bgm.m4a');
+	});
+
+	it('retains canonical bgm.m4a when it is the only full-track audio', async () => {
+		mockedListAll.mockResolvedValue([{ key: '42/bgm.m4a', size: 150, uploaded: new Date() }]);
+
+		await collectZipSources({} as R2Bucket, [42]);
+
+		expect(zipInputKeys()).toContain('42/bgm.m4a');
+	});
+
+	it('does not treat nested sample audio as an authored full-track source', async () => {
+		mockedListAll.mockResolvedValue([
+			{ key: '42/assets/kick.ogg', size: 20, uploaded: new Date() },
+			{ key: '42/bgm.m4a', size: 150, uploaded: new Date() }
+		]);
+
+		await collectZipSources({} as R2Bucket, [42]);
+
+		expect(zipInputKeys()).toEqual(
+			expect.arrayContaining(['42/assets/kick.ogg', '42/bgm.m4a'])
+		);
+	});
 });

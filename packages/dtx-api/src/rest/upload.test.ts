@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { routeUpload } from './upload';
 import type { Env } from '../env';
 import type { ExecutionContext, R2Bucket } from '@cloudflare/workers-types';
+import { workerLogger } from '@dtx/common/server';
 
 vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
@@ -12,13 +13,19 @@ vi.mock('../services/uploads', () => ({
 	purgeCacheForFile: vi.fn(async () => true)
 }));
 
+vi.mock('../services/bgmM4aWorkflowTrigger', () => ({
+	triggerBgmM4aWorkflow: vi.fn(async () => 'disabled')
+}));
+
 const { resolveAuthSession } = await import('../auth/session');
 const { uploadSimfileFile, purgeCacheForFile } = await import('../services/uploads');
+const { triggerBgmM4aWorkflow } = await import('../services/bgmM4aWorkflowTrigger');
 const mockedResolveAuthSession = resolveAuthSession as ReturnType<typeof vi.fn>;
 const mockedUpload = uploadSimfileFile as ReturnType<typeof vi.fn>;
 const mockedPurge = purgeCacheForFile as ReturnType<typeof vi.fn>;
+const mockedTrigger = triggerBgmM4aWorkflow as ReturnType<typeof vi.fn>;
 
-const makeEnv = (): Env => ({
+const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	DB: {} as Env['DB'],
 	DTXFILE_BUCKET: {} as R2Bucket,
 	RATE_LIMIT_API: {} as Env['RATE_LIMIT_API'],
@@ -32,7 +39,8 @@ const makeEnv = (): Env => ({
 	GRAPHIQL: 'false',
 	CORS_ALLOWED_ORIGINS: '',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
-	PUBLIC_SIMFILE_BUCKET_URL: 'https://files.example'
+	PUBLIC_SIMFILE_BUCKET_URL: 'https://files.example',
+	...overrides
 });
 
 const makeCtx = (): ExecutionContext =>
@@ -61,6 +69,7 @@ beforeEach(() => {
 	mockedResolveAuthSession.mockReset().mockResolvedValue(null);
 	mockedUpload.mockClear();
 	mockedPurge.mockClear();
+	mockedTrigger.mockReset().mockResolvedValue('disabled');
 });
 
 describe('POST /upload', () => {
@@ -161,6 +170,72 @@ describe('POST /upload', () => {
 			'https://files.example/42/my%20song%20file.dtx',
 			expect.anything()
 		);
+	});
+
+	it('returns the authored upload response without waiting for the BGM trigger', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		const uploadResponse = new Response(JSON.stringify({ ok: true }), { status: 200 });
+		mockedUpload.mockResolvedValue({
+			response: uploadResponse,
+			uploadedObject: {
+				simfileId: 42,
+				key: '42/music.ogg',
+				etag: 'etag-1',
+				version: 'version-1',
+				uploaded: '2026-08-27T05:00:00.123Z',
+				size: 10
+			}
+		});
+		let finishTrigger: (() => void) | undefined;
+		mockedTrigger.mockReturnValue(
+			new Promise((resolve) => {
+				finishTrigger = () => resolve('triggered');
+			})
+		);
+		const ctx = makeCtx();
+
+		const response = await routeUpload(
+			multipartReq(),
+			makeEnv({ PUBLIC_SIMFILE_BUCKET_URL: '' }),
+			ctx
+		);
+
+		expect(response).toBe(uploadResponse);
+		expect(mockedTrigger).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ key: '42/music.ogg' })
+		);
+		expect(ctx.waitUntil).toHaveBeenCalledOnce();
+		finishTrigger?.();
+	});
+
+	it('logs a background BGM trigger failure without rolling back the upload', async () => {
+		mockedResolveAuthSession.mockResolvedValue(validAuthSession());
+		mockedUpload.mockResolvedValue({
+			response: new Response(JSON.stringify({ ok: true }), { status: 200 }),
+			uploadedObject: {
+				simfileId: 42,
+				key: '42/music.ogg',
+				etag: 'etag-1',
+				version: 'version-1',
+				uploaded: '2026-08-27T05:00:00.123Z',
+				size: 10
+			}
+		});
+		mockedTrigger.mockRejectedValueOnce(new Error('Workflow unavailable'));
+		const errorSpy = vi.spyOn(workerLogger, 'error').mockImplementation(() => {});
+
+		const response = await routeUpload(
+			multipartReq(),
+			makeEnv({ PUBLIC_SIMFILE_BUCKET_URL: '' }),
+			makeCtx()
+		);
+
+		expect(response.status).toBe(200);
+		expect(errorSpy).toHaveBeenCalledWith('Unexpected error triggering BGM M4A generation', {
+			error: 'Error: Workflow unavailable'
+		});
+		errorSpy.mockRestore();
 	});
 
 	it('400 when form is missing required parts', async () => {

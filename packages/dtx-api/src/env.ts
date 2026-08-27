@@ -1,4 +1,5 @@
-import type { D1Database, R2Bucket, KVNamespace } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket, KVNamespace, Workflow } from '@cloudflare/workers-types';
+import type { GenerateBgmM4aPayload } from './services/bgmM4a';
 
 export type Env = {
 	DB: D1Database;
@@ -16,6 +17,8 @@ export type Env = {
 	GRAPHIQL: 'true' | 'false';
 	CORS_ALLOWED_ORIGINS: string;
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' | 'false';
+	BGM_M4A_GENERATION_ENABLED?: 'true' | 'false';
+	BGM_M4A_WORKFLOW?: Workflow<GenerateBgmM4aPayload>;
 
 	// Phase 2 — var (committed to wrangler.jsonc)
 	PUBLIC_SIMFILE_BUCKET_URL: string;

@@ -496,11 +496,113 @@ CMD ["bun", "run", "server.ts"]
 
 - [ ] **Step 4: Implement serialized streaming HTTP service**
 
-Implement `POST /transcode/ogg-to-m4a` so it streams request body to a unique temp `input.ogg`, runs the spec FFmpeg command, validates `ffprobe` codec output equals `aac`, streams `output.m4a` back as `audio/mp4`, and cleans temp files after response close/cancel. Invalid media returns 422; internal/transient failures return 5xx. Serialize requests through a promise tail so only one FFmpeg process executes at a time. Do not read audio files into JS buffers.
+Create `container/bgm-transcoder/server.ts` with these concrete helpers:
+
+```ts
+import { createReadStream, createWriteStream } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { spawn } from 'node:child_process';
+
+let ffmpegTail: Promise<void> = Promise.resolve();
+
+const runSerialized = async <T>(work: () => Promise<T>): Promise<T> => {
+  const previous = ffmpegTail;
+  let release!: () => void;
+  ffmpegTail = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try { return await work(); } finally { release(); }
+};
+
+const run = (command: string, args: string[]) =>
+  new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? -1, stdout, stderr }));
+  });
+```
+
+For the handler:
+
+```ts
+if (request.method !== 'POST' || new URL(request.url).pathname !== '/transcode/ogg-to-m4a') {
+  return new Response('Not Found', { status: 404 });
+}
+if (!request.body) return new Response('Missing OGG body', { status: 422 });
+
+return runSerialized(async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dtx-bgm-'));
+  const input = join(directory, 'input.ogg');
+  const output = join(directory, 'output.m4a');
+  try {
+    await pipeline(Readable.fromWeb(request.body as never), createWriteStream(input));
+    const ffmpeg = await run('ffmpeg', [
+      '-nostdin', '-hide_banner', '-loglevel', 'error',
+      '-i', input, '-map', '0:a:0', '-vn',
+      '-c:a', 'aac', '-profile:a', 'aac_low', '-b:a', '192k',
+      '-movflags', '+faststart', output
+    ]);
+    if (ffmpeg.code !== 0) {
+      await rm(directory, { recursive: true, force: true });
+      return new Response('Invalid OGG media', { status: 422 });
+    }
+
+    const probe = await run('ffprobe', [
+      '-v', 'error', '-select_streams', 'a:0',
+      '-show_entries', 'stream=codec_name', '-of', 'default=nw=1:nk=1', output
+    ]);
+    if (probe.code !== 0 || probe.stdout.trim() !== 'aac') {
+      await rm(directory, { recursive: true, force: true });
+      return new Response('No AAC audio stream', { status: 422 });
+    }
+
+    const nodeStream = createReadStream(output);
+    const body = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+    nodeStream.once('close', () => void rm(directory, { recursive: true, force: true }));
+    return new Response(body, { headers: { 'content-type': 'audio/mp4' } });
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    console.error(error);
+    return new Response('Transcode failed', { status: 500 });
+  }
+});
+```
+
+When implementing, also attach cleanup to response-stream cancellation so a client disconnect does not leave the temp directory behind; keep that cancellation wrapper local to this file rather than adding a generic stream abstraction.
 
 - [ ] **Step 5: Add deterministic Docker smoke**
 
-`smoke.sh` must build the image, start one test container, create a 1-second synthetic Vorbis OGG with that image's FFmpeg, POST it to port 8080, validate the returned file with `ffprobe`, require `aac`, and clean container/temp files via `trap`.
+`container/bgm-transcoder/smoke.sh` must:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+image='dtx-bgm-transcoder-smoke'
+name="dtx-bgm-transcoder-smoke-$$"
+tmp="$(mktemp -d)"
+trap 'docker rm -f "$name" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
+
+docker build -t "$image" -f container/bgm-transcoder/Dockerfile container/bgm-transcoder
+docker run -d --name "$name" -p 18080:8080 "$image" >/dev/null
+docker exec "$name" ffmpeg -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:duration=1' -c:a libvorbis /tmp/input.ogg
+docker cp "$name:/tmp/input.ogg" "$tmp/input.ogg"
+curl --fail --silent --show-error --data-binary @"$tmp/input.ogg" \
+  -H 'content-type: audio/ogg' http://127.0.0.1:18080/transcode/ogg-to-m4a \
+  -o "$tmp/output.m4a"
+docker cp "$tmp/output.m4a" "$name:/tmp/output.m4a"
+test "$(docker exec "$name" ffprobe -v error -select_streams a:0 \
+  -show_entries stream=codec_name -of default=nw=1:nk=1 /tmp/output.m4a | tr -d '\r')" = 'aac'
+```
 
 Add package script:
 

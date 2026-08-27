@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-24-cloudflare-workflow-m4a-generation-design.md`
 
-**Validated against:** `main@9ec68aac5db82e027432841938f92824e8687f80` after Better Auth/D1 PR #240.
+**Validated against:** `main@9ec68aac5db82e027432841938f92824e8687f80` after Better Auth/D1 PR #240 and Cloudflare platform docs current through 2026-08-26.
 
 ## Global Constraints
 
@@ -27,9 +27,10 @@
 - Worker orchestration is stream-only; no whole-audio buffering.
 - One-item `createBatch()`, deterministic upload identity, success retention `1 day`, error retention `7 days`.
 - Retry transient transcode failures twice with 30-second exponential delay and 30-minute timeout; invalid media is non-retryable.
-- One `basic` Container, `max_instances: 1`, one-minute idle sleep, internet disabled, one FFmpeg process at a time.
+- One `basic` Container (1/4 vCPU, 1 GiB memory, 4 GB disk), `max_instances: 1`, one-minute idle sleep, internet disabled, one FFmpeg process at a time.
 - Preserve current Better Auth behavior/config/package scripts and `/api/auth/*` routing.
 - Keep GraphQL schema/codegen and `packages/common/src/lib/server/zipBuilder.ts` unchanged.
+- Keep current Worker compatibility date; `2025-01-01` already satisfies Workflows' `2024-10-22` minimum.
 - `pre-prod-prod-data` cannot mutate canonical source/derivative keys.
 - No Queue, R2 event notification, D1 job state, public job API, generic media framework, iOS package endpoint, client transcoder, or OGG decoder.
 - Virgo HPA-85 remains separate and blocked on both production catalog gates.
@@ -669,7 +670,7 @@ Production resource shape:
 }]
 ```
 
-Repeat non-inheritable bindings for `pre-prod` and `pre-prod-prod-data` with distinct Workflow names. Append `BGM_M4A_GENERATION_ENABLED` to current vars: prod/pre-prod `true`, prod-data `false`. Preserve every existing Better Auth URL/cookie/Google/D1/R2/KV value.
+Repeat non-inheritable bindings for `pre-prod` and `pre-prod-prod-data` with distinct Workflow names. Append `BGM_M4A_GENERATION_ENABLED` to current vars: prod/pre-prod `true`, prod-data `false`. Preserve every existing Better Auth URL/cookie/Google/D1/R2/KV value. Keep compatibility date unchanged; the current date already satisfies Workflows' minimum.
 
 - [ ] **Step 2: Run RED production dry-run**
 

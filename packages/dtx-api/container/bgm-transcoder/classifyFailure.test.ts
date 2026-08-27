@@ -4,7 +4,6 @@ import { classifyFfmpegFailure } from './classifyFailure';
 describe('classifyFfmpegFailure', () => {
 	it.each([
 		'Invalid data found when processing input',
-		'Error opening input file /tmp/input: Permission denied',
 		'Could not find codec parameters for stream 0',
 		'moov atom not found',
 		'Stream map 0:a:0 matches no streams',
@@ -17,6 +16,9 @@ describe('classifyFfmpegFailure', () => {
 	});
 
 	it.each([
+		'Error opening input file /tmp/input: Permission denied',
+		'Error opening input file /tmp/input: EACCES',
+		'Error opening input file /tmp/input: No space left on device',
 		'Error initializing output stream 0:0 -- Error while opening encoder',
 		'Error writing trailer of output.m4a: No space left on device',
 		'Conversion failed!',

@@ -64,7 +64,7 @@ describe('desktop local dev topology', () => {
 			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
 		);
 		expect(apiPackage.scripts['dev:local']).toBe(
-			'wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787'
+			'wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787 --var BGM_M4A_GENERATION_ENABLED:false'
 		);
 		expect(desktopPackage.scripts.dev).toBe(
 			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'

@@ -150,7 +150,7 @@ describe('GenerateBgmM4aWorkflow', () => {
 			const { result, calls } = await runWorkflow(payload, env);
 
 			await expect(result).resolves.toEqual({ status });
-			expect(inspectMock).toHaveBeenCalledWith(env, payload, workerLogger);
+			expect(inspectMock).toHaveBeenCalledWith(env, payload);
 			expect(transcodeMock).not.toHaveBeenCalled();
 			expect(calls).toEqual([{ name: inspectStepName, config: undefined }]);
 		}

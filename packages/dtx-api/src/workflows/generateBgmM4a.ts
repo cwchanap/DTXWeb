@@ -14,7 +14,7 @@ export class GenerateBgmM4aWorkflow extends WorkflowEntrypoint<Env, GenerateBgmM
 		const payload = generateBgmM4aPayloadSchema.parse(event.payload);
 
 		const inspection = await step.do('inspect BGM source and derivative', async () =>
-			inspectBgmM4aGeneration(this.env, payload, workerLogger)
+			inspectBgmM4aGeneration(this.env, payload)
 		);
 
 		if (inspection.status !== 'generate') {

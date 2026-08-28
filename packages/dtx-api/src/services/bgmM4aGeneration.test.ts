@@ -167,9 +167,7 @@ describe('inspectBgmM4aGeneration', () => {
 	it('captures the current payload source identity and generates when no derivative exists', async () => {
 		const harness = makeBucket();
 
-		await expect(
-			inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger)
-		).resolves.toEqual({
+		await expect(inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)).resolves.toEqual({
 			status: 'generate',
 			source: capturedSource
 		});
@@ -183,16 +181,16 @@ describe('inspectBgmM4aGeneration', () => {
 			selectedKeys: ['42/music.ogg', payload.sourceKey]
 		});
 
-		await expect(
-			inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger)
-		).resolves.toEqual({ status: 'superseded' });
+		await expect(inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)).resolves.toEqual({
+			status: 'superseded'
+		});
 		expect(harness.head).not.toHaveBeenCalled();
 	});
 
 	it('HEADs the arbitrary payload source key without reconstructing a filename', async () => {
 		const harness = makeBucket();
 
-		await inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger);
+		await inspectBgmM4aGeneration(makeEnv(harness.bucket), payload);
 
 		expect(harness.head).toHaveBeenCalledWith('42/custom.flac');
 		expect(harness.head).not.toHaveBeenCalledWith('42/bgm.ogg');
@@ -203,9 +201,9 @@ describe('inspectBgmM4aGeneration', () => {
 			source: makeIdentity({ uploaded: '2026-08-27T05:00:01.123Z' })
 		});
 
-		await expect(
-			inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger)
-		).resolves.toEqual({ status: 'superseded' });
+		await expect(inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)).resolves.toEqual({
+			status: 'superseded'
+		});
 	});
 
 	it.each([
@@ -216,9 +214,9 @@ describe('inspectBgmM4aGeneration', () => {
 			source: makeIdentity(sourceOverride)
 		});
 
-		await expect(
-			inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger)
-		).resolves.toEqual({ status: 'superseded' });
+		await expect(inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)).resolves.toEqual({
+			status: 'superseded'
+		});
 	});
 
 	it('returns cached when derivative source ETag and profile match', async () => {
@@ -232,14 +230,14 @@ describe('inspectBgmM4aGeneration', () => {
 			})
 		});
 
-		await expect(
-			inspectBgmM4aGeneration(makeEnv(harness.bucket), payload, logger)
-		).resolves.toEqual({ status: 'cached' });
+		await expect(inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)).resolves.toEqual({
+			status: 'cached'
+		});
 		expect(harness.deleteObject).not.toHaveBeenCalled();
 	});
 
-	it('deletes and best-effort purges a stale derivative before generating', async () => {
-		const purgeFetch = vi.fn().mockRejectedValue(new Error('purge unavailable'));
+	it('keeps a stale derivative in place until publish overwrites it', async () => {
+		const purgeFetch = vi.fn();
 		vi.stubGlobal('fetch', purgeFetch);
 		const harness = makeBucket({
 			derivative: makeIdentity({
@@ -255,16 +253,12 @@ describe('inspectBgmM4aGeneration', () => {
 			CLOUDFLARE_API_TOKEN: 'token'
 		});
 
-		await expect(inspectBgmM4aGeneration(env, payload, logger)).resolves.toEqual({
+		await expect(inspectBgmM4aGeneration(env, payload)).resolves.toEqual({
 			status: 'generate',
 			source: capturedSource
 		});
-		expect(harness.deleteObject).toHaveBeenCalledWith('42/bgm.m4a');
-		expect(purgeFetch).toHaveBeenCalledOnce();
-		expect(logger.error).toHaveBeenCalledWith(
-			'Error purging cache for https://cdn.example.test/simfiles/42/bgm.m4a',
-			{ error: 'Error: purge unavailable' }
-		);
+		expect(harness.deleteObject).not.toHaveBeenCalled();
+		expect(purgeFetch).not.toHaveBeenCalled();
 	});
 });
 

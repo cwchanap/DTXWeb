@@ -137,6 +137,29 @@ describe('auditCatalog', () => {
 		});
 		expect(catalogFixture().some((row) => JSON.stringify(row).includes('bgm.ogg'))).toBe(false);
 	});
+
+	it('treats unparseable source or derivative timestamps as missing/older', () => {
+		const rows: CatalogSimfile[] = [
+			{
+				id: '1',
+				files: [
+					{ key: '1/song.flac', uploaded: SOURCE_UPLOADED },
+					{ key: '1/bgm.m4a', uploaded: 'not-a-date' }
+				]
+			},
+			{
+				id: '2',
+				files: [
+					{ key: '2/song.flac', uploaded: 'not-a-date' },
+					{ key: '2/bgm.m4a', uploaded: NEWER_UPLOADED }
+				]
+			}
+		];
+
+		const audit = auditCatalog(rows);
+
+		expect(audit.selected.map((row) => row.missingOrOlder)).toEqual([true, true]);
+	});
 });
 
 describe('formatAuditReport', () => {

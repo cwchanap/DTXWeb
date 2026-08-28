@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
-import { BGM_TRANSCODE_PROFILE, buildBgmWorkflowInstanceId } from '../services/bgmM4a';
 import {
+	BGM_TRANSCODE_PROFILE,
+	BGM_TRANSCODE_WORST_CASE_MS,
+	buildBgmWorkflowInstanceId
+} from '../services/bgmM4a';
+import {
+	DEFAULT_MAX_POLL_ATTEMPTS,
+	DEFAULT_POLL_DELAY_MS,
 	auditCatalog,
 	formatAuditReport,
 	parseWorkflowRunOutput,
@@ -854,5 +860,17 @@ describe('execute REST lifecycle', () => {
 		expect(result.exitCode).toBe(0);
 		expect(rest).not.toHaveBeenCalled();
 		expect(result.stdout).toContain('selected authored sources: 0');
+	});
+});
+
+describe('polling horizon', () => {
+	it('defaults to a horizon longer than the Workflow retry worst-case window', () => {
+		// Pins the relationship between the operator polling horizon and the
+		// Workflow transcode retry contract so --execute cannot give up while
+		// Cloudflare is still running a legitimate retrying instance. Both
+		// values derive from the shared constants in services/bgmM4a.ts.
+		expect(DEFAULT_MAX_POLL_ATTEMPTS * DEFAULT_POLL_DELAY_MS).toBeGreaterThan(
+			BGM_TRANSCODE_WORST_CASE_MS
+		);
 	});
 });

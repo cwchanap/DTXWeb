@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../env';
-import { BGM_TRANSCODE_PROFILE, type GenerateBgmM4aPayload } from '../services/bgmM4a';
+import {
+	BGM_TRANSCODE_PROFILE,
+	BGM_TRANSCODE_STEP_CONFIG,
+	type GenerateBgmM4aPayload
+} from '../services/bgmM4a';
 import { PermanentBgmTranscodeError } from '../services/bgmM4aGeneration';
 import type { WorkflowEvent, WorkflowStep } from 'cloudflare:workers';
 
@@ -76,10 +80,7 @@ const capturedSource = {
 
 const inspectStepName = 'inspect BGM source and derivative';
 const transcodeStepName = 'transcode and publish BGM M4A';
-const transcodeStepConfig = {
-	retries: { limit: 2, delay: '30 seconds', backoff: 'exponential' },
-	timeout: '30 minutes'
-};
+const transcodeStepConfig = BGM_TRANSCODE_STEP_CONFIG;
 
 type StepCall = { name: string; config?: unknown };
 

@@ -2,7 +2,11 @@ import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloud
 import { NonRetryableError } from 'cloudflare:workflows';
 import { workerLogger } from '@dtx/common/server';
 import type { Env } from '../env';
-import { generateBgmM4aPayloadSchema, type GenerateBgmM4aPayload } from '../services/bgmM4a';
+import {
+	BGM_TRANSCODE_STEP_CONFIG,
+	generateBgmM4aPayloadSchema,
+	type GenerateBgmM4aPayload
+} from '../services/bgmM4a';
 import {
 	classifyBgmTranscodeError,
 	inspectBgmM4aGeneration,
@@ -21,29 +25,22 @@ export class GenerateBgmM4aWorkflow extends WorkflowEntrypoint<Env, GenerateBgmM
 			return { status: inspection.status };
 		}
 
-		return step.do(
-			'transcode and publish BGM M4A',
-			{
-				retries: { limit: 2, delay: '30 seconds', backoff: 'exponential' },
-				timeout: '30 minutes'
-			},
-			async () => {
-				try {
-					return await transcodeAndPublishBgmM4a(
-						this.env,
-						payload,
-						inspection.source,
-						workerLogger
+		return step.do('transcode and publish BGM M4A', BGM_TRANSCODE_STEP_CONFIG, async () => {
+			try {
+				return await transcodeAndPublishBgmM4a(
+					this.env,
+					payload,
+					inspection.source,
+					workerLogger
+				);
+			} catch (error) {
+				if (classifyBgmTranscodeError(error) === 'non-retryable') {
+					throw new NonRetryableError(
+						error instanceof Error ? error.message : String(error)
 					);
-				} catch (error) {
-					if (classifyBgmTranscodeError(error) === 'non-retryable') {
-						throw new NonRetryableError(
-							error instanceof Error ? error.message : String(error)
-						);
-					}
-					throw error;
 				}
+				throw error;
 			}
-		);
+		});
 	}
 }

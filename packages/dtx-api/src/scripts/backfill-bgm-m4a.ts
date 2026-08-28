@@ -7,6 +7,7 @@ import {
 } from '../lib/r2Files';
 import {
 	BGM_TRANSCODE_PROFILE,
+	BGM_TRANSCODE_WORST_CASE_MS,
 	buildBgmWorkflowInstanceId,
 	isCanonicalBgmDerivativeKey
 } from '../services/bgmM4a';
@@ -69,8 +70,16 @@ type InstanceSnapshot = {
 // Production Workflow name. Pre-prod `--execute` must set
 // BGM_WORKFLOW_NAME=dtx-api-bgm-m4a-preprod
 const DEFAULT_WORKFLOW_NAME = 'dtx-api-bgm-m4a';
-const DEFAULT_POLL_DELAY_MS = 2000;
-const DEFAULT_MAX_POLL_ATTEMPTS = 900;
+export const DEFAULT_POLL_DELAY_MS = 2000;
+// Polling horizon must exceed the Workflow's worst-case retry window
+// (BGM_TRANSCODE_WORST_CASE_MS) so --execute never reports failure while
+// Cloudflare is still running a legitimate retrying instance. Derived from the
+// shared retry contract plus a safety margin, divided by the poll interval.
+// Pinned by the "polling horizon" test in backfill-bgm-m4a.test.ts.
+const BGM_BACKFILL_POLL_SAFETY_MARGIN_MS = 10 * 60 * 1000;
+export const DEFAULT_MAX_POLL_ATTEMPTS = Math.ceil(
+	(BGM_TRANSCODE_WORST_CASE_MS + BGM_BACKFILL_POLL_SAFETY_MARGIN_MS) / DEFAULT_POLL_DELAY_MS
+);
 const DEFAULT_GRAPHQL_PAGE_SIZE = 100;
 const IN_PROGRESS_STATUSES = new Set([
 	'queued',

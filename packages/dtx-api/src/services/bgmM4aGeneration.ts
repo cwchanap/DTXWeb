@@ -89,8 +89,15 @@ export const inspectBgmM4aGeneration = async (
 	};
 	const outputKey = bgmDerivativeKey(payload.simfileId);
 	const derivative = await bucket.head(outputKey);
+	// Match the full source identity published alongside the derivative. R2 ETag
+	// is content-derived, so re-uploading identical bytes leaves the ETag unchanged
+	// while `version`/`uploaded` advance; checking only ETag+profile would report
+	// `cached` and leave the older bgm.m4a timestamp, which makes backfill
+	// `--check` keep failing and restarting the Workflow repeat the same cache hit.
 	if (
 		derivative?.customMetadata?.['source-etag'] === capturedSource.etag &&
+		derivative.customMetadata['source-version'] === capturedSource.version &&
+		derivative.customMetadata['source-uploaded'] === capturedSource.uploaded &&
 		derivative.customMetadata['transcode-profile'] === BGM_TRANSCODE_PROFILE
 	) {
 		return { status: 'cached' };

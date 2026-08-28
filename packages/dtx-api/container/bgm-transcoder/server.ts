@@ -19,6 +19,10 @@ class TranscoderProcessError extends Error {
 
 let transcodeTail: Promise<void> = Promise.resolve();
 
+// Below the workflow step's 30-minute timeout so a hung subprocess is killed
+// and the serialized transcode queue keeps draining.
+const SUBPROCESS_TIMEOUT_MS = 10 * 60 * 1000;
+
 const serializeTranscode = <T>(operation: () => Promise<T>): Promise<T> => {
 	const queued = transcodeTail.then(operation, operation);
 	transcodeTail = queued.then(
@@ -59,7 +63,8 @@ const runFfmpeg = async (inputPath: string, outputPath: string): Promise<void> =
 			{
 				stdin: 'ignore',
 				stdout: 'ignore',
-				stderr: 'pipe'
+				stderr: 'pipe',
+				timeout: SUBPROCESS_TIMEOUT_MS
 			}
 		);
 	} catch (error) {
@@ -109,7 +114,8 @@ const probeOutputCodec = async (outputPath: string): Promise<string> => {
 			{
 				stdin: 'ignore',
 				stdout: 'pipe',
-				stderr: 'ignore'
+				stderr: 'ignore',
+				timeout: SUBPROCESS_TIMEOUT_MS
 			}
 		);
 	} catch (error) {

@@ -62,8 +62,7 @@ const cancelResponseBody = async (response: Response, logger: WorkerLogger): Pro
 
 export const inspectBgmM4aGeneration = async (
 	env: Env,
-	payload: GenerateBgmM4aPayload,
-	logger: WorkerLogger
+	payload: GenerateBgmM4aPayload
 ): Promise<InspectBgmM4aGenerationResult> => {
 	const bucket = env.DTXFILE_BUCKET;
 	const selected = await resolveSelectedAuthoredSource(bucket, payload.simfileId);
@@ -97,10 +96,8 @@ export const inspectBgmM4aGeneration = async (
 		return { status: 'cached' };
 	}
 
-	if (derivative) {
-		await bucket.delete(outputKey);
-		await purgeCacheForFile(env, derivativeUrl(env, outputKey), logger);
-	}
+	// The stale derivative stays in place; the publish-side bucket.put overwrites
+	// it and purges the cache only once the new derivative is live.
 
 	return { status: 'generate', source: capturedSource };
 };

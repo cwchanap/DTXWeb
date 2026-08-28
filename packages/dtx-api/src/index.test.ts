@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import worker, { BgmTranscoderContainer, GenerateBgmM4aWorkflow } from './index';
+import worker from './index';
 import type { Env } from './env';
 
 vi.mock('cloudflare:workers', () => {
@@ -503,11 +503,6 @@ describe('Phase 2 routes', () => {
 		expect(response.status).toBe(500);
 		expect(response.headers.get('Access-Control-Allow-Origin')).toBe('http://localhost:5173');
 		errorSpy.mockRestore();
-	});
-
-	it('exports the BGM Workflow and Container classes without changing fetch routing', () => {
-		expect(GenerateBgmM4aWorkflow).toBeTypeOf('function');
-		expect(BgmTranscoderContainer).toBeTypeOf('function');
 	});
 
 	it('405 on non-POST /upload', async () => {

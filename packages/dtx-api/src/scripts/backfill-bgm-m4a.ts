@@ -105,8 +105,13 @@ const catalogFiles = (row: CatalogSimfile): CatalogFile[] =>
 			!!file && typeof file.key === 'string' && typeof file.uploaded === 'string'
 	);
 
-const isMissingOrOlder = (source: CatalogFile, derivative: CatalogFile | undefined): boolean =>
-	!derivative || Date.parse(derivative.uploaded) < Date.parse(source.uploaded);
+const isMissingOrOlder = (source: CatalogFile, derivative: CatalogFile | undefined): boolean => {
+	if (!derivative) return true;
+	const sourceUploaded = Date.parse(source.uploaded);
+	const derivativeUploaded = Date.parse(derivative.uploaded);
+	if (Number.isNaN(sourceUploaded) || Number.isNaN(derivativeUploaded)) return true;
+	return derivativeUploaded < sourceUploaded;
+};
 
 const defaultSleep = (ms: number): Promise<void> =>
 	new Promise((resolve) => {
@@ -288,10 +293,12 @@ const cloudflareHeaders = (apiToken: string): HeadersInit => ({
 	'Content-Type': 'application/json'
 });
 
-const isDuplicateCreate = (httpStatus: number, body: unknown): boolean => {
-	if (httpStatus === 409) return true;
-	if (httpStatus >= 500) return false;
-	return isRecord(body) && body.success === false;
+const isDuplicateCreate = (httpStatus: number): boolean => httpStatus === 409;
+
+const createErrorMessage = (body: unknown): string => {
+	if (!isRecord(body) || !Array.isArray(body.errors)) return '';
+	const first = body.errors[0];
+	return isRecord(first) && typeof first.message === 'string' ? first.message : '';
 };
 
 const createInstance = async (
@@ -317,9 +324,12 @@ const createInstance = async (
 		})
 	});
 	const body = await readJson(response);
-	if (isDuplicateCreate(response.status, body)) return 'duplicate';
+	if (isDuplicateCreate(response.status)) return 'duplicate';
 	if (!response.ok || (isRecord(body) && body.success === false)) {
-		throw new Error(`Create Workflow instance ${instanceId} failed`);
+		const detail = createErrorMessage(body);
+		throw new Error(
+			`Create Workflow instance ${instanceId} failed${detail ? `: ${detail}` : ''}`
+		);
 	}
 	return 'created';
 };

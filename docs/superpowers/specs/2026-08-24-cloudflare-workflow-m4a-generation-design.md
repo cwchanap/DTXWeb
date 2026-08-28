@@ -242,8 +242,8 @@ type GenerateBgmM4aPayload = {
 5. When expected ETag/version are supplied, require those too.
 6. Capture `{ etag, version, uploaded }` as small metadata.
 7. HEAD lower-case `{id}/bgm.m4a`.
-8. Destination metadata matching source ETag + profile -> `cached`.
-9. Otherwise delete stale derivative and best-effort purge before conversion so Virgo cannot fetch audio for an older source while replacement generation runs.
+8. Destination metadata matching the full captured source identity (ETag + version + uploaded) + profile -> `cached`. ETag alone is content-derived, so re-uploading identical bytes leaves the ETag unchanged while `version`/`uploaded` advance; matching the full identity ensures a new source upload republishes the derivative and can satisfy `--check`.
+9. Otherwise keep the stale derivative in place; the publish-side `bucket.put` overwrites it and purges the cache only once the new derivative is live, so a permanent transcode error never leaves Virgo without playable audio.
 
 ### Step 2 — transcode and publish
 

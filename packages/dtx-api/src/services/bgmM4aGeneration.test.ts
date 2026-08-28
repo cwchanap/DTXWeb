@@ -219,12 +219,14 @@ describe('inspectBgmM4aGeneration', () => {
 		});
 	});
 
-	it('returns cached when derivative source ETag and profile match', async () => {
+	it('returns cached when derivative source ETag, version, uploaded, and profile match', async () => {
 		const harness = makeBucket({
 			derivative: makeIdentity({
 				key: '42/bgm.m4a',
 				customMetadata: {
 					'source-etag': capturedSource.etag,
+					'source-version': capturedSource.version,
+					'source-uploaded': capturedSource.uploaded,
 					'transcode-profile': BGM_TRANSCODE_PROFILE
 				}
 			})
@@ -235,6 +237,34 @@ describe('inspectBgmM4aGeneration', () => {
 		});
 		expect(harness.deleteObject).not.toHaveBeenCalled();
 	});
+
+	it.each([
+		['source-version', { 'source-version': 'stale-version' }],
+		['source-uploaded', { 'source-uploaded': '2026-08-27T04:00:00.000Z' }]
+	])(
+		'regenerates when the derivative ETag matches but %s is stale (re-uploaded identical bytes)',
+		async (_field, staleMetadata) => {
+			const harness = makeBucket({
+				derivative: makeIdentity({
+					key: '42/bgm.m4a',
+					customMetadata: {
+						'source-etag': capturedSource.etag,
+						'source-uploaded': capturedSource.uploaded,
+						'transcode-profile': BGM_TRANSCODE_PROFILE,
+						...staleMetadata
+					}
+				})
+			});
+
+			await expect(
+				inspectBgmM4aGeneration(makeEnv(harness.bucket), payload)
+			).resolves.toEqual({
+				status: 'generate',
+				source: capturedSource
+			});
+			expect(harness.deleteObject).not.toHaveBeenCalled();
+		}
+	);
 
 	it('keeps a stale derivative in place until publish overwrites it', async () => {
 		const purgeFetch = vi.fn();

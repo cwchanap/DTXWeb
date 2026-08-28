@@ -249,6 +249,7 @@ describe('inspectBgmM4aGeneration', () => {
 					key: '42/bgm.m4a',
 					customMetadata: {
 						'source-etag': capturedSource.etag,
+						'source-version': capturedSource.version,
 						'source-uploaded': capturedSource.uploaded,
 						'transcode-profile': BGM_TRANSCODE_PROFILE,
 						...staleMetadata

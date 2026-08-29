@@ -34,6 +34,7 @@ type WranglerEnv = {
 	d1_databases?: Array<Record<string, unknown>>;
 	r2_buckets?: Array<Record<string, unknown>>;
 	vars?: Record<string, string>;
+	workers_dev?: boolean;
 };
 
 type WranglerConfig = {
@@ -61,6 +62,7 @@ describe('desktop local dev topology', () => {
 		const desktopPackage = readJson<PackageJson>('packages/dtx-desktop/package.json');
 		const turboConfig = readJson<TurboConfig>('turbo.json');
 		const apiWrangler = readJson<WranglerConfig>('packages/dtx-api/wrangler.jsonc');
+		const webWrangler = readJson<WranglerConfig>('packages/dtx-web/wrangler.jsonc');
 
 		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
@@ -119,6 +121,8 @@ describe('desktop local dev topology', () => {
 			binding: 'DTXFILE_BUCKET',
 			bucket_name: 'simfile-dtx-preprod'
 		});
+		expect(apiWrangler.env?.['pre-prod']?.workers_dev).toBe(false);
+		expect(webWrangler.env?.['pre-prod']?.workers_dev).toBe(false);
 		expect(turboConfig.tasks['dtx-desktop#dev:local-web']?.env).toBeUndefined();
 	});
 

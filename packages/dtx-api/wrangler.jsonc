@@ -136,7 +136,13 @@
 						"class_name": "BgmTranscoderContainer"
 					}
 				]
-			}
+			},
+			"migrations": [
+				{
+					"tag": "bgm-transcoder-v1",
+					"new_sqlite_classes": ["BgmTranscoderContainer"]
+				}
+			]
 		},
 		"pre-prod": {
 			"name": "dtx-api-pre-prod",

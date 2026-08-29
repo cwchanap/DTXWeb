@@ -3,7 +3,7 @@
 // starts. Run by the Playwright webServer command.
 import { execFileSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { TEST_USER_ID, CHART_A_ID, CHART_B_ID, CHART_C_ID, isAuthConfigured } from '../test-config';
@@ -85,6 +85,34 @@ migrations.forEach((migration, i) => {
 		migration
 	]);
 });
+
+// Direct SQL execution does not update Wrangler's migration ledger. Record the
+// same names so a later `wrangler d1 migrations apply` sees this fresh database
+// as fully migrated instead of replaying schema changes.
+const migrationHistorySql = [
+	'CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL);',
+	...migrations.map(
+		(migration) =>
+			`INSERT INTO d1_migrations (name, applied_at) VALUES ('${basename(migration)}', CURRENT_TIMESTAMP);`
+	)
+].join('\n');
+const tmpMigrationHistoryDir = mkdtempSync(join(tmpdir(), 'e2e-migration-history-'));
+const tmpMigrationHistory = join(tmpMigrationHistoryDir, 'migrations.sql');
+try {
+	writeFileSync(tmpMigrationHistory, `${migrationHistorySql}\n`);
+	wrangler('record D1 migration history', [
+		'd1',
+		'execute',
+		D1_NAME,
+		'--local',
+		'--persist-to',
+		persist,
+		'--file',
+		tmpMigrationHistory
+	]);
+} finally {
+	rmSync(tmpMigrationHistoryDir, { recursive: true, force: true });
+}
 
 // 2. Seed the Better Auth user into this same freshly migrated D1. The
 //    generated replacement password is written only to a short-lived local

@@ -108,7 +108,7 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	RATE_LIMIT_ENV: 'pre-prod',
+	RATE_LIMIT_ENV: 'local',
 	GRAPHIQL: 'true',
 	CORS_ALLOWED_ORIGINS: 'https://pre-prod.dtx.hapadona.com,http://localhost:5173',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',

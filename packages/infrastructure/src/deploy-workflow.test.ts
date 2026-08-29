@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const workflowPath = new URL(
-	'../../../.github/workflows/deploy-cloudflare-access.yml',
+	'../../../.github/workflows/deploy-cloudflare-infrastructure.yml',
 	import.meta.url
 );
 
@@ -27,7 +27,7 @@ describe('committed Pulumi stack settings', () => {
 	);
 });
 
-describe('automatic Cloudflare Access deployment workflow', () => {
+describe('automatic Cloudflare infrastructure deployment workflow', () => {
 	it('keeps the serial deployment and CI contract', () => {
 		const workflowExists = existsSync(workflowPath);
 
@@ -40,13 +40,13 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 		const preProdJob = text.slice(preProdJobStart, productionJobStart);
 		const productionJob = text.slice(productionJobStart);
 
-		expect(text).toContain('name: Deploy Cloudflare Access');
+		expect(text).toContain('name: Deploy Cloudflare Infrastructure');
 		expect(text).toContain('branches: [main]');
 		expect(text).toContain("'packages/infrastructure/**'");
 		expect(text).toContain("'bun.lock'");
 		expect(text).toContain("'package.json'");
 		expect(text).toContain("'tsconfig.base.json'");
-		expect(text).toContain("'.github/workflows/deploy-cloudflare-access.yml'");
+		expect(text).toContain("'.github/workflows/deploy-cloudflare-infrastructure.yml'");
 		expect(text).toContain('workflow_dispatch:');
 		expect(text).not.toContain('pull_request:');
 
@@ -101,7 +101,7 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			expect(
 				countOccurrences(
 					job,
-					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}'
+					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}'
 				)
 			).toBe(1);
 			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');

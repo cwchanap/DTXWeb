@@ -39,7 +39,7 @@ token and exports it as `PULUMI_ACCESS_TOKEN` for the deployment step, so no lon
 scope for that exchange.
 
 The repository's existing `CLOUDFLARE_ACCOUNT_ID` variable remains available to workflows that
-already use it. The Access workflow does not inject that variable: the non-secret account setting
+already use it. The infrastructure workflow does not inject that variable: the non-secret account setting
 is committed in both Pulumi stack files. Each GitHub Environment contains only its own
 `CLOUDFLARE_ACCESS_API_TOKEN` secret:
 
@@ -61,7 +61,13 @@ account ID, application ID, or ciphertext.
 
 ## Automatic deployment
 
-The workflow in `.github/workflows/deploy-cloudflare-access.yml` has two normal entry points:
+The `Deploy Cloudflare Infrastructure` workflow in `.github/workflows/deploy-cloudflare-infrastructure.yml`
+has two normal entry points:
+
+Pre-merge checklist: add `CLOUDFLARE_INFRA_API_TOKEN` to `dtx-access-pre-prod` and `dtx-access-production` with
+the minimum Access Apps/Policies, D1, R2 bucket identity, Workers KV namespace, and Workers custom domain
+permissions; keep `CLOUDFLARE_ACCESS_API_TOKEN` until the renamed workflow runs successfully. Provisioning is
+deferred this session.
 
 1. A relevant change pushed to `main` (`packages/infrastructure/**`, the lockfile, root package
    or TypeScript configuration, or the workflow itself).

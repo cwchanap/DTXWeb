@@ -108,6 +108,15 @@ assert_public() {
 	fi
 }
 
+assert_health() {
+	local url="$1"
+
+	if ! curl --fail --silent --show-error --max-time 15 -o /dev/null "$url"; then
+		printf 'health check failed for %s\n' "$url" >&2
+		return 1
+	fi
+}
+
 verify_pre_prod() {
 	local base_url='https://pre-prod.dtx.hapadona.com'
 	local path
@@ -130,6 +139,7 @@ verify_pre_prod() {
 		assert_access_intercepted "$base_url$path" || return 1
 	done
 	assert_public 'https://api.pre-prod.dtx.hapadona.com/'
+	assert_health 'https://api.pre-prod.dtx.hapadona.com/healthz'
 }
 
 verify_production() {
@@ -158,6 +168,7 @@ verify_production() {
 		assert_public "$base_url$path" || return 1
 	done
 	assert_public 'https://api.dtx.hapadona.com/'
+	assert_health 'https://api.dtx.hapadona.com/healthz'
 }
 
 if [[ "$#" -ne 1 ]]; then

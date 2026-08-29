@@ -4,3 +4,4 @@ config:
   dtxweb-infrastructure:devicePostureRuleId: 414d3bb6-4927-43fd-94a9-d5c2e171d5b5
   dtxweb-infrastructure:accessEmail:
     secure: AAABABNVdcI0Z3NWFl3KW83CV6FkNQDkv+bFwEknuLSUUoEiZLjv67rjq7SAQ73CrWvJ4cBaow==
+  dtxweb-infrastructure:cloudflareZoneId: e02478b46bce77a4729a6ec21b01009d

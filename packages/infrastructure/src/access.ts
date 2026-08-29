@@ -13,42 +13,68 @@ export const ACCESS_APPLICATION_FLAGS = {
 	pathCookieAttribute: true
 } as const;
 
+export type StackName = 'pre-prod' | 'production';
+
 export interface AccessDestination {
 	type: 'public';
 	uri: string;
 }
 
-export interface AccessStackDefinition {
-	stackName: 'pre-prod' | 'production';
+export interface InfrastructureStackDefinition {
+	stackName: StackName;
 	applicationName: string;
-	domain: string;
-	destinations: AccessDestination[];
+	accessDomain: string;
+	accessDestinations: AccessDestination[];
+	webWorkerName: string;
+	apiWorkerName: string;
+	webHostname: string;
+	apiHostname: string;
+	databaseName: string;
+	bucketName: string;
+	r2Location: string;
+	rateLimitKvTitle: string;
 }
 
-const ACCESS_STACKS: Record<AccessStackDefinition['stackName'], AccessStackDefinition> = {
+const INFRASTRUCTURE_STACKS: Record<StackName, InfrastructureStackDefinition> = {
 	'pre-prod': {
 		stackName: 'pre-prod',
 		applicationName: 'DTXWeb Pre-prod',
-		domain: 'pre-prod.dtx.hapadona.com',
-		destinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }]
+		accessDomain: 'pre-prod.dtx.hapadona.com',
+		accessDestinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }],
+		webWorkerName: 'dtx-web-pre-prod',
+		apiWorkerName: 'dtx-api-pre-prod',
+		webHostname: 'pre-prod.dtx.hapadona.com',
+		apiHostname: 'api.pre-prod.dtx.hapadona.com',
+		databaseName: 'dtx-web-preprod',
+		bucketName: 'simfile-dtx-preprod',
+		r2Location: 'WNAM',
+		rateLimitKvTitle: 'pre-prod-RATE_LIMIT_API'
 	},
 	production: {
 		stackName: 'production',
 		applicationName: 'DTXWeb Production App',
-		domain: 'dtx.hapadona.com/app',
-		destinations: [
+		accessDomain: 'dtx.hapadona.com/app',
+		accessDestinations: [
 			{ type: 'public', uri: 'dtx.hapadona.com/app' },
 			{ type: 'public', uri: 'dtx.hapadona.com/app/*' }
-		]
+		],
+		webWorkerName: 'dtx-web',
+		apiWorkerName: 'dtx-api',
+		webHostname: 'dtx.hapadona.com',
+		apiHostname: 'api.dtx.hapadona.com',
+		databaseName: 'dtx-web',
+		bucketName: 'simfile-dtx',
+		r2Location: 'APAC',
+		rateLimitKvTitle: 'RATE_LIMIT_API'
 	}
 };
 
-export function getAccessStackDefinition(stackName: string): AccessStackDefinition {
+export function getInfrastructureStackDefinition(stackName: string): InfrastructureStackDefinition {
 	if (stackName !== 'pre-prod' && stackName !== 'production') {
 		throw new Error(`Unsupported DTXWeb infrastructure stack: ${stackName}`);
 	}
 
-	return ACCESS_STACKS[stackName];
+	return INFRASTRUCTURE_STACKS[stackName];
 }
 
 export function normalizeAccessEmail(rawValue: string): string {
@@ -80,7 +106,7 @@ export function buildAccessPolicy(
 
 export interface BuildAccessApplicationArgs {
 	accountId: pulumi.Input<string>;
-	stackDefinition: AccessStackDefinition;
+	stackDefinition: InfrastructureStackDefinition;
 	accessEmail: pulumi.Input<string>;
 	devicePostureRuleId: pulumi.Input<string>;
 	sessionDuration?: pulumi.Input<string>;
@@ -93,8 +119,8 @@ export function buildAccessApplicationArgs(
 		accountId: args.accountId,
 		name: args.stackDefinition.applicationName,
 		type: 'self_hosted',
-		domain: args.stackDefinition.domain,
-		destinations: args.stackDefinition.destinations,
+		domain: args.stackDefinition.accessDomain,
+		destinations: args.stackDefinition.accessDestinations,
 		sessionDuration: args.sessionDuration ?? DEFAULT_ACCESS_SESSION_DURATION,
 		...ACCESS_APPLICATION_FLAGS,
 		policies: [buildAccessPolicy(args.accessEmail, args.devicePostureRuleId)]

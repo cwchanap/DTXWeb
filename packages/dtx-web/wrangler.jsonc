@@ -32,6 +32,7 @@
 		},
 		"pre-prod": {
 			"name": "dtx-web-pre-prod",
+			"workers_dev": false,
 			"vars": {
 				"PUBLIC_DTX_API_URL": "https://api.pre-prod.dtx.hapadona.com",
 				"PUBLIC_ENABLE_BLOG_DOWNLOAD": "false"

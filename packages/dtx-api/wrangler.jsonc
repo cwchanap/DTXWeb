@@ -146,6 +146,7 @@
 		},
 		"pre-prod": {
 			"name": "dtx-api-pre-prod",
+			"workers_dev": false,
 			"r2_buckets": [
 				{
 					"binding": "DTXFILE_BUCKET",

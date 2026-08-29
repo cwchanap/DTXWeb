@@ -77,10 +77,7 @@
 	"env": {
 		"production": {
 			"name": "dtx-api",
-			"route": {
-				"pattern": "api.dtx.hapadona.com",
-				"custom_domain": true
-			},
+			"workers_dev": false,
 			"r2_buckets": [
 				{
 					"binding": "DTXFILE_BUCKET",

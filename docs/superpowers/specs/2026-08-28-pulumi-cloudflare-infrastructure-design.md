@@ -6,149 +6,130 @@
 
 ## Summary
 
-DTXWeb will expand the existing `@dtx/infrastructure` Pulumi workspace from Cloudflare Access-only ownership to the source of truth for every **persistent Cloudflare resource with an independent lifecycle** that DTXWeb owns.
+DTXWeb will expand the existing `@dtx/infrastructure` Pulumi workspace beyond Cloudflare Access, but only where Pulumi can become the **single safe owner** of a persistent resource without fighting Wrangler or requiring a risky brownfield cutover.
 
-Pulumi will own the two permanent environments' Access applications, D1 databases, R2 buckets, Workers KV namespaces, Worker identities and account-level settings, Worker custom domains, and R2 public-access settings. The existing Pulumi Cloud stacks remain:
+The two existing Pulumi Cloud stacks remain:
 
 - `cwchanap/dtxweb-infrastructure/pre-prod`
 - `cwchanap/dtxweb-infrastructure/production`
 
-Wrangler remains the release engine for application code. It continues to build and upload Worker modules and static assets, apply D1 schema migrations, and publish version-coupled bindings, variables, Workflows, Durable Object migrations, and Container rollouts. Before a remote release, a small checked-in renderer reads non-secret Pulumi stack outputs and produces ignored Wrangler deployment files. This removes duplicated D1/KV IDs, bucket names, Worker names, public URLs, and domain ownership from the committed release configuration without recreating Wrangler's build pipeline in Pulumi.
+Pulumi will own, per stack:
 
-The migration is import-first and pre-production-first. Existing data and Worker resources are adopted into the existing stacks; no D1 database, R2 bucket, Worker, or custom domain may be replaced. Every persistent resource is protected, and D1/R2 additionally use `retainOnDelete`.
+- the existing Access application and inline policy;
+- one D1 database;
+- one R2 bucket;
+- one active rate-limit Workers KV namespace;
+- the web Worker custom domain;
+- the API Worker custom domain.
 
-The legacy `pre-prod-prod-data` Wrangler environment is retired. It is a mutable deployment alias that points the pre-production hostnames at production D1/R2 data, not a third infrastructure environment. Keeping it would leave hostname ownership split between Pulumi and Wrangler.
+Wrangler remains the Worker release engine and therefore owns Worker identities/releases, modules, assets, compatibility settings, observability, bindings, variables, Workflows, Durable Object migrations, Containers, secrets, and D1 schema migrations.
 
-This design supersedes the Access-only ownership boundary in the existing Cloudflare Access specifications and runbooks. It does not change the current Access policy, protected paths, configured operator identity, or Perseus-owned posture rule.
+R2 CORS plus R2 managed/custom public-domain settings remain outside Pulumi in this migration. The provider cannot import `R2CustomDomain`, so moving `chart.hapadona.com` would require a visible detach/reattach cutover for no current product benefit. The existing public URLs become explicit per-stack release constants instead.
 
-## Context
+The checked-in Wrangler files become local-first and contain no production/pre-production environment blocks. A small renderer combines one closed per-stack release definition with two non-secret Pulumi output IDs and writes complete ignored remote configs at each application package root. Remote deploy commands continue to use Wrangler.
 
-`packages/infrastructure` currently creates only the two Cloudflare Access applications. Its automatic workflow deploys pre-production first, production second, through Pulumi Cloud OIDC. The Access resources are already protected and covered by runtime-mock, workflow-contract, and live-boundary tests.
+The legacy `pre-prod-prod-data` environment is retired. It is a hostname-stealing deployment alias, not a third infrastructure environment.
 
-The rest of the permanent Cloudflare topology is encoded in `packages/dtx-api/wrangler.jsonc` and `packages/dtx-web/wrangler.jsonc`:
-
-- four permanent Worker identities and custom domains;
-- two D1 databases;
-- two R2 buckets;
-- production and pre-production rate-limit KV namespaces;
-- the web-to-API service bindings;
-- public R2 URLs;
-- Worker observability;
-- API Workflow, Container, and Durable Object declarations;
-- resource IDs copied into committed Wrangler configuration.
-
-Wrangler currently mixes three concerns:
-
-1. durable infrastructure identity;
-2. Worker release metadata;
-3. local-development topology.
-
-That works, but it leaves the dashboard, Pulumi, and two Wrangler files as overlapping control planes. Resource IDs must be copied by hand, custom-domain drift is reconciled by whichever tool deploys last, and the `pre-prod-prod-data` alias can replace the Worker behind the same pre-production hostnames.
+The migration is import-first and pre-production-first. Before the first import, the currently deployed Access-only GitHub Actions workflow must be disabled. This prevents the old Access-only Pulumi program on `main` from interpreting newly imported resources as deletions while the implementation pull request is still open.
 
 ## Goals
 
-- Make the two existing Pulumi stacks authoritative for all permanent DTXWeb-owned Cloudflare infrastructure.
-- Preserve the existing Access applications and policies exactly.
-- Adopt existing D1, R2, KV, Worker, Worker-domain, and R2 public settings without replacing stateful resources.
-- Remove remote resource IDs and domain declarations from committed Wrangler configuration.
-- Keep Wrangler for the deployment operations it already handles well: Worker code/assets, bindings, variables, Workflows, Durable Object migrations, Containers, and D1 schema migrations.
-- Keep one root command per application/environment for manual deployment.
-- Keep local development and Web E2E independent of Pulumi Cloud and remote Cloudflare data.
-- Retain the current pre-production-before-production Pulumi deployment gate.
-- Finish the migration in one implementation ticket and one pull request.
+- Make Pulumi authoritative for the persistent DTXWeb resources that can be safely brownfield-adopted now.
+- Preserve the existing Access applications and policy behavior exactly.
+- Import existing D1, R2, KV, and Worker custom-domain resources without replacing stateful data.
+- Remove copied remote D1/KV IDs and custom-domain ownership from committed Wrangler configuration.
+- Keep all remote release variables and Workflow names in one closed per-stack definition rather than deriving them from local config.
+- Make routine local development use local Miniflare D1/R2/KV instead of remote pre-production data.
+- Keep Wrangler responsible for Worker release metadata and Container/Workflow deployment.
+- Retire `pre-prod-prod-data` and its alias Workers/KV after the permanent pre-production Workers own the hostnames again.
+- Preserve one root deploy command per app/environment.
+- Complete the implementation in one implementation pull request.
 
 ## Non-goals
 
-- Reimplement Wrangler's Worker bundling, module upload, static asset upload, version creation, or release rollout in Pulumi.
+- Manage `cloudflare.Worker`, Worker versions, or Worker deployments through Pulumi.
+- Manage Worker observability, tags, tail consumers, `workers.dev`, preview URLs, code, or assets through Pulumi.
+- Manage R2 CORS, R2 managed domains, or R2 custom domains through Pulumi in this ticket.
+- Detach or recreate `chart.hapadona.com`.
 - Manage D1 schema migrations through Pulumi.
-- Move Worker secret values into Pulumi state or stack outputs.
-- Manage Workflow instances, R2 objects, generated M4A files, release artifacts, or application data through Pulumi.
-- Manage the Cloudflare account, the `hapadona.com` zone, the Perseus-owned posture rule, or other repositories' infrastructure.
-- Add preview stacks, per-branch Cloudflare environments, a generic Pulumi component framework, a custom dynamic provider, or a second deployment orchestrator.
-- Automate Worker application deployment in this ticket. Infrastructure applies remain automatic; Worker releases remain explicit commands.
-- Redesign CORS, Worker observability, Access, authentication, caching, or the BGM Workflow. The migration preserves live behavior.
+- Put Worker secret values in Pulumi state, outputs, or generated files.
+- Manage Workflow instances, R2 objects, generated M4A files, release artifacts, or application data.
+- Manage the Cloudflare account, `hapadona.com` zone, or Perseus-owned posture rule.
+- Add preview stacks, a generic component framework, a dynamic provider, a second deployment orchestrator, or automatic Worker releases.
 - Preserve `pre-prod-prod-data` compatibility.
+- Add a `dev:remote-preprod` command unless a real need appears after local-first development lands.
 
-## Decision
+## Why the first draft changes
 
-### Pulumi is the infrastructure control plane
+### Do not import `cloudflare.Worker`
 
-A resource belongs to Pulumi when it can exist independently of one Worker build and must retain a stable identity across releases. That includes data stores, Worker identities, host-to-Worker mappings, Access policy, and bucket-level public settings.
+Wrangler already writes Worker observability and release settings on every deployment. Having Pulumi also own Worker settings creates a permanent two-writer reconciliation loop. Pulumi only needs the custom-domain resources to stop hostname ownership from moving during a Wrangler release.
 
-### Wrangler is the Worker release engine
+The Worker service names remain stable constants in the closed stack definition and are referenced by `WorkersCustomDomain` and generated Wrangler files.
 
-A setting remains in Wrangler when it is uploaded as part of a Worker version or must move atomically with the code defining it. Bindings and variables are therefore rendered into each deployment even though their target resource identities come from Pulumi.
+### Do not adopt R2 public-domain resources now
 
-This hybrid is intentional rather than transitional. Pulumi's current `Worker` resource manages Worker identity, observability, tags, and subdomain settings, while Wrangler remains the supported path for the code/assets/Workflow/Container release surface. Replacing Wrangler would add beta Worker version/deployment resources and custom Container image/rollout orchestration without improving DTXWeb's feature delivery.
+`R2CustomDomain` does not support normal Pulumi import. Detaching and reattaching the production chart domain would introduce user-visible risk solely to change control planes. CORS/public-domain management is deferred until there is an actual change that justifies a dedicated migration.
+
+### Local config cannot be the source of remote values
+
+Production and pre-production differ in cookie prefix/domain, CORS, GraphiQL, rate-limit environment, public API URLs, Workflow names, and service target. Once checked-in config becomes local-first, copying its values into a remote release would be incorrect.
+
+One stack definition therefore owns both persistent resource names and remote release settings. Pulumi outputs add only live provider-generated IDs.
 
 ## Ownership contract
 
 | Concern | Final owner | Notes |
 | --- | --- | --- |
-| Access applications and inline policies | Pulumi | Existing resources and logical names remain unchanged. |
-| D1 database identity and placement settings | Pulumi | Existing databases are imported; D1 schema remains Wrangler/application-owned. |
-| R2 bucket identity and storage settings | Pulumi | Existing buckets are imported. Objects remain application data. |
-| Workers KV namespace identity | Pulumi | Import the active production and pre-production namespaces. |
-| Worker identity, observability, tags, and subdomain/preview state | Pulumi | Existing Workers are imported. Worker code is not managed here. |
-| Worker custom domains | Pulumi | Use `cloudflare.WorkersCustomDomain`; remove `route` from Wrangler. |
-| R2 CORS policy | Pulumi | Preserve the live policy exactly; no policy redesign. |
-| R2 managed `r2.dev` state | Pulumi | Pre-production keeps its current public endpoint. |
-| R2 custom domain | Pulumi | Production keeps `chart.hapadona.com`. |
-| Worker code, modules, compatibility date/flags, and assets | Wrangler | Built and released from each application package. |
-| D1/R2/KV/service bindings | Rendered Wrangler config | Binding names remain code-owned; target IDs/names come from Pulumi outputs. |
-| Plain Worker variables | Rendered Wrangler config | Version-coupled application configuration. |
-| Worker secret values | Wrangler/GitHub Environments | Never exported from Pulumi. |
-| Workflow declaration and binding | Wrangler | Tied to the Worker class exported by the deployed version. |
-| Durable Object binding and migration tags | Wrangler | Must move atomically with code. |
-| Container image, instance type, and rollout | Wrangler | Cloudflare's Container deployment path owns the image and rollout. |
-| D1 schema migrations | Wrangler | Run immediately before the API Worker deployment. |
-| R2 objects and release artifacts | Existing application/release tooling | Data, not infrastructure. |
-| Cloudflare account, zone, and Perseus posture rule | External references | DTXWeb consumes their IDs but does not own them. |
+| Access applications and policies | Pulumi | Existing resources, names, and policy stay unchanged. |
+| D1 database identity | Pulumi | Imported and protected; schema stays Wrangler-owned. |
+| R2 bucket identity | Pulumi | Imported and protected; objects stay application data. |
+| Active rate-limit KV namespace | Pulumi | Imported and protected. |
+| Web/API Worker custom domains | Pulumi | Imported `WorkersCustomDomain` resources point at stable Wrangler-owned Worker names. |
+| Worker identity and code release | Wrangler | No `cloudflare.Worker` resource. |
+| Worker observability/tags/tails | Wrangler | Prevent a dual-writer loop. |
+| `workers.dev` / preview URLs | Generated Wrangler config | Remote configs set them false. |
+| D1/R2/KV/service bindings | Generated Wrangler config | Binding names stay code-owned; IDs/names come from closed definition + Pulumi output. |
+| Plain Worker variables | Generated Wrangler config | Final remote values come from the closed stack definition. |
+| Worker secrets | Wrangler/GitHub Environments | Never emitted by Pulumi. |
+| Workflow declaration/name/binding | Generated Wrangler config | Per-stack Workflow name lives in the closed release definition. |
+| Durable Object migrations | Wrangler | Must move with code. |
+| Container image/config/rollout | Wrangler | Cloudflare release tooling owns it. |
+| D1 schema migrations | Wrangler | Run before API Worker deployment. |
+| R2 CORS | Existing Cloudflare setting | Explicitly unmanaged in this ticket. |
+| R2 `r2.dev` / `chart.hapadona.com` | Existing Cloudflare setting | Explicitly unmanaged; public URLs are release constants. |
+| Cloudflare account/zone/posture rule | External references | DTXWeb consumes IDs but does not own them. |
 
-## Permanent environment model
+## Permanent environment and release model
 
-Only two Pulumi environments exist.
-
-| Stack | Web Worker | API Worker | Web hostname | API hostname | D1 | R2 |
-| --- | --- | --- | --- | --- | --- | --- |
-| `pre-prod` | `dtx-web-pre-prod` | `dtx-api-pre-prod` | `pre-prod.dtx.hapadona.com` | `api.pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` |
-| `production` | `dtx-web` | `dtx-api` | `dtx.hapadona.com` | `api.dtx.hapadona.com` | `dtx-web` | `simfile-dtx` |
-
-The stack files continue to hold `cloudflareAccountId`, encrypted `accessEmail`, and `devicePostureRuleId`. Add two non-secret settings:
-
-- `cloudflareZoneId` — the existing `hapadona.com` zone;
-- `rateLimitKvTitle` — the exact live title of that stack's active rate-limit namespace.
-
-Do not commit database IDs, namespace IDs, Worker IDs, Worker-domain IDs, bucket IDs, or `r2.dev` generated hostnames as stack configuration. They become provider state and Pulumi outputs after import.
-
-The Access contract stays:
-
-- pre-production protects the entire `pre-prod.dtx.hapadona.com` hostname;
-- production protects only `dtx.hapadona.com/app` and `dtx.hapadona.com/app/*`;
-- one allow policy includes the configured email and requires the Perseus-managed posture rule;
-- APIs and all other production routes remain outside Access.
-
-## Pulumi program structure
-
-Keep one TypeScript program and small resource-focused modules:
-
-```text
-packages/infrastructure/src/
-├── access.ts
-├── config.ts
-├── data.ts
-├── workers.ts
-├── r2-public.ts
-├── wrangler.ts
-└── index.ts
-```
-
-No component-resource framework is needed. Each module exposes a pure argument builder for focused tests and one creation function for `index.ts`.
-
-### `config.ts`
+Only two stacks exist.
 
 ```typescript
 export type StackName = 'pre-prod' | 'production';
+
+export interface ApiReleaseSettings {
+	workflowName: string;
+	vars: {
+		BETTER_AUTH_URL: string;
+		DTX_WEB_URL: string;
+		GOOGLE_AUTH_CLIENT_ID: string;
+		AUTH_COOKIE_DOMAIN: string;
+		AUTH_COOKIE_PREFIX: string;
+		RATE_LIMIT_ENV: 'prod' | 'pre-prod';
+		GRAPHIQL: 'true' | 'false';
+		CORS_ALLOWED_ORIGINS: string;
+		PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false';
+		PUBLIC_SIMFILE_BUCKET_URL: string;
+		BGM_M4A_GENERATION_ENABLED: 'true';
+	};
+}
+
+export interface WebReleaseSettings {
+	vars: {
+		PUBLIC_DTX_API_URL: string;
+		PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false';
+	};
+}
 
 export interface InfrastructureDefinition {
 	stackName: StackName;
@@ -158,19 +139,73 @@ export interface InfrastructureDefinition {
 	apiHostname: string;
 	databaseName: string;
 	bucketName: string;
-	publicSimfileBaseUrl: 'managed-r2' | 'https://chart.hapadona.com';
+	rateLimitKvTitle: string;
+	apiRelease: ApiReleaseSettings;
+	webRelease: WebReleaseSettings;
 }
-
-export const getInfrastructureDefinition = (stackName: string): InfrastructureDefinition => {
-	// Return the closed two-stack table or reject before resource registration.
-};
 ```
 
-Hostnames, Worker names, D1 names, R2 names, and production public-domain intent stay in code. Account/zone IDs, Access identity, and the live KV title remain stack configuration.
+The closed table contains the current final remote values for both stacks, including:
+
+| Setting | Production | Pre-production |
+| --- | --- | --- |
+| API Worker | `dtx-api` | `dtx-api-pre-prod` |
+| Web Worker | `dtx-web` | `dtx-web-pre-prod` |
+| API hostname | `api.dtx.hapadona.com` | `api.pre-prod.dtx.hapadona.com` |
+| Web hostname | `dtx.hapadona.com` | `pre-prod.dtx.hapadona.com` |
+| D1 | `dtx-web` | `dtx-web-preprod` |
+| R2 | `simfile-dtx` | `simfile-dtx-preprod` |
+| Workflow | `dtx-api-bgm-m4a` | `dtx-api-bgm-m4a-preprod` |
+| Auth cookie prefix | `dtx` | `dtx-preprod` |
+| Rate-limit environment | `prod` | `pre-prod` |
+| GraphiQL | `false` | `true` |
+| API CORS | production web origin | pre-production web origin plus current localhost development origins |
+| Public simfile URL | `https://chart.hapadona.com` | current existing `r2.dev` URL |
+| Web public API URL | production API hostname | pre-production API hostname |
+
+The exact current rate-limit KV titles and pre-production `r2.dev` URL are captured during the read-only inventory and then committed as non-secret constants in this table. IDs are not committed here.
+
+Pulumi stack configuration remains limited to externally assigned or secret inputs:
+
+- `cloudflareAccountId`;
+- `cloudflareZoneId`;
+- encrypted `accessEmail`;
+- `devicePostureRuleId`;
+- optional `accessSessionDuration` only when it differs from `12h`.
+
+The rate-limit KV title is not Pulumi config; it is part of the closed stack definition.
+
+## Pulumi program structure
+
+```text
+packages/infrastructure/src/
+├── access.ts
+├── config.ts
+├── data.ts
+├── domains.ts
+├── wrangler.ts
+└── index.ts
+```
+
+No component framework is introduced.
+
+### `access.ts`
+
+Keep the current Access code and logical resource names unchanged. `createAccessApplication()` already uses `protect: true`.
+
+### `config.ts`
+
+Own the closed two-stack table and reject every other stack name, including `pre-prod-prod-data`.
 
 ### `data.ts`
 
-Create exactly one D1 database, one R2 bucket, and one active rate-limit KV namespace per stack.
+Create one resource of each type per stack:
+
+```text
+cloudflare.D1Database
+cloudflare.R2Bucket
+cloudflare.WorkersKvNamespace
+```
 
 Resource options:
 
@@ -185,105 +220,120 @@ export const PERSISTENT_RESOURCE_OPTIONS = {
 } as const;
 ```
 
-D1 and R2 use `STATEFUL_RESOURCE_OPTIONS`. KV uses `PERSISTENT_RESOURCE_OPTIONS`: its counters are disposable, but accidental namespace deletion should still be blocked.
+D1 and R2 use `STATEFUL_RESOURCE_OPTIONS`. KV uses `PERSISTENT_RESOURCE_OPTIONS`.
 
-### `workers.ts`
+Only live non-default D1/R2 fields observed during inventory are declared. Do not invent jurisdiction, placement, storage class, or replication settings.
 
-Create/import the web and API `cloudflare.Worker` identities with their current live observability configuration and disabled `workers.dev`/preview URLs. Create two `cloudflare.WorkersCustomDomain` mappings to the exact Worker names. Omit the deprecated `environment` field because pre-production already uses distinct Worker service names.
+### `domains.ts`
 
-All four Workers and custom-domain resources use `protect: true`.
+Create two protected `cloudflare.WorkersCustomDomain` resources per stack:
 
-### `r2-public.ts`
+```typescript
+{
+	accountId,
+	zoneId,
+	hostname: definition.webHostname,
+	service: definition.webWorkerName
+}
 
-Manage the bucket-level public surface:
+{
+	accountId,
+	zoneId,
+	hostname: definition.apiHostname,
+	service: definition.apiWorkerName
+}
+```
 
-- the exact existing CORS policy for each bucket, when one is present;
-- `R2ManagedDomain(enabled: true)` for pre-production;
-- `R2CustomDomain(domain: 'chart.hapadona.com', enabled: true)` for production.
-
-These resources use `protect: true`. The implementation first exports the current live settings and codifies them byte-for-byte; it does not infer or broaden origins, methods, TLS settings, or ciphers.
+No Worker resource is registered by Pulumi.
 
 ### `index.ts`
 
-`index.ts` remains the composition root. It loads the closed stack definition, stack configuration, Access resource, data resources, Worker resources, and R2 public resources. It exports:
+`index.ts` composes Access, data resources, and custom domains. Export only the provider-generated IDs needed by the remote renderer:
 
 ```typescript
-export interface WorkerDeploymentConfig {
+export interface WorkerDeploymentIds {
 	stack: StackName;
-	web: {
-		workerName: string;
-		hostname: string;
-		apiServiceName: string;
-	};
-	api: {
-		workerName: string;
-		hostname: string;
-		databaseId: string;
-		databaseName: string;
-		bucketName: string;
-		rateLimitKvNamespaceId: string;
-		publicSimfileBucketUrl: string;
-	};
+	databaseId: string;
+	rateLimitKvNamespaceId: string;
 }
 
-export const workerDeploymentConfig: pulumi.Output<WorkerDeploymentConfig>;
+export const workerDeploymentIds: pulumi.Output<WorkerDeploymentIds>;
 ```
 
-This output is non-secret. Do not export Access IDs, email, posture-rule ID, API tokens, Worker secrets, or Pulumi ciphertext.
+Bucket name, Worker names, hostnames, Workflow names, service targets, and variables come from `getInfrastructureDefinition(stack)`, not from outputs.
 
-## Wrangler deployment configuration
+Do not export Access IDs, email, posture-rule ID, tokens, ciphertext, or stack state.
 
-### Checked-in configuration becomes local-first
+## Wrangler model
 
-The checked-in `packages/dtx-api/wrangler.jsonc` and `packages/dtx-web/wrangler.jsonc` remain useful for local development, type generation, and Web E2E. They retain:
+### Checked-in files are local-first
 
-- Worker entrypoints and compatibility settings;
-- binding names and local resource names;
-- API Workflow/Container/Durable Object declarations;
-- application variables with local/test-safe defaults where required;
-- web assets and local service binding shape.
+`packages/dtx-api/wrangler.jsonc` and `packages/dtx-web/wrangler.jsonc` become safe local/default configs.
 
-They no longer contain:
+The API checked-in config keeps:
 
-- production or pre-production custom domains;
-- remote D1 or KV IDs;
-- `remote: true` data bindings;
-- production/pre-production environment blocks;
-- Pulumi-owned observability configuration;
-- `pre-prod-prod-data`.
+- `name`, `main`, alias, compatibility settings;
+- local D1 binding named `dtx-web` so existing E2E setup continues to target the same local database;
+- local R2/KV bindings with schema-valid local-only IDs where required;
+- no `remote: true`;
+- no remote routes;
+- local-safe URLs/CORS/cookie prefix;
+- `RATE_LIMIT_ENV: "local"` and the corresponding TypeScript union extension;
+- `GRAPHIQL: "true"`;
+- `BGM_M4A_GENERATION_ENABLED: "false"`;
+- Workflow/Container/Durable Object declarations needed by remote rendering, with local Containers disabled.
 
-Local API development stops selecting the remote `pre-prod` environment. It uses local Miniflare D1/R2/KV state, matching Web E2E and preventing routine development from authenticating or writing against deployed resources.
+The web checked-in config keeps its entrypoint/assets/service shape but uses local API URL values and has no remote route/environment blocks.
 
-### Generated remote configuration
+Delete both `pre-prod` and `pre-prod-prod-data` Wrangler environment blocks. Remote deployments never select Wrangler environments after this migration.
 
-Add `packages/infrastructure/src/wrangler.ts` plus `scripts/render-wrangler-config.ts`. The pure module accepts the checked-in local config and `WorkerDeploymentConfig`, then returns complete API and web deployment objects.
+### One renderer owns remote overlays
 
-Generated files are ignored:
+`src/wrangler.ts` accepts:
+
+```typescript
+renderApiRemoteConfig(localConfig, definition, ids)
+renderWebRemoteConfig(localConfig, definition)
+```
+
+It must build complete remote configs that:
+
+- set the exact remote Worker name;
+- bind D1 using `definition.databaseName` plus `ids.databaseId`;
+- bind R2 using `definition.bucketName`;
+- bind KV using `ids.rateLimitKvNamespaceId`;
+- replace API vars with `definition.apiRelease.vars`;
+- set the API Workflow name from `definition.apiRelease.workflowName`;
+- set the web service target to `definition.apiWorkerName`;
+- replace web vars with `definition.webRelease.vars`;
+- preserve the checked-in `main`, alias, compatibility, assets, Container, Durable Object, and migration structures;
+- set `workers_dev: false` and `preview_urls: false`;
+- omit `route`, `routes`, and `env` entirely;
+- reject `pre-prod-prod-data` and any missing Pulumi ID;
+- assert that local-only cookie prefixes, localhost-only remote values, or the local Workflow name do not leak into a remote output.
+
+The renderer does not mutate checked-in files.
+
+### Generated config location
+
+Generated configs live at each application package root:
 
 ```text
-.wrangler/generated/pre-prod/api.jsonc
-.wrangler/generated/pre-prod/web.jsonc
-.wrangler/generated/production/api.jsonc
-.wrangler/generated/production/web.jsonc
+packages/dtx-api/wrangler.remote.pre-prod.generated.jsonc
+packages/dtx-api/wrangler.remote.production.generated.jsonc
+packages/dtx-web/wrangler.remote.pre-prod.generated.jsonc
+packages/dtx-web/wrangler.remote.production.generated.jsonc
 ```
 
-The renderer must:
+Add these patterns to the appropriate gitignore files.
 
-- inject the exact Worker name;
-- inject D1 database ID/name, R2 bucket name, and KV namespace ID;
-- inject the web-to-API service target;
-- inject `PUBLIC_SIMFILE_BUCKET_URL`;
-- preserve version-coupled variables, assets, Workflow, Container, Durable Object, and migration declarations;
-- omit `route` and `routes`;
-- set `workers_dev: false` and `preview_urls: false` so a Wrangler release cannot re-enable unintended public subdomains;
-- reject missing/extra Pulumi fields and unsupported stacks;
-- never write secrets or Pulumi stack state.
+They intentionally do **not** live under `packages/infrastructure` or a nested `.wrangler/generated/` directory. Wrangler resolves project-relative paths from the config location. Keeping the generated file beside the checked-in file lets `main: "src/index.ts"`, `../common/...` aliases, `./container/...`, and `.svelte-kit/cloudflare` assets remain unchanged.
 
-Cloudflare documents that Wrangler overwrites routes on deployment when route keys remain in its configuration. Removing those keys is therefore mandatory once Pulumi owns Worker custom domains. `workers_dev: false` is a release guard consistent with the Pulumi-owned Worker subdomain state.
+Remote commands run from the app package and pass only the generated filename to `--config`.
 
-### Deployment commands
+## Deployment commands
 
-Preserve the existing root command names:
+Preserve these root commands:
 
 ```text
 bun run deploy:api
@@ -292,185 +342,200 @@ bun run deploy:web
 bun run deploy:web:preprod
 ```
 
-Each command renders the selected stack first. API deployment then applies that stack's D1 migrations and deploys the API Worker from the generated config. Web deployment builds SvelteKit and deploys the web Worker from the generated config.
+Remove all `*:preprod:prod-data` commands.
 
-Generated config creation must fail before Wrangler runs when Pulumi login, stack selection, output decoding, or file rendering fails.
+A remote API deploy does:
+
+```text
+read selected Pulumi stack output
+-> render API remote config at packages/dtx-api package root
+-> apply selected D1 migrations with that generated config
+-> wrangler deploy --config <generated-file>
+```
+
+A remote web deploy does:
+
+```text
+read selected Pulumi stack output
+-> render web remote config at packages/dtx-web package root
+-> build SvelteKit
+-> wrangler deploy --config <generated-file>
+```
+
+Failure to log in to Pulumi, select the expected stack, decode the output, or render a complete config stops before Wrangler runs.
 
 ## Retire `pre-prod-prod-data`
 
-`pre-prod-prod-data` is removed from:
+Remove it from:
 
-- both Wrangler files;
-- API, web, and root package scripts;
-- the API `RATE_LIMIT_ENV` union;
+- API and web Wrangler files;
+- package/root deploy and migration scripts;
+- `RATE_LIMIT_ENV` type;
 - configuration-contract tests;
 - desktop development-topology tests;
-- current M4A specification/plan statements that describe the alias as active.
+- current docs that still describe it as an active environment.
 
-The legacy alias Workers and alias-only KV namespace are inventoried before removal. After normal pre-production is verified:
+Before deleting alias resources, inventory the two pre-production custom domains.
 
-1. confirm neither pre-production hostname routes to an alias Worker;
-2. confirm the alias Workers have no custom domains, routes, schedules, or service consumers;
-3. delete the alias Worker identities;
-4. delete the alias-only rate-limit KV namespace.
+If a hostname currently points at `dtx-api-pre-prod-prod-data` or `dtx-web-pre-prod-prod-data`, that is an **expected migration state**, not an inventory failure. Import the custom domain, allow the one service-target update to the permanent Worker, apply it, then verify the permanent Worker before deleting the alias.
 
-Production D1 and R2 are never deleted or mutated by this cleanup. Importing disposable legacy resources solely to delete them would add state churn and risk, so this one-time decommission remains an explicit operator action recorded in the runbook.
+The one-time cleanup deletes only:
 
-## Existing-resource adoption
+- alias Worker identities after they have no domains/routes/schedules/service consumers;
+- the alias-only rate-limit KV namespace after confirming no permanent Worker binds it.
 
-### Import-supported resources
+Production D1 and R2 are never deleted or modified by alias cleanup.
 
-The Pulumi Cloudflare provider supports import for:
+## Safe adoption sequence
 
-- `cloudflare.D1Database`: `<account_id>/<database_id>`;
-- `cloudflare.R2Bucket`: `<account_id>/<bucket_name>/<jurisdiction>`;
-- `cloudflare.WorkersKvNamespace`: `<account_id>/<namespace_id>`;
-- `cloudflare.Worker`: `<account_id>/<worker_id>`;
-- `cloudflare.WorkersCustomDomain`: `<account_id>/<domain_id>`.
+### 1. Complete the implementation before touching live state
 
-The implementation declares the final logical names first, then imports the matching live resources into those URNs. Every import is followed by `pulumi preview --refresh --expect-no-changes`. Any create, replacement, or delete for D1, R2, KV, Worker, or Worker custom domain is a hard stop.
+The implementation PR first contains the full Pulumi program, renderer, local-first configs, workflow replacement, tests, and runbook. No D1/R2/KV/custom-domain import occurs while those pieces are incomplete.
 
-Before D1 import, create a D1 backup/export and record only its private location. Never attach the export to the PR or workflow artifacts.
+### 2. Disable the existing Access-only deployment workflow
 
-### R2 resources without import support
+Before the **first** import, disable `.github/workflows/deploy-cloudflare-access.yml` in GitHub Actions and verify it cannot run from `main` or `workflow_dispatch`.
 
-`R2BucketCors`, `R2ManagedDomain`, and `R2CustomDomain` currently do not support `pulumi import`.
+Keep it disabled while the implementation PR is open and the remote Pulumi stacks contain resources that `main`'s Access-only `src/index.ts` does not register.
 
-For CORS and the managed `r2.dev` endpoint, Cloudflare exposes singleton PUT APIs. The implementation first records the exact live response, then runs a targeted pre-production Pulumi update using identical values. If the provider successfully performs an idempotent PUT, the resource becomes state-managed without disabling the endpoint. If Cloudflare returns a conflict, restore from the captured response through the API, delete only the singleton setting, and immediately repeat the targeted Pulumi update.
+This is a hard gate. `protect` is defense in depth, not a substitute: the old program would still produce delete plans and fail automated Access deployment.
 
-The production R2 custom domain uses an attach operation and therefore gets a controlled detach/re-attach cutover:
+### 3. Import pre-production
 
-1. capture its current enabled state, zone ID/name, minimum TLS, ciphers, and health status;
-2. remove only the `chart.hapadona.com` bucket attachment;
-3. immediately run a targeted Pulumi update for `R2CustomDomain`;
-4. wait until ownership and SSL status are active;
-5. verify representative chart downloads and CORS headers.
+Import into `cwchanap/dtxweb-infrastructure/pre-prod`:
 
-The R2 bucket and its objects are untouched. A brief `chart.hapadona.com` maintenance window is acceptable for this hobby project and is simpler than introducing an unsupported custom provider or hand-editing Pulumi state.
+- D1 database;
+- R2 bucket;
+- active KV namespace;
+- web custom domain;
+- API custom domain.
 
-## Deployment automation
+Use the provider's documented IDs:
 
-Rename the existing workflow to `.github/workflows/deploy-cloudflare-infrastructure.yml` and generalize its tests and documentation.
+```text
+D1:                 <account_id>/<database_id>
+R2:                 <account_id>/<bucket_name>/<captured_jurisdiction>
+KV:                 <account_id>/<namespace_id>
+WorkersCustomDomain:<account_id>/<domain_id>
+```
 
-Retain:
+`pulumi import` protects imported resources by default; source code also keeps protection enabled. D1/R2 source code adds `retainOnDelete`.
 
-- push-to-`main` and manual recovery triggers;
+If either custom domain currently targets an alias Worker, the subsequent preview may contain exactly that `service` update to the permanent pre-production Worker. No D1/R2 replacement/delete or unrelated domain change is allowed.
+
+Apply the expected domain remap, render/deploy the permanent pre-production API and web Workers, then verify:
+
+- API `/healthz`;
+- web hostname;
+- existing Access protected/public route matrix;
+- D1 read/write path;
+- R2 read path;
+- rate-limit KV path;
+- BGM Workflow trigger/Container path.
+
+### 4. Import production
+
+Import production D1, R2, KV, and both Worker custom domains. Production custom domains should preview unchanged.
+
+Do **not** manage or detach `chart.hapadona.com`; its existing R2 custom-domain configuration remains untouched.
+
+Render/deploy the production API and web Workers, then repeat the live validation gate.
+
+### 5. Delete alias resources
+
+After permanent pre-production hostnames are verified, delete only the unused alias Workers and alias KV namespace.
+
+### 6. Merge with matching state/program
+
+Only merge after both stacks have been imported, both remote generated configs have been exercised, alias cleanup is complete, and the PR program previews without unexpected changes.
+
+At merge time the old Access workflow is still disabled. The merged commit deletes it and adds the generalized infrastructure workflow, so there is never an enabled Access-only program against the expanded state.
+
+Run or manually dispatch the new workflow immediately after merge and require pre-production success before production.
+
+## Automatic Pulumi workflow
+
+Replace `.github/workflows/deploy-cloudflare-access.yml` with `.github/workflows/deploy-cloudflare-infrastructure.yml`.
+
+Keep:
+
+- push to `main` for relevant infrastructure/lock/workflow changes;
+- `workflow_dispatch` recovery entrypoint;
 - pre-production before production;
-- production blocked by any pre-production failure;
+- `needs: deploy-pre-prod`;
 - Pulumi Cloud OIDC;
-- SHA-pinned actions;
+- the existing GitHub Environment names `dtx-access-pre-prod` and `dtx-access-production` so OIDC subjects do not change;
 - `pulumi up --refresh`;
-- protected stack outputs;
-- `cancel-in-progress: false`;
-- existing Access boundary verification.
+- `suppress-outputs: true`;
+- non-cancelling concurrency;
+- Access boundary verification.
 
-Reuse the existing GitHub Environment names and Pulumi OIDC subjects:
+Replace the Access-only Cloudflare token with `CLOUDFLARE_INFRA_API_TOKEN`, scoped only for the resources this program now owns: Access apps/policies, D1, R2 bucket identity, KV, and Workers custom domains. No R2 public-domain or DNS mutation permission is required for this ticket.
 
-- `dtx-access-pre-prod`;
-- `dtx-access-production`.
+Add a small live infrastructure verifier that checks names/hostnames and API health without printing IDs or secret values.
 
-The names are historical, but reusing them avoids changing an already-working Pulumi OIDC trust policy. Documentation will state that they now gate the complete DTXWeb Cloudflare infrastructure stack.
+## Testing
 
-Replace `CLOUDFLARE_ACCESS_API_TOKEN` with `CLOUDFLARE_INFRA_API_TOKEN` in both environments. The tokens are scoped to the DTXWeb account/zone and only the provider operations needed for Access, D1, R2, Workers KV, Worker identities/settings, and Worker custom domains. They do not receive API-token management, user management, billing, or Global API Key privileges.
+### Pure tests
 
-The automatic workflow does not deploy Worker code or run D1 schema migrations. A Pulumi change can therefore be reviewed and applied independently of an application release.
+- closed two-stack table and exact release settings;
+- `pre-prod-prod-data` rejection;
+- D1/R2/KV argument builders and resource options;
+- custom-domain arguments and protection;
+- stack registration contains Access + D1 + R2 + KV + two custom domains, and no `cloudflare.Worker`/R2 public resources;
+- remote API renderer replaces local vars completely and uses the stack-specific Workflow name;
+- remote web renderer sets the correct API service/URL;
+- generated remote configs contain no routes/env blocks and disable `workers.dev`/preview URLs;
+- renderer rejects missing IDs and local-only value leakage;
+- package scripts no longer expose `pre-prod-prod-data`;
+- checked-in local configs contain no `remote: true` or production/pre-production environment blocks;
+- root `bun run dev` uses local-safe config and local D1 name `dtx-web`.
 
-After each stack apply:
+### Dry-run tests
 
-- run the existing Access boundary matrix;
-- verify the public API `/healthz` endpoint;
-- verify the expected R2 public endpoint is reachable without DNS/TLS/5xx failure;
-- confirm the Pulumi deployment output contains all expected non-secret resource identities.
+For each generated API/web config:
 
-## Validation strategy
+```bash
+wrangler deploy --dry-run --config <generated-file> --containers-rollout=none
+```
 
-### Unit and contract tests
+The dry run must resolve existing source, alias, Container, and assets paths from the application package root.
 
-- closed two-stack configuration table;
-- pure D1/R2/KV/Worker/R2-public argument builders;
-- constructor options prove protection and retention at the creation seams;
-- Pulumi runtime mocks prove exact resource counts, logical names, types, dependencies, and exported deployment shape;
-- Wrangler renderer fixtures prove no remote resource IDs or routes remain committed and generated configs contain every required release binding;
-- renderer rejects unsupported stacks and incomplete Pulumi output;
-- workflow contract keeps serial OIDC deployment and broader credential name;
-- shell tests cover infrastructure HTTP verification without real network calls;
-- repository search contract proves `pre-prod-prod-data` has no active code/config references.
+### Live gates
 
-### Pre-production live gate
+For each stack:
 
-- zero-unexpected-change Pulumi preview after import;
-- targeted R2 public-setting adoption;
-- API and web generated-config dry runs;
-- remote D1 migration no-op/apply against the pre-production database;
-- API deploy, health check, authenticated smoke, R2 read/write smoke, KV rate-limit smoke;
-- web deploy and Access boundary matrix;
-- BGM Workflow/Container smoke.
-
-### Production live gate
-
-Repeat the same sequence, then perform the controlled `chart.hapadona.com` attachment cutover and representative public download/CORS verification.
-
-## Failure and recovery
-
-- A preview showing D1/R2/Worker replacement or deletion stops the migration.
-- `protect: true` blocks deletion/replacement during normal automation.
-- `retainOnDelete: true` prevents a source-code/state mistake from deleting D1 or R2.
-- A mistaken import is removed from Pulumi state only; the live resource is not deleted.
-- D1 backup/export is required before production adoption.
-- R2 CORS/domain settings are captured before any non-importable-resource cutover.
-- The old Access workflow remains active until the generalized workflow and broader credentials pass pre-production.
-- Worker releases continue using the old committed Wrangler path until generated configs pass dry-run and pre-production deployment.
-- No automatic rollback or destroy is added. Recovery is a reviewed forward fix or explicit operator action.
-
-## Rollout sequence
-
-All work remains one implementation pull request. The PR stays draft while external adoption is in progress.
-
-1. Add the final Pulumi declarations, tests, and outputs.
-2. Import and verify pre-production data, Worker, domain, and R2 public resources.
-3. Add and validate generated Wrangler deployment files; deploy pre-production API/web.
-4. Generalize the workflow and validate its pre-production job.
-5. Import and verify production resources.
-6. Adopt production R2 settings and `chart.hapadona.com`.
-7. Deploy production API/web through generated configs.
-8. Remove `pre-prod-prod-data` code/config and decommission its disposable Worker/KV resources.
-9. Run the complete validation matrix, update the runbook, and mark the PR ready.
+- `pulumi preview --refresh` has no unexpected create/replace/delete;
+- D1/R2/KV/domain resources are protected;
+- D1/R2 are retained on source removal;
+- custom domains point to permanent Workers;
+- generated Wrangler deployment succeeds;
+- API health and Access boundary checks pass;
+- no secret or provider ID is printed by verification scripts.
 
 ## Acceptance criteria
 
-- The existing Pulumi stacks manage Access, two D1 databases, two R2 buckets, two active KV namespaces, four Worker identities, four Worker custom domains, and the desired R2 public settings.
-- D1 and R2 resources are protected and retained; every other persistent resource is protected.
-- `pulumi preview --refresh --expect-no-changes` succeeds for both final stacks.
-- No production or pre-production D1/KV IDs or Worker-domain declarations remain in committed Wrangler files.
-- Generated Wrangler files are ignored, deterministic, secret-free, and pass API/web dry runs.
-- Existing root deployment command names still deploy the selected API/web environment.
-- Local development and Web E2E use local Miniflare data without Pulumi Cloud.
-- `pre-prod-prod-data` has no active code/config/script references, alias Workers are gone, and its alias-only KV namespace is gone.
-- API health, web behavior, Access boundaries, R2 public reads/CORS, KV use, D1 queries, service binding, BGM Workflow, and Container transcoding work in both environments.
-- The automatic workflow applies pre-production before production and does not deploy Worker application code.
-- No secrets, stack state, D1 backups, or R2-setting exports are committed or logged.
+The migration is complete when:
 
-## Superseded documentation
+- the existing Access resources remain unchanged;
+- each stack state contains one D1, one R2 bucket, one active rate-limit KV namespace, and two Worker custom domains;
+- no `cloudflare.Worker`, R2 CORS, R2 managed-domain, or R2 custom-domain resource is registered by this program;
+- D1 and R2 are both protected and retained;
+- committed Wrangler files contain no production/pre-production D1/KV IDs, no custom routes, no `remote: true`, and no `pre-prod-prod-data`;
+- local `bun run dev` cannot write to remote pre-production D1/R2 by configuration;
+- remote renderer outputs exact per-stack vars and Workflow names from the closed definition;
+- generated configs live beside each app's checked-in Wrangler file and pass dry runs without path rewriting;
+- production `chart.hapadona.com` was never detached;
+- permanent pre-production Workers own both pre-production hostnames;
+- alias Workers/KV are removed only after that verification;
+- the Access-only workflow was disabled before the first import and remained disabled until merge;
+- the generalized infrastructure workflow succeeds pre-production before production after merge.
 
-This design supersedes only the following earlier decisions:
+## Deferred follow-ups
 
-- `packages/infrastructure` manages Access applications only;
-- Workers/D1/R2/KV/custom domains are permanent Wrangler-owned infrastructure;
-- the deployment workflow and credential are Access-specific;
-- `pre-prod-prod-data` remains an active deployment option.
+These require a concrete need before implementation:
 
-The Access route/policy contract and the M4A Workflow/Container application design remain valid.
-
-## Primary references
-
-- [Cloudflare Wrangler configuration — source of truth and route ownership](https://developers.cloudflare.com/workers/wrangler/configuration/#source-of-truth)
-- [Pulumi Cloudflare `Worker`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/worker/)
-- [Pulumi Cloudflare `WorkersCustomDomain`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/workerscustomdomain/)
-- [Pulumi Cloudflare `D1Database`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/d1database/)
-- [Pulumi Cloudflare `R2Bucket`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/r2bucket/)
-- [Pulumi Cloudflare `WorkersKvNamespace`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/workerskvnamespace/)
-- [Pulumi Cloudflare `R2BucketCors`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/r2bucketcors/)
-- [Pulumi Cloudflare `R2ManagedDomain`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/r2manageddomain/)
-- [Pulumi Cloudflare `R2CustomDomain`](https://www.pulumi.com/registry/packages/cloudflare/api-docs/r2customdomain/)
-- [Cloudflare R2 CORS API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/cors/)
-- [Cloudflare R2 domain API](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/domains/)
+- Pulumi ownership of R2 CORS/public domains once the provider supports safe import or a domain change is required;
+- a remote-pre-production local development command;
+- Pulumi Worker identity/settings ownership if Wrangler stops owning those fields;
+- a replacement for `pre-prod-prod-data` using a distinct no-domain Worker if production-data diagnostics become necessary again.

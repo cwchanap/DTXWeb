@@ -14,6 +14,29 @@ set -euo pipefail
 url="${!#}"
 printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
 
+health_probe=0
+for arg in "$@"; do
+	if [[ "$arg" == '--fail' ]]; then
+		health_probe=1
+	fi
+done
+
+if [[ "$health_probe" -eq 1 ]]; then
+	case "${FAKE_CURL_SCENARIO:-}" in
+		api-healthz-503)
+			printf 'unhealthy\n'
+			exit 22
+			;;
+		api-healthz-network-failure|network-failure)
+			exit 28
+			;;
+		*)
+			printf 'ok\n'
+			exit 0
+			;;
+	esac
+fi
+
 emit_cloudflare_redirect() {
 	cat <<'RESPONSE'
 HTTP/2 302
@@ -262,6 +285,13 @@ case "${FAKE_CURL_SCENARIO:-}" in
 			emit_public_ok
 		fi
 		;;
+	api-healthz-ok|api-healthz-503|api-healthz-network-failure)
+		if is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
 	production-full-matrix)
 		if is_production_protected_url; then
 			emit_access_forbidden
@@ -340,6 +370,10 @@ run_case 'public 200, 303, and 404 accepted' 0 public-matrix production
 run_case 'Access interception on a public route rejected' 1 public-intercepted pre-prod
 run_case 'public API root with a single Access header rejected' 1 public-single-access-header pre-prod
 run_case 'network failure rejected' 1 network-failure pre-prod
+run_case 'pre-prod API /healthz public 200 with retained web Access matrix' 0 api-healthz-ok pre-prod
+run_case 'pre-prod API /healthz returning 503 rejected' 1 api-healthz-503 pre-prod
+run_case 'production API /healthz returning 503 rejected' 1 api-healthz-503 production
+run_case 'API /healthz network failure stays fail-closed' 1 api-healthz-network-failure pre-prod
 run_case 'unsupported environment rejected before curl' 1 cloudflare-redirect development
 if [[ -s "$FAKE_CURL_LOG" ]]; then
 	printf 'FAIL: unsupported environment called curl\n' >&2
@@ -360,7 +394,8 @@ assert_urls 'pre-prod full matrix requests every specified URL' \
 	'https://pre-prod.dtx.hapadona.com/app/' \
 	'https://pre-prod.dtx.hapadona.com/app/score' \
 	'https://pre-prod.dtx.hapadona.com/app/__data.json' \
-	'https://api.pre-prod.dtx.hapadona.com/'
+	'https://api.pre-prod.dtx.hapadona.com/' \
+	'https://api.pre-prod.dtx.hapadona.com/healthz'
 
 run_case 'production full matrix requests every specified URL' 0 production-full-matrix production
 assert_urls 'production full matrix requests every specified URL' \
@@ -375,4 +410,5 @@ assert_urls 'production full matrix requests every specified URL' \
 	'https://dtx.hapadona.com/editor' \
 	'https://dtx.hapadona.com/tool/dtx-to-midi' \
 	'https://dtx.hapadona.com/game' \
-	'https://api.dtx.hapadona.com/'
+	'https://api.dtx.hapadona.com/' \
+	'https://api.dtx.hapadona.com/healthz'

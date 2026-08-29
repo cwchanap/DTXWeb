@@ -146,10 +146,6 @@
 		},
 		"pre-prod": {
 			"name": "dtx-api-pre-prod",
-			"route": {
-				"pattern": "api.pre-prod.dtx.hapadona.com",
-				"custom_domain": true
-			},
 			"r2_buckets": [
 				{
 					"binding": "DTXFILE_BUCKET",

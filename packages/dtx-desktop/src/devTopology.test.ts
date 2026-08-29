@@ -30,16 +30,21 @@ type TurboConfig = {
 	tasks: Record<string, { env?: string[] }>;
 };
 
-type WranglerConfig = {
+type WranglerEnv = {
+	d1_databases?: Array<Record<string, unknown>>;
+	r2_buckets?: Array<Record<string, unknown>>;
 	vars?: Record<string, string>;
-	env?: Record<
-		string,
-		{
-			d1_databases?: Array<Record<string, unknown>>;
-			r2_buckets?: Array<Record<string, unknown>>;
-			vars?: Record<string, string>;
-		}
-	>;
+};
+
+type WranglerConfig = {
+	d1_databases?: Array<Record<string, unknown>>;
+	r2_buckets?: Array<Record<string, unknown>>;
+	vars?: Record<string, string>;
+	env?: {
+		production?: WranglerEnv;
+		'pre-prod'?: WranglerEnv;
+		'pre-prod-prod-data'?: WranglerEnv;
+	};
 };
 
 type TauriConfig = {
@@ -57,14 +62,28 @@ describe('desktop local dev topology', () => {
 		const turboConfig = readJson<TurboConfig>('turbo.json');
 		const apiWrangler = readJson<WranglerConfig>('packages/dtx-api/wrangler.jsonc');
 
+		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
+		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
+			binding: 'DB',
+			database_name: 'dtx-web-preprod',
+			database_id: '6fedd126-9dcf-419f-bc2e-eaf8c23d9510'
+		});
+		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).not.toHaveProperty('remote');
+		expect(apiWrangler.d1_databases?.[0]).toMatchObject({
+			binding: 'DB',
+			database_name: 'dtx-web'
+		});
+		expect(apiWrangler.d1_databases?.[0]).not.toHaveProperty('remote');
+		expect(apiWrangler.r2_buckets?.[0]).not.toHaveProperty('remote');
+		expect(rootPackage.scripts['dev:seed']).toContain(
+			'packages/e2e-web/setup/prepare-stack.ts'
+		);
+
 		expect(rootPackage.scripts.dev).toBe(
-			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web'
+			'bun run migrate:api:local && turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web'
 		);
 		expect(rootPackage.scripts['dev:all']).toBe(
-			'turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
-		);
-		expect(apiPackage.scripts['dev:local']).toBe(
-			'wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787 --var BGM_M4A_GENERATION_ENABLED:false'
+			'bun run migrate:api:local && turbo run dtx-api#dev:local dtx-web#dev:local-api dtx-desktop#dev:local-web @dtx/common#dev'
 		);
 		expect(desktopPackage.scripts.dev).toBe(
 			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
@@ -83,7 +102,7 @@ describe('desktop local dev topology', () => {
 		expect(apiWrangler.env?.['pre-prod']?.vars?.AUTH_COOKIE_DOMAIN).toBe(
 			'pre-prod.dtx.hapadona.com'
 		);
-		expect(apiWrangler.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
+		expect(apiWrangler.env?.production?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
 			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
 		);
 		expect(apiWrangler.env?.['pre-prod']?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
@@ -94,13 +113,11 @@ describe('desktop local dev topology', () => {
 		);
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
 			binding: 'DB',
-			database_name: 'dtx-web-preprod',
-			remote: true
+			database_name: 'dtx-web-preprod'
 		});
 		expect(apiWrangler.env?.['pre-prod']?.r2_buckets?.[0]).toMatchObject({
 			binding: 'DTXFILE_BUCKET',
-			bucket_name: 'simfile-dtx-preprod',
-			remote: true
+			bucket_name: 'simfile-dtx-preprod'
 		});
 		expect(turboConfig.tasks['dtx-desktop#dev:local-web']?.env).toBeUndefined();
 	});

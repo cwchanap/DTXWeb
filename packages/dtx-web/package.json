@@ -16,7 +16,7 @@
 		"test:coverage": "vitest --run --coverage",
 		"wrangler:dev": "wrangler dev",
 		"deploy": "bun run deploy:prod",
-		"deploy:prod": "bun run build && wrangler deploy",
+		"deploy:prod": "bun run build && wrangler deploy --env production",
 		"deploy:preprod": "bun run build && wrangler deploy --env pre-prod",
 		"deploy:preprod:prod-data": "bun run build && wrangler deploy --env pre-prod-prod-data",
 		"deploy:preview": "bun run build && wrangler deploy --env preview",

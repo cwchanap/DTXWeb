@@ -13,7 +13,7 @@ export type Env = {
 	AUTH_COOKIE_PREFIX: string;
 	GOOGLE_AUTH_CLIENT_ID: string;
 	GOOGLE_AUTH_CLIENT_SECRET: string;
-	RATE_LIMIT_ENV: 'prod' | 'pre-prod' | 'pre-prod-prod-data';
+	RATE_LIMIT_ENV: 'local' | 'prod' | 'pre-prod' | 'pre-prod-prod-data';
 	GRAPHIQL: 'true' | 'false';
 	CORS_ALLOWED_ORIGINS: string;
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' | 'false';

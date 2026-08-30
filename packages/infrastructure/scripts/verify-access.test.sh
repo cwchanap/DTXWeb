@@ -14,29 +14,6 @@ set -euo pipefail
 url="${!#}"
 printf '%s\n' "$url" >> "$FAKE_CURL_LOG"
 
-health_probe=0
-for arg in "$@"; do
-	if [[ "$arg" == '--fail' ]]; then
-		health_probe=1
-	fi
-done
-
-if [[ "$health_probe" -eq 1 ]]; then
-	case "${FAKE_CURL_SCENARIO:-}" in
-		api-healthz-503)
-			printf 'unhealthy\n'
-			exit 22
-			;;
-		api-healthz-network-failure|network-failure)
-			exit 28
-			;;
-		*)
-			printf 'ok\n'
-			exit 0
-			;;
-	esac
-fi
-
 emit_cloudflare_redirect() {
 	cat <<'RESPONSE'
 HTTP/2 302
@@ -149,6 +126,34 @@ HTTP/2 404
 Content-Type: text/plain
 
 RESPONSE
+}
+
+emit_health_503() {
+	cat <<'RESPONSE'
+HTTP/2 503
+Content-Type: text/plain
+
+RESPONSE
+}
+
+emit_health_redirect() {
+	cat <<'RESPONSE'
+HTTP/2 302
+Location: https://login.cloudflareaccess.com/cdn-cgi/access/login
+
+RESPONSE
+}
+
+is_healthz_url() {
+	case "$url" in
+		https://api.pre-prod.dtx.hapadona.com/healthz|\
+		https://api.dtx.hapadona.com/healthz)
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
 }
 
 is_pre_prod_protected_url() {
@@ -285,8 +290,35 @@ case "${FAKE_CURL_SCENARIO:-}" in
 			emit_public_ok
 		fi
 		;;
-	api-healthz-ok|api-healthz-503|api-healthz-network-failure)
+	api-healthz-ok)
 		if is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-503)
+		if is_healthz_url; then
+			emit_health_503
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-network-failure)
+		if is_healthz_url; then
+			exit 28
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-redirect)
+		if is_healthz_url; then
+			emit_health_redirect
+		elif is_pre_prod_protected_url || is_production_protected_url; then
 			emit_access_forbidden
 		else
 			emit_public_ok
@@ -374,6 +406,7 @@ run_case 'pre-prod API /healthz public 200 with retained web Access matrix' 0 ap
 run_case 'pre-prod API /healthz returning 503 rejected' 1 api-healthz-503 pre-prod
 run_case 'production API /healthz returning 503 rejected' 1 api-healthz-503 production
 run_case 'API /healthz network failure stays fail-closed' 1 api-healthz-network-failure pre-prod
+run_case 'pre-prod API /healthz returning 3xx redirect rejected' 1 api-healthz-redirect pre-prod
 run_case 'unsupported environment rejected before curl' 1 cloudflare-redirect development
 if [[ -s "$FAKE_CURL_LOG" ]]; then
 	printf 'FAIL: unsupported environment called curl\n' >&2

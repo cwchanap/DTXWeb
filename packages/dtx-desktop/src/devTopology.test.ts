@@ -44,7 +44,6 @@ type WranglerConfig = {
 	env?: {
 		production?: WranglerEnv;
 		'pre-prod'?: WranglerEnv;
-		'pre-prod-prod-data'?: WranglerEnv;
 	};
 };
 
@@ -63,6 +62,14 @@ describe('desktop local dev topology', () => {
 		const turboConfig = readJson<TurboConfig>('turbo.json');
 		const apiWrangler = readJson<WranglerConfig>('packages/dtx-api/wrangler.jsonc');
 		const webWrangler = readJson<WranglerConfig>('packages/dtx-web/wrangler.jsonc');
+
+		expect(apiWrangler.env).not.toHaveProperty('pre-prod-prod-data');
+		expect(webWrangler.env).not.toHaveProperty('pre-prod-prod-data');
+		expect(apiPackage.scripts).not.toHaveProperty('deploy:preprod:prod-data');
+		expect(webPackage.scripts).not.toHaveProperty('deploy:preprod:prod-data');
+		expect(webPackage.scripts).not.toHaveProperty('deploy:preview');
+		expect(rootPackage.scripts).not.toHaveProperty('deploy:api:preprod:prod-data');
+		expect(rootPackage.scripts).not.toHaveProperty('deploy:web:preprod:prod-data');
 
 		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
@@ -108,9 +115,6 @@ describe('desktop local dev topology', () => {
 			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
 		);
 		expect(apiWrangler.env?.['pre-prod']?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
-			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
-		);
-		expect(apiWrangler.env?.['pre-prod-prod-data']?.vars?.GOOGLE_AUTH_CLIENT_ID).toBe(
 			'333977657035-u0r7jj85dv1fv9rqi32e7nl6qb2bn77i.apps.googleusercontent.com'
 		);
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({

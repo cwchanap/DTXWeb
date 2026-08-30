@@ -115,6 +115,12 @@ describe('desktop local dev topology', () => {
 		expect(webPackage.scripts['dev:local-api']).toBe(
 			'PUBLIC_DTX_API_URL=http://localhost:8787 vite dev --port 5173'
 		);
+		expect(webPackage.scripts['deploy:prod']).toBe(
+			'PUBLIC_SIMFILE_BUCKET_URL=https://chart.hapadona.com bun run build && wrangler deploy --env production --no-x-provision'
+		);
+		expect(webPackage.scripts['deploy:preprod']).toBe(
+			'PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev bun run build && wrangler deploy --env pre-prod --no-x-provision'
+		);
 		expect(desktopPackage.scripts['dev:local-web']).toBe(
 			'DTX_DESKTOP_BUILD_ENV=local GOOGLE_DRIVE_OAUTH_CLIENT_ENV=local VITE_DTX_API_URL=http://localhost:8787 bun --env-file ../../.env tauri dev --config src-tauri/tauri.dev.conf.json'
 		);

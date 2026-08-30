@@ -16,8 +16,8 @@
 		"test:coverage": "vitest --run --coverage",
 		"wrangler:dev": "wrangler dev",
 		"deploy": "bun run deploy:prod",
-		"deploy:prod": "bun run build && wrangler deploy --env production --no-x-provision",
-		"deploy:preprod": "bun run build && wrangler deploy --env pre-prod --no-x-provision",
+		"deploy:prod": "PUBLIC_SIMFILE_BUCKET_URL=https://chart.hapadona.com bun run build && wrangler deploy --env production --no-x-provision",
+		"deploy:preprod": "PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev bun run build && wrangler deploy --env pre-prod --no-x-provision",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},
 	"devDependencies": {

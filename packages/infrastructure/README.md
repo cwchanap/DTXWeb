@@ -64,7 +64,7 @@ secret, so the workflow-level `main` guard is not a credential boundary; the dep
 restriction is what prevents a modified workflow on another branch from minting the Pulumi-trusted
 environment subject.
 
-During the Pulumi update step, `CLOUDFLARE_INFRA_API_TOKEN` is exposed only as
+During the Pulumi refresh-gate and update steps, `CLOUDFLARE_INFRA_API_TOKEN` is exposed only as
 `CLOUDFLARE_API_TOKEN`. It must be dashboard-minted with the minimum account-level permissions
 for Access Apps/Policies, D1, R2 bucket identity, Workers KV namespaces, and Workers custom
 domains. Do not grant token-management or Global API Key privileges. Do not record or print the
@@ -88,16 +88,20 @@ pending operator action; the full procedure is in the current infrastructure run
 Both entry points run the same serial path:
 
 ```text
-pre-production check/test/coverage/build -> Pulumi up --refresh -> pre-production boundary verification
-  -> production check/test/coverage/build -> Pulumi up --refresh -> production boundary verification
+pre-production check/test/coverage/build -> Pulumi refresh --preview-only --expect-no-changes
+  -> Pulumi up (without --refresh) -> pre-production boundary verification
+  -> production check/test/coverage/build -> Pulumi refresh --preview-only --expect-no-changes
+  -> Pulumi up (without --refresh) -> production boundary verification
 ```
 
-The production job requires `deploy-pre-prod`, so a pre-production check, update, or boundary
-failure prevents production from starting. Each job builds and verifies `dist/index.js` on its own
-runner, authenticates with OIDC, runs exactly one refreshed Pulumi update, suppresses stack
-outputs, and invokes the version-controlled boundary verifier. There is no pull-request deploy,
-automatic rollback, or automatic destroy. Workflow/ref concurrency uses `cancel-in-progress: false`,
-so a newer run waits for an active deployment instead of interrupting it.
+The preview-only refresh is a drift gate: any live drift fails the job before the update instead of
+being auto-remediated. The production job requires `deploy-pre-prod`, so a pre-production check,
+drift gate, update, or boundary failure prevents production from starting. Each job builds and
+verifies `dist/index.js` on its own runner, authenticates with OIDC, runs the preview-only refresh
+gate followed by one non-refreshing Pulumi update, suppresses stack outputs, and invokes the
+version-controlled boundary verifier. There is no pull-request deploy, automatic rollback, or
+automatic destroy. Workflow/ref concurrency uses `cancel-in-progress: false`, so a newer run waits
+for an active deployment instead of interrupting it.
 
 ## Resource protection
 

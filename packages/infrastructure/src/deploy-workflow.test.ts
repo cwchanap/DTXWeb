@@ -9,6 +9,7 @@ const workflowPath = new URL(
 const countOccurrences = (text: string, value: string): number => text.split(value).length - 1;
 const checkoutAction = 'uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0';
 const setupBunAction = 'uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2';
+const pulumiAction = 'uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58';
 const mainRefGuard = "if: github.ref == 'refs/heads/main'";
 const suppressOutputs = 'suppress-outputs: true';
 
@@ -75,7 +76,18 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(countOccurrences(text, command)).toBe(2);
 		}
 
-		for (const job of [preProdJob, productionJob]) {
+		for (const [job, stack, verifier] of [
+			[
+				preProdJob,
+				'cwchanap/dtxweb-infrastructure/pre-prod',
+				'packages/infrastructure/scripts/verify-access.sh pre-prod'
+			],
+			[
+				productionJob,
+				'cwchanap/dtxweb-infrastructure/production',
+				'packages/infrastructure/scripts/verify-access.sh production'
+			]
+		] as const) {
 			expect(countOccurrences(job, checkoutAction)).toBe(1);
 			expect(countOccurrences(job, setupBunAction)).toBe(1);
 			expect(job).not.toContain('uses: actions/checkout@v');
@@ -88,22 +100,24 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 					'uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640'
 				)
 			).toBe(1);
-			expect(
-				countOccurrences(
-					job,
-					'uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58'
-				)
-			).toBe(1);
+			expect(countOccurrences(job, pulumiAction)).toBe(2);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
-			expect(countOccurrences(job, 'refresh: true')).toBe(1);
-			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(1);
+			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --stack ${stack}`;
+			const driftCheckIndex = job.indexOf(driftCheck);
+			const updateIndex = job.indexOf('command: up');
+			const verifyIndex = job.indexOf(`run: ${verifier}`);
+			expect(countOccurrences(job, driftCheck)).toBe(1);
+			expect(driftCheckIndex).toBeGreaterThan(-1);
+			expect(driftCheckIndex).toBeLessThan(updateIndex);
+			expect(updateIndex).toBeLessThan(verifyIndex);
+			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(2);
 			expect(countOccurrences(job, 'work-dir: packages/infrastructure')).toBe(1);
 			expect(
 				countOccurrences(
 					job,
 					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}'
 				)
-			).toBe(1);
+			).toBe(2);
 			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');
 			expect(job).toContain(
 				'requested-token-type: urn:pulumi:token-type:access_token:personal'
@@ -124,7 +138,9 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			'DTX_DEVICE_POSTURE_RULE_ID',
 			'config-map',
 			'reviewers:',
-			'pulumi destroy'
+			'pulumi destroy',
+			'pulumi up --refresh',
+			'refresh: true'
 		]) {
 			expect(text).not.toContain(forbidden);
 		}

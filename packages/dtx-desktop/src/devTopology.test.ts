@@ -72,6 +72,13 @@ describe('desktop local dev topology', () => {
 		expect(rootPackage.scripts).not.toHaveProperty('deploy:web:preprod:prod-data');
 
 		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
+		expect(apiPackage.scripts['dev:local']).toContain('--local');
+		expect(apiPackage.scripts.build).toContain('--env production');
+		expect(apiPackage.scripts.build).toContain('--no-x-provision');
+		expect(apiPackage.scripts['build:preprod']).toContain('--env pre-prod');
+		expect(apiPackage.scripts['build:preprod']).toContain('--no-x-provision');
+		expect(apiPackage.scripts['deploy:prod']).toContain('--no-x-provision');
+		expect(apiPackage.scripts['deploy:preprod']).toContain('--no-x-provision');
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
 			binding: 'DB',
 			database_name: 'dtx-web-preprod',

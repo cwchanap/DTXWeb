@@ -67,6 +67,20 @@ bun run migrate:api:local
 It targets `.wrangler/state` only. `bun run dev:seed` is the explicit reset path; it is not a
 production or pre-production operation.
 
+## Retention probes
+
+Before any Pulumi import/apply or Worker cutover, create a baseline for each environment in a
+private directory outside the repository. Use read-only access and `umask 077`; never print the
+captured values. Record the D1 database ID and a representative existing row identifier, plus the
+R2 bucket name, jurisdiction, object key, and stable object metadata such as size, content type,
+and checksum or ETag. Keep the baseline private and do not copy any of it into a commit or report.
+
+After each Pulumi apply and again after the related Worker deploys, probe the same environment. It
+must show the same D1 ID and that the captured row still exists, the same R2 bucket and jurisdiction,
+and the captured object still exists with its recorded metadata. Stop immediately on any mismatch;
+do not continue to another deploy, delete, repair, or alias cleanup until the discrepancy is
+investigated.
+
 ## Workflow disable, import, and recovery
 
 The authoritative deployment workflow is
@@ -74,6 +88,21 @@ The authoritative deployment workflow is
 `workflow_dispatch` from `main`, checks/builds/tests each stack, updates pre-production first,
 verifies it, then updates production and verifies it. The job environments remain
 `dtx-access-pre-prod` and `dtx-access-production`.
+
+### Drift-fail-closed automation
+
+After the checks and Pulumi authentication, each job runs a preview-only refresh gate before its
+update, then verifies the boundary:
+
+```text
+pulumi refresh --preview-only --expect-no-changes --stack <stack>
+pulumi up --stack <stack>                 # never add --refresh
+packages/infrastructure/scripts/verify-access.sh <environment>
+```
+
+`--expect-no-changes` makes live drift fail the job before `pulumi up`; the workflow does not
+auto-remediate drift. Resolve drift through a separately reviewed operator change, then rerun the
+gate. The pre-production job must complete before the production job starts.
 
 Before any new import or state mutation, verify that the old Access-only workflow is disabled:
 
@@ -172,12 +201,18 @@ pre-production gate must be revalidated before production:
 set -euo pipefail
 
 cd packages/infrastructure
-pulumi up --refresh --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi refresh --preview-only --expect-no-changes --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi up --stack cwchanap/dtxweb-infrastructure/pre-prod
+# Complete the pre-production retention probe immediately after the Pulumi apply.
 cd ../..
 packages/infrastructure/scripts/verify-access.sh pre-prod
-bun run deploy:api:preprod
-bun run deploy:web:preprod
+cd packages/dtx-api && bun run migrate:preprod && bunx wrangler deploy --env pre-prod --no-x-provision
+cd ../dtx-web
+bun run build
+bunx wrangler deploy --env pre-prod --no-x-provision
+cd ../..
 packages/infrastructure/scripts/verify-access.sh pre-prod
+# Repeat the pre-production retention probe after both Worker deploys.
 ```
 
 The pre-production route blocks are gone and both permanent Worker environments have
@@ -279,12 +314,14 @@ Worker. Re-run the relevant production smoke/boundary checks after rollback.
 
 ## Final drift checks
 
-The authoritative check is a full-scope refreshed preview using a Cloudflare credential that can
-read the Access application. Run it from `packages/infrastructure`:
+The authoritative check is a full-scope preview-only refresh followed by a source preview, using a
+Cloudflare credential that can read the Access application. Run it from `packages/infrastructure`:
 
 ```bash
-pulumi preview --refresh --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
-pulumi preview --refresh --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
+pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi preview --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
+pulumi preview --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
 ```
 
 The credential available in this worktree was insufficient for Cloudflare provider refresh: the
@@ -296,8 +333,9 @@ provisioned.
 
 If only the non-Access permissions are available, use a targeted refresh/preview of the five
 non-Access resources per stack. Get each stack's non-Access URN from `pulumi stack --show-urns`,
-pass them with repeated `--target` flags, and retain `--refresh --expect-no-changes`. A targeted
-result is not proof that Access is drift-free.
+pass them with repeated `--target` flags, and retain `--preview-only --expect-no-changes` for the
+refresh gate and `--expect-no-changes` for the source preview. A targeted result is not proof that
+Access is drift-free.
 
 Inspect the output, not only the exit code: it must report zero operations and `Resources: ...
 unchanged`. Any D1/R2 create, replace, delete, or unexpected domain/KV operation is a hard stop.
@@ -307,6 +345,10 @@ Then run both boundary verifiers:
 packages/infrastructure/scripts/verify-access.sh pre-prod
 packages/infrastructure/scripts/verify-access.sh production
 ```
+
+Before declaring the final gates green, run [Retention probes](#retention-probes) for both
+pre-production and production from their private baselines. Both probes must pass; a missing row,
+changed D1 ID, changed R2 bucket or jurisdiction, missing object, or metadata mismatch blocks merge.
 
 ## Pending operator gates
 
@@ -348,26 +390,36 @@ security identifiers.
 ### 2. Production cutover — PENDING OPERATOR
 
 Production imports and the earlier targeted preview are done, but the live Pulumi update and Worker
-deploys are not. Use the provisioned infrastructure token for the full-scope refresh. The preview must
-exit successfully with no operations before `pulumi up`; stop on any stateful operation, especially
-D1/R2. `set -euo pipefail` gates every later deployment and verifier on the preceding command:
+deploys are not. First capture the production retention baseline using [Retention probes](#retention-probes)
+in the private directory. Use the provisioned infrastructure token for the full-scope refresh gate.
+It must exit successfully with no drift before the source preview; stop on any unreviewed stateful
+operation, especially D1/R2. `set -euo pipefail` gates every later deployment and verifier on the
+preceding command:
 
 ```bash
 set -euo pipefail
 
 cd packages/infrastructure
-pulumi preview --refresh --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
-pulumi up --refresh --stack cwchanap/dtxweb-infrastructure/production
+pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
+pulumi preview --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
+pulumi up --stack cwchanap/dtxweb-infrastructure/production
+# Complete the production retention probe immediately after the Pulumi apply; stop on mismatch.
 cd ../..
-bun run deploy:api
-bun run deploy:web
+cd packages/dtx-api && bunx wrangler deploy --env production --no-x-provision
+cd ../dtx-web
+bun run build
+bunx wrangler deploy --env production --no-x-provision
+cd ../..
 packages/infrastructure/scripts/verify-access.sh production
+# Repeat the production retention probe after both Worker deploys.
 ```
 
-This is the production cutover sequence: full-scope refresh, `pulumi up --refresh`, API deploy, web
-deploy, then the explicit production boundary verifier. The production Wrangler route removal and
-`workers_dev: false` take effect at those deploys. Record that the full-scope refresh ran in
-CI/operator context; do not treat the local targeted result as an Access drift proof.
+This is the production cutover sequence: preview-only full-scope refresh gate, source preview,
+plain `pulumi up`, production retention probe, direct no-migration API deploy, web build and direct
+no-migration deploy, explicit production boundary verifier, and a repeated retention probe. The
+production Wrangler route removal and `workers_dev: false` take effect at those deploys. Record that
+the full-scope refresh ran in CI/operator context; do not treat the local targeted result as an
+Access drift proof.
 
 After this cutover, repeat the trusted-device `/app` and failing-posture checks against production,
 with the explicit automated boundary command:
@@ -469,6 +521,8 @@ case "$job_statuses" in
   *) printf '%s\n' 'deploy-production is not green' >&2; exit 1 ;;
 esac
 
+# Complete Retention probes for pre-production and production from the private baselines.
+# Do not remove the old secret unless both probes pass.
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-pre-prod --repo cwchanap/DTXWeb
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo cwchanap/DTXWeb
 ```
@@ -482,6 +536,7 @@ gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo 
 - [ ] Pre-production trusted-device allow and failing-posture denial checks are complete.
 - [ ] Production full-scope refresh, Pulumi update, Worker deploys, and explicit production verifier
       have completed.
+- [ ] Retention probes pass for both environments from the private baselines.
 - [ ] The 24-hour soak has completed after production cutover and both verifiers are green.
 - [ ] Both alias Worker dependencies and the alias-only KV dependency inventory are complete.
 - [ ] Both alias Workers and only the alias-only KV have been deleted.
@@ -490,6 +545,6 @@ gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo 
 - [ ] `CLOUDFLARE_ACCESS_API_TOKEN` is removed only after that verified successful run.
 
 The canonical sequence is: provision the infrastructure token and complete trusted-device checks;
-perform production cutover; wait for soak completion and re-run both verifiers; inventory and delete
-only the aliases; complete merge-transition checks; then remove the old Access-only Environment
-secret.
+perform production cutover with its retention probes; wait for soak completion and re-run both
+verifiers; inventory and delete only the aliases; pass the final retention probes and
+merge-transition checks; then remove the old Access-only Environment secret.

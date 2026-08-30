@@ -62,7 +62,7 @@ jobs:
           pulumi-version: '3.258.0'
 
       - name: Detect pre-production drift
-        run: pulumi refresh --preview-only --expect-no-changes --stack cwchanap/dtxweb-infrastructure/pre-prod
+        run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
         working-directory: packages/infrastructure
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}
@@ -128,7 +128,7 @@ jobs:
           pulumi-version: '3.258.0'
 
       - name: Detect production drift
-        run: pulumi refresh --preview-only --expect-no-changes --stack cwchanap/dtxweb-infrastructure/production
+        run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
         working-directory: packages/infrastructure
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}

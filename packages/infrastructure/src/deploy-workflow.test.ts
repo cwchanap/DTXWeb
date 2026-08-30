@@ -102,7 +102,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			).toBe(1);
 			expect(countOccurrences(job, pulumiAction)).toBe(2);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
-			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --stack ${stack}`;
+			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack ${stack}`;
 			const driftCheckIndex = job.indexOf(driftCheck);
 			const updateIndex = job.indexOf('command: up');
 			const verifyIndex = job.indexOf(`run: ${verifier}`);

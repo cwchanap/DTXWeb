@@ -208,7 +208,7 @@ cd ../..
 packages/infrastructure/scripts/verify-access.sh pre-prod
 cd packages/dtx-api && bunx wrangler deploy --env pre-prod --no-x-provision
 cd ../dtx-web
-bun run build
+PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev bun run build
 bunx wrangler deploy --env pre-prod --no-x-provision
 cd ../..
 packages/infrastructure/scripts/verify-access.sh pre-prod
@@ -409,7 +409,8 @@ pulumi up --stack cwchanap/dtxweb-infrastructure/production
 cd ../..
 cd packages/dtx-api && bunx wrangler deploy --env production --no-x-provision
 cd ../dtx-web
-bun run build
+# PUBLIC_SIMFILE_BUCKET_URL is baked into the client bundle at build time ($env/static/public) — omitting it breaks all preview images.
+PUBLIC_SIMFILE_BUCKET_URL=https://chart.hapadona.com bun run build
 bunx wrangler deploy --env production --no-x-provision
 cd ../..
 packages/infrastructure/scripts/verify-access.sh production

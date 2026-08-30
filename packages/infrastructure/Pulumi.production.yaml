@@ -1,4 +1,3 @@
-secretsprovider: default
 config:
   dtxweb-infrastructure:accessEmail:
     secure: AAABAMyT+8Z1mkzt7UqMq3EuF5NFPkATM6LjZt3xoxipWZqmlMyIxEn23F/1jvNVf5ywMaff9Q==

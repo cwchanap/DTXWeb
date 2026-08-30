@@ -72,13 +72,21 @@ describe('desktop local dev topology', () => {
 		expect(rootPackage.scripts).not.toHaveProperty('deploy:web:preprod:prod-data');
 
 		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
-		expect(apiPackage.scripts['dev:local']).toContain('--local');
-		expect(apiPackage.scripts.build).toContain('--env production');
-		expect(apiPackage.scripts.build).toContain('--no-x-provision');
-		expect(apiPackage.scripts['build:preprod']).toContain('--env pre-prod');
-		expect(apiPackage.scripts['build:preprod']).toContain('--no-x-provision');
-		expect(apiPackage.scripts['deploy:prod']).toContain('--no-x-provision');
-		expect(apiPackage.scripts['deploy:preprod']).toContain('--no-x-provision');
+		expect(apiPackage.scripts['dev:local']).toBe(
+			'wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false'
+		);
+		expect(apiPackage.scripts.build).toBe(
+			'wrangler deploy --dry-run --env production --outdir=dist --containers-rollout=none --no-x-provision'
+		);
+		expect(apiPackage.scripts['build:preprod']).toBe(
+			'wrangler deploy --dry-run --env pre-prod --outdir=dist --containers-rollout=none --no-x-provision'
+		);
+		expect(apiPackage.scripts['deploy:prod']).toBe(
+			'bun run migrate:prod && wrangler deploy --env production --no-x-provision'
+		);
+		expect(apiPackage.scripts['deploy:preprod']).toBe(
+			'bun run migrate:preprod && wrangler deploy --env pre-prod --no-x-provision'
+		);
 		expect(apiWrangler.env?.['pre-prod']?.d1_databases?.[0]).toMatchObject({
 			binding: 'DB',
 			database_name: 'dtx-web-preprod',

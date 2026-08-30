@@ -206,7 +206,7 @@ pulumi up --stack cwchanap/dtxweb-infrastructure/pre-prod
 # Complete the pre-production retention probe immediately after the Pulumi apply.
 cd ../..
 packages/infrastructure/scripts/verify-access.sh pre-prod
-cd packages/dtx-api && bun run migrate:preprod && bunx wrangler deploy --env pre-prod --no-x-provision
+cd packages/dtx-api && bunx wrangler deploy --env pre-prod --no-x-provision
 cd ../dtx-web
 bun run build
 bunx wrangler deploy --env pre-prod --no-x-provision
@@ -318,6 +318,8 @@ The authoritative check is a full-scope preview-only refresh followed by a sourc
 Cloudflare credential that can read the Access application. Run it from `packages/infrastructure`:
 
 ```bash
+set -euo pipefail
+
 pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
 pulumi preview --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/pre-prod
 pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production

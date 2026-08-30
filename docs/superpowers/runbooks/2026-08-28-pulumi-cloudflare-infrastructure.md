@@ -162,11 +162,15 @@ Repeat the state-only recovery for production only if production imports were al
 
 ## Pre-production before production
 
-The required order is: pre-production import/adoption, pre-production boundary verification,
-route-free pre-production deploy, 24-hour soak, then production full-scope refresh and cutover.
-The pre-production live gate is already complete. If it must be revalidated before production:
+Pre-production import/adoption, boundary verification, route-free deployment, and `workers_dev: false`
+are prerequisites for production and are already complete. The 24-hour alias soak does **not** block
+production cutover; it only gates alias dependency inventory and deletion after production is live.
+Follow [Pending operator gates](#pending-operator-gates) for the canonical remaining order. If the
+pre-production gate must be revalidated before production:
 
 ```bash
+set -euo pipefail
+
 cd packages/infrastructure
 pulumi up --refresh --stack cwchanap/dtxweb-infrastructure/pre-prod
 cd ../..
@@ -181,8 +185,8 @@ The pre-production route blocks are gone and both permanent Worker environments 
 
 ## 24-hour alias soak and deletion gate
 
-The aliases are the rollback window, not permanent environments. Do not delete them until all of
-these are true:
+The aliases are the rollback window, not permanent environments. Evaluate this gate after production
+cutover; it does not delay production cutover. Do not delete them until all of these are true:
 
 1. The current time is at or after `2026-08-30T21:55:04Z` (24 hours after the route-free
    pre-production deploy).
@@ -195,6 +199,8 @@ these are true:
 Check the deadline and boundary before inventory:
 
 ```bash
+set -euo pipefail
+
 python3 - <<'PY'
 from datetime import datetime, timezone
 
@@ -212,6 +218,8 @@ packages/infrastructure/scripts/verify-access.sh production
 Inventory the aliases without changing them:
 
 ```bash
+set -euo pipefail
+
 bunx wrangler deployments list --name dtx-api-pre-prod-prod-data
 bunx wrangler deployments list --name dtx-web-pre-prod-prod-data
 bunx wrangler kv namespace list
@@ -232,7 +240,15 @@ identity and delete only the aliases and alias-only KV. The commands prompt for 
 not skip the confirmation unless the inventory has been independently signed off:
 
 ```bash
+set -euo pipefail
+
 : "${ALIAS_KV_NAMESPACE_ID:?set from the private inventory; do not use a permanent namespace ID}"
+: "${ALIAS_DEPENDENCY_INVENTORY_CONFIRMED:?set to yes only after the two Worker and KV dependency checks pass}"
+[ "$ALIAS_DEPENDENCY_INVENTORY_CONFIRMED" = yes ]
+: "${PERMANENT_PREPROD_KV_NAMESPACE_ID:?set from the private inventory; never print it}"
+: "${PERMANENT_PRODUCTION_KV_NAMESPACE_ID:?set from the private inventory; never print it}"
+[ "$ALIAS_KV_NAMESPACE_ID" != "$PERMANENT_PREPROD_KV_NAMESPACE_ID" ]
+[ "$ALIAS_KV_NAMESPACE_ID" != "$PERMANENT_PRODUCTION_KV_NAMESPACE_ID" ]
 bunx wrangler delete dtx-api-pre-prod-prod-data
 bunx wrangler delete dtx-web-pre-prod-prod-data
 bunx wrangler kv namespace delete --namespace-id "$ALIAS_KV_NAMESPACE_ID"
@@ -294,16 +310,51 @@ packages/infrastructure/scripts/verify-access.sh production
 
 ## Pending operator gates
 
-These are the remaining gates from this execution. Do not mark the migration complete until each
-one is closed.
+Complete the remaining gates in this order. Provisioning the infrastructure credential and completing
+the trusted-device check may happen any time before merge, but both must be complete before production
+cutover. The soak gates alias deletion only; it does not gate production cutover.
 
-### 1. Production cutover — PENDING OPERATOR
+### 1. Infrastructure credential and trusted-device admission — PENDING OPERATOR
 
-Production imports and the targeted preview are done, but the live Pulumi update and Worker
-deploys are not. First run a full-scope refreshed preview with a credential that can read Access;
-the current worktree credential is insufficient. Stop on any stateful operation, especially D1/R2:
+Before production cutover, mint a dashboard Cloudflare token with only Access Apps/Policies, D1, R2
+bucket identity, Workers KV namespace, and Workers custom-domain permissions. Add it to both existing
+GitHub Environments without printing the value. `set -euo pipefail` makes the secret-list checks gate
+the rest of this block:
 
 ```bash
+set -euo pipefail
+
+gh secret set CLOUDFLARE_INFRA_API_TOKEN --env dtx-access-pre-prod --repo cwchanap/DTXWeb
+gh secret set CLOUDFLARE_INFRA_API_TOKEN --env dtx-access-production --repo cwchanap/DTXWeb
+gh secret list --env dtx-access-pre-prod --repo cwchanap/DTXWeb | grep -F 'CLOUDFLARE_INFRA_API_TOKEN'
+gh secret list --env dtx-access-production --repo cwchanap/DTXWeb | grep -F 'CLOUDFLARE_INFRA_API_TOKEN'
+```
+
+Keep `CLOUDFLARE_ACCESS_API_TOKEN` in both environments until the post-merge gate in section 4.
+Run the pre-production boundary check, then perform the human admission check on a trusted device:
+
+```bash
+set -euo pipefail
+
+packages/infrastructure/scripts/verify-access.sh pre-prod
+```
+
+On a trusted device, enter the protected pre-production application, complete the current Google
+login/OAuth flow, open `/app`, and confirm API use works. From a device that fails the shared posture
+rule, request the same protected surface and confirm Access denies the request before DTXWeb loads.
+Do not record cookies, headers, email addresses, device identifiers, or screenshots containing
+security identifiers.
+
+### 2. Production cutover — PENDING OPERATOR
+
+Production imports and the earlier targeted preview are done, but the live Pulumi update and Worker
+deploys are not. Use the provisioned infrastructure token for the full-scope refresh. The preview must
+exit successfully with no operations before `pulumi up`; stop on any stateful operation, especially
+D1/R2. `set -euo pipefail` gates every later deployment and verifier on the preceding command:
+
+```bash
+set -euo pipefail
+
 cd packages/infrastructure
 pulumi preview --refresh --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
 pulumi up --refresh --stack cwchanap/dtxweb-infrastructure/production
@@ -313,57 +364,111 @@ bun run deploy:web
 packages/infrastructure/scripts/verify-access.sh production
 ```
 
-The production Wrangler route removal and `workers_dev: false` take effect at those deploys. Record
-that the full-scope refresh was run in CI/operator context; do not treat the local targeted result
-as an Access drift proof.
+This is the production cutover sequence: full-scope refresh, `pulumi up --refresh`, API deploy, web
+deploy, then the explicit production boundary verifier. The production Wrangler route removal and
+`workers_dev: false` take effect at those deploys. Record that the full-scope refresh ran in
+CI/operator context; do not treat the local targeted result as an Access drift proof.
 
-### 2. Trusted-device Access admission — PENDING OPERATOR
-
-Run the boundary verifier, then perform the human check that automation cannot perform:
+After this cutover, repeat the trusted-device `/app` and failing-posture checks against production,
+with the explicit automated boundary command:
 
 ```bash
+set -euo pipefail
+
+packages/infrastructure/scripts/verify-access.sh production
+```
+
+### 3. Soak completion, dependency inventory, and alias cleanup — PENDING OPERATOR
+
+After production cutover and a green production verifier, wait until at least
+`2026-08-30T21:55:04Z`. Confirm no incident during the window required restoring an alias domain or
+alias Worker. Before deletion, independently inventory **both** alias Workers:
+
+- `dtx-api-pre-prod-prod-data`
+- `dtx-web-pre-prod-prod-data`
+
+For each Worker, confirm in **Workers & Pages → Settings → Domains & Routes**, **Triggers**, and
+**Bindings** that there is no custom domain, route, cron/schedule, or service-binding consumer, and
+confirm there is no remaining operator use. Confirm from the private inventory that the alias-only KV
+namespace is neither the production nor permanent pre-production namespace. Do not record the IDs.
+
+Set `ALIAS_DEPENDENCY_INVENTORY_CONFIRMED=yes` only after all those read-only checks are complete.
+The following block then re-checks the deadline and both boundaries, lists both alias Workers and the
+KV namespaces, verifies the private KV identities are distinct, and only then reaches the deletion
+commands:
+
+```bash
+set -euo pipefail
+
+python3 - <<'PY'
+from datetime import datetime, timezone
+
+deadline = datetime.fromisoformat('2026-08-30T21:55:04+00:00')
+now = datetime.now(timezone.utc)
+if now < deadline:
+    raise SystemExit(f'alias soak incomplete until {deadline.isoformat()}')
+print(f'alias soak deadline passed: {now.isoformat()}')
+PY
+
 packages/infrastructure/scripts/verify-access.sh pre-prod
+packages/infrastructure/scripts/verify-access.sh production
+bunx wrangler deployments list --name dtx-api-pre-prod-prod-data
+bunx wrangler deployments list --name dtx-web-pre-prod-prod-data
+bunx wrangler kv namespace list
+
+: "${ALIAS_DEPENDENCY_INVENTORY_CONFIRMED:?set to yes only after the two Worker and KV dependency checks above pass}"
+[ "$ALIAS_DEPENDENCY_INVENTORY_CONFIRMED" = yes ]
+: "${ALIAS_KV_NAMESPACE_ID:?set from the private inventory; do not use a permanent namespace ID}"
+: "${PERMANENT_PREPROD_KV_NAMESPACE_ID:?set from the private inventory; never print it}"
+: "${PERMANENT_PRODUCTION_KV_NAMESPACE_ID:?set from the private inventory; never print it}"
+[ "$ALIAS_KV_NAMESPACE_ID" != "$PERMANENT_PREPROD_KV_NAMESPACE_ID" ]
+[ "$ALIAS_KV_NAMESPACE_ID" != "$PERMANENT_PRODUCTION_KV_NAMESPACE_ID" ]
+
+bunx wrangler delete dtx-api-pre-prod-prod-data
+bunx wrangler delete dtx-web-pre-prod-prod-data
+bunx wrangler kv namespace delete --namespace-id "$ALIAS_KV_NAMESPACE_ID"
 ```
 
-On a trusted device, enter the protected pre-production application, complete the current Google
-login/OAuth flow, open `/app`, and confirm API use works. After production cutover, repeat the
-equivalent `/app` browser/API check in production. From a device that fails the shared posture
-rule, request the same protected surface and confirm Access denies the request before DTXWeb loads.
-Do not record cookies, headers, email addresses, device identifiers, or screenshots containing
-security identifiers.
+**Hard invariant:** this cleanup may not delete, mutate, reset, truncate, replace, or repurpose
+production D1 `dtx-web` or R2 `simfile-dtx`, nor the permanent pre-production D1/R2 resources. If
+any Worker dependency check, KV identity comparison, or Pulumi preview is ambiguous, stop. Alias
+deletion closes the fast alias rollback path.
 
-### 3. Soak completion and alias cleanup — PENDING OPERATOR
+### 4. Merge transition and old-secret removal — PENDING OPERATOR
 
-After the deadline and the criteria in [24-hour alias soak and deletion gate](#24-hour-alias-soak-and-deletion-gate),
-run the two verifiers, complete the dependency inventory, and delete only:
-
-```text
-dtx-api-pre-prod-prod-data
-the alias-only rate-limit KV namespace
-```
-
-Never delete or mutate the permanent production D1 `dtx-web` or R2 `simfile-dtx`; the same
-invariant also protects the permanent pre-production D1/R2 resources.
-
-### 4. GitHub Environment credentials — PENDING OPERATOR
-
-Before merge, mint a dashboard Cloudflare token with only Access Apps/Policies, D1, R2 bucket
-identity, Workers KV, and Workers custom-domain permissions. Add it to both existing GitHub
-Environments without printing the value:
+Before merge, keep the old Access-only workflow disabled and confirm the generalized workflow file is
+present. After merge, choose the specific **post-merge** `main` run of the generalized workflow; do
+not use a pre-merge or merely latest-existing run. The old secret may be removed only after that run
+is explicitly completed and successful and `gh run view` shows both serial jobs green:
+`deploy-pre-prod=completed/success` and `deploy-production=completed/success`.
 
 ```bash
-gh secret set CLOUDFLARE_INFRA_API_TOKEN --env dtx-access-pre-prod --repo cwchanap/DTXWeb
-gh secret set CLOUDFLARE_INFRA_API_TOKEN --env dtx-access-production --repo cwchanap/DTXWeb
-gh secret list --env dtx-access-pre-prod --repo cwchanap/DTXWeb | grep -F 'CLOUDFLARE_INFRA_API_TOKEN'
-gh secret list --env dtx-access-production --repo cwchanap/DTXWeb | grep -F 'CLOUDFLARE_INFRA_API_TOKEN'
-```
+set -euo pipefail
 
-Keep `CLOUDFLARE_ACCESS_API_TOKEN` in both environments until the renamed workflow's first
-successful `main` run completes both serial jobs. Verify that run, then and only then remove the
-obsolete secret:
+gh workflow list --repo cwchanap/DTXWeb --all | grep -F 'Deploy Cloudflare Access' | grep -F 'disabled_manually'
+gh run list --workflow deploy-cloudflare-infrastructure.yml --branch main --limit 20 --repo cwchanap/DTXWeb \
+  --json databaseId,createdAt,status,conclusion,headBranch
+: "${POST_MERGE_MAIN_RUN_ID:?set to the completed successful post-merge main run ID after reviewing the list above}"
 
-```bash
-gh run list --workflow deploy-cloudflare-infrastructure.yml --branch main --limit 1 --repo cwchanap/DTXWeb
+run_status="$(gh run view "$POST_MERGE_MAIN_RUN_ID" --repo cwchanap/DTXWeb \
+  --json workflowName,headBranch,status,conclusion \
+  --jq '"\(.workflowName)|\(.headBranch)|\(.status)|\(.conclusion)"')"
+printf '%s\n' "$run_status"
+[ "$run_status" = 'Deploy Cloudflare Infrastructure|main|completed|success' ]
+
+job_statuses="$(gh run view "$POST_MERGE_MAIN_RUN_ID" --repo cwchanap/DTXWeb \
+  --json jobs \
+  --jq '.jobs[] | select(.name == "deploy-pre-prod" or .name == "deploy-production") | "\(.name)=\(.status)/\(.conclusion)"')"
+printf '%s\n' "$job_statuses"
+case "$job_statuses" in
+  *'deploy-pre-prod=completed/success'*) ;;
+  *) printf '%s\n' 'deploy-pre-prod is not green' >&2; exit 1 ;;
+esac
+case "$job_statuses" in
+  *'deploy-production=completed/success'*) ;;
+  *) printf '%s\n' 'deploy-production is not green' >&2; exit 1 ;;
+esac
+
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-pre-prod --repo cwchanap/DTXWeb
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo cwchanap/DTXWeb
 ```
@@ -371,16 +476,20 @@ gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo 
 ## Merge-transition checklist
 
 - [x] Old `Deploy Cloudflare Access` workflow is disabled (`gh workflow list --all` reports
-      `disabled_manually`).
+      `disabled_manually`) and remains disabled until merge.
 - [x] `.github/workflows/deploy-cloudflare-infrastructure.yml` is present on this branch.
-- [ ] Both Pulumi stacks have a fresh authenticated full-scope no-op preview; the worktree
-      credential currently cannot refresh Cloudflare resources.
 - [ ] `CLOUDFLARE_INFRA_API_TOKEN` is provisioned in both GitHub Environments.
-- [ ] The alias soak has completed and the dependency inventory plus alias-only cleanup has been
-      performed.
-- [ ] Production full-scope refresh, Pulumi update, Worker deploys, and production verifier have
-      completed.
+- [ ] Pre-production trusted-device allow and failing-posture denial checks are complete.
+- [ ] Production full-scope refresh, Pulumi update, Worker deploys, and explicit production verifier
+      have completed.
+- [ ] The 24-hour soak has completed after production cutover and both verifiers are green.
+- [ ] Both alias Worker dependencies and the alias-only KV dependency inventory are complete.
+- [ ] Both alias Workers and only the alias-only KV have been deleted.
+- [ ] The first successful post-merge `main` run of the generalized workflow is explicitly verified
+      with both serial jobs green.
+- [ ] `CLOUDFLARE_ACCESS_API_TOKEN` is removed only after that verified successful run.
 
-After merge, the generalized workflow's first `main` run must be an ordinary refreshed update with
-no imports or replacements. Only after that run succeeds may the obsolete Access-only Environment
-secret be removed.
+The canonical sequence is: provision the infrastructure token and complete trusted-device checks;
+perform production cutover; wait for soak completion and re-run both verifiers; inventory and delete
+only the aliases; complete merge-transition checks; then remove the old Access-only Environment
+secret.

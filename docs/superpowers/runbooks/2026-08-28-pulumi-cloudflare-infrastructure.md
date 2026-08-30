@@ -365,6 +365,28 @@ bucket identity, Workers KV namespace, and Workers custom-domain permissions. Ad
 GitHub Environments without printing the value. `set -euo pipefail` makes the secret-list checks gate
 the rest of this block:
 
+The token must be **account-scoped to the single DTXWeb account** (never "All accounts") and carry
+only these Cloudflare permission groups. Cloudflare exposes no "identity-only" permission for D1/R2/KV
+or for Worker custom domains, so most of these groups inherently grant broader mutation rights than
+the Pulumi ownership boundary intends; the compensating controls below constrain that overshoot so
+the boundary still holds operationally.
+
+| Pulumi-managed resource      | Permission group (Account scope) | Boundary overshoot                                                | Compensating control                                                                                                                                             |
+| ---------------------------- | -------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Access applications/policies | `Access: Apps and Policies Edit` | None — matches the boundary                                       | `protect: true`; drift-fail-closed preview                                                                                                                       |
+| D1 database identity         | `D1 Edit`                        | Also permits D1 schema/data writes                                | Pulumi declares only `D1Database` identity (name/region), never schema; migrations stay in Wrangler; `protect: true` + `retainOnDelete: true`                    |
+| R2 bucket identity           | `Workers R2 Storage Edit`        | Also permits R2 **object** read/write/delete                      | Pulumi declares only `R2Bucket` identity (name/jurisdiction), never objects; `protect: true` + `retainOnDelete: true`; retention probes before/after every apply |
+| Workers KV namespace         | `Workers KV Storage Edit`        | Also permits KV **value** read/write/delete                       | Pulumi declares only namespace identity, never values; `protect: true`; drift-fail-closed preview                                                                |
+| Worker custom domains        | `Workers Scripts Edit`           | Also permits Worker **script/release** mutations (Wrangler-owned) | Pulumi declares only `WorkersCustomDomain`, never `cloudflare.Worker`; `protect: true`; Wrangler stays the release source of truth                               |
+
+`Workers Scripts Edit` is required because the Workers Custom Domains API
+(`/accounts/{account_id}/workers/domains`) gates attach/update/delete on the Workers Scripts write
+permission — there is no narrower custom-domain-only group. The same drift-fail-closed automation
+(`pulumi refresh --preview-only --expect-no-changes` before every `pulumi up`) and the
+`protect: true` / `retainOnDelete: true` flags on every permanent D1/R2 resource are what prevent the
+overshoot from touching data or releases. Do not add `Workers Routes`, DNS, SSL/Certificates, or any
+Zone-scoped permission: Pulumi owns no zone resources on this stack.
+
 ```bash
 set -euo pipefail
 
@@ -403,7 +425,7 @@ set -euo pipefail
 
 cd packages/infrastructure
 pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
-pulumi preview --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
+pulumi preview --expect-no-changes --suppress-outputs --stack cwchanap/dtxweb-infrastructure/production
 pulumi up --stack cwchanap/dtxweb-infrastructure/production
 # Complete the production retention probe immediately after the Pulumi apply; stop on mismatch.
 cd ../..
@@ -417,12 +439,13 @@ packages/infrastructure/scripts/verify-access.sh production
 # Repeat the production retention probe after both Worker deploys.
 ```
 
-This is the production cutover sequence: preview-only full-scope refresh gate, source preview,
-plain `pulumi up`, production retention probe, direct no-migration API deploy, web build and direct
-no-migration deploy, explicit production boundary verifier, and a repeated retention probe. The
-production Wrangler route removal and `workers_dev: false` take effect at those deploys. Record that
-the full-scope refresh ran in CI/operator context; do not treat the local targeted result as an
-Access drift proof.
+This is the production cutover sequence: preview-only full-scope refresh gate, fail-closed
+source preview (`--expect-no-changes` — any proposed change, especially D1/R2, stops before
+`pulumi up`), plain `pulumi up`, production retention probe, direct no-migration API deploy, web
+build and direct no-migration deploy, explicit production boundary verifier, and a repeated
+retention probe. The production Wrangler route removal and `workers_dev: false` take effect at
+those deploys. Record that the full-scope refresh ran in CI/operator context; do not treat the
+local targeted result as an Access drift proof.
 
 After this cutover, repeat the trusted-device `/app` and failing-posture checks against production,
 with the explicit automated boundary command:
@@ -502,14 +525,16 @@ set -euo pipefail
 
 gh workflow list --repo cwchanap/DTXWeb --all | grep -F 'Deploy Cloudflare Access' | grep -F 'disabled_manually'
 gh run list --workflow deploy-cloudflare-infrastructure.yml --branch main --limit 20 --repo cwchanap/DTXWeb \
-  --json databaseId,createdAt,status,conclusion,headBranch
+  --json databaseId,createdAt,status,conclusion,headBranch,headSha
 : "${POST_MERGE_MAIN_RUN_ID:?set to the completed successful post-merge main run ID after reviewing the list above}"
+: "${MERGE_COMMIT_SHA:?set to the merged main commit SHA (e.g. from gh pr view --json mergeCommit); the run must be for this commit}"
 
+# Bind the run to the merge commit so a stale pre-merge main run cannot satisfy the gate.
 run_status="$(gh run view "$POST_MERGE_MAIN_RUN_ID" --repo cwchanap/DTXWeb \
-  --json workflowName,headBranch,status,conclusion \
-  --jq '"\(.workflowName)|\(.headBranch)|\(.status)|\(.conclusion)"')"
+  --json workflowName,headBranch,headSha,status,conclusion \
+  --jq '"\(.workflowName)|\(.headBranch)|\(.headSha)|\(.status)|\(.conclusion)"')"
 printf '%s\n' "$run_status"
-[ "$run_status" = 'Deploy Cloudflare Infrastructure|main|completed|success' ]
+[ "$run_status" = "Deploy Cloudflare Infrastructure|main|$MERGE_COMMIT_SHA|completed|success" ]
 
 job_statuses="$(gh run view "$POST_MERGE_MAIN_RUN_ID" --repo cwchanap/DTXWeb \
   --json jobs \
@@ -526,6 +551,8 @@ esac
 
 # Complete Retention probes for pre-production and production from the private baselines.
 # Do not remove the old secret unless both probes pass.
+: "${RETENTION_PROBES_CONFIRMED:?set to yes only after both pre-production and production retention probes pass from the private baselines; never print probe values}"
+[ "$RETENTION_PROBES_CONFIRMED" = yes ]
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-pre-prod --repo cwchanap/DTXWeb
 gh secret delete CLOUDFLARE_ACCESS_API_TOKEN --env dtx-access-production --repo cwchanap/DTXWeb
 ```

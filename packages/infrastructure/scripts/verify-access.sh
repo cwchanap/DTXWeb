@@ -111,8 +111,14 @@ assert_public() {
 assert_health() {
 	local url="$1"
 
-	if ! curl --fail --silent --show-error --max-time 15 -o /dev/null "$url"; then
-		printf 'health check failed for %s\n' "$url" >&2
+	if ! http_headers "$url"; then
+		return 1
+	fi
+	print_response_summary
+	# `curl --fail` only rejects 4xx/5xx; a 3xx redirect (e.g. Access intercepting
+	# /healthz) would pass silently. Require exactly HTTP 200.
+	if [[ "$HTTP_STATUS" != '200' ]]; then
+		printf 'health check expected HTTP 200 for %s, got %s\n' "$url" "$HTTP_STATUS" >&2
 		return 1
 	fi
 }

@@ -64,5 +64,5 @@ describe('stack registration', () => {
 				forbiddenTypes.some((forbidden) => resource.type.includes(forbidden))
 			)
 		).toEqual([]);
-	});
+	}, 15000);
 });

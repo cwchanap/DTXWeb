@@ -127,6 +127,8 @@ describe('desktop local dev topology', () => {
 		});
 		expect(apiWrangler.env?.['pre-prod']?.workers_dev).toBe(false);
 		expect(webWrangler.env?.['pre-prod']?.workers_dev).toBe(false);
+		expect(apiWrangler.env?.['pre-prod']?.route).toBeUndefined();
+		expect(webWrangler.env?.['pre-prod']?.route).toBeUndefined();
 		expect(apiWrangler.env?.production?.workers_dev).toBe(false);
 		expect(webWrangler.env?.production?.workers_dev).toBe(false);
 		expect(apiWrangler.env?.production?.route).toBeUndefined();

@@ -42,7 +42,8 @@ describe('createWorkersCustomDomains', () => {
 			'dtxweb-pre-prod-api-domain',
 			expect.objectContaining({
 				hostname: 'api.pre-prod.dtx.hapadona.com',
-				service: 'dtx-api-pre-prod'
+				service: 'dtx-api-pre-prod',
+				zoneId: 'zone-id'
 			}),
 			{ protect: true }
 		);
@@ -60,7 +61,8 @@ describe('createWorkersCustomDomains', () => {
 			'dtxweb-production-web-domain',
 			expect.objectContaining({
 				hostname: 'dtx.hapadona.com',
-				service: 'dtx-web'
+				service: 'dtx-web',
+				zoneId: 'zone-id'
 			}),
 			{ protect: true }
 		);
@@ -68,7 +70,8 @@ describe('createWorkersCustomDomains', () => {
 			'dtxweb-production-api-domain',
 			expect.objectContaining({
 				hostname: 'api.dtx.hapadona.com',
-				service: 'dtx-api'
+				service: 'dtx-api',
+				zoneId: 'zone-id'
 			}),
 			{ protect: true }
 		);

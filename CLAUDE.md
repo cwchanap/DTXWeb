@@ -36,6 +36,10 @@ bun run --filter=dtx-api test         # Run API tests
 bun run --filter=@dtx/common test     # Run common package tests
 bun run --filter=@dtx/ui-components test  # Run UI components tests
 
+# Cloudflare infrastructure (Pulumi)
+bun run --filter=@dtx/infrastructure check
+bun run --filter=@dtx/infrastructure test:coverage
+
 # Desktop Rust backend (run from packages/dtx-desktop/src-tauri)
 cargo test --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml      # Rust unit tests
 cargo fmt --check --manifest-path packages/dtx-desktop/src-tauri/Cargo.toml  # Format check (enforced by pre-commit hook)
@@ -57,7 +61,8 @@ bun run --filter=dtx-api gen-schema   # Regenerate the GraphQL schema from the A
 
 ```bash
 # Development servers
-bun run dev                     # Run API (8787) + web (5173) + desktop (Tauri), wired for local
+bun run dev                     # Apply local D1 migrations, then run API (8787) + web (5173) + desktop (Tauri)
+bun run dev:seed                # Reset, migrate, and seed the local D1/R2 stack
 bun run dev:web                 # Run web app only (port 5173)
 bun run dev:desktop             # Run desktop app only (tauri dev)
 bun run dev:common              # Run common package dev server
@@ -83,12 +88,10 @@ bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
 bun run fixtures:verify         # Verify e2e test fixtures are valid
 
 # Deployment (Cloudflare Workers) — manual, no CI/CD
-bun run deploy:web                       # Deploy web app to production
-bun run deploy:web:preprod               # Deploy web app to pre-prod (preprod D1 + R2)
-bun run deploy:web:preprod:prod-data     # Deploy web app to pre-prod with prod D1 + R2
-bun run deploy:api                       # Deploy GraphQL API to production
-bun run deploy:api:preprod               # Deploy API to pre-prod
-bun run deploy:api:preprod:prod-data     # Deploy API to pre-prod with prod data
+bun run deploy:web                       # Build and deploy web app with Wrangler env production
+bun run deploy:web:preprod               # Build and deploy web app with Wrangler env pre-prod
+bun run deploy:api                       # Apply production migrations and deploy API with Wrangler env production
+bun run deploy:api:preprod               # Apply pre-prod migrations and deploy API with Wrangler env pre-prod
 
 # Native type generation
 bun run gen:native-types       # Generate TypeScript contracts from Rust
@@ -297,22 +300,23 @@ import { Button } from '@dtx/common/components';
 ## Deployment & Infrastructure
 
 - **Web App**: Deployed to Cloudflare Workers via @sveltejs/adapter-cloudflare
-- **GraphQL API** (`dtx-api`): Deployed to Cloudflare Workers via wrangler (`deploy:api*`)
+- **GraphQL API** (`dtx-api`): Worker release, configuration, and D1 schema migrations are deployed via Wrangler (`deploy:api*`)
+- **Cloudflare infrastructure** (`@dtx/infrastructure`): Pulumi owns Access, D1, R2, the active rate-limit KV namespaces, and Worker custom domains; `.github/workflows/deploy-cloudflare-infrastructure.yml` updates the pre-production stack before production
 - **Desktop**: Built with Tauri (`tauri build`), with auto-update via `tauri-plugin-updater`; distributed via GitHub releases (`desktop-build-deploy.yml`)
 - **Database**: Cloudflare D1
 - **Storage**: Cloudflare R2 (and AWS S3) for game assets
+- **Wrangler runtime ownership**: Worker release/configuration, D1 schema migrations, and Workflow/Container/Durable Object definitions remain in the Worker packages
 
 ### Deployment Environments
 
-Three environments are configured in `packages/dtx-web/wrangler.jsonc`:
+The Worker packages use local-only top-level Wrangler configuration plus explicit `production` and `pre-prod` environments:
 
-| Command                                | Domain                      | D1 Database       | R2 Bucket             | Use Case                           |
-| -------------------------------------- | --------------------------- | ----------------- | --------------------- | ---------------------------------- |
-| `bun run deploy:web`                   | `dtx.hapadona.com`          | `dtx-web` (prod)  | `simfile-dtx` (prod)  | Production releases                |
-| `bun run deploy:web:preprod`           | `pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` | Testing with isolated data         |
-| `bun run deploy:web:preprod:prod-data` | `pre-prod.dtx.hapadona.com` | `dtx-web` (prod)  | `simfile-dtx` (prod)  | Testing new code against real data |
+| Command                      | Wrangler env | Domain                      | D1 Database       | R2 Bucket             | Use Case                    |
+| ---------------------------- | ------------ | --------------------------- | ----------------- | --------------------- | --------------------------- |
+| `bun run deploy:web`         | `production` | `dtx.hapadona.com`          | `dtx-web`         | `simfile-dtx`         | Production releases         |
+| `bun run deploy:web:preprod` | `pre-prod`   | `pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` | Isolated pre-production use |
 
-All commands build first (`vite build`) then deploy via `wrangler deploy` with the appropriate `--env` flag. Web deploys are manual (no CI/CD pipeline).
+All web commands build first (`vite build`) then deploy via `wrangler deploy --env` with the named environment. API commands apply the matching remote D1 migrations before `wrangler deploy --env`. Worker deploys are manual (no CI/CD pipeline); Pulumi infrastructure updates run through the generalized infrastructure workflow.
 
 ### R2 Bucket Configuration
 

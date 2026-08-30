@@ -67,22 +67,22 @@ The normative retention details are also recorded in `docs/superpowers/specs/202
 
 ## Ownership contract
 
-| Concern | Final owner | Notes |
-| --- | --- | --- |
-| Access application/policy | Pulumi | Existing logical names and behavior unchanged. |
-| D1 database identity | Pulumi | Existing resource imported; protected + retained. |
-| R2 bucket identity | Pulumi | Existing resource imported; protected + retained. |
-| Active rate-limit KV namespace | Pulumi | Existing resource imported and protected. |
-| Web/API Worker custom domains | Pulumi | Existing `WorkersCustomDomain` resources imported. |
-| Worker identity/release | Wrangler | No `cloudflare.Worker` resource. |
-| Worker observability/compatibility | Wrangler | Avoid a two-writer loop. |
-| D1/R2/KV/service bindings | Wrangler env blocks | Existing IDs/names stay checked in. |
-| Worker variables | Wrangler env blocks | Application-owned release config. |
-| Worker secrets | Wrangler/GitHub Environments | Never exported by Pulumi. |
-| Workflow/Container/DO declarations | Wrangler | Version-coupled to Worker code. |
-| D1 schema migrations | Wrangler | Application release concern; not run as part of this infrastructure cutover. |
-| R2 CORS/public domains | Existing Cloudflare settings | Explicitly unmanaged in this ticket. |
-| Cloudflare account/zone/posture rule | External references | DTXWeb consumes but does not create them. |
+| Concern                              | Final owner                  | Notes                                                                        |
+| ------------------------------------ | ---------------------------- | ---------------------------------------------------------------------------- |
+| Access application/policy            | Pulumi                       | Existing logical names and behavior unchanged.                               |
+| D1 database identity                 | Pulumi                       | Existing resource imported; protected + retained.                            |
+| R2 bucket identity                   | Pulumi                       | Existing resource imported; protected + retained.                            |
+| Active rate-limit KV namespace       | Pulumi                       | Existing resource imported and protected.                                    |
+| Web/API Worker custom domains        | Pulumi                       | Existing `WorkersCustomDomain` resources imported.                           |
+| Worker identity/release              | Wrangler                     | No `cloudflare.Worker` resource.                                             |
+| Worker observability/compatibility   | Wrangler                     | Avoid a two-writer loop.                                                     |
+| D1/R2/KV/service bindings            | Wrangler env blocks          | Existing IDs/names stay checked in.                                          |
+| Worker variables                     | Wrangler env blocks          | Application-owned release config.                                            |
+| Worker secrets                       | Wrangler/GitHub Environments | Never exported by Pulumi.                                                    |
+| Workflow/Container/DO declarations   | Wrangler                     | Version-coupled to Worker code.                                              |
+| D1 schema migrations                 | Wrangler                     | Application release concern; not run as part of this infrastructure cutover. |
+| R2 CORS/public domains               | Existing Cloudflare settings | Explicitly unmanaged in this ticket.                                         |
+| Cloudflare account/zone/posture rule | External references          | DTXWeb consumes but does not create them.                                    |
 
 ## Reuse decisions
 

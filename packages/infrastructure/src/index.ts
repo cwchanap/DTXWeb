@@ -5,9 +5,10 @@ import { createWorkersCustomDomains } from './domains.js';
 
 const stackDefinition = getInfrastructureStackDefinition(pulumi.getStack());
 const config = new pulumi.Config();
+const accountId = config.require('cloudflareAccountId');
 
 const accessApplication = createAccessApplication({
-	accountId: config.require('cloudflareAccountId'),
+	accountId,
 	stackDefinition,
 	accessEmail: config.requireSecret('accessEmail'),
 	devicePostureRuleId: config.require('devicePostureRuleId'),
@@ -15,22 +16,22 @@ const accessApplication = createAccessApplication({
 });
 
 const d1Database = createD1Database({
-	accountId: config.require('cloudflareAccountId'),
+	accountId,
 	stackDefinition
 });
 
 const r2Bucket = createR2Bucket({
-	accountId: config.require('cloudflareAccountId'),
+	accountId,
 	stackDefinition
 });
 
 const rateLimitKvNamespace = createRateLimitKvNamespace({
-	accountId: config.require('cloudflareAccountId'),
+	accountId,
 	stackDefinition
 });
 
 const workersCustomDomains = createWorkersCustomDomains({
-	accountId: config.require('cloudflareAccountId'),
+	accountId,
 	zoneId: config.require('cloudflareZoneId'),
 	stackDefinition
 });

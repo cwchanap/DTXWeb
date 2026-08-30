@@ -44,6 +44,7 @@
 ## Task 1: Make normal local development fully local
 
 **Files:**
+
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `packages/dtx-api/package.json`
 - Modify: `packages/dtx-api/src/env.ts`
@@ -54,6 +55,7 @@
 - Modify: `package.json`
 
 **Interfaces:**
+
 - top-level API/web Wrangler config = local/default only;
 - `env.production` = current production release contract;
 - `env.pre-prod` = current pre-production release contract;
@@ -173,6 +175,7 @@ git commit -m "fix(dev): keep local API data local"
 ## Task 2: Disable old automation, capture retention baselines, and import pre-production
 
 **Files:**
+
 - Modify: `packages/infrastructure/src/access.ts`
 - Modify: `packages/infrastructure/src/access.test.ts`
 - Create: `packages/infrastructure/src/data.ts`
@@ -300,6 +303,7 @@ git commit -m "feat(infrastructure): adopt pre-prod Cloudflare data and domains"
 ## Task 3: Apply and cut over pre-production without touching D1 data
 
 **Files:**
+
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `packages/dtx-web/wrangler.jsonc`
 - Modify: `packages/infrastructure/scripts/verify-access.sh`
@@ -384,6 +388,7 @@ Start the minimum 24-hour soak. Keep alias Workers/KV alive.
 ## Task 4: Import and cut over production without touching D1 data
 
 **Files:**
+
 - Modify infrastructure builders/tests only if production import exposes a real input difference.
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `packages/dtx-web/wrangler.jsonc`
@@ -455,6 +460,7 @@ git commit -m "feat(infrastructure): cut production domains to Pulumi"
 ## Task 5: Generalize Pulumi automation and fail closed on drift
 
 **Files:**
+
 - Rename: `.github/workflows/deploy-cloudflare-access.yml` -> `.github/workflows/deploy-cloudflare-infrastructure.yml`
 - Modify: `packages/infrastructure/src/deploy-workflow.test.ts`
 - Modify: `packages/infrastructure/README.md`
@@ -497,6 +503,7 @@ Keep the old workflow disabled until merge.
 ## Task 6: Retire `pre-prod-prod-data` after soak, without touching retained data
 
 **Files:**
+
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `packages/dtx-api/package.json`
 - Modify: `packages/dtx-api/src/env.ts`
@@ -552,6 +559,7 @@ git commit -m "chore(cloudflare): retire pre-prod prod-data alias"
 ## Task 7: Bound docs and run final retention/drift gates
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 - Modify: `packages/infrastructure/README.md`
 - Create: `docs/superpowers/runbooks/2026-08-28-pulumi-cloudflare-infrastructure.md`

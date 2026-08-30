@@ -528,6 +528,7 @@ describe('wrangler BGM Workflow names', () => {
 			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
 		) as {
 			workflows: Array<{ name: string; binding: string; class_name: string }>;
+			vars?: Record<string, string>;
 			env: Record<
 				string,
 				{
@@ -552,7 +553,19 @@ describe('wrangler BGM Workflow names', () => {
 			}
 		]);
 		expect(wrangler.env['pre-prod'].workflows?.[0]?.name).not.toBe(wrangler.workflows[0].name);
-		expect(wrangler.env['pre-prod-prod-data'].workflows).toBeUndefined();
-		expect(wrangler.env['pre-prod-prod-data'].vars?.BGM_M4A_GENERATION_ENABLED).toBe('false');
+	});
+
+	it('uses only supported rate-limit environments', () => {
+		const wrangler = JSON.parse(
+			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
+		) as {
+			vars?: Record<string, string>;
+			env: Record<string, { vars?: Record<string, string> }>;
+		};
+
+		expect([
+			wrangler.vars?.RATE_LIMIT_ENV,
+			...Object.values(wrangler.env).map((environment) => environment.vars?.RATE_LIMIT_ENV)
+		]).toEqual(['local', 'prod', 'pre-prod']);
 	});
 });

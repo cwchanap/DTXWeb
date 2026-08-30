@@ -19,7 +19,7 @@ describe('committed Pulumi stack settings', () => {
 		(file) => {
 			const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
-			expect(text).toContain('secretsprovider: default');
+			expect(text).not.toContain('secretsprovider:');
 			expect(text).toMatch(/dtxweb-infrastructure:accessEmail:\s*\n\s+secure:/);
 			expect(text).toMatch(/dtxweb-infrastructure:devicePostureRuleId:/);
 			expect(text).toContain('dtxweb-infrastructure:cloudflareAccountId:');

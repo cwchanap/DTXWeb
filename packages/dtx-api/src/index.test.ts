@@ -467,6 +467,20 @@ describe('Phase 2 routes', () => {
 		expect(env.DTXFILE_BUCKET.get).toHaveBeenCalledWith('1001/my file.dtx');
 	});
 
+	it('GET /local-r2/<key> returns 404 for malformed percent-encoded segments', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: { get: vi.fn() } as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/%', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+		expect(env.DTXFILE_BUCKET.get).not.toHaveBeenCalled();
+	});
+
 	it('GET /local-r2/<key> returns 404 when the object is missing', async () => {
 		const env = makeEnv({
 			RATE_LIMIT_ENV: 'local',

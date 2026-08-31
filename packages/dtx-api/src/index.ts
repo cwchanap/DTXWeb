@@ -108,10 +108,18 @@ export default {
 			if (localR2Match) {
 				if (request.method !== 'GET')
 					return withCors(methodNotAllowed('GET'), request, env);
-				const key = localR2Match[1]
-					.split('/')
-					.map((segment) => decodeURIComponent(segment))
-					.join('/');
+				// Malformed percent-encoding (e.g. `/local-r2/%`) makes
+				// `decodeURIComponent` throw `URIError` before `safeRoute` can
+				// catch it; treat an undecodable key as a missing object.
+				let key: string;
+				try {
+					key = localR2Match[1]
+						.split('/')
+						.map((segment) => decodeURIComponent(segment))
+						.join('/');
+				} catch {
+					return withCors(new Response('Not Found', { status: 404 }), request, env);
+				}
 				return withCors(
 					await safeRoute(() => routeLocalR2(env, key), url.pathname),
 					request,

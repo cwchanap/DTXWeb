@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"dev": "wrangler dev --var BGM_M4A_GENERATION_ENABLED:false",
-		"dev:local": "wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false",
+		"dev:local": "wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false --var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2",
 		"build": "wrangler deploy --dry-run --env production --outdir=dist --containers-rollout=none --no-x-provision",
 		"build:preprod": "wrangler deploy --dry-run --env pre-prod --outdir=dist --containers-rollout=none --no-x-provision",
 		"migrate:local": "wrangler d1 migrations apply dtx-web --local --persist-to .wrangler/state",

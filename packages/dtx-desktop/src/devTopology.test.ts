@@ -73,7 +73,13 @@ describe('desktop local dev topology', () => {
 
 		expect(apiPackage.scripts['dev:local']).not.toContain('--env pre-prod');
 		expect(apiPackage.scripts['dev:local']).toBe(
-			'wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false'
+			'wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false --var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2'
+		);
+		// Local catalog/preview URLs must resolve to the local Miniflare bucket
+		// via the local-only R2 passthrough, not the remote pre-prod bucket.
+		expect(apiWrangler.vars?.PUBLIC_SIMFILE_BUCKET_URL).toBe('http://localhost:8787/local-r2');
+		expect(apiPackage.scripts['dev:local']).toContain(
+			'--var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2'
 		);
 		expect(apiPackage.scripts.build).toBe(
 			'wrangler deploy --dry-run --env production --outdir=dist --containers-rollout=none --no-x-provision'

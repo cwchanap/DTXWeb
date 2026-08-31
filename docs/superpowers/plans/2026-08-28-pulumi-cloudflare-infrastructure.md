@@ -32,6 +32,7 @@
 - Infrastructure cutover Worker deploys do **not** run D1 migrations; this ticket changes no D1 schema.
 - Disable the current Access-only GitHub Actions workflow before the first new Pulumi import and keep it disabled until the implementation PR merges.
 - Recurring Pulumi automation detects drift with `pulumi refresh --preview-only --expect-no-changes` before `pulumi up`; recurring `pulumi up` must not use `--refresh`.
+- Recurring Pulumi automation runs a fail-closed source preview gate between the drift refresh and `pulumi up` that rejects any D1/R2 stateful operation proposed by the checked-in program. `protect: true` blocks D1/R2 delete/replace but not a source-introduced create, and `pulumi/actions` runs `pulumi up --yes --skip-preview`, so the drift refresh alone cannot enforce the "any D1/R2 create/replace/delete is a hard stop" invariant.
 - Adopt and validate pre-production before production.
 - Keep alias Workers alive for at least 24 hours after the successful pre-production hostname remap.
 - Alias cleanup may remove alias Workers/KV only; both production and pre-production D1/R2 remain untouched.
@@ -48,10 +49,13 @@
 - Modify: `packages/dtx-api/wrangler.jsonc`
 - Modify: `packages/dtx-api/package.json`
 - Modify: `packages/dtx-api/src/env.ts`
+- Modify: `packages/dtx-api/src/index.ts`
 - Modify: `packages/dtx-api/src/index.test.ts`
+- Create: `packages/dtx-api/src/rest/localR2.ts`
 - Modify: `packages/dtx-web/wrangler.jsonc`
 - Modify: `packages/dtx-web/package.json`
 - Modify: `packages/dtx-desktop/src/devTopology.test.ts`
+- Modify: `.env.example`
 - Modify: `package.json`
 
 **Interfaces:**
@@ -60,7 +64,8 @@
 - `env.production` = current production release contract;
 - `env.pre-prod` = current pre-production release contract;
 - `migrate:local` = tracked local D1 migration without reset;
-- root `dev:seed` = deterministic local-only reset/seed via existing E2E preparation.
+- root `dev:seed` = deterministic local-only reset/seed via existing E2E preparation;
+- local `PUBLIC_SIMFILE_BUCKET_URL` = `http://localhost:8787/local-r2`, served by a local-only R2 passthrough route registered only when `RATE_LIMIT_ENV === 'local'`, and pinned in `dev:local` via `--var` so `.env` cannot override it.
 
 - [ ] **Step 1: Write RED topology tests**
 
@@ -78,6 +83,10 @@ expect(apiWrangler.r2_buckets?.[0]).not.toHaveProperty('remote');
 expect(apiWrangler.env?.production?.name).toBe('dtx-api');
 expect(apiWrangler.env?.['pre-prod']?.name).toBe('dtx-api-pre-prod');
 expect(rootPackage.scripts['dev:seed']).toContain('packages/e2e-web/setup/prepare-stack.ts');
+expect(apiWrangler.vars?.PUBLIC_SIMFILE_BUCKET_URL).toBe('http://localhost:8787/local-r2');
+expect(apiPackage.scripts['dev:local']).toContain(
+	'--var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2'
+);
 ```
 
 Run:
@@ -90,11 +99,13 @@ Expected: FAIL against the current remote-pre-prod local-dev contract.
 
 - [ ] **Step 2: Restructure API Wrangler config**
 
-Make top level local-safe. Keep API entrypoint/alias/compatibility, local D1 name `dtx-web`, local R2/KV bindings, local URLs/CORS/cookie prefix, `RATE_LIMIT_ENV: "local"`, GraphiQL enabled, BGM generation disabled, and Containers disabled for routine local dev.
+Make top level local-safe. Keep API entrypoint/alias/compatibility, local D1 name `dtx-web`, local R2/KV bindings, local URLs/CORS/cookie prefix, `RATE_LIMIT_ENV: "local"`, GraphiQL enabled, BGM generation disabled, and Containers disabled for routine local dev. Set the local `PUBLIC_SIMFILE_BUCKET_URL` to `http://localhost:8787/local-r2` so catalog/preview URLs resolve to the local Miniflare bucket via the local-only R2 passthrough added in this task, not the remote pre-prod public bucket.
 
 Move today's production values into `env.production` and explicitly set `name: "dtx-api"`. Keep today's pre-production values in `env.pre-prod` and explicitly set `name: "dtx-api-pre-prod"`.
 
 For this task only, keep current route/custom-domain declarations in both remote environments; Pulumi does not own them yet.
+
+Add a local-only R2 passthrough so seeded/local-only chart objects are reachable. Create `packages/dtx-api/src/rest/localR2.ts` exporting `routeLocalR2(env, key)` that streams `env.DTXFILE_BUCKET.get(key)` (404 when missing, `content-type` from `object.httpMetadata`). Wire it in `src/index.ts` under a `/^\/local-r2\/(.+)$/` pattern, registered **only** when `env.RATE_LIMIT_ENV === 'local'`, decoding each percent-encoded path segment and rejoining with `/` to recover the R2 key (matching `toPublicR2Url`'s encoding). It is never reachable in production or pre-production. Cover it in `src/index.test.ts`: streams an object, decodes encoded segments, 404 on missing, 405 on non-GET, and 404 outside the local environment.
 
 - [ ] **Step 3: Restructure web Wrangler config**
 
@@ -114,7 +125,7 @@ Preserve current production/pre-production vars and API service targets in their
 API scripts must preserve normal migration-before-release behavior while hardening the deploy leg:
 
 ```json
-"dev:local": "wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false",
+"dev:local": "wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false --var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2",
 "migrate:local": "wrangler d1 migrations apply dtx-web --local --persist-to .wrangler/state",
 "build": "wrangler deploy --dry-run --env production --outdir=dist --containers-rollout=none --no-x-provision",
 "build:preprod": "wrangler deploy --dry-run --env pre-prod --outdir=dist --containers-rollout=none --no-x-provision",
@@ -122,6 +133,8 @@ API scripts must preserve normal migration-before-release behavior while hardeni
 "deploy:prod": "bun run migrate:prod && wrangler deploy --env production --no-x-provision",
 "deploy:preprod": "bun run migrate:preprod && wrangler deploy --env pre-prod --no-x-provision"
 ```
+
+Pin `PUBLIC_SIMFILE_BUCKET_URL` in `dev:local` via `--var` because `dev:local` loads `../../.env` and Wrangler lets env-file values override configured vars; `.env.example` contains `PUBLIC_SIMFILE_BUCKET_URL`, so the checked-in value is not authoritative unless the command pins it. Update `.env.example` to set `PUBLIC_SIMFILE_BUCKET_URL='http://localhost:8787/local-r2'` so the web client (which reads the workspace-root `.env` via Vite `envDir`) also resolves local chart URLs correctly.
 
 Keep `pre-prod-prod-data` scripts temporarily; Task 6 removes them after the soak.
 
@@ -462,8 +475,12 @@ git commit -m "feat(infrastructure): cut production domains to Pulumi"
 **Files:**
 
 - Rename: `.github/workflows/deploy-cloudflare-access.yml` -> `.github/workflows/deploy-cloudflare-infrastructure.yml`
+- Create: `packages/infrastructure/scripts/preview-gate.py`
+- Create: `packages/infrastructure/scripts/preview-gate.sh`
+- Create: `packages/infrastructure/scripts/preview-gate.test.sh`
 - Modify: `packages/infrastructure/src/deploy-workflow.test.ts`
 - Modify: `packages/infrastructure/README.md`
+- Modify: `packages/infrastructure/package.json`
 
 - [ ] **Step 1: Write RED workflow-contract tests**
 
@@ -471,15 +488,18 @@ Require two serial jobs, same stack names/OIDC/actions, `CLOUDFLARE_INFRA_API_TO
 
 ```text
 pulumi refresh --preview-only --expect-no-changes
+scripts/preview-gate.sh <stack>     # source preview: reject D1/R2 stateful ops
 pulumi up                 # no --refresh
 verify-access.sh
 ```
 
-Reject `pulumi up --refresh`, `pulumi destroy`, `PULUMI_ACCESS_TOKEN`, and `PULUMI_CONFIG_PASSPHRASE`.
+Require the source preview gate step to appear once per job, ordered after the drift refresh and before `command: up`, and `CLOUDFLARE_INFRA_API_TOKEN` to be injected into the gate step. Reject `pulumi up --refresh`, `pulumi destroy`, `PULUMI_ACCESS_TOKEN`, and `PULUMI_CONFIG_PASSPHRASE`. The forbidden `command: preview` still holds because the gate runs `pulumi preview` via a shell script, not `pulumi/actions`'s `command: preview`.
 
-- [ ] **Step 2: Rename/generalize workflow**
+- [ ] **Step 2: Add the source preview gate and rename/generalize workflow**
 
-Preserve pre-prod -> production ordering, concurrency, locked actions, and infrastructure package tests/build.
+Add `packages/infrastructure/scripts/preview-gate.py` (reads `pulumi preview --json` from stdin, exits non-zero if any `cloudflare:index/d1Database:D1Database` or `cloudflare:index/r2Bucket:R2Bucket` step has a stateful `op` — anything other than `same`/`refresh`/`read`) and `preview-gate.sh` (runs `pulumi preview --json --suppress-outputs --stack <stack>` piped into the parser). Do **not** use `--expect-no-changes` in the gate because legitimate non-D1/R2 changes (e.g. an alias -> permanent `WorkersCustomDomain.service` update) must be allowed to proceed to `pulumi up`; only D1/R2 stateful ops are rejected. Add `preview-gate.test.sh` fixture tests and wire both bash tests into the infrastructure `test`/`test:coverage` scripts.
+
+Insert a `Source preview gate (<environment>)` step between each job's drift refresh and `pulumi/actions up`, using `working-directory: packages/infrastructure` and `run: scripts/preview-gate.sh <stack>`, with `CLOUDFLARE_INFRA_API_TOKEN` injected. Preserve pre-prod -> production ordering, concurrency, locked actions, and infrastructure package tests/build.
 
 Add a drift-detection step before each update using `pulumi refresh --preview-only --expect-no-changes`. Then run `pulumi up` **without refresh**. Any live drift stops automation instead of being remediated automatically.
 
@@ -657,3 +677,5 @@ git commit -m "docs(infrastructure): document retained Cloudflare ownership"
 - Recurring `pulumi up --refresh`: removed because it remediates drift; automation now detects drift and fails before a plain `pulumi up`.
 - Wrangler automatic provisioning: disabled for all remote deploy/dry-run commands with `--no-x-provision`.
 - Infrastructure cutover D1 migrations: removed; direct Worker deploy is used because this ticket changes no D1 schema.
+- Local catalog/preview URLs 404 on seeded objects: local `PUBLIC_SIMFILE_BUCKET_URL` now points at a local-only R2 passthrough (`http://localhost:8787/local-r2`) registered only when `RATE_LIMIT_ENV === 'local'`, and is pinned in `dev:local` via `--var` so `.env` cannot override it.
+- Recurring workflow skipping the source plan before apply: a fail-closed source preview gate (`scripts/preview-gate.sh`) now runs between the drift refresh and `pulumi up` for both stacks and rejects any D1/R2 stateful operation proposed by the checked-in program, closing the gap that `protect` and the drift refresh cannot.

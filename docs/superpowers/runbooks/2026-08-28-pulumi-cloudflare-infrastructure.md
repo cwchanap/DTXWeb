@@ -67,6 +67,21 @@ bun run migrate:api:local
 It targets `.wrangler/state` only. `bun run dev:seed` is the explicit reset path; it is not a
 production or pre-production operation.
 
+### Local R2 bucket serving
+
+`dev:seed` writes chart objects into the local Miniflare `DTXFILE_BUCKET`, and catalog/preview
+URLs are built as `PUBLIC_SIMFILE_BUCKET_URL/<key>`. The local `PUBLIC_SIMFILE_BUCKET_URL` is
+`http://localhost:8787/local-r2`, served by a local-only R2 passthrough route in `dtx-api` that
+streams objects from the bound `DTXFILE_BUCKET`. The route is registered **only** when
+`RATE_LIMIT_ENV === 'local'`, so it is never reachable in production or pre-production.
+
+`dev:local` pins the value with `--var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2`
+because it loads `../../.env` and Wrangler lets env-file values override configured vars;
+`.env.example` ships the same local value so the web client (which reads the workspace-root `.env`
+via Vite `envDir`) also resolves local chart URLs correctly. Without this endpoint, every seeded
+or newly uploaded local-only object would resolve to a URL on the remote pre-prod public bucket
+where it does not exist (404).
+
 ## Retention probes
 
 Before any Pulumi import/apply or Worker cutover, create a baseline for each environment in a
@@ -91,18 +106,29 @@ verifies it, then updates production and verifies it. The job environments remai
 
 ### Drift-fail-closed automation
 
-After the checks and Pulumi authentication, each job runs a preview-only refresh gate before its
-update, then verifies the boundary:
+After the checks and Pulumi authentication, each job runs a preview-only refresh gate, then a
+fail-closed source preview gate, before its update, then verifies the boundary:
 
 ```text
 pulumi refresh --preview-only --expect-no-changes --stack <stack>
+scripts/preview-gate.sh <stack>           # source preview: reject D1/R2 stateful ops
 pulumi up --stack <stack>                 # never add --refresh
 packages/infrastructure/scripts/verify-access.sh <environment>
 ```
 
-`--expect-no-changes` makes live drift fail the job before `pulumi up`; the workflow does not
-auto-remediate drift. Resolve drift through a separately reviewed operator change, then rerun the
-gate. The pre-production job must complete before the production job starts.
+`--expect-no-changes` makes live drift fail the job before the source preview; the workflow does
+not auto-remediate drift. The source preview gate runs `pulumi preview --json` and rejects any
+`cloudflare:index/d1Database:D1Database` or `cloudflare:index/r2Bucket:R2Bucket` stateful
+operation proposed by the checked-in program. This closes the gap that the drift refresh and
+`protect: true` cannot: the drift refresh only proves live provider state matches recorded Pulumi
+state (it says nothing about source-introduced changes), `protect` blocks D1/R2 delete/replace but
+not a new create, and `pulumi/actions` runs `pulumi up --yes --skip-preview`, so without the gate a
+source change that adds a new D1/R2 resource could pass drift detection and apply immediately. The
+gate does **not** use `--expect-no-changes` because legitimate non-D1/R2 changes (e.g. an alias ->
+permanent `WorkersCustomDomain.service` update) must be allowed to proceed to `pulumi up`.
+
+Resolve drift or a D1/R2 gate rejection through a separately reviewed operator change, then rerun
+the gates. The pre-production job must complete before the production job starts.
 
 Before any new import or state mutation, verify that the old Access-only workflow is disabled:
 

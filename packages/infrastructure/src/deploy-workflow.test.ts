@@ -103,12 +103,21 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(countOccurrences(job, pulumiAction)).toBe(2);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
 			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack ${stack}`;
+			const sourceGate = `run: scripts/preview-gate.sh ${stack}`;
 			const driftCheckIndex = job.indexOf(driftCheck);
+			const sourceGateIndex = job.indexOf(sourceGate);
 			const updateIndex = job.indexOf('command: up');
 			const verifyIndex = job.indexOf(`run: ${verifier}`);
 			expect(countOccurrences(job, driftCheck)).toBe(1);
+			expect(countOccurrences(job, sourceGate)).toBe(1);
 			expect(driftCheckIndex).toBeGreaterThan(-1);
-			expect(driftCheckIndex).toBeLessThan(updateIndex);
+			expect(sourceGateIndex).toBeGreaterThan(-1);
+			// Drift gate (live vs recorded state) -> source preview gate
+			// (rejects D1/R2 stateful ops from the checked-in program) -> up ->
+			// verify. The source gate is what blocks a source-introduced D1/R2
+			// create that `protect` and the drift refresh cannot stop.
+			expect(driftCheckIndex).toBeLessThan(sourceGateIndex);
+			expect(sourceGateIndex).toBeLessThan(updateIndex);
 			expect(updateIndex).toBeLessThan(verifyIndex);
 			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(2);
 			expect(countOccurrences(job, 'work-dir: packages/infrastructure')).toBe(1);
@@ -117,7 +126,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 					job,
 					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}'
 				)
-			).toBe(2);
+			).toBe(3);
 			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');
 			expect(job).toContain(
 				'requested-token-type: urn:pulumi:token-type:access_token:personal'

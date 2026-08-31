@@ -4,6 +4,7 @@ import { routeDownloadSimfile } from './rest/downloadSimfile';
 import { routeDownloadBulk } from './rest/downloadBulk';
 import { routeUpload } from './rest/upload';
 import { routeSetDef } from './rest/setDef';
+import { routeLocalR2 } from './rest/localR2';
 import { handlePreflight, withCors } from './lib/cors';
 import { createAuth } from './auth/auth';
 import type { Env } from './env';
@@ -13,6 +14,9 @@ export { GenerateBgmM4aWorkflow } from './workflows/generateBgmM4a';
 
 const downloadSimfilePattern = /^\/downloads\/([^/]+)$/;
 const setDefPattern = /^\/simfiles\/([^/]+)\/set\.def$/;
+// Local-only R2 passthrough. `toPublicR2Url` encodes each path segment, so the
+// key is recovered by decoding each segment and rejoining with `/`.
+const localR2Pattern = /^\/local-r2\/(.+)$/;
 
 const methodNotAllowed = (allow: string) =>
 	new Response('Method Not Allowed', { status: 405, headers: { Allow: allow } });
@@ -94,6 +98,26 @@ export default {
 				request,
 				env
 			);
+		}
+
+		// Local-only R2 passthrough: serves seeded/local-only chart objects so
+		// PUBLIC_SIMFILE_BUCKET_URL resolves to the local Miniflare bucket.
+		// Never registered in production or pre-production.
+		if (env.RATE_LIMIT_ENV === 'local') {
+			const localR2Match = localR2Pattern.exec(url.pathname);
+			if (localR2Match) {
+				if (request.method !== 'GET')
+					return withCors(methodNotAllowed('GET'), request, env);
+				const key = localR2Match[1]
+					.split('/')
+					.map((segment) => decodeURIComponent(segment))
+					.join('/');
+				return withCors(
+					await safeRoute(() => routeLocalR2(env, key), url.pathname),
+					request,
+					env
+				);
+			}
 		}
 
 		return withCors(new Response('Not Found', { status: 404 }), request, env);

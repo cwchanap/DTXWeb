@@ -9,7 +9,7 @@ const workflowPath = new URL(
 const countOccurrences = (text: string, value: string): number => text.split(value).length - 1;
 const checkoutAction = 'uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0';
 const setupBunAction = 'uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2';
-const pulumiAction = 'uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58';
+const pulumiAction = 'uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d';
 const mainRefGuard = "if: github.ref == 'refs/heads/main'";
 const suppressOutputs = 'suppress-outputs: true';
 
@@ -97,7 +97,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(
 				countOccurrences(
 					job,
-					'uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640'
+					'uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2'
 				)
 			).toBe(1);
 			expect(countOccurrences(job, pulumiAction)).toBe(2);

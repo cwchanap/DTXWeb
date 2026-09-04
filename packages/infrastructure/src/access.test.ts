@@ -4,7 +4,7 @@ import {
 	buildAccessApplicationArgs,
 	buildAccessPolicy,
 	createAccessApplication,
-	getAccessStackDefinition,
+	getInfrastructureStackDefinition,
 	normalizeAccessEmail
 } from './access.js';
 
@@ -31,37 +31,65 @@ const resolveOutput = <T>(output: pulumi.Output<T>): Promise<T> =>
 		});
 	});
 
-describe('getAccessStackDefinition', () => {
-	it('defines hostname-wide pre-production Access', () => {
-		expect(getAccessStackDefinition('pre-prod')).toEqual({
+describe('getInfrastructureStackDefinition', () => {
+	it('defines the pre-production data and domain targets', () => {
+		expect(getInfrastructureStackDefinition('pre-prod')).toMatchObject({
 			stackName: 'pre-prod',
+			webWorkerName: 'dtx-web-pre-prod',
+			apiWorkerName: 'dtx-api-pre-prod',
+			webHostname: 'pre-prod.dtx.hapadona.com',
+			apiHostname: 'api.pre-prod.dtx.hapadona.com',
+			databaseName: 'dtx-web-preprod',
+			bucketName: 'simfile-dtx-preprod'
+		});
+	});
+
+	it('keeps hostname-wide pre-production Access', () => {
+		expect(getInfrastructureStackDefinition('pre-prod')).toMatchObject({
 			applicationName: 'DTXWeb Pre-prod',
-			domain: 'pre-prod.dtx.hapadona.com',
-			destinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }]
+			accessDomain: 'pre-prod.dtx.hapadona.com',
+			accessDestinations: [{ type: 'public', uri: 'pre-prod.dtx.hapadona.com' }],
+			rateLimitKvTitle: 'pre-prod-RATE_LIMIT_API',
+			r2Location: 'WNAM'
 		});
 	});
 
 	it('defines production Access at exactly /app and /app/*', () => {
-		expect(getAccessStackDefinition('production')).toEqual({
-			stackName: 'production',
+		expect(getInfrastructureStackDefinition('production')).toMatchObject({
 			applicationName: 'DTXWeb Production App',
-			domain: 'dtx.hapadona.com/app',
-			destinations: [
+			accessDomain: 'dtx.hapadona.com/app',
+			accessDestinations: [
 				{ type: 'public', uri: 'dtx.hapadona.com/app' },
 				{ type: 'public', uri: 'dtx.hapadona.com/app/*' }
-			]
+			],
+			webWorkerName: 'dtx-web',
+			apiWorkerName: 'dtx-api',
+			webHostname: 'dtx.hapadona.com',
+			apiHostname: 'api.dtx.hapadona.com',
+			databaseName: 'dtx-web',
+			bucketName: 'simfile-dtx',
+			rateLimitKvTitle: 'RATE_LIMIT_API',
+			r2Location: 'APAC'
 		});
 	});
 
 	it('does not define hostname-wide production Access', () => {
-		expect(getAccessStackDefinition('production').destinations).not.toContainEqual({
+		expect(
+			getInfrastructureStackDefinition('production').accessDestinations
+		).not.toContainEqual({
 			type: 'public',
 			uri: 'dtx.hapadona.com'
 		});
 	});
 
 	it('rejects an unsupported stack before resource creation', () => {
-		expect(() => getAccessStackDefinition('development')).toThrow(
+		expect(() => getInfrastructureStackDefinition('development')).toThrow(
+			/Unsupported DTXWeb infrastructure stack/
+		);
+	});
+
+	it('rejects the pre-prod-prod-data alias stack', () => {
+		expect(() => getInfrastructureStackDefinition('pre-prod-prod-data')).toThrow(
 			/Unsupported DTXWeb infrastructure stack/
 		);
 	});
@@ -84,7 +112,7 @@ describe('buildAccessApplicationArgs', () => {
 	it('uses the default session duration and browser security flags', () => {
 		const args = buildAccessApplicationArgs({
 			accountId: 'account-id',
-			stackDefinition: getAccessStackDefinition('pre-prod'),
+			stackDefinition: getInfrastructureStackDefinition('pre-prod'),
 			accessEmail: 'operator@example.com',
 			devicePostureRuleId: 'posture-rule-id'
 		});
@@ -142,14 +170,16 @@ describe('createAccessApplication', () => {
 	] as const)('protects the %s application resource identity', (stack, logicalName) => {
 		createAccessApplication({
 			accountId: 'account-id',
-			stackDefinition: getAccessStackDefinition(stack),
+			stackDefinition: getInfrastructureStackDefinition(stack),
 			accessEmail: 'operator@example.com',
 			devicePostureRuleId: 'posture-rule-id'
 		});
 
 		expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
 			logicalName,
-			expect.objectContaining({ name: getAccessStackDefinition(stack).applicationName }),
+			expect.objectContaining({
+				name: getInfrastructureStackDefinition(stack).applicationName
+			}),
 			{ protect: true }
 		);
 	});

@@ -108,6 +108,21 @@ assert_public() {
 	fi
 }
 
+assert_health() {
+	local url="$1"
+
+	if ! http_headers "$url"; then
+		return 1
+	fi
+	print_response_summary
+	# `curl --fail` only rejects 4xx/5xx; a 3xx redirect (e.g. Access intercepting
+	# /healthz) would pass silently. Require exactly HTTP 200.
+	if [[ "$HTTP_STATUS" != '200' ]]; then
+		printf 'health check expected HTTP 200 for %s, got %s\n' "$url" "$HTTP_STATUS" >&2
+		return 1
+	fi
+}
+
 verify_pre_prod() {
 	local base_url='https://pre-prod.dtx.hapadona.com'
 	local path
@@ -130,6 +145,7 @@ verify_pre_prod() {
 		assert_access_intercepted "$base_url$path" || return 1
 	done
 	assert_public 'https://api.pre-prod.dtx.hapadona.com/'
+	assert_health 'https://api.pre-prod.dtx.hapadona.com/healthz'
 }
 
 verify_production() {
@@ -158,6 +174,7 @@ verify_production() {
 		assert_public "$base_url$path" || return 1
 	done
 	assert_public 'https://api.dtx.hapadona.com/'
+	assert_health 'https://api.dtx.hapadona.com/healthz'
 }
 
 if [[ "$#" -ne 1 ]]; then

@@ -6,8 +6,8 @@
 	"scripts": {
 		"build": "tsc",
 		"check": "tsc --noEmit",
-		"test": "vitest --run && bash scripts/verify-access.test.sh",
-		"test:coverage": "vitest --run --coverage && bash scripts/verify-access.test.sh",
+		"test": "vitest --run && bash scripts/verify-access.test.sh && bash scripts/preview-gate.test.sh",
+		"test:coverage": "vitest --run --coverage && bash scripts/verify-access.test.sh && bash scripts/preview-gate.test.sh",
 		"test:watch": "vitest"
 	},
 	"dependencies": {

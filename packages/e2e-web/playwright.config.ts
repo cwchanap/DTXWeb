@@ -16,6 +16,15 @@ const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173';
 const apiURL = `http://localhost:${DTX_API_LOCAL_PORT}`;
 const packageRoot = fileURLToPath(new URL('.', import.meta.url));
 
+// The preview spec (preview.spec.ts) intercepts this host with page.route and
+// fulfills chart fetches from a local fixture, because Miniflare R2 is not
+// served over HTTP. The API builds each chart's fileUrl from its
+// PUBLIC_SIMFILE_BUCKET_URL (services/r2Enrichment.ts -> toPublicR2Url), so the
+// e2e API must return fileUrls under this host for the intercept to fire. Pin
+// it here explicitly instead of relying on dtx-api's wrangler.jsonc top-level
+// default, which is the local-dev config and may diverge from the e2e stack.
+const e2eSimfileBucketUrl = 'https://chart.hapadona.com';
+
 // Playwright's TestConfigWebServer.env requires Record<string, string>, but
 // process.env types values as string | undefined. Strip undefined entries.
 const processEnv = Object.fromEntries(
@@ -69,6 +78,7 @@ const webServers = [
 			` --var GOOGLE_AUTH_CLIENT_SECRET:"${localAuthEnv.GOOGLE_AUTH_CLIENT_SECRET}"` +
 			' --var CORS_ALLOWED_ORIGINS:"http://localhost:5173"' +
 			' --var PUBLIC_ENABLE_BLOG_DOWNLOAD:"true"' +
+			` --var PUBLIC_SIMFILE_BUCKET_URL:"${e2eSimfileBucketUrl}"` +
 			' --var BGM_M4A_GENERATION_ENABLED:false',
 		cwd: packageRoot,
 		url: `${apiURL}/graphql?query=%7B__typename%7D`,

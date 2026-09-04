@@ -108,7 +108,7 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	RATE_LIMIT_ENV: 'pre-prod',
+	RATE_LIMIT_ENV: 'local',
 	GRAPHIQL: 'true',
 	CORS_ALLOWED_ORIGINS: 'https://pre-prod.dtx.hapadona.com,http://localhost:5173',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
@@ -425,6 +425,100 @@ describe('Phase 2 routes', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('GET /local-r2/<key> streams the local R2 object when RATE_LIMIT_ENV=local', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue({
+					arrayBuffer: vi
+						.fn()
+						.mockResolvedValue(new TextEncoder().encode('chart-bytes').buffer),
+					httpMetadata: { contentType: 'application/octet-stream' }
+				})
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/song.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('application/octet-stream');
+		expect(await response.text()).toBe('chart-bytes');
+		expect(env.DTXFILE_BUCKET.get).toHaveBeenCalledWith('1001/song.dtx');
+	});
+
+	it('GET /local-r2/<key> decodes percent-encoded path segments', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue({
+					arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('ok').buffer),
+					httpMetadata: { contentType: 'text/plain' }
+				})
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/my%20file.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(200);
+		expect(env.DTXFILE_BUCKET.get).toHaveBeenCalledWith('1001/my file.dtx');
+	});
+
+	it('GET /local-r2/<key> returns 404 for malformed percent-encoded segments', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: { get: vi.fn() } as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/%', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+		expect(env.DTXFILE_BUCKET.get).not.toHaveBeenCalled();
+	});
+
+	it('GET /local-r2/<key> returns 404 when the object is missing', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue(null)
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/missing.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it('405 on non-GET /local-r2/<key>', async () => {
+		const env = makeEnv({ RATE_LIMIT_ENV: 'local' });
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/song.dtx', { method: 'POST' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(405);
+		expect(response.headers.get('Allow')).toBe('GET');
+	});
+
+	it('does not register /local-r2 outside the local environment', async () => {
+		for (const rateLimitEnv of ['prod', 'pre-prod'] as const) {
+			const env = makeEnv({ RATE_LIMIT_ENV: rateLimitEnv });
+			const response = await worker.fetch(
+				new Request('http://api/local-r2/1001/song.dtx', { method: 'GET' }),
+				env,
+				makeExecutionCtx()
+			);
+			expect(response.status).toBe(404);
+		}
+	});
+
 	it('CORS-wraps 500 when downloadSimfile handler throws', async () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
 		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('R2 error'));
@@ -528,6 +622,7 @@ describe('wrangler BGM Workflow names', () => {
 			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
 		) as {
 			workflows: Array<{ name: string; binding: string; class_name: string }>;
+			vars?: Record<string, string>;
 			env: Record<
 				string,
 				{
@@ -552,7 +647,19 @@ describe('wrangler BGM Workflow names', () => {
 			}
 		]);
 		expect(wrangler.env['pre-prod'].workflows?.[0]?.name).not.toBe(wrangler.workflows[0].name);
-		expect(wrangler.env['pre-prod-prod-data'].workflows).toBeUndefined();
-		expect(wrangler.env['pre-prod-prod-data'].vars?.BGM_M4A_GENERATION_ENABLED).toBe('false');
+	});
+
+	it('uses only supported rate-limit environments', () => {
+		const wrangler = JSON.parse(
+			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
+		) as {
+			vars?: Record<string, string>;
+			env: Record<string, { vars?: Record<string, string> }>;
+		};
+
+		expect([
+			wrangler.vars?.RATE_LIMIT_ENV,
+			...Object.values(wrangler.env).map((environment) => environment.vars?.RATE_LIMIT_ENV)
+		]).toEqual(['local', 'prod', 'pre-prod']);
 	});
 });

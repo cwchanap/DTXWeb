@@ -36,9 +36,9 @@ const workersCustomDomains = createWorkersCustomDomains({
 	stackDefinition
 });
 
-export const accessApplicationId = accessApplication.id;
-export const d1DatabaseId = d1Database.id;
-export const r2BucketName = r2Bucket.name;
-export const rateLimitKvNamespaceId = rateLimitKvNamespace.id;
-export const webDomainHostname = workersCustomDomains[0].hostname;
-export const apiDomainHostname = workersCustomDomains[1].hostname;
+export const accessApplicationId: pulumi.Output<string> = accessApplication.id;
+export const d1DatabaseId: pulumi.Output<string> = d1Database.id;
+export const r2BucketName: pulumi.Output<string> = r2Bucket.name;
+export const rateLimitKvNamespaceId: pulumi.Output<string> = rateLimitKvNamespace.id;
+export const webDomainHostname: pulumi.Output<string> = workersCustomDomains[0].hostname;
+export const apiDomainHostname: pulumi.Output<string> = workersCustomDomains[1].hostname;

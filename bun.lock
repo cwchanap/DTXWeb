@@ -154,6 +154,7 @@
         "@graphql-codegen/typed-document-node": "^7.1.0",
         "@graphql-codegen/typescript": "^6.1.0",
         "@graphql-codegen/typescript-operations": "^6.1.6",
+        "@graphql-typed-document-node/core": "^3.2.0",
         "@iconify/svelte": "^5.2.2",
         "@lucide/svelte": "^1.35.0",
         "@skeletonlabs/skeleton": "^3.1.2",

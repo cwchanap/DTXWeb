@@ -10,27 +10,31 @@
 		}
 	},
 	"scripts": {
-		"dev": "wrangler dev",
-		"dev:local": "wrangler dev --env pre-prod --env-file ../../.env --var AUTH_COOKIE_DOMAIN: --port 8787",
-		"build": "wrangler deploy --dry-run --outdir=dist",
-		"migrate:prod": "wrangler d1 migrations apply dtx-web --remote",
+		"dev": "wrangler dev --var BGM_M4A_GENERATION_ENABLED:false",
+		"dev:local": "wrangler dev --local --env-file ../../.env --port 8787 --var AUTH_COOKIE_DOMAIN: --var BGM_M4A_GENERATION_ENABLED:false --var PUBLIC_SIMFILE_BUCKET_URL:http://localhost:8787/local-r2",
+		"build": "wrangler deploy --dry-run --env production --outdir=dist --containers-rollout=none --no-x-provision",
+		"build:preprod": "wrangler deploy --dry-run --env pre-prod --outdir=dist --containers-rollout=none --no-x-provision",
+		"migrate:local": "wrangler d1 migrations apply dtx-web --local --persist-to .wrangler/state",
+		"migrate:prod": "wrangler d1 migrations apply dtx-web --remote --env production",
 		"migrate:preprod": "wrangler d1 migrations apply dtx-web-preprod --remote --env pre-prod",
-		"migrate:preprod:prod-data": "wrangler d1 migrations apply dtx-web --remote --env pre-prod-prod-data",
-		"deploy:prod": "bun run migrate:prod && wrangler deploy",
-		"deploy:preprod": "bun run migrate:preprod && wrangler deploy --env pre-prod",
-		"deploy:preprod:prod-data": "bun run migrate:preprod:prod-data && wrangler deploy --env pre-prod-prod-data",
+		"deploy:prod": "bun run migrate:prod && wrangler deploy --env production --no-x-provision",
+		"deploy:preprod": "bun run migrate:preprod && wrangler deploy --env pre-prod --no-x-provision",
 		"test": "vitest --run",
 		"test:watch": "vitest",
 		"test:coverage": "vitest --run --coverage",
 		"check": "tsc --noEmit",
+		"smoke:bgm-transcoder": "bash container/bgm-transcoder/smoke.sh",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings",
+		"cf-typegen:preprod": "wrangler types --env pre-prod --env-interface CloudflareBindings",
 		"gen-schema": "bun run src/scripts/gen-schema.ts",
+		"backfill:bgm-m4a": "bun run src/scripts/backfill-bgm-m4a.ts",
 		"auth:migrate": "bun run src/scripts/migrate-supabase-auth.ts",
 		"auth:schema:generate": "auth generate --config src/auth/auth.cli.ts --output src/auth/schema.ts --adapter drizzle --dialect sqlite --yes",
 		"auth:schema:export": "drizzle-kit export --config drizzle.auth.config.ts --sql=true",
 		"auth:schema:check": "bun run auth:schema:generate && prettier --write src/auth/schema.ts && git diff --exit-code -- src/auth/schema.ts"
 	},
 	"dependencies": {
+		"@cloudflare/containers": "^0.3.7",
 		"@dtx/common": "*",
 		"@pothos/core": "^4.13.1",
 		"@pothos/plugin-errors": "^4.9.1",
@@ -38,8 +42,8 @@
 		"better-auth": "1.6.30",
 		"drizzle-orm": "^0.45.2",
 		"graphql": "^16.10.0",
-		"graphql-yoga": "^5.21.3",
-		"zod": "^4.4.3"
+		"graphql-yoga": "^5.22.0",
+		"zod": "^4.5.2"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250620.0",
@@ -48,6 +52,6 @@
 		"drizzle-kit": "^0.31.10",
 		"typescript": "^5.8.3",
 		"vitest": "^3.1.4",
-		"wrangler": "^4.123.0"
+		"wrangler": "^4.127.1"
 	}
 }

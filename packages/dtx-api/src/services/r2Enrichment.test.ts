@@ -362,6 +362,27 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/music.ogg');
 	});
 
+	it('supports authored m4a while excluding canonical generated bgm.m4a from downloadUrl', async () => {
+		const bucket = makeBucket([
+			[
+				{ key: '42/bgm.m4a', size: 200, uploaded: new Date() },
+				{ key: '42/music.m4a', size: 150, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.downloadUrl).toBe('https://cdn.example.test/42/music.m4a');
+	});
+
 	it('ignores preview.mp3 when selecting full audio for downloadUrl', async () => {
 		const bucket = makeBucket([
 			[

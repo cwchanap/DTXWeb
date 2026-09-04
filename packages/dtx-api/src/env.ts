@@ -1,4 +1,5 @@
-import type { D1Database, R2Bucket, KVNamespace } from '@cloudflare/workers-types';
+import type { D1Database, R2Bucket, KVNamespace, Workflow } from '@cloudflare/workers-types';
+import type { GenerateBgmM4aPayload } from './services/bgmM4a';
 
 export type Env = {
 	DB: D1Database;
@@ -12,10 +13,13 @@ export type Env = {
 	AUTH_COOKIE_PREFIX: string;
 	GOOGLE_AUTH_CLIENT_ID: string;
 	GOOGLE_AUTH_CLIENT_SECRET: string;
-	RATE_LIMIT_ENV: 'prod' | 'pre-prod' | 'pre-prod-prod-data';
+	RATE_LIMIT_ENV: 'local' | 'prod' | 'pre-prod';
 	GRAPHIQL: 'true' | 'false';
 	CORS_ALLOWED_ORIGINS: string;
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' | 'false';
+	BGM_M4A_GENERATION_ENABLED?: 'true' | 'false';
+	BGM_M4A_WORKFLOW?: Workflow<GenerateBgmM4aPayload>;
+	BGM_TRANSCODER?: DurableObjectNamespace;
 
 	// Phase 2 — var (committed to wrangler.jsonc)
 	PUBLIC_SIMFILE_BUCKET_URL: string;

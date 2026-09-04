@@ -128,6 +128,34 @@ Content-Type: text/plain
 RESPONSE
 }
 
+emit_health_503() {
+	cat <<'RESPONSE'
+HTTP/2 503
+Content-Type: text/plain
+
+RESPONSE
+}
+
+emit_health_redirect() {
+	cat <<'RESPONSE'
+HTTP/2 302
+Location: https://login.cloudflareaccess.com/cdn-cgi/access/login
+
+RESPONSE
+}
+
+is_healthz_url() {
+	case "$url" in
+		https://api.pre-prod.dtx.hapadona.com/healthz|\
+		https://api.dtx.hapadona.com/healthz)
+			return 0
+			;;
+		*)
+			return 1
+			;;
+	esac
+}
+
 is_pre_prod_protected_url() {
 	case "$url" in
 		https://pre-prod.dtx.hapadona.com/|\
@@ -262,6 +290,40 @@ case "${FAKE_CURL_SCENARIO:-}" in
 			emit_public_ok
 		fi
 		;;
+	api-healthz-ok)
+		if is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-503)
+		if is_healthz_url; then
+			emit_health_503
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-network-failure)
+		if is_healthz_url; then
+			exit 28
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
+	api-healthz-redirect)
+		if is_healthz_url; then
+			emit_health_redirect
+		elif is_pre_prod_protected_url || is_production_protected_url; then
+			emit_access_forbidden
+		else
+			emit_public_ok
+		fi
+		;;
 	production-full-matrix)
 		if is_production_protected_url; then
 			emit_access_forbidden
@@ -340,6 +402,11 @@ run_case 'public 200, 303, and 404 accepted' 0 public-matrix production
 run_case 'Access interception on a public route rejected' 1 public-intercepted pre-prod
 run_case 'public API root with a single Access header rejected' 1 public-single-access-header pre-prod
 run_case 'network failure rejected' 1 network-failure pre-prod
+run_case 'pre-prod API /healthz public 200 with retained web Access matrix' 0 api-healthz-ok pre-prod
+run_case 'pre-prod API /healthz returning 503 rejected' 1 api-healthz-503 pre-prod
+run_case 'production API /healthz returning 503 rejected' 1 api-healthz-503 production
+run_case 'API /healthz network failure stays fail-closed' 1 api-healthz-network-failure pre-prod
+run_case 'pre-prod API /healthz returning 3xx redirect rejected' 1 api-healthz-redirect pre-prod
 run_case 'unsupported environment rejected before curl' 1 cloudflare-redirect development
 if [[ -s "$FAKE_CURL_LOG" ]]; then
 	printf 'FAIL: unsupported environment called curl\n' >&2
@@ -360,7 +427,8 @@ assert_urls 'pre-prod full matrix requests every specified URL' \
 	'https://pre-prod.dtx.hapadona.com/app/' \
 	'https://pre-prod.dtx.hapadona.com/app/score' \
 	'https://pre-prod.dtx.hapadona.com/app/__data.json' \
-	'https://api.pre-prod.dtx.hapadona.com/'
+	'https://api.pre-prod.dtx.hapadona.com/' \
+	'https://api.pre-prod.dtx.hapadona.com/healthz'
 
 run_case 'production full matrix requests every specified URL' 0 production-full-matrix production
 assert_urls 'production full matrix requests every specified URL' \
@@ -375,4 +443,5 @@ assert_urls 'production full matrix requests every specified URL' \
 	'https://dtx.hapadona.com/editor' \
 	'https://dtx.hapadona.com/tool/dtx-to-midi' \
 	'https://dtx.hapadona.com/game' \
-	'https://api.dtx.hapadona.com/'
+	'https://api.dtx.hapadona.com/' \
+	'https://api.dtx.hapadona.com/healthz'

@@ -1,39 +1,101 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import worker from './index';
 import type { Env } from './env';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
-	return {
-		...actual,
-		getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
-		listAllR2Objects: vi.fn(async () => []),
-		createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
-		validateZipSources: vi.fn(async () => {}),
-		buildZipStream: vi.fn(() => new ReadableStream()),
-		getClientIp: vi.fn(() => null),
-		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 }))
-	};
+vi.mock('cloudflare:workers', () => {
+	class WorkerEntrypoint {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	class DurableObject {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	class WorkflowEntrypoint {
+		protected ctx: unknown;
+		protected env: unknown;
+		constructor(ctx: unknown, env: unknown) {
+			this.ctx = ctx;
+			this.env = env;
+		}
+	}
+	return { WorkerEntrypoint, DurableObject, WorkflowEntrypoint };
 });
 
-const authSessionMocks = vi.hoisted(() => ({
-	resolveAuthSession: vi.fn()
+vi.mock('cloudflare:workflows', () => ({
+	NonRetryableError: class NonRetryableError extends Error {
+		constructor(message: string, name = 'NonRetryableError') {
+			super(message);
+			this.name = name;
+		}
+	}
 }));
 
-vi.mock('./auth/session', () => authSessionMocks);
+vi.mock('@dtx/common/server', () => ({
+	workerLogger: {
+		info: vi.fn(),
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn()
+	},
+	getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
+	listAllR2Objects: vi.fn(async () => []),
+	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
+	validateZipSources: vi.fn(async () => {}),
+	buildZipStream: vi.fn(() => new ReadableStream()),
+	getClientIp: vi.fn(() => null),
+	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
+	createSimfile: vi.fn(),
+	createDtxFiles: vi.fn(),
+	deleteSimfile: vi.fn(),
+	getChartVisibilityBatch: vi.fn(),
+	upsertChartScoreAndReplaceScores: vi.fn(),
+	getUserProfile: vi.fn(),
+	upsertUserProfile: vi.fn(),
+	getSimfile: vi.fn(),
+	getNextDisplayId: vi.fn(),
+	listSimfiles: vi.fn(),
+	listUserScoredSimfiles: vi.fn(),
+	searchSimfiles: vi.fn(),
+	toSimfileWithDtx: vi.fn(),
+	updateSimfile: vi.fn(),
+	updateSimfileDriveFile: vi.fn(),
+	getUserChartScore: vi.fn(),
+	listUserChartScores: vi.fn()
+}));
 
-const authMocks = vi.hoisted(() => ({
-	createAuth: vi.fn(),
+vi.mock('./auth/session', () => ({ resolveAuthSession: vi.fn() }));
+vi.mock('./auth/auth', () => ({ createAuth: vi.fn() }));
+
+const { resolveAuthSession } = await import('./auth/session');
+const { createAuth } = await import('./auth/auth');
+const authSessionMocks = {
+	resolveAuthSession: resolveAuthSession as ReturnType<typeof vi.fn>
+};
+const authMocks = {
+	createAuth: createAuth as ReturnType<typeof vi.fn>,
 	handler: vi.fn()
-}));
-
-vi.mock('./auth/auth', () => ({ createAuth: authMocks.createAuth }));
+};
 
 vi.mock('./services/uploads', () => ({
-	uploadSimfileFile: vi.fn(
-		async () => new Response(JSON.stringify({ ok: true }), { status: 200 })
-	),
+	uploadSimfileFile: vi.fn(async () => ({
+		response: new Response(JSON.stringify({ ok: true }), { status: 200 })
+	})),
 	purgeCacheForFile: vi.fn(async () => true)
+}));
+
+vi.mock('./services/bgmM4aWorkflowTrigger', () => ({
+	triggerBgmM4aWorkflow: vi.fn(async () => 'disabled')
 }));
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({
@@ -46,7 +108,7 @@ const makeEnv = (overrides: Partial<Env> = {}): Env => ({
 	AUTH_COOKIE_PREFIX: 'dtx-test',
 	GOOGLE_AUTH_CLIENT_ID: 'google-client-id',
 	GOOGLE_AUTH_CLIENT_SECRET: 'google-client-secret',
-	RATE_LIMIT_ENV: 'pre-prod',
+	RATE_LIMIT_ENV: 'local',
 	GRAPHIQL: 'true',
 	CORS_ALLOWED_ORIGINS: 'https://pre-prod.dtx.hapadona.com,http://localhost:5173',
 	PUBLIC_ENABLE_BLOG_DOWNLOAD: 'false',
@@ -198,7 +260,7 @@ describe('worker fetch router', () => {
 describe('Phase 2 routes', () => {
 	it('GET /downloads/123 dispatches to downloadSimfile route', async () => {
 		const { getClientIp } = await import('@dtx/common/server');
-		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
+		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', { method: 'GET' }),
@@ -297,7 +359,9 @@ describe('Phase 2 routes', () => {
 
 	it('CORS-wraps 500 when a route handler throws', async () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
-		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 listing failed'));
+		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('R2 listing failed')
+		);
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
@@ -322,7 +386,7 @@ describe('Phase 2 routes', () => {
 		const body = (await response.json()) as { error: string };
 		expect(body.error).toBe('Internal Server Error');
 		expect(errorSpy).toHaveBeenCalledTimes(1);
-		expect(errorSpy.mock.calls[0][1]).instanceof(Error);
+		expect(errorSpy.mock.calls[0][1]).toBeInstanceOf(Error);
 		errorSpy.mockRestore();
 	});
 
@@ -361,9 +425,103 @@ describe('Phase 2 routes', () => {
 		expect(response.status).toBe(400);
 	});
 
+	it('GET /local-r2/<key> streams the local R2 object when RATE_LIMIT_ENV=local', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue({
+					arrayBuffer: vi
+						.fn()
+						.mockResolvedValue(new TextEncoder().encode('chart-bytes').buffer),
+					httpMetadata: { contentType: 'application/octet-stream' }
+				})
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/song.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get('content-type')).toBe('application/octet-stream');
+		expect(await response.text()).toBe('chart-bytes');
+		expect(env.DTXFILE_BUCKET.get).toHaveBeenCalledWith('1001/song.dtx');
+	});
+
+	it('GET /local-r2/<key> decodes percent-encoded path segments', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue({
+					arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('ok').buffer),
+					httpMetadata: { contentType: 'text/plain' }
+				})
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/my%20file.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(200);
+		expect(env.DTXFILE_BUCKET.get).toHaveBeenCalledWith('1001/my file.dtx');
+	});
+
+	it('GET /local-r2/<key> returns 404 for malformed percent-encoded segments', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: { get: vi.fn() } as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/%', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+		expect(env.DTXFILE_BUCKET.get).not.toHaveBeenCalled();
+	});
+
+	it('GET /local-r2/<key> returns 404 when the object is missing', async () => {
+		const env = makeEnv({
+			RATE_LIMIT_ENV: 'local',
+			DTXFILE_BUCKET: {
+				get: vi.fn().mockResolvedValue(null)
+			} as unknown as Env['DTXFILE_BUCKET']
+		});
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/missing.dtx', { method: 'GET' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(404);
+	});
+
+	it('405 on non-GET /local-r2/<key>', async () => {
+		const env = makeEnv({ RATE_LIMIT_ENV: 'local' });
+		const response = await worker.fetch(
+			new Request('http://api/local-r2/1001/song.dtx', { method: 'POST' }),
+			env,
+			makeExecutionCtx()
+		);
+		expect(response.status).toBe(405);
+		expect(response.headers.get('Allow')).toBe('GET');
+	});
+
+	it('does not register /local-r2 outside the local environment', async () => {
+		for (const rateLimitEnv of ['prod', 'pre-prod'] as const) {
+			const env = makeEnv({ RATE_LIMIT_ENV: rateLimitEnv });
+			const response = await worker.fetch(
+				new Request('http://api/local-r2/1001/song.dtx', { method: 'GET' }),
+				env,
+				makeExecutionCtx()
+			);
+			expect(response.status).toBe(404);
+		}
+	});
+
 	it('CORS-wraps 500 when downloadSimfile handler throws', async () => {
 		const { getSimfileOwner } = await import('@dtx/common/server');
-		vi.mocked(getSimfileOwner).mockRejectedValueOnce(new Error('R2 error'));
+		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('R2 error'));
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
@@ -371,7 +529,7 @@ describe('Phase 2 routes', () => {
 			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
 		});
 		const { getClientIp } = await import('@dtx/common/server');
-		vi.mocked(getClientIp).mockReturnValueOnce('1.2.3.4');
+		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', {
 				method: 'GET',
@@ -393,7 +551,9 @@ describe('Phase 2 routes', () => {
 		});
 
 		const { uploadSimfileFile } = await import('./services/uploads');
-		vi.mocked(uploadSimfileFile).mockRejectedValueOnce(new Error('R2 write failed'));
+		(uploadSimfileFile as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+			new Error('R2 write failed')
+		);
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const env = makeEnv({
@@ -453,5 +613,53 @@ describe('Phase 2 routes', () => {
 		);
 		expect(response.status).toBe(405);
 		expect(response.headers.get('Allow')).toBe('POST');
+	});
+});
+
+describe('wrangler BGM Workflow names', () => {
+	it('uses distinct Workflow names for prod and pre-prod generating workers', () => {
+		const wrangler = JSON.parse(
+			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
+		) as {
+			workflows: Array<{ name: string; binding: string; class_name: string }>;
+			vars?: Record<string, string>;
+			env: Record<
+				string,
+				{
+					workflows?: Array<{ name: string; binding: string; class_name: string }>;
+					vars?: Record<string, string>;
+				}
+			>;
+		};
+
+		expect(wrangler.workflows).toEqual([
+			{
+				name: 'dtx-api-bgm-m4a',
+				binding: 'BGM_M4A_WORKFLOW',
+				class_name: 'GenerateBgmM4aWorkflow'
+			}
+		]);
+		expect(wrangler.env['pre-prod'].workflows).toEqual([
+			{
+				name: 'dtx-api-bgm-m4a-preprod',
+				binding: 'BGM_M4A_WORKFLOW',
+				class_name: 'GenerateBgmM4aWorkflow'
+			}
+		]);
+		expect(wrangler.env['pre-prod'].workflows?.[0]?.name).not.toBe(wrangler.workflows[0].name);
+	});
+
+	it('uses only supported rate-limit environments', () => {
+		const wrangler = JSON.parse(
+			readFileSync(resolve(import.meta.dirname, '../wrangler.jsonc'), 'utf8')
+		) as {
+			vars?: Record<string, string>;
+			env: Record<string, { vars?: Record<string, string> }>;
+		};
+
+		expect([
+			wrangler.vars?.RATE_LIMIT_ENV,
+			...Object.values(wrangler.env).map((environment) => environment.vars?.RATE_LIMIT_ENV)
+		]).toEqual(['local', 'prod', 'pre-prod']);
 	});
 });

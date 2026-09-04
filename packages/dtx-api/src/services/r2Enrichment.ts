@@ -6,6 +6,15 @@ import {
 	type WorkerLogger
 } from '@dtx/common/server';
 import type { R2Bucket } from '@cloudflare/workers-types';
+import {
+	FULL_TRACK_AUDIO_EXTENSIONS,
+	isTopLevelNamedR2Key,
+	isTopLevelR2Key,
+	r2FileName,
+	selectTopLevelFullTrackObject,
+	toPublicR2Url
+} from '../lib/r2Files';
+import { isCanonicalBgmDerivativeKey } from './bgmM4a';
 
 export type R2FileEntry = {
 	key: string;
@@ -65,14 +74,7 @@ export type CatalogDiscoveryOptions = {
  */
 const MAX_CONCURRENT_R2_LIST = 4;
 
-const toPublicUrl = (publicBaseUrl: string, key: string): string => {
-	const baseUrl = publicBaseUrl.replace(/\/+$/, '');
-	return `${baseUrl}/${key.split('/').map(encodeURIComponent).join('/')}`;
-};
-
-const getFileName = (key: string): string => key.split('/').at(-1) ?? '';
-
-const isPreviewMp3Key = (key: string): boolean => getFileName(key).toLowerCase() === 'preview.mp3';
+const isPreviewMp3Key = (key: string): boolean => r2FileName(key).toLowerCase() === 'preview.mp3';
 
 const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
 
@@ -186,16 +188,17 @@ export const discoverCatalogFiles = async (
 	// contract is the top-level path — selecting by basename alone plus
 	// alphabetic sort would return the nested asset first because
 	// `42/assets/preview.mp3` sorts before `42/preview.mp3`.
-	const canonicalPreviewKey = `${prefix}preview.mp3`.toLowerCase();
 	const previewObject =
-		objects.find((obj: R2ObjectMeta) => obj.key.toLowerCase() === canonicalPreviewKey) ??
+		objects.find((obj: R2ObjectMeta) => isTopLevelNamedR2Key(obj.key, prefix, 'preview.mp3')) ??
 		objects.find((obj: R2ObjectMeta) => isPreviewMp3Key(obj.key));
-	const previewUrl = previewObject ? toPublicUrl(publicBaseUrl, previewObject.key) : null;
+	const previewUrl = previewObject ? toPublicR2Url(publicBaseUrl, previewObject.key) : null;
 
-	const audioExts = ['.ogg', '.mp3', '.wav', '.flac'];
 	const isAudio = (key: string): boolean => {
 		const lower = key.toLowerCase();
-		return audioExts.some((ext) => lower.endsWith(ext)) && !isPreviewMp3Key(key);
+		return (
+			FULL_TRACK_AUDIO_EXTENSIONS.some((extension) => lower.endsWith(extension)) &&
+			!isPreviewMp3Key(key)
+		);
 	};
 	// A top-level audio file lives directly under the simfile prefix
 	// (e.g. 42/song.ogg) rather than in a subdirectory (e.g.
@@ -206,25 +209,28 @@ export const discoverCatalogFiles = async (
 	// sort would return the sample chip first because
 	// '42/assets/...' sorts before '42/song.ogg' — mirroring the
 	// canonical-vs-nested preference used for preview.mp3 and set.def.
-	const isTopLevelKey = (key: string): boolean => !key.slice(prefix.length).includes('/');
 	// Top-level must win over extension: a top-level .mp3 backing track
 	// is the full-audio download candidate even when nested .ogg sample
 	// chips exist, because .ogg has higher extension priority. Checking
 	// extension first would sort the nested sample ahead of the backing
 	// track and point downloadUrl at a drum chip instead of full audio.
-	const audioObjects = objects
-		.filter((obj: R2ObjectMeta) => isAudio(obj.key))
+	const topLevelDownloadObject = selectTopLevelFullTrackObject(objects, prefix, (object) =>
+		isCanonicalBgmDerivativeKey(object.key, simfileId)
+	);
+	const nestedAudioObjects = objects
+		.filter((obj: R2ObjectMeta) => !isTopLevelR2Key(obj.key, prefix) && isAudio(obj.key))
 		.sort((a, b) => {
-			const aTop = isTopLevelKey(a.key);
-			const bTop = isTopLevelKey(b.key);
-			if (aTop !== bTop) return aTop ? -1 : 1;
-			const aExt = audioExts.findIndex((ext) => a.key.toLowerCase().endsWith(ext));
-			const bExt = audioExts.findIndex((ext) => b.key.toLowerCase().endsWith(ext));
+			const aExt = FULL_TRACK_AUDIO_EXTENSIONS.findIndex((extension) =>
+				a.key.toLowerCase().endsWith(extension)
+			);
+			const bExt = FULL_TRACK_AUDIO_EXTENSIONS.findIndex((extension) =>
+				b.key.toLowerCase().endsWith(extension)
+			);
 			if (aExt !== bExt) return aExt - bExt;
 			return a.key.localeCompare(b.key);
 		});
-	const downloadObject = audioObjects[0];
-	const downloadUrl = downloadObject ? toPublicUrl(publicBaseUrl, downloadObject.key) : null;
+	const downloadObject = topLevelDownloadObject ?? nestedAudioObjects[0];
+	const downloadUrl = downloadObject ? toPublicR2Url(publicBaseUrl, downloadObject.key) : null;
 
 	const dtxObjects = objects
 		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
@@ -240,10 +246,10 @@ export const discoverCatalogFiles = async (
 	// `42/assets/set.def` sorts before `42/set.def` — causing chart
 	// labels to be read from the wrong/empty SET.DEF and `fileUrl`
 	// pairing to fall back to incorrect sorted-key matching.
-	const canonicalSetDefKey = `${prefix}set.def`.toLowerCase();
 	const setDefKey =
-		objects.find((obj: R2ObjectMeta) => obj.key.toLowerCase() === canonicalSetDefKey)?.key ??
-		objects.find((obj: R2ObjectMeta) => getFileName(obj.key).toLowerCase() === 'set.def')?.key;
+		objects.find((obj: R2ObjectMeta) => isTopLevelNamedR2Key(obj.key, prefix, 'set.def'))
+			?.key ??
+		objects.find((obj: R2ObjectMeta) => r2FileName(obj.key).toLowerCase() === 'set.def')?.key;
 	// Skip fetching set.def when no chart rows need matching — preview-only
 	// requests never read filesByLabel, so we avoid an unnecessary R2 GET.
 	const filesByLabel =
@@ -329,7 +335,7 @@ export const discoverCatalogFiles = async (
 		}
 		return {
 			...file,
-			fileUrl: toPublicUrl(publicBaseUrl, object.key),
+			fileUrl: toPublicR2Url(publicBaseUrl, object.key),
 			fileSizeBytes: object.size,
 			fileEncoding: 'SHIFT_JIS'
 		};

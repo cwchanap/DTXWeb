@@ -16,24 +16,22 @@
 		"test:coverage": "vitest --run --coverage",
 		"wrangler:dev": "wrangler dev",
 		"deploy": "bun run deploy:prod",
-		"deploy:prod": "bun run build && wrangler deploy",
-		"deploy:preprod": "bun run build && wrangler deploy --env pre-prod",
-		"deploy:preprod:prod-data": "bun run build && wrangler deploy --env pre-prod-prod-data",
-		"deploy:preview": "bun run build && wrangler deploy --env preview",
+		"deploy:prod": "PUBLIC_SIMFILE_BUCKET_URL=https://chart.hapadona.com bun run build && wrangler deploy --env production --no-x-provision",
+		"deploy:preprod": "PUBLIC_SIMFILE_BUCKET_URL=https://pub-69ca40bf7a284843b562ff39a68b2e6e.r2.dev bun run build && wrangler deploy --env pre-prod --no-x-provision",
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250620.0",
-		"@graphql-codegen/cli": "^7.2.0",
+		"@graphql-codegen/cli": "^7.3.1",
 		"@graphql-codegen/typed-document-node": "^7.1.0",
 		"@graphql-codegen/typescript": "^6.1.0",
 		"@graphql-codegen/typescript-operations": "^6.1.6",
 		"@iconify/svelte": "^5.2.2",
-		"@lucide/svelte": "^1.31.0",
+		"@lucide/svelte": "^1.35.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
-		"@sveltejs/kit": "^2.70.2",
+		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
 		"@tailwindcss/vite": "^4.3.3",
 		"@testing-library/dom": "^10.4.1",
@@ -41,7 +39,7 @@
 		"@testing-library/svelte": "^5.4.2",
 		"@vitest/coverage-v8": "^3.0.0",
 		"jsdom": "^30.0.1",
-		"svelte": "^5.56.9",
+		"svelte": "^5.57.0",
 		"svelte-check": "^4.7.6",
 		"tailwindcss": "^4.1.4",
 		"tslib": "^2.8.1",
@@ -53,7 +51,7 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1112.0",
+		"@aws-sdk/client-s3": "^3.1121.0",
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
 		"dayjs": "^1.11.23",
@@ -67,10 +65,10 @@
 		"vexflow": "4.2.5",
 		"winston": "^3.17.0",
 		"xa_decoder": "^0.1.2",
-		"zod": "^4.4.3"
+		"zod": "^4.5.2"
 	},
 	"optionalDependencies": {
-		"@rollup/rollup-linux-x64-gnu": "^4.62.4",
+		"@rollup/rollup-linux-x64-gnu": "^4.63.1",
 		"lightningcss-linux-x64-gnu": "^1.33.0"
 	}
 }

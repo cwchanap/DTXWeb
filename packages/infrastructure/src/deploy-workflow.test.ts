@@ -2,13 +2,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const workflowPath = new URL(
-	'../../../.github/workflows/deploy-cloudflare-access.yml',
+	'../../../.github/workflows/deploy-cloudflare-infrastructure.yml',
 	import.meta.url
 );
 
 const countOccurrences = (text: string, value: string): number => text.split(value).length - 1;
 const checkoutAction = 'uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0';
 const setupBunAction = 'uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2';
+const pulumiAction = 'uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d';
 const mainRefGuard = "if: github.ref == 'refs/heads/main'";
 const suppressOutputs = 'suppress-outputs: true';
 
@@ -18,7 +19,7 @@ describe('committed Pulumi stack settings', () => {
 		(file) => {
 			const text = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
-			expect(text).toContain('secretsprovider: default');
+			expect(text).not.toContain('secretsprovider:');
 			expect(text).toMatch(/dtxweb-infrastructure:accessEmail:\s*\n\s+secure:/);
 			expect(text).toMatch(/dtxweb-infrastructure:devicePostureRuleId:/);
 			expect(text).toContain('dtxweb-infrastructure:cloudflareAccountId:');
@@ -27,7 +28,7 @@ describe('committed Pulumi stack settings', () => {
 	);
 });
 
-describe('automatic Cloudflare Access deployment workflow', () => {
+describe('automatic Cloudflare infrastructure deployment workflow', () => {
 	it('keeps the serial deployment and CI contract', () => {
 		const workflowExists = existsSync(workflowPath);
 
@@ -40,13 +41,13 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 		const preProdJob = text.slice(preProdJobStart, productionJobStart);
 		const productionJob = text.slice(productionJobStart);
 
-		expect(text).toContain('name: Deploy Cloudflare Access');
+		expect(text).toContain('name: Deploy Cloudflare Infrastructure');
 		expect(text).toContain('branches: [main]');
 		expect(text).toContain("'packages/infrastructure/**'");
 		expect(text).toContain("'bun.lock'");
 		expect(text).toContain("'package.json'");
 		expect(text).toContain("'tsconfig.base.json'");
-		expect(text).toContain("'.github/workflows/deploy-cloudflare-access.yml'");
+		expect(text).toContain("'.github/workflows/deploy-cloudflare-infrastructure.yml'");
 		expect(text).toContain('workflow_dispatch:');
 		expect(text).not.toContain('pull_request:');
 
@@ -75,7 +76,18 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			expect(countOccurrences(text, command)).toBe(2);
 		}
 
-		for (const job of [preProdJob, productionJob]) {
+		for (const [job, stack, verifier] of [
+			[
+				preProdJob,
+				'cwchanap/dtxweb-infrastructure/pre-prod',
+				'packages/infrastructure/scripts/verify-access.sh pre-prod'
+			],
+			[
+				productionJob,
+				'cwchanap/dtxweb-infrastructure/production',
+				'packages/infrastructure/scripts/verify-access.sh production'
+			]
+		] as const) {
 			expect(countOccurrences(job, checkoutAction)).toBe(1);
 			expect(countOccurrences(job, setupBunAction)).toBe(1);
 			expect(job).not.toContain('uses: actions/checkout@v');
@@ -85,25 +97,36 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			expect(
 				countOccurrences(
 					job,
-					'uses: pulumi/auth-actions@1c89817aab0c66407723cdef72b05266e7376640'
+					'uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2'
 				)
 			).toBe(1);
-			expect(
-				countOccurrences(
-					job,
-					'uses: pulumi/actions@8582a9e8cc630786854029b4e09281acd6794b58'
-				)
-			).toBe(1);
+			expect(countOccurrences(job, pulumiAction)).toBe(2);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
-			expect(countOccurrences(job, 'refresh: true')).toBe(1);
-			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(1);
+			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack ${stack}`;
+			const sourceGate = `run: scripts/preview-gate.sh ${stack}`;
+			const driftCheckIndex = job.indexOf(driftCheck);
+			const sourceGateIndex = job.indexOf(sourceGate);
+			const updateIndex = job.indexOf('command: up');
+			const verifyIndex = job.indexOf(`run: ${verifier}`);
+			expect(countOccurrences(job, driftCheck)).toBe(1);
+			expect(countOccurrences(job, sourceGate)).toBe(1);
+			expect(driftCheckIndex).toBeGreaterThan(-1);
+			expect(sourceGateIndex).toBeGreaterThan(-1);
+			// Drift gate (live vs recorded state) -> source preview gate
+			// (rejects D1/R2 stateful ops from the checked-in program) -> up ->
+			// verify. The source gate is what blocks a source-introduced D1/R2
+			// create that `protect` and the drift refresh cannot stop.
+			expect(driftCheckIndex).toBeLessThan(sourceGateIndex);
+			expect(sourceGateIndex).toBeLessThan(updateIndex);
+			expect(updateIndex).toBeLessThan(verifyIndex);
+			expect(countOccurrences(job, "pulumi-version: '3.258.0'")).toBe(2);
 			expect(countOccurrences(job, 'work-dir: packages/infrastructure')).toBe(1);
 			expect(
 				countOccurrences(
 					job,
-					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_ACCESS_API_TOKEN }}'
+					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}'
 				)
-			).toBe(1);
+			).toBe(3);
 			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');
 			expect(job).toContain(
 				'requested-token-type: urn:pulumi:token-type:access_token:personal'
@@ -124,7 +147,9 @@ describe('automatic Cloudflare Access deployment workflow', () => {
 			'DTX_DEVICE_POSTURE_RULE_ID',
 			'config-map',
 			'reviewers:',
-			'pulumi destroy'
+			'pulumi destroy',
+			'pulumi up --refresh',
+			'refresh: true'
 		]) {
 			expect(text).not.toContain(forbidden);
 		}

@@ -34,6 +34,14 @@ export default [
 	},
 	eslint.configs.recommended,
 	{
+		// eslint 10 core added these to recommended; keep v8 rule parity for this
+		// migration — enable + fix findings in a follow-up
+		rules: {
+			'no-useless-assignment': 'off',
+			'preserve-caught-error': 'off'
+		}
+	},
+	{
 		files: ['**/*.{js,cjs,mjs,ts,svelte}'],
 		languageOptions: {
 			parser: tsParser,

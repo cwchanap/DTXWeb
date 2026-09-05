@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -160,51 +160,13 @@ const cleanupDirectory = async (directory: string): Promise<void> => {
 	}
 };
 
-const createResponseStream = (
-	outputPath: string,
-	temporaryDirectory: string
-): ReadableStream<Uint8Array> => {
-	const reader = Bun.file(outputPath).stream().getReader();
-	let cleanupPromise: Promise<void> | undefined;
-
-	const cleanup = (): Promise<void> => {
-		cleanupPromise ??= cleanupDirectory(temporaryDirectory);
-		return cleanupPromise;
-	};
-
-	return new ReadableStream<Uint8Array>({
-		async pull(controller) {
-			try {
-				const { done, value } = await reader.read();
-				if (done) {
-					controller.close();
-					await cleanup();
-					return;
-				}
-
-				controller.enqueue(value);
-			} catch (error) {
-				controller.error(error);
-				await cleanup();
-			}
-		},
-		async cancel(reason) {
-			try {
-				await reader.cancel(reason);
-			} finally {
-				await cleanup();
-			}
-		}
-	});
-};
-
 const handleTranscode = async (request: Request): Promise<Response> => {
 	if (request.body === null) {
 		return new Response('The request body must contain audio', { status: 422 });
 	}
 
 	let temporaryDirectory: string | undefined;
-	let responseOwnsCleanup = false;
+	let cleanedUp = false;
 
 	try {
 		temporaryDirectory = await mkdtemp(join(tmpdir(), 'bgm-transcoder-'));
@@ -218,17 +180,18 @@ const handleTranscode = async (request: Request): Promise<Response> => {
 
 		await serializeTranscode(() => transcodeAndValidate(inputPath, outputPath));
 
-		const outputStat = await stat(outputPath);
-		const responseBody = createResponseStream(outputPath, temporaryDirectory);
-		const response = new Response(responseBody, {
+		// Respond with the finished file as a buffer: Bun.serve only emits a
+		// real Content-Length for non-stream bodies, and the Worker's R2
+		// publish needs that length to re-frame the body. AAC-LC 192k output is
+		// ponytail: bounded ~1.4 MB/min, so buffering the completed file is
+		// safe; switch back to streaming only with an explicit length channel.
+		const output = await readFile(outputPath);
+		await cleanupDirectory(temporaryDirectory);
+		cleanedUp = true;
+		return new Response(output, {
 			status: 200,
-			headers: {
-				'Content-Length': outputStat.size.toString(),
-				'Content-Type': 'audio/mp4'
-			}
+			headers: { 'Content-Type': 'audio/mp4' }
 		});
-		responseOwnsCleanup = true;
-		return response;
 	} catch (error) {
 		if (error instanceof UnprocessableAudioError) {
 			return new Response('The source does not contain decodable audio', { status: 422 });
@@ -237,7 +200,7 @@ const handleTranscode = async (request: Request): Promise<Response> => {
 		console.error('Audio transcode failed', error);
 		return new Response('Internal transcoder error', { status: 500 });
 	} finally {
-		if (temporaryDirectory !== undefined && !responseOwnsCleanup) {
+		if (temporaryDirectory !== undefined && !cleanedUp) {
 			await cleanupDirectory(temporaryDirectory);
 		}
 	}

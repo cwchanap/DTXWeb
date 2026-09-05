@@ -15,7 +15,13 @@ import {
 
 export class GenerateBgmM4aWorkflow extends WorkflowEntrypoint<Env, GenerateBgmM4aPayload> {
 	async run(event: WorkflowEvent<GenerateBgmM4aPayload>, step: WorkflowStep) {
-		const payload = generateBgmM4aPayloadSchema.parse(event.payload);
+		// The upload service binding delivers a parsed object, but the REST API
+		// (backfill and wrangler trigger) delivers `params` as a JSON-encoded
+		// string. Accept both before validating.
+		const rawPayload = event.payload;
+		const payload = generateBgmM4aPayloadSchema.parse(
+			typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload
+		);
 
 		const inspection = await step.do('inspect BGM source and derivative', async () =>
 			inspectBgmM4aGeneration(this.env, payload)

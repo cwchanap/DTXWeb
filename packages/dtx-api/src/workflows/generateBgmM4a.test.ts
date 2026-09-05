@@ -143,6 +143,16 @@ describe('GenerateBgmM4aWorkflow', () => {
 		expect(transcodeMock).not.toHaveBeenCalled();
 	});
 
+	it('parses a JSON string payload delivered by the REST API trigger', async () => {
+		inspectMock.mockResolvedValue({ status: 'cached' });
+		const env = makeEnv();
+		const { result, calls } = await runWorkflow(JSON.stringify(payload), env);
+
+		await expect(result).resolves.toEqual({ status: 'cached' });
+		expect(inspectMock).toHaveBeenCalledWith(env, payload);
+		expect(calls).toEqual([{ name: inspectStepName, config: undefined }]);
+	});
+
 	it.each(['cached', 'superseded'] as const)(
 		'returns %s from inspect without transcoding',
 		async (status) => {

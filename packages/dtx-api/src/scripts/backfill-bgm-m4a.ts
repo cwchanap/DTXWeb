@@ -302,7 +302,19 @@ const cloudflareHeaders = (apiToken: string): HeadersInit => ({
 	'Content-Type': 'application/json'
 });
 
-const isDuplicateCreate = (httpStatus: number): boolean => httpStatus === 409;
+// Cloudflare signals an existing instance_id as HTTP 400 with error code
+// 10405 (workflows.api.error.instance.already_exists); 409 is accepted for
+// forward compatibility.
+const isDuplicateCreate = (httpStatus: number, body: unknown): boolean => {
+	if (httpStatus === 409) return true;
+	if (httpStatus !== 400 || !isRecord(body) || !Array.isArray(body.errors)) return false;
+	return body.errors.some(
+		(error) =>
+			isRecord(error) &&
+			(error.code === 10405 ||
+				(typeof error.message === 'string' && error.message.includes('already_exists')))
+	);
+};
 
 const createErrorMessage = (body: unknown): string => {
 	if (!isRecord(body) || !Array.isArray(body.errors)) return '';
@@ -333,7 +345,7 @@ const createInstance = async (
 		})
 	});
 	const body = await readJson(response);
-	if (isDuplicateCreate(response.status)) return 'duplicate';
+	if (isDuplicateCreate(response.status, body)) return 'duplicate';
 	if (!response.ok || (isRecord(body) && body.success === false)) {
 		const detail = createErrorMessage(body);
 		throw new Error(

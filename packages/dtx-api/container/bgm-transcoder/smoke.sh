@@ -71,14 +71,13 @@ verify_transcode() {
 	local source_name="$1"
 	local source_path="$2"
 	local output_path="$temporary_directory/${source_name}.m4a"
-	local http_status
-	local codec
-
+	local headers_path="$temporary_directory/${source_name}.headers"
 	http_status="$(
 		curl \
 			--silent \
 			--show-error \
 			--output "$output_path" \
+			--dump-headers "$headers_path" \
 			--write-out '%{http_code}' \
 			--header 'Content-Type: application/octet-stream' \
 			--data-binary "@$source_path" \
@@ -86,6 +85,13 @@ verify_transcode() {
 	)"
 	if [[ "$http_status" != "200" ]]; then
 		echo "$source_name transcode returned HTTP $http_status" >&2
+		return 1
+	fi
+
+	# The Worker's R2 publish needs a real Content-Length to re-frame the
+	# response; Bun.serve only emits one for non-stream bodies.
+	if ! grep -iEq '^content-length: [0-9]+\r?$' "$headers_path"; then
+		echo "$source_name response is missing Content-Length" >&2
 		return 1
 	fi
 

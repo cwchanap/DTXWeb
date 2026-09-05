@@ -52,6 +52,7 @@ type BucketHarness = {
 	head: ReturnType<typeof vi.fn>;
 	get: ReturnType<typeof vi.fn>;
 	put: ReturnType<typeof vi.fn>;
+	putBodies: Uint8Array[];
 	deleteObject: ReturnType<typeof vi.fn>;
 	sourceObject: Omit<ObjectIdentity, 'uploaded'> & {
 		uploaded: Date;
@@ -106,7 +107,15 @@ const makeBucket = ({
 		return null;
 	});
 	const get = vi.fn(async (key: string) => (key === payload.sourceKey ? sourceObject : null));
-	const put = vi.fn(async (key: string) => makeIdentity({ key }));
+	// Mirror real R2.put: consume the stream so a piped FixedLengthStream can
+	// complete, and record the drained bytes for assertions.
+	const putBodies: Uint8Array[] = [];
+	const put = vi.fn(async (key: string, value: unknown) => {
+		if (value instanceof ReadableStream) {
+			putBodies.push(new Uint8Array(await new Response(value).arrayBuffer()));
+		}
+		return makeIdentity({ key });
+	});
 	const deleteObject = vi.fn(async () => undefined);
 
 	return {
@@ -122,6 +131,7 @@ const makeBucket = ({
 		get,
 		put,
 		deleteObject,
+		putBodies,
 		sourceObject
 	};
 };
@@ -134,13 +144,23 @@ const makeEnv = (bucket: R2Bucket, overrides: Partial<Env> = {}): Env =>
 		...overrides
 	}) as Env;
 
-const makeContainerResponse = (status = 200) => {
+const makeContainerResponse = (
+	status = 200,
+	headers: Record<string, string> = { 'content-length': '4' }
+) => {
 	const cancel = vi.fn();
-	const body = new ReadableStream<Uint8Array>({ cancel });
+	const body = new ReadableStream<Uint8Array>({
+		start(controller) {
+			controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+			controller.close();
+		},
+		cancel
+	});
 	return {
 		response: {
 			ok: status >= 200 && status < 300,
 			status,
+			headers: new Headers(headers),
 			body,
 			arrayBuffer: vi.fn(),
 			bytes: vi.fn(),
@@ -157,6 +177,16 @@ beforeEach(() => {
 	vi.mocked(logger.warn).mockReset();
 	vi.mocked(logger.error).mockReset();
 	vi.mocked(logger.debug).mockReset();
+	// Node has no workerd FixedLengthStream global; TransformStream is a
+	// faithful stand-in (exact-length enforcement is workerd-only).
+	vi.stubGlobal(
+		'FixedLengthStream',
+		class FixedLengthStream<T = unknown> extends TransformStream<T, T> {
+			constructor(_length?: number) {
+				super();
+			}
+		}
+	);
 });
 
 afterEach(() => {
@@ -439,7 +469,16 @@ describe('transcodeAndPublishBgmM4a', () => {
 		expect(output.response.arrayBuffer).not.toHaveBeenCalled();
 		expect(output.response.bytes).not.toHaveBeenCalled();
 		expect(output.response.text).not.toHaveBeenCalled();
-		expect(harness.put).toHaveBeenCalledWith('42/bgm.m4a', output.body, {
+		expect(harness.put).toHaveBeenCalledTimes(1);
+		const [putKey, putBody, putOptions] = harness.put.mock.calls[0] as unknown as [
+			string,
+			ReadableStream<Uint8Array>,
+			Record<string, unknown>
+		];
+		expect(putKey).toBe('42/bgm.m4a');
+		expect(putBody).toBeInstanceOf(ReadableStream);
+		expect(harness.putBodies[0]).toEqual(new Uint8Array([1, 2, 3, 4]));
+		expect(putOptions).toEqual({
 			httpMetadata: {
 				contentType: 'audio/mp4',
 				cacheControl: 'public, max-age=300, must-revalidate'
@@ -452,6 +491,34 @@ describe('transcodeAndPublishBgmM4a', () => {
 				'transcode-profile': BGM_TRANSCODE_PROFILE
 			}
 		});
+	});
+
+	it('fails loudly and cancels when the Container response has no Content-Length', async () => {
+		const harness = makeBucket();
+		const output = makeContainerResponse(200, {});
+		getContainerMock.mockReturnValue({
+			fetch: vi.fn().mockResolvedValue(output.response)
+		});
+
+		await expect(
+			transcodeAndPublishBgmM4a(makeEnv(harness.bucket), payload, capturedSource, logger)
+		).rejects.toThrow('Content-Length');
+		expect(output.cancel).toHaveBeenCalledOnce();
+		expect(harness.put).not.toHaveBeenCalled();
+	});
+
+	it('fails loudly and cancels when the Container Content-Length is not a number', async () => {
+		const harness = makeBucket();
+		const output = makeContainerResponse(200, { 'content-length': 'not-a-number' });
+		getContainerMock.mockReturnValue({
+			fetch: vi.fn().mockResolvedValue(output.response)
+		});
+
+		await expect(
+			transcodeAndPublishBgmM4a(makeEnv(harness.bucket), payload, capturedSource, logger)
+		).rejects.toThrow('Content-Length');
+		expect(output.cancel).toHaveBeenCalledOnce();
+		expect(harness.put).not.toHaveBeenCalled();
 	});
 
 	it('keeps a successful publish ready when cache purge fails', async () => {

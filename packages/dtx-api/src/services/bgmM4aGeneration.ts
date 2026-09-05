@@ -143,6 +143,12 @@ export const transcodeAndPublishBgmM4a = async (
 	if (!response.body) {
 		throw new Error('BGM transcoder returned an empty response body');
 	}
+	const contentLengthHeader = response.headers.get('content-length');
+	const contentLength = contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
+	if (!Number.isInteger(contentLength) || contentLength < 0) {
+		await cancelResponseBody(response, logger);
+		throw new Error('BGM transcoder response is missing a valid Content-Length');
+	}
 
 	const selected = await resolveSelectedAuthoredSource(bucket, payload.simfileId);
 	if (selected?.key !== payload.sourceKey) {
@@ -157,20 +163,30 @@ export const transcodeAndPublishBgmM4a = async (
 	}
 
 	const outputKey = bgmDerivativeKey(payload.simfileId);
-	const outputBody = response.body as unknown as Parameters<typeof bucket.put>[1];
-	await bucket.put(outputKey, outputBody, {
-		httpMetadata: {
-			contentType: 'audio/mp4',
-			cacheControl: 'public, max-age=300, must-revalidate'
-		},
-		customMetadata: {
-			'source-key': payload.sourceKey,
-			'source-etag': sourceIdentity.etag,
-			'source-version': sourceIdentity.version,
-			'source-uploaded': sourceIdentity.uploaded,
-			'transcode-profile': BGM_TRANSCODE_PROFILE
-		}
-	});
+	// The Container (Durable Object) fetch boundary does not preserve the
+	// known-length stream R2.put requires, so re-frame the body through a
+	// FixedLengthStream sized by the Container's Content-Length.
+	const derivativeStream = new FixedLengthStream(contentLength);
+	await Promise.all([
+		response.body.pipeTo(derivativeStream.writable),
+		bucket.put(
+			outputKey,
+			derivativeStream.readable as unknown as Parameters<typeof bucket.put>[1],
+			{
+				httpMetadata: {
+					contentType: 'audio/mp4',
+					cacheControl: 'public, max-age=300, must-revalidate'
+				},
+				customMetadata: {
+					'source-key': payload.sourceKey,
+					'source-etag': sourceIdentity.etag,
+					'source-version': sourceIdentity.version,
+					'source-uploaded': sourceIdentity.uploaded,
+					'transcode-profile': BGM_TRANSCODE_PROFILE
+				}
+			}
+		)
+	]);
 	await purgeCacheForFile(env, derivativeUrl(env, outputKey), logger);
 
 	return { status: 'ready' };

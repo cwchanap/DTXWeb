@@ -425,6 +425,44 @@ describe('execute REST lifecycle', () => {
 		}
 	);
 
+	it('treats an already-exists 400 (code 10405) create response as a duplicate', async () => {
+		const rows = sourceRow([
+			{ key: '42/song.flac', uploaded: SOURCE_UPLOADED },
+			{ key: '42/bgm.m4a', uploaded: '2026-08-27T06:00:00.000Z' }
+		]);
+		const id = expectedId();
+		const methods: string[] = [];
+
+		const result = await runBackfill(
+			executeConfig(
+				combineFetch(rows, ({ method, url }) => {
+					methods.push(method);
+					if (method === 'POST')
+						return jsonResponse(
+							{
+								success: false,
+								errors: [
+									{
+										code: 10405,
+										message: 'workflows.api.error.instance.already_exists'
+									}
+								],
+								messages: [],
+								result: null
+							},
+							400
+						);
+					if (method === 'GET')
+						return cfOk({ status: 'complete', output: { status: 'cached' } });
+					throw new Error(`${method} ${url}`);
+				})
+			)
+		);
+
+		expect(result.exitCode).toBe(0);
+		expect(methods).toEqual(['POST', 'GET']);
+	});
+
 	it.each(['errored', 'terminated'])(
 		'restarts a retained %s instance then polls the same ID',
 		async (status) => {

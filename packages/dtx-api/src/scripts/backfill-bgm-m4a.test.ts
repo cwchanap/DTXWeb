@@ -904,7 +904,10 @@ describe('execute REST lifecycle', () => {
 
 describe('withFetchTimeout', () => {
 	it('aborts a stalled request instead of wedging the run', async () => {
-		const hungFetch: FetchLike = () => new Promise(() => {});
+		const hungFetch: FetchLike = (_input, init) =>
+			new Promise((_resolve, reject) => {
+				init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+			});
 
 		await expect(withFetchTimeout(hungFetch, 10)('https://example.test')).rejects.toThrow();
 	});

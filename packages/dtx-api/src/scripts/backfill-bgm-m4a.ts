@@ -46,6 +46,7 @@ export type BackfillConfig = {
 	pollDelayMs: number;
 	maxPollAttempts: number;
 	graphqlPageSize: number;
+	log?: (message: string) => void;
 };
 
 export type BackfillResult = {
@@ -305,6 +306,12 @@ const cloudflareHeaders = (apiToken: string): HeadersInit => ({
 // Cloudflare signals an existing instance_id as HTTP 400 with error code
 // 10405 (workflows.api.error.instance.already_exists); 409 is accepted for
 // forward compatibility.
+// A stalled socket must never wedge the whole sequential run.
+export const withFetchTimeout =
+	(fetchLike: FetchLike, timeoutMs: number): FetchLike =>
+	async (input, init) =>
+		fetchLike(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+
 const isDuplicateCreate = (httpStatus: number, body: unknown): boolean => {
 	if (httpStatus === 409) return true;
 	if (httpStatus !== 400 || !isRecord(body) || !Array.isArray(body.errors)) return false;
@@ -520,11 +527,18 @@ export const runBackfill = async (config: BackfillConfig): Promise<BackfillResul
 		}
 
 		const errors: string[] = [];
+		const log = config.log ?? (() => {});
+		let index = 0;
 		for (const selected of audit.selected) {
+			index += 1;
+			log(`simfile ${selected.simfileId} (${index}/${audit.selected.length}): reconciling`);
 			try {
 				await reconcileSelected(config, selected);
+				log(`simfile ${selected.simfileId}: ok`);
 			} catch (error) {
-				errors.push(errorMessage(error));
+				const message = errorMessage(error);
+				log(`simfile ${selected.simfileId}: FAILED ${message}`);
+				errors.push(message);
 			}
 		}
 		return {
@@ -554,11 +568,12 @@ export const runCli = async (
 			cloudflareAccountId: env.CLOUDFLARE_ACCOUNT_ID,
 			cloudflareApiToken: env.CLOUDFLARE_API_TOKEN,
 			workflowName: env.BGM_WORKFLOW_NAME || DEFAULT_WORKFLOW_NAME,
-			fetch: io.fetch ?? fetch,
+			fetch: withFetchTimeout(io.fetch ?? fetch, 30_000),
 			sleep: io.sleep ?? defaultSleep,
 			pollDelayMs: io.pollDelayMs ?? DEFAULT_POLL_DELAY_MS,
 			maxPollAttempts: io.maxPollAttempts ?? DEFAULT_MAX_POLL_ATTEMPTS,
-			graphqlPageSize: io.graphqlPageSize ?? DEFAULT_GRAPHQL_PAGE_SIZE
+			graphqlPageSize: io.graphqlPageSize ?? DEFAULT_GRAPHQL_PAGE_SIZE,
+			log: (message) => console.error(message)
 		});
 	} catch (error) {
 		return { exitCode: 1, stdout: '', stderr: errorMessage(error) };

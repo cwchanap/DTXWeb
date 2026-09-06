@@ -12,6 +12,7 @@ import {
 	parseWorkflowRunOutput,
 	runBackfill,
 	runCli,
+	withFetchTimeout,
 	type CatalogSimfile,
 	type FetchLike
 } from './backfill-bgm-m4a';
@@ -898,6 +899,14 @@ describe('execute REST lifecycle', () => {
 		expect(result.exitCode).toBe(0);
 		expect(rest).not.toHaveBeenCalled();
 		expect(result.stdout).toContain('selected authored sources: 0');
+	});
+});
+
+describe('withFetchTimeout', () => {
+	it('aborts a stalled request instead of wedging the run', async () => {
+		const hungFetch: FetchLike = () => new Promise(() => {});
+
+		await expect(withFetchTimeout(hungFetch, 10)('https://example.test')).rejects.toThrow();
 	});
 });
 

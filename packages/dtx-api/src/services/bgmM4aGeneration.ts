@@ -165,28 +165,22 @@ export const transcodeAndPublishBgmM4a = async (
 	const outputKey = bgmDerivativeKey(payload.simfileId);
 	// The Container (Durable Object) fetch boundary does not preserve the
 	// known-length stream R2.put requires, so re-frame the body through a
-	// FixedLengthStream sized by the Container's Content-Length.
-	const derivativeStream = new FixedLengthStream(contentLength);
-	await Promise.all([
-		response.body.pipeTo(derivativeStream.writable),
-		bucket.put(
-			outputKey,
-			derivativeStream.readable as unknown as Parameters<typeof bucket.put>[1],
-			{
-				httpMetadata: {
-					contentType: 'audio/mp4',
-					cacheControl: 'public, max-age=300, must-revalidate'
-				},
-				customMetadata: {
-					'source-key': payload.sourceKey,
-					'source-etag': sourceIdentity.etag,
-					'source-version': sourceIdentity.version,
-					'source-uploaded': sourceIdentity.uploaded,
-					'transcode-profile': BGM_TRANSCODE_PROFILE
-				}
-			}
-		)
-	]);
+	// FixedLengthStream sized by the Container's Content-Length. pipeThrough
+	// propagates backpressure and cancellation to the upstream response body.
+	const outputBody = response.body.pipeThrough(new FixedLengthStream(contentLength));
+	await bucket.put(outputKey, outputBody as unknown as Parameters<typeof bucket.put>[1], {
+		httpMetadata: {
+			contentType: 'audio/mp4',
+			cacheControl: 'public, max-age=300, must-revalidate'
+		},
+		customMetadata: {
+			'source-key': payload.sourceKey,
+			'source-etag': sourceIdentity.etag,
+			'source-version': sourceIdentity.version,
+			'source-uploaded': sourceIdentity.uploaded,
+			'transcode-profile': BGM_TRANSCODE_PROFILE
+		}
+	});
 	await purgeCacheForFile(env, derivativeUrl(env, outputKey), logger);
 
 	return { status: 'ready' };

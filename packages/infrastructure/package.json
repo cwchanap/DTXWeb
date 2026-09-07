@@ -12,7 +12,7 @@
 	},
 	"dependencies": {
 		"@pulumi/cloudflare": "^6.20.0",
-		"@pulumi/pulumi": "^3.260.0"
+		"@pulumi/pulumi": "^3.261.0"
 	},
 	"devDependencies": {
 		"@types/node": "^20.11.25",

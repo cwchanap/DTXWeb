@@ -72,6 +72,7 @@ verify_transcode() {
 	local source_path="$2"
 	local output_path="$temporary_directory/${source_name}.m4a"
 	local headers_path="$temporary_directory/${source_name}.headers"
+	local http_status codec
 	http_status="$(
 		curl \
 			--silent \

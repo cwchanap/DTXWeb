@@ -21,7 +21,7 @@ describe('committed Pulumi stack settings', () => {
 
 			expect(text).not.toContain('secretsprovider:');
 			expect(text).toMatch(/dtxweb-infrastructure:accessEmail:\s*\n\s+secure:/);
-			expect(text).toMatch(/dtxweb-infrastructure:devicePostureRuleId:/);
+			expect(text).not.toContain('dtxweb-infrastructure:devicePostureRuleId:');
 			expect(text).toContain('dtxweb-infrastructure:cloudflareAccountId:');
 			expect(text).not.toContain('encryptionsalt:');
 		}

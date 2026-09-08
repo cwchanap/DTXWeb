@@ -1,17 +1,22 @@
 # @dtx/infrastructure
 
-This Pulumi workspace manages DTXWeb's Cloudflare Access applications, permanent D1 databases,
-R2 buckets, active rate-limit KV namespaces, and Worker custom domains. Wrangler continues to own
-Worker release/configuration, D1 schema migrations, and Workflow, Container, and Durable Object
-runtime definitions.
+This Pulumi workspace manages DTXWeb's Cloudflare Access applications, DTXWeb-owned Gateway posture
+checks, permanent D1 databases, R2 buckets, active rate-limit KV namespaces, and Worker custom
+domains. Wrangler continues to own Worker release/configuration, D1 schema migrations, and
+Workflow, Container, and Durable Object runtime definitions.
 
 ## Ownership boundary
 
-Pulumi owns the identity and lifecycle of the Access, D1, R2, KV, and Worker custom-domain
-resources in the two stacks below. D1 and R2 are protected and retained; any preview that creates,
-replaces, or deletes one of those resources is a hard stop. Wrangler keeps the checked-in binding
-IDs and owns Worker code/assets, runtime configuration, secrets, observability, migrations,
-Workflows, Containers, and Durable Object migrations.
+Pulumi owns the identity and lifecycle of the Access, Gateway posture, D1, R2, KV, and Worker
+custom-domain resources in the two stacks below. D1 and R2 are protected and retained; any preview
+that creates, replaces, or deletes one of those resources is a hard stop. Wrangler keeps the
+checked-in binding IDs and owns Worker code/assets, runtime configuration, secrets, observability,
+migrations, Workflows, Containers, and Durable Object migrations.
+
+DTXWeb does not reuse another application's trusted-device list or posture rule. Each DTXWeb stack
+creates its own `gateway` posture check and requires that check from its Access policy. The check
+admits a device only when Cloudflare One Client traffic is going through this Zero Trust account's
+Gateway; there is no DTXWeb serial-number allowlist.
 
 ## Pulumi Cloud ownership
 
@@ -27,11 +32,12 @@ The two stack settings files are committed and are the configuration source for 
 - `Pulumi.pre-prod.yaml`
 - `Pulumi.production.yaml`
 
-Both use Pulumi Cloud's `default` secrets provider. `accessEmail` is encrypted; the
-`devicePostureRuleId` and `cloudflareAccountId` entries are non-secret stack configuration. Never
-print or copy their values, ciphertext, or Pulumi stack state. Local passphrase state is retired;
-CI does not use `PULUMI_CONFIG_PASSPHRASE`, and these stacks must not be replaced with local
-stacks.
+Both use Pulumi Cloud's `default` secrets provider. `accessEmail` is encrypted;
+`cloudflareAccountId` and `cloudflareZoneId` are non-secret stack configuration. The Gateway
+posture checks are code-owned resources and require no posture-rule ID in stack config. Never print
+or copy configuration values, ciphertext, or Pulumi stack state. Local passphrase state is
+retired; CI does not use `PULUMI_CONFIG_PASSPHRASE`, and these stacks must not be replaced with
+local stacks.
 
 ## OIDC and Cloudflare credentials
 
@@ -65,19 +71,21 @@ restriction is what prevents a modified workflow on another branch from minting 
 environment subject.
 
 During the Pulumi refresh-gate and update steps, `CLOUDFLARE_INFRA_API_TOKEN` is exposed only as
-`CLOUDFLARE_API_TOKEN`. It must be dashboard-minted with the minimum account-level permissions
-for Access Apps/Policies, D1, R2 bucket identity, Workers KV namespaces, and Workers custom
-domains. Do not grant token-management or Global API Key privileges. Do not record or print the
-token, operator email, posture-rule ID, account ID, application ID, or ciphertext.
+`CLOUDFLARE_API_TOKEN`. It must be dashboard-minted with the minimum account-level permissions for
+Access Apps/Policies, Zero Trust Write (required to create/update device-posture checks), D1, R2
+bucket identity, Workers KV namespaces, and Workers custom domains. Do not grant token-management
+or Global API Key privileges. Do not record or print the token, operator email, account ID,
+application ID, posture-rule ID, or ciphertext.
 
 ## Automatic deployment
 
 The `Deploy Cloudflare Infrastructure` workflow in `.github/workflows/deploy-cloudflare-infrastructure.yml`
 has two normal entry points:
 
-Pre-merge checklist: add `CLOUDFLARE_INFRA_API_TOKEN` to `dtx-access-pre-prod` and `dtx-access-production` with
-the minimum Access Apps/Policies, D1, R2 bucket identity, Workers KV namespace, and Workers custom domain
-permissions; keep `CLOUDFLARE_ACCESS_API_TOKEN` until the renamed workflow runs successfully. Provisioning remains
+Pre-merge checklist: ensure `CLOUDFLARE_INFRA_API_TOKEN` exists in `dtx-access-pre-prod` and
+`dtx-access-production` with the minimum Access Apps/Policies, Zero Trust Write, D1, R2 bucket
+identity, Workers KV namespace, and Workers custom domain permissions; keep
+`CLOUDFLARE_ACCESS_API_TOKEN` until the renamed workflow runs successfully. Provisioning remains
 pending operator action; the full procedure is in the current infrastructure runbook.
 
 1. A relevant change pushed to `main` (`packages/infrastructure/**`, the lockfile, root package
@@ -105,10 +113,14 @@ for an active deployment instead of interrupting it.
 
 ## Resource protection
 
-Both Access resources are declared with `protect: true`, and the protection bit is persisted in
+Both Access applications are declared with `protect: true`, and the protection bit is persisted in
 their Pulumi Cloud state. Normal updates remain possible, but Pulumi refuses deletion or
 replacement. An intentional replacement or deletion requires a separately reviewed unprotect
 operation; the automatic workflow never performs that exception.
+
+The Gateway posture checks are small DTXWeb-owned reusable components. The Access application has
+an explicit Pulumi dependency on its stack's posture check so the policy cannot be created before
+the check exists.
 
 ## Verification and human admission
 
@@ -124,7 +136,9 @@ redirect or the required `403` Access-header contract. It never prints Access he
 cookies. The verifier proves edge interception only; it does not prove identity, posture, browser
 login, desktop authorization, or session expiry.
 
-After any change to the configured identity, posture rule, Access policy, or relevant Cloudflare
-tenant settings, a human must enter the protected application on a trusted device and confirm it
-works, then use a device that fails the posture rule to confirm Access denies the request before
-DTXWeb loads. The runbook contains the full current and future acceptance procedure.
+After any change to the configured identity, DTXWeb Gateway posture check, Access policy, or
+relevant Cloudflare tenant settings, a human must enter the protected application using the
+configured identity on a device whose Cloudflare One Client reports Gateway connected. Confirm the
+protected app works, then disconnect Gateway or use a device not enrolled in this Zero Trust
+organization and confirm Access denies the same protected surface before DTXWeb loads. The runbook
+contains the full current and future acceptance procedure.

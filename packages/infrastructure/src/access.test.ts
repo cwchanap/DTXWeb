@@ -118,7 +118,7 @@ describe('buildAccessApplicationArgs', () => {
 			accountId: 'account-id',
 			stackDefinition: getInfrastructureStackDefinition('pre-prod'),
 			accessEmail: 'operator@example.com',
-			devicePostureRuleId: 'posture-rule-id'
+			gatewayPostureRuleId: 'posture-rule-id'
 		});
 
 		expect(args).toMatchObject({
@@ -142,7 +142,7 @@ describe('buildAccessApplicationArgs', () => {
 });
 
 describe('buildAccessPolicy', () => {
-	it('uses an email Include and the supplied posture-rule Require', async () => {
+	it('uses an email Include and the supplied Gateway posture Require', async () => {
 		const policy = buildAccessPolicy('operator@example.com', 'posture-rule-id');
 		const includedEmail = policy.includes?.[0]?.email?.email as pulumi.Output<string>;
 

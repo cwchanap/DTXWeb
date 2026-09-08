@@ -29,8 +29,7 @@ describe('stack registration', () => {
 			{
 				'dtxweb-infrastructure:cloudflareAccountId': 'account-id',
 				'dtxweb-infrastructure:cloudflareZoneId': 'zone-id',
-				'dtxweb-infrastructure:accessEmail': 'operator@example.com',
-				'dtxweb-infrastructure:devicePostureRuleId': 'posture-rule-id'
+				'dtxweb-infrastructure:accessEmail': 'operator@example.com'
 			},
 			['dtxweb-infrastructure:accessEmail']
 		);
@@ -53,7 +52,7 @@ describe('stack registration', () => {
 		);
 		expect(postureRules).toHaveLength(1);
 		expect(postureRules[0]?.inputs).toMatchObject({
-			name: 'DTXWeb Gateway Check',
+			name: 'DTXWeb Production App Gateway Check',
 			type: 'gateway'
 		});
 		expect(typeOf('cloudflare:index/d1Database:D1Database')).toHaveLength(1);

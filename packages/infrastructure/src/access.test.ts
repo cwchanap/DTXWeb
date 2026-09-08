@@ -168,20 +168,20 @@ describe('buildAccessPolicy', () => {
 });
 
 describe('createAccessApplication', () => {
-	it.each([
+	const cases = [
 		['pre-prod', 'dtxweb-pre-prod-access', 'DTXWeb Pre-prod Gateway Check'],
 		['production', 'dtxweb-production-access', 'DTXWeb Production App Gateway Check']
-	] as const)(
-		'creates a DTXWeb-owned Gateway posture rule for %s',
-		(stack, applicationLogicalName, postureName) => {
+	] as const;
+
+	for (const [stack, applicationLogicalName, postureName] of cases) {
+		it(`creates its own Gateway posture rule for ${stack}`, () => {
 			const stackDefinition = getInfrastructureStackDefinition(stack);
-			const args = {
+
+			createAccessApplication({
 				accountId: 'account-id',
 				stackDefinition,
 				accessEmail: 'operator@example.com'
-			} as Parameters<typeof createAccessApplication>[0];
-
-			createAccessApplication(args);
+			});
 
 			expect(zeroTrustDevicePostureRuleMock).toHaveBeenLastCalledWith(
 				`dtxweb-${stack}-gateway-posture`,
@@ -206,6 +206,6 @@ describe('createAccessApplication', () => {
 				}),
 				{ protect: true, dependsOn: expect.anything() }
 			);
-		}
-	);
+		});
+	}
 });

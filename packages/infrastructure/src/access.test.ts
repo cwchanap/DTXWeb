@@ -168,44 +168,38 @@ describe('buildAccessPolicy', () => {
 });
 
 describe('createAccessApplication', () => {
-	const cases = [
-		['pre-prod', 'dtxweb-pre-prod-access', 'DTXWeb Pre-prod Gateway Check'],
-		['production', 'dtxweb-production-access', 'DTXWeb Production App Gateway Check']
-	] as const;
+	it.each([
+		['pre-prod', 'dtxweb-pre-prod-access'],
+		['production', 'dtxweb-production-access']
+	] as const)('creates Gateway posture for %s', (stack, logicalName) => {
+		const stackDefinition = getInfrastructureStackDefinition(stack);
 
-	for (const [stack, applicationLogicalName, postureName] of cases) {
-		it(`creates its own Gateway posture rule for ${stack}`, () => {
-			const stackDefinition = getInfrastructureStackDefinition(stack);
-
-			createAccessApplication({
-				accountId: 'account-id',
-				stackDefinition,
-				accessEmail: 'operator@example.com'
-			});
-
-			expect(zeroTrustDevicePostureRuleMock).toHaveBeenLastCalledWith(
-				`dtxweb-${stack}-gateway-posture`,
-				{
-					accountId: 'account-id',
-					name: postureName,
-					type: 'gateway',
-					description: 'Requires Cloudflare One Client connected to this Zero Trust account'
-				}
-			);
-			expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
-				applicationLogicalName,
-				expect.objectContaining({
-					name: stackDefinition.applicationName,
-					policies: [
-						expect.objectContaining({
-							requires: [
-								{ devicePosture: { integrationUid: 'gateway-posture-rule-id' } }
-							]
-						})
-					]
-				}),
-				{ protect: true, dependsOn: expect.anything() }
-			);
+		createAccessApplication({
+			accountId: 'account-id',
+			stackDefinition,
+			accessEmail: 'operator@example.com'
 		});
-	}
+
+		expect(zeroTrustDevicePostureRuleMock).toHaveBeenLastCalledWith(
+			`dtxweb-${stack}-gateway-posture`,
+			{
+				accountId: 'account-id',
+				name: `${stackDefinition.applicationName} Gateway Check`,
+				type: 'gateway',
+				description: 'Requires Cloudflare One Client connected to this Zero Trust account'
+			}
+		);
+		expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
+			logicalName,
+			expect.objectContaining({
+				name: stackDefinition.applicationName,
+				policies: [
+					expect.objectContaining({
+						requires: [{ devicePosture: { integrationUid: 'gateway-posture-rule-id' } }]
+					})
+				]
+			}),
+			{ protect: true, dependsOn: expect.anything() }
+		);
+	});
 });

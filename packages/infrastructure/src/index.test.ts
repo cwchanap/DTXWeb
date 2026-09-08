@@ -44,10 +44,18 @@ describe('stack registration', () => {
 		const typeOf = (typeName: string) =>
 			cloudflareResources.filter((resource) => resource.type === typeName);
 
-		expect(cloudflareResources).toHaveLength(6);
+		expect(cloudflareResources).toHaveLength(7);
 		expect(
 			typeOf('cloudflare:index/zeroTrustAccessApplication:ZeroTrustAccessApplication')
 		).toHaveLength(1);
+		const postureRules = typeOf(
+			'cloudflare:index/zeroTrustDevicePostureRule:ZeroTrustDevicePostureRule'
+		);
+		expect(postureRules).toHaveLength(1);
+		expect(postureRules[0]?.inputs).toMatchObject({
+			name: 'DTXWeb Gateway Check',
+			type: 'gateway'
+		});
 		expect(typeOf('cloudflare:index/d1Database:D1Database')).toHaveLength(1);
 		expect(typeOf('cloudflare:index/r2Bucket:R2Bucket')).toHaveLength(1);
 		expect(typeOf('cloudflare:index/workersKvNamespace:WorkersKvNamespace')).toHaveLength(1);

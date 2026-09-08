@@ -91,7 +91,7 @@ type AccessApplicationArgs = cloudflare.ZeroTrustAccessApplicationArgs;
 
 export function buildAccessPolicy(
 	accessEmail: pulumi.Input<string>,
-	devicePostureRuleId: pulumi.Input<string>
+	gatewayPostureRuleId: pulumi.Input<string>
 ): AccessPolicy {
 	const normalizedAccessEmail = pulumi.output(accessEmail).apply(normalizeAccessEmail);
 
@@ -100,7 +100,7 @@ export function buildAccessPolicy(
 		decision: 'allow',
 		precedence: 1,
 		includes: [{ email: { email: normalizedAccessEmail } }],
-		requires: [{ devicePosture: { integrationUid: devicePostureRuleId } }]
+		requires: [{ devicePosture: { integrationUid: gatewayPostureRuleId } }]
 	};
 }
 
@@ -108,7 +108,7 @@ export interface BuildAccessApplicationArgs {
 	accountId: pulumi.Input<string>;
 	stackDefinition: InfrastructureStackDefinition;
 	accessEmail: pulumi.Input<string>;
-	devicePostureRuleId: pulumi.Input<string>;
+	gatewayPostureRuleId: pulumi.Input<string>;
 	sessionDuration?: pulumi.Input<string>;
 }
 
@@ -130,7 +130,7 @@ export function buildAccessApplicationArgs(
 		destinations: args.stackDefinition.accessDestinations,
 		sessionDuration: args.sessionDuration ?? DEFAULT_ACCESS_SESSION_DURATION,
 		...ACCESS_APPLICATION_FLAGS,
-		policies: [buildAccessPolicy(args.accessEmail, args.devicePostureRuleId)]
+		policies: [buildAccessPolicy(args.accessEmail, args.gatewayPostureRuleId)]
 	};
 }
 
@@ -151,7 +151,7 @@ export function createAccessApplication(
 		`dtxweb-${args.stackDefinition.stackName}-access`,
 		buildAccessApplicationArgs({
 			...args,
-			devicePostureRuleId: gatewayPostureRule.id
+			gatewayPostureRuleId: gatewayPostureRule.id
 		}),
 		{ protect: true, dependsOn: [gatewayPostureRule] }
 	);

@@ -9,18 +9,22 @@ import {
 } from './access.js';
 
 const zeroTrustAccessApplicationMock = vi.hoisted(() => vi.fn());
+const zeroTrustDevicePostureRuleMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@pulumi/cloudflare', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('@pulumi/cloudflare')>();
 
 	return {
 		...actual,
-		ZeroTrustAccessApplication: zeroTrustAccessApplicationMock
+		ZeroTrustAccessApplication: zeroTrustAccessApplicationMock,
+		ZeroTrustDevicePostureRule: zeroTrustDevicePostureRuleMock
 	};
 });
 
 beforeEach(() => {
 	zeroTrustAccessApplicationMock.mockClear();
+	zeroTrustDevicePostureRuleMock.mockReset();
+	zeroTrustDevicePostureRuleMock.mockReturnValue({ id: 'gateway-posture-rule-id' });
 });
 
 const resolveOutput = <T>(output: pulumi.Output<T>): Promise<T> =>
@@ -167,20 +171,37 @@ describe('createAccessApplication', () => {
 	it.each([
 		['pre-prod', 'dtxweb-pre-prod-access'],
 		['production', 'dtxweb-production-access']
-	] as const)('protects the %s application resource identity', (stack, logicalName) => {
-		createAccessApplication({
+	] as const)('creates a DTXWeb-owned Gateway posture rule for %s', (stack, logicalName) => {
+		const args = {
 			accountId: 'account-id',
 			stackDefinition: getInfrastructureStackDefinition(stack),
-			accessEmail: 'operator@example.com',
-			devicePostureRuleId: 'posture-rule-id'
-		});
+			accessEmail: 'operator@example.com'
+		} as Parameters<typeof createAccessApplication>[0];
 
+		createAccessApplication(args);
+
+		expect(zeroTrustDevicePostureRuleMock).toHaveBeenLastCalledWith(
+			'dtxweb-gateway-posture',
+			{
+				accountId: 'account-id',
+				name: 'DTXWeb Gateway Check',
+				type: 'gateway',
+				description: 'Requires Cloudflare One Client connected to this Zero Trust account'
+			}
+		);
 		expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
 			logicalName,
 			expect.objectContaining({
-				name: getInfrastructureStackDefinition(stack).applicationName
+				name: getInfrastructureStackDefinition(stack).applicationName,
+				policies: [
+					expect.objectContaining({
+						requires: [
+							{ devicePosture: { integrationUid: 'gateway-posture-rule-id' } }
+						]
+					})
+				]
 			}),
-			{ protect: true }
+			{ protect: true, dependsOn: expect.anything() }
 		);
 	});
 });

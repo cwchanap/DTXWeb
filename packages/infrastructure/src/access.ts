@@ -112,6 +112,13 @@ export interface BuildAccessApplicationArgs {
 	sessionDuration?: pulumi.Input<string>;
 }
 
+export interface CreateAccessApplicationArgs {
+	accountId: pulumi.Input<string>;
+	stackDefinition: InfrastructureStackDefinition;
+	accessEmail: pulumi.Input<string>;
+	sessionDuration?: pulumi.Input<string>;
+}
+
 export function buildAccessApplicationArgs(
 	args: BuildAccessApplicationArgs
 ): AccessApplicationArgs {
@@ -128,11 +135,24 @@ export function buildAccessApplicationArgs(
 }
 
 export function createAccessApplication(
-	args: BuildAccessApplicationArgs
+	args: CreateAccessApplicationArgs
 ): cloudflare.ZeroTrustAccessApplication {
+	const gatewayPostureRule = new cloudflare.ZeroTrustDevicePostureRule(
+		`dtxweb-${args.stackDefinition.stackName}-gateway-posture`,
+		{
+			accountId: args.accountId,
+			name: `${args.stackDefinition.applicationName} Gateway Check`,
+			type: 'gateway',
+			description: 'Requires Cloudflare One Client connected to this Zero Trust account'
+		}
+	);
+
 	return new cloudflare.ZeroTrustAccessApplication(
 		`dtxweb-${args.stackDefinition.stackName}-access`,
-		buildAccessApplicationArgs(args),
-		{ protect: true }
+		buildAccessApplicationArgs({
+			...args,
+			devicePostureRuleId: gatewayPostureRule.id
+		}),
+		{ protect: true, dependsOn: [gatewayPostureRule] }
 	);
 }

@@ -71,9 +71,8 @@ Then perform the negative check by disconnecting Gateway or using a device not e
 Zero Trust organization. Request the same protected surface and confirm Cloudflare Access denies it
 before DTXWeb loads.
 
-For the reported Windows device, `WARP: on` and `Gateway: on` should satisfy the new device-posture
-portion after the infrastructure deployment; the configured Access identity remains separately
-required.
+A client reporting `Gateway: on` is the expected positive device signal after the infrastructure
+change is deployed; the configured Access identity remains separately required.
 
 ## Rollback
 

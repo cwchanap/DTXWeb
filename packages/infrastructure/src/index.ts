@@ -11,7 +11,6 @@ const accessApplication = createAccessApplication({
 	accountId,
 	stackDefinition,
 	accessEmail: config.requireSecret('accessEmail'),
-	devicePostureRuleId: config.require('devicePostureRuleId'),
 	sessionDuration: config.get('accessSessionDuration')
 });
 

@@ -74,8 +74,32 @@ before DTXWeb loads.
 A client reporting `Gateway: on` is the expected positive device signal after the infrastructure
 change is deployed; the configured Access identity remains separately required.
 
+## Enforcement window
+
+Each Gateway posture rule sets `expiration: '10m'`. A posture result therefore stays valid for at
+most ten minutes after the last successful Gateway check; the One Client polls on its default `5m`
+schedule, so `10m` is 2× the polling interval as Cloudflare recommends. If a device stops reporting
+Gateway (for example, the One Client is quit or loses connectivity), Access denies that device
+within at most ten minutes rather than retaining a stale pass indefinitely. Treat any admission
+verification that follows a deliberate Gateway disconnect as conclusive only after this window has
+elapsed.
+
 ## Rollback
 
-Do not restore the Perseus posture-rule ID or create a DTXWeb serial allowlist as a rollback.
-If the Gateway posture change itself must be backed out, revert this DTXWeb infrastructure change
-through the normal reviewed Pulumi deployment path. Do not alter Perseus Access resources.
+A plain `git revert` of this change is **not** the rollback: it restores the old
+`devicePostureRuleId` config and the committed Perseus posture-rule IDs, which reintroduces the
+Perseus coupling this runbook removes. Do not alter Perseus Access resources.
+
+To back the Gateway posture change out while keeping DTXWeb decoupled, ship a one-off reviewed
+Pulumi change (not a revert) that temporarily drops the device-posture `requires` from the affected
+stack's Access policy, leaving the operator-email `Include` as the only admission condition:
+
+1. in `createAccessApplication`, build the policy without the `requires` entry (email `Include`
+   only) for the stack being rolled back;
+2. deploy through the normal reviewed `.github/workflows/deploy-cloudflare-infrastructure.yml`
+   path (pre-production first, then production);
+3. confirm the protected surface is reachable for the configured operator identity;
+4. restore the Gateway `requires` and redeploy once the posture change is ready to re-enable.
+
+This temporarily lowers admission to email identity only. It does not touch Perseus, does not
+restore `devicePostureRuleId`, and keeps DTXWeb's posture ownership intact in the committed code.

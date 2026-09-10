@@ -143,7 +143,8 @@ export function createAccessApplication(
 			accountId: args.accountId,
 			name: `${args.stackDefinition.applicationName} Gateway Check`,
 			type: 'gateway',
-			description: 'Requires Cloudflare One Client connected to this Zero Trust account'
+			description: 'Requires Cloudflare One Client connected to this Zero Trust account',
+			expiration: '10m'
 		}
 	);
 

@@ -186,9 +186,11 @@ describe('createAccessApplication', () => {
 				accountId: 'account-id',
 				name: `${stackDefinition.applicationName} Gateway Check`,
 				type: 'gateway',
-				description: 'Requires Cloudflare One Client connected to this Zero Trust account'
+				description: 'Requires Cloudflare One Client connected to this Zero Trust account',
+				expiration: '10m'
 			}
 		);
+		const gatewayPostureRule = zeroTrustDevicePostureRuleMock.mock.results[0].value;
 		expect(zeroTrustAccessApplicationMock).toHaveBeenLastCalledWith(
 			logicalName,
 			expect.objectContaining({
@@ -199,7 +201,7 @@ describe('createAccessApplication', () => {
 					})
 				]
 			}),
-			{ protect: true, dependsOn: expect.anything() }
+			{ protect: true, dependsOn: [gatewayPostureRule] }
 		);
 	});
 });

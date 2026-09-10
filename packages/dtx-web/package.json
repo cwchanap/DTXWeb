@@ -22,13 +22,13 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "^4.20250620.0",
-		"@graphql-codegen/cli": "^7.3.1",
+		"@graphql-codegen/cli": "^7.4.0",
 		"@graphql-codegen/typed-document-node": "^7.1.0",
 		"@graphql-codegen/typescript": "^6.1.0",
 		"@graphql-codegen/typescript-operations": "^6.1.6",
 		"@graphql-typed-document-node/core": "^3.2.0",
 		"@iconify/svelte": "^5.2.2",
-		"@lucide/svelte": "^1.35.0",
+		"@lucide/svelte": "^1.41.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
@@ -52,7 +52,7 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1121.0",
+		"@aws-sdk/client-s3": "^3.1126.0",
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
 		"dayjs": "^1.11.23",
@@ -66,7 +66,7 @@
 		"vexflow": "4.2.5",
 		"winston": "^3.17.0",
 		"xa_decoder": "^0.1.2",
-		"zod": "^4.5.2"
+		"zod": "^4.5.4"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "^4.63.1",

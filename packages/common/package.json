@@ -61,7 +61,7 @@
 		"phaser": "^3.88.0"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20250620.0",
+		"@cloudflare/workers-types": "^5.20260904.1",
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/package": "^2.5.8",

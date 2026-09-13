@@ -57,7 +57,7 @@
 		"@dtx/ui-components": "*",
 		"dayjs": "^1.11.23",
 		"drizzle-orm": "^0.45.2",
-		"graphql": "^16.10.0",
+		"graphql": "^17.0.2",
 		"graphql-request": "^7.1.2",
 		"jszip": "^3.10.1",
 		"phaser": "^3.88.2",

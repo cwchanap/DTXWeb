@@ -10,7 +10,7 @@ on:
   workflow_dispatch: # Allows manual triggering
     inputs:
       version:
-        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered as an update.'
+        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered an update.'
         required: true
         type: string
 
@@ -51,9 +51,9 @@ jobs:
     # the signing secrets: TAURI_SIGNING_PRIVATE_KEY (required) and
     # TAURI_SIGNING_PRIVATE_KEY_PASSWORD (optional; only needed if the key
     # itself is password-protected).
-    # The build vars (VITE_DTX_API_URL, PUBLIC_SIMFILE_BUCKET_URL) live at repo
-    # level and are inherited by every
-    # environment, so they do not need to be duplicated here.
+    # The build vars (VITE_DTX_API_URL, PUBLIC_SIMFILE_BUCKET_URL,
+    # GOOGLE_DRIVE_OAUTH_CLIENT_ID) live at repo level and are inherited by
+    # every environment, so they do not need to be duplicated here.
     environment: Desktop-Windows
     env:
       VITE_DTX_API_URL: ${{ vars.VITE_DTX_API_URL }}
@@ -88,14 +88,14 @@ jobs:
         if: github.ref == 'refs/heads/preview'
         shell: bash
         env:
-          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
 
       - name: Configure Google Drive build for production
         if: github.ref != 'refs/heads/preview'
         shell: bash
         env:
-          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh production
 
       - name: Set Release Version
@@ -209,14 +209,14 @@ jobs:
         if: github.ref == 'refs/heads/preview'
         shell: bash
         env:
-          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PREPRODUCTION }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh preproduction
 
       - name: Configure Google Drive build for production
         if: github.ref != 'refs/heads/preview'
         shell: bash
         env:
-          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID_PRODUCTION }}
+          GOOGLE_DRIVE_OAUTH_CLIENT_ID: ${{ vars.GOOGLE_DRIVE_OAUTH_CLIENT_ID }}
         run: bash packages/dtx-desktop/src-tauri/scripts/validate_google_drive_build_env.sh production
 
       - name: Set Release Version
@@ -232,8 +232,8 @@ jobs:
           elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
           else
-            # Push to main (continuous release): use the committed tauri.conf.json
-            # version. See the Windows job for the full rationale.
+            # Push to main (continuous release): use the version committed in
+            # tauri.conf.json. See the Windows job for the full rationale.
             VERSION="$(jq -r '.version' "$CONF")"
           fi
           VERSION="${VERSION#v}"

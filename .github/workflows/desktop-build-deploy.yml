@@ -10,7 +10,7 @@ on:
   workflow_dispatch: # Allows manual triggering
     inputs:
       version:
-        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered an update.'
+        description: 'Semver version (MAJOR.MINOR.PATCH) written to the updater manifest. Must exceed the currently installed version to be offered as an update.'
         required: true
         type: string
 
@@ -232,8 +232,8 @@ jobs:
           elif [[ -n "${INPUT_VERSION:-}" ]]; then
             VERSION="${INPUT_VERSION}"
           else
-            # Push to main (continuous release): use the version committed in
-            # tauri.conf.json. See the Windows job for the full rationale.
+            # Push to main (continuous release): use the committed tauri.conf.json
+            # version. See the Windows job for the full rationale.
             VERSION="$(jq -r '.version' "$CONF")"
           fi
           VERSION="${VERSION#v}"

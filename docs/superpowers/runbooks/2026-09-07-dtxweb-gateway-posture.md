@@ -51,6 +51,23 @@ The intended Pulumi change per stack is:
 
 The committed stack settings must not contain `devicePostureRuleId`.
 
+### One-time state reconciliation
+
+The deploy workflow's drift gate (`pulumi refresh --preview-only --expect-no-changes`) runs before
+`up` on every stack. The change that removed `description` and `expiration` from the posture rule
+leaves recorded stack state still containing both fields, so the first deploy after that change
+merges fails the drift gate once more. Reconcile recorded state once per stack, then re-run the
+failed workflow jobs:
+
+```bash
+cd packages/infrastructure
+pulumi refresh --yes --stack cwchanap/dtxweb-infrastructure/pre-prod
+pulumi refresh --yes --stack cwchanap/dtxweb-infrastructure/production
+```
+
+Order matters: the refresh must run before any `up` of pre-removal code, which would re-write the
+fields and reintroduce the drift.
+
 ## Human admission verification
 
 The boundary verifier proves only that Cloudflare Access intercepts the expected routes:
@@ -76,22 +93,29 @@ change is deployed; the configured Access identity remains separately required.
 
 ## Enforcement window
 
-The Cloudflare API does not persist `expiration` (or `description`) on `gateway` posture rules: it
-accepts the fields on write but omits them on read, so Pulumi records them in state and every
-`pulumi refresh` reports them as drift. Earlier revisions of this runbook set `expiration: '10m'`
-expecting a bounded stale-pass window; that bound was never actually applied. The rules therefore
-carry no `expiration`, and a posture result stays valid until the Cloudflare One Client overwrites
-it on its next report (default `5m` poll).
+The Cloudflare API accepts `expiration` and `description` on write for `gateway` posture rules but
+omits them on read, so Pulumi records them in state and every `pulumi refresh` reports them as
+drift. Earlier revisions of this runbook set `expiration: '10m'` expecting a bounded stale-pass
+window; whether Cloudflare ever persisted or enforced that value is not verifiable — the read
+omission alone cannot prove the field was dropped rather than stored-but-hidden. The rules carry no
+`expiration`, and none of the reasoning below relies on the old bound having worked.
 
-If a device stops reporting entirely — the One Client is quit or loses connectivity — its last
-posture result can be retained rather than expiring on a posture timer. The only remaining bound is
-the Access application's `sessionDuration` (currently `12h`). To tighten the stale-pass window,
-shorten `sessionDuration` on the Access application; do not re-add `expiration` to the posture rule,
-as Cloudflare will keep dropping it and reintroduce the refresh drift.
+Without `expiration`, a posture result remains valid until the Cloudflare One Client overwrites it
+with new data (default `5m` poll). If a device stops reporting entirely — the One Client is quit or
+loses connectivity — the last `Gateway: on` result is retained indefinitely: there is no
+posture-side bound on the stale-pass window.
 
-Treat any admission verification that follows a deliberate Gateway disconnect as conclusive only
-after at least one poll interval has elapsed, and remember the worst-case stale-pass bound is the
-session duration, not a posture expiration.
+The Access application's `sessionDuration` (currently `12h`) does not bound it either. Session
+expiry only makes Access re-evaluate the policy, and the retained `Gateway: on` posture still
+satisfies the Require, so a quit or disconnected client can remain eligible past session expiry.
+Shortening `sessionDuration` shortens only the application token lifetime, not the stale-posture
+window. A real bound would need a different control — do not re-add `expiration` to the posture
+rule, as Cloudflare keeps dropping it and the refresh drift returns.
+
+Treat admission verification after a deliberate Gateway disconnect as conclusive only once at least
+one poll interval has elapsed with the client still running and reporting new state. A negative
+check performed by quitting the One Client is not conclusive — that is precisely the unbounded
+stale-pass case above.
 
 ## Rollback
 

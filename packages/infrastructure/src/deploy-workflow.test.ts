@@ -11,6 +11,8 @@ const checkoutAction = 'uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9d
 const setupBunAction = 'uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2';
 const pulumiAction = 'uses: pulumi/actions@8e5e406f4007fca908480587cb9893c07090f58d';
 const mainRefGuard = "if: github.ref == 'refs/heads/main'";
+const reconcileGuard =
+	"if: ${{ github.event_name == 'workflow_dispatch' && inputs.reconcile_state }}";
 const suppressOutputs = 'suppress-outputs: true';
 
 describe('committed Pulumi stack settings', () => {
@@ -49,6 +51,10 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 		expect(text).toContain("'tsconfig.base.json'");
 		expect(text).toContain("'.github/workflows/deploy-cloudflare-infrastructure.yml'");
 		expect(text).toContain('workflow_dispatch:');
+		expect(text).toContain('reconcile_state:');
+		expect(text).toContain(
+			"description: 'Reconcile Pulumi state with Cloudflare before deployment'"
+		);
 		expect(text).not.toContain('pull_request:');
 
 		expect(text).toContain('contents: read');
@@ -65,6 +71,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 		expect(preProdJob).toContain('cwchanap/dtxweb-infrastructure/pre-prod');
 		expect(productionJob).toContain('cwchanap/dtxweb-infrastructure/production');
 		expect(countOccurrences(text, mainRefGuard)).toBe(2);
+		expect(countOccurrences(text, reconcileGuard)).toBe(2);
 		expect(countOccurrences(text, suppressOutputs)).toBe(2);
 
 		for (const command of [
@@ -93,6 +100,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(job).not.toContain('uses: actions/checkout@v');
 			expect(job).not.toContain('uses: oven-sh/setup-bun@v');
 			expect(countOccurrences(job, mainRefGuard)).toBe(1);
+			expect(countOccurrences(job, reconcileGuard)).toBe(1);
 			expect(countOccurrences(job, suppressOutputs)).toBe(1);
 			expect(
 				countOccurrences(
@@ -102,20 +110,25 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			).toBe(1);
 			expect(countOccurrences(job, pulumiAction)).toBe(2);
 			expect(countOccurrences(job, 'command: up')).toBe(1);
+			const reconcile = `run: pulumi refresh --yes --suppress-outputs --stack ${stack}`;
 			const driftCheck = `run: pulumi refresh --preview-only --expect-no-changes --suppress-outputs --stack ${stack}`;
 			const sourceGate = `run: scripts/preview-gate.sh ${stack}`;
+			const reconcileIndex = job.indexOf(reconcile);
 			const driftCheckIndex = job.indexOf(driftCheck);
 			const sourceGateIndex = job.indexOf(sourceGate);
 			const updateIndex = job.indexOf('command: up');
 			const verifyIndex = job.indexOf(`run: ${verifier}`);
+			expect(countOccurrences(job, reconcile)).toBe(1);
 			expect(countOccurrences(job, driftCheck)).toBe(1);
 			expect(countOccurrences(job, sourceGate)).toBe(1);
+			expect(reconcileIndex).toBeGreaterThan(-1);
 			expect(driftCheckIndex).toBeGreaterThan(-1);
 			expect(sourceGateIndex).toBeGreaterThan(-1);
-			// Drift gate (live vs recorded state) -> source preview gate
-			// (rejects D1/R2 stateful ops from the checked-in program) -> up ->
-			// verify. The source gate is what blocks a source-introduced D1/R2
-			// create that `protect` and the drift refresh cannot stop.
+			// Optional manual reconciliation -> drift gate (live vs recorded state) ->
+			// source preview gate (rejects D1/R2 stateful ops from the checked-in
+			// program) -> up -> verify. Normal pushes skip reconciliation and remain
+			// fail-closed on unexpected live drift.
+			expect(reconcileIndex).toBeLessThan(driftCheckIndex);
 			expect(driftCheckIndex).toBeLessThan(sourceGateIndex);
 			expect(sourceGateIndex).toBeLessThan(updateIndex);
 			expect(updateIndex).toBeLessThan(verifyIndex);
@@ -126,7 +139,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 					job,
 					'CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_INFRA_API_TOKEN }}'
 				)
-			).toBe(3);
+			).toBe(4);
 			expect(job).toContain('organization: ${{ vars.PULUMI_ORG }}');
 			expect(job).toContain(
 				'requested-token-type: urn:pulumi:token-type:access_token:personal'

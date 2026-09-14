@@ -51,14 +51,14 @@
 		"@types/eslint": "^8.56.0",
 		"@types/node": "^20.11.25",
 		"@types/uuid": "^10.0.0",
-		"@typescript-eslint/eslint-plugin": "^8.67.0",
-		"@typescript-eslint/parser": "^8.67.0",
+		"@typescript-eslint/eslint-plugin": "^8.70.0",
+		"@typescript-eslint/parser": "^8.70.0",
 		"eslint": "^10.9.1",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^2.45.1",
 		"globals": "^13.24.0",
 		"husky": "^9.1.1",
-		"lint-staged": "^17.4.1",
+		"lint-staged": "^17.5.1",
 		"prettier": "^3.9.6",
 		"prettier-plugin-svelte": "^3.5.0",
 		"prettier-plugin-tailwindcss": "^0.8.1",
@@ -82,7 +82,7 @@
 		"packages/infrastructure"
 	],
 	"dependencies": {
-		"jszip": "^3.10.1"
+		"jszip": "^3.10.2"
 	},
 	"overrides": {
 		"@wdio/native-utils": "^2.5.0"

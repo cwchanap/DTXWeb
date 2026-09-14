@@ -185,9 +185,7 @@ describe('createAccessApplication', () => {
 			{
 				accountId: 'account-id',
 				name: `${stackDefinition.applicationName} Gateway Check`,
-				type: 'gateway',
-				description: 'Requires Cloudflare One Client connected to this Zero Trust account',
-				expiration: '10m'
+				type: 'gateway'
 			}
 		);
 		const gatewayPostureRule = zeroTrustDevicePostureRuleMock.mock.results[0].value;

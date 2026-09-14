@@ -76,13 +76,22 @@ change is deployed; the configured Access identity remains separately required.
 
 ## Enforcement window
 
-Each Gateway posture rule sets `expiration: '10m'`. A posture result therefore stays valid for at
-most ten minutes after the last successful Gateway check; the One Client polls on its default `5m`
-schedule, so `10m` is 2× the polling interval as Cloudflare recommends. If a device stops reporting
-Gateway (for example, the One Client is quit or loses connectivity), Access denies that device
-within at most ten minutes rather than retaining a stale pass indefinitely. Treat any admission
-verification that follows a deliberate Gateway disconnect as conclusive only after this window has
-elapsed.
+The Cloudflare API does not persist `expiration` (or `description`) on `gateway` posture rules: it
+accepts the fields on write but omits them on read, so Pulumi records them in state and every
+`pulumi refresh` reports them as drift. Earlier revisions of this runbook set `expiration: '10m'`
+expecting a bounded stale-pass window; that bound was never actually applied. The rules therefore
+carry no `expiration`, and a posture result stays valid until the Cloudflare One Client overwrites
+it on its next report (default `5m` poll).
+
+If a device stops reporting entirely — the One Client is quit or loses connectivity — its last
+posture result can be retained rather than expiring on a posture timer. The only remaining bound is
+the Access application's `sessionDuration` (currently `12h`). To tighten the stale-pass window,
+shorten `sessionDuration` on the Access application; do not re-add `expiration` to the posture rule,
+as Cloudflare will keep dropping it and reintroduce the refresh drift.
+
+Treat any admission verification that follows a deliberate Gateway disconnect as conclusive only
+after at least one poll interval has elapsed, and remember the worst-case stale-pass bound is the
+session duration, not a posture expiration.
 
 ## Rollback
 

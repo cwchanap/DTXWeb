@@ -21,14 +21,14 @@
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^5.20260904.1",
-		"@graphql-codegen/cli": "^7.3.1",
+		"@cloudflare/workers-types": "^5.20260911.1",
+		"@graphql-codegen/cli": "^7.4.1",
 		"@graphql-codegen/typed-document-node": "^7.1.0",
 		"@graphql-codegen/typescript": "^6.1.0",
 		"@graphql-codegen/typescript-operations": "^6.1.6",
 		"@graphql-typed-document-node/core": "^3.2.0",
 		"@iconify/svelte": "^5.2.2",
-		"@lucide/svelte": "^1.35.0",
+		"@lucide/svelte": "^1.45.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
@@ -52,21 +52,21 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@aws-sdk/client-s3": "^3.1121.0",
+		"@aws-sdk/client-s3": "^3.1130.0",
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
 		"dayjs": "^1.11.23",
 		"drizzle-orm": "^0.45.2",
 		"graphql": "^17.0.2",
 		"graphql-request": "^7.1.2",
-		"jszip": "^3.10.1",
+		"jszip": "^3.10.2",
 		"phaser": "^3.88.2",
 		"svelte-i18n": "^4.0.1",
 		"uuid": "^11.1.0",
 		"vexflow": "4.2.5",
 		"winston": "^3.17.0",
 		"xa_decoder": "^0.1.2",
-		"zod": "^4.5.2"
+		"zod": "^4.6.2"
 	},
 	"optionalDependencies": {
 		"@rollup/rollup-linux-x64-gnu": "^4.63.1",

@@ -55,6 +55,9 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 		expect(text).toContain(
 			"description: 'Reconcile Pulumi state with Cloudflare before deployment'"
 		);
+		expect(text).toContain('required: false');
+		expect(text).toContain('type: boolean');
+		expect(text).toContain('default: false');
 		expect(text).not.toContain('pull_request:');
 
 		expect(text).toContain('contents: read');

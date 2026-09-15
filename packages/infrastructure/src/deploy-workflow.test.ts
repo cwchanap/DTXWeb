@@ -124,6 +124,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(countOccurrences(job, reconcile)).toBe(1);
 			expect(countOccurrences(job, driftCheck)).toBe(1);
 			expect(countOccurrences(job, sourceGate)).toBe(1);
+			expect(job).toContain(`${reconcileGuard}\n        ${reconcile}`);
 			expect(reconcileIndex).toBeGreaterThan(-1);
 			expect(driftCheckIndex).toBeGreaterThan(-1);
 			expect(sourceGateIndex).toBeGreaterThan(-1);

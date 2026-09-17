@@ -117,7 +117,8 @@ impl PickerAttempt {
             .append_pair("access_type", "offline")
             .append_pair("prompt", "consent")
             .append_pair("trigger_onepick", "true")
-            .append_pair("allow_folder_selection", "true");
+            .append_pair("allow_folder_selection", "true")
+            .append_pair("mimetypes", "application/vnd.google-apps.folder");
         Ok(url.into())
     }
 

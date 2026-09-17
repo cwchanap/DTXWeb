@@ -60,6 +60,7 @@ fn authorization_url_uses_exact_drive_file_picker_protocol() {
         ("response_type", "code"),
         ("scope", GOOGLE_DRIVE_FILE_SCOPE),
         ("code_challenge_method", "S256"),
+        ("mimetypes", "application/vnd.google-apps.folder"),
     ] {
         assert_eq!(
             pairs

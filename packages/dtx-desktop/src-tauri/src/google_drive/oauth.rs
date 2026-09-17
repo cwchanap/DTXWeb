@@ -1008,5 +1008,30 @@ pub(crate) fn access_token_is_reusable(expires_at: Instant, now: Instant) -> boo
 }
 
 #[cfg(test)]
+#[test]
+fn authorization_url_filters_picker_to_folders() {
+    let attempt = PickerAttempt::new(
+        "test-user".to_string(),
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, 49152),
+        Instant::now(),
+        Duration::from_secs(300),
+    );
+    let url = Url::parse(
+        &attempt
+            .authorization_url("desktop-client.apps.googleusercontent.com")
+            .expect("authorization URL"),
+    )
+    .expect("valid URL");
+
+    assert_eq!(
+        url.query_pairs()
+            .filter(|(key, _)| key == "mimetypes")
+            .map(|(_, value)| value.into_owned())
+            .collect::<Vec<_>>(),
+        vec!["application/vnd.google-apps.folder".to_string()]
+    );
+}
+
+#[cfg(test)]
 #[path = "../tests/google_drive_oauth_tests.rs"]
 mod tests;

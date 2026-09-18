@@ -180,7 +180,12 @@
 			workspaceStore.closeNewSongForm();
 		} catch (err) {
 			console.error('Failed to create song:', err);
-			error = err instanceof Error ? err.message : 'Failed to create song';
+			error =
+				err instanceof Error
+					? err.message
+					: typeof err === 'string'
+						? err
+						: 'Failed to create song';
 		} finally {
 			isCreating = false;
 		}
@@ -239,7 +244,7 @@
 	}
 </script>
 
-<div class="bg-base flex h-full flex-col overflow-hidden">
+<div class="bg-base flex h-full min-w-0 flex-1 flex-col overflow-hidden">
 	<!-- Header -->
 	<div
 		class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"

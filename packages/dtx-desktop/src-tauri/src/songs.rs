@@ -93,10 +93,9 @@ pub(crate) async fn create_song_with_workspace_root(
     mut options: CreateSongOptions,
     workspace_root: &Path,
 ) -> Result<CreateSongResult> {
-    // Resolve all caller-controlled source/destination roots before mutation.
-    // `create_song_folder` receives canonical paths, so a selected-path or
-    // template symlink cannot redirect mkdir, copy, or SET.def writes outside
-    // the trusted workspace after this boundary check.
+    // The destination is always constrained to the trusted workspace. Templates are
+    // explicitly selected by the user and may live elsewhere, so canonicalize the
+    // source to freeze symlink resolution without applying the destination boundary.
     let workspace_root = workspace_root.to_string_lossy();
     let selected_path = crate::filesystem::canonicalize_within_workspace(
         &options.selected_path,
@@ -104,13 +103,7 @@ pub(crate) async fn create_song_with_workspace_root(
     )
     .await?;
     let template_folder_path = match options.template_folder_path.as_deref() {
-        Some(template_folder_path) => Some(
-            crate::filesystem::canonicalize_within_workspace(
-                template_folder_path,
-                Some(&workspace_root),
-            )
-            .await?,
-        ),
+        Some(template_folder_path) => Some(fs::canonicalize(template_folder_path).await?),
         None => None,
     };
 

@@ -229,7 +229,6 @@ describe('Templates', () => {
 				canceled: false,
 				filePaths: ['/template/path']
 			});
-			mockDesktopHost.pathExists.mockResolvedValue({ exists: true, error: null });
 			render(Templates);
 			await fireEvent.click(screen.getByRole('button', { name: /Create new template/i }));
 			const nameInput = screen.getByLabelText(/Template Name/i);
@@ -243,6 +242,27 @@ describe('Templates', () => {
 					'/template/path'
 				);
 			});
+		});
+
+		it('registers a picker-selected folder outside the workspace without an existence check', async () => {
+			mockDesktopHost.selectFolder.mockResolvedValue({
+				canceled: false,
+				filePaths: ['/external/templates/Starter']
+			});
+			render(Templates);
+			await fireEvent.click(screen.getByRole('button', { name: /Create new template/i }));
+			const nameInput = screen.getByLabelText(/Template Name/i);
+			await fireEvent.input(nameInput, { target: { value: 'External Template' } });
+			await fireEvent.click(screen.getByRole('button', { name: /Browse/i }));
+			await waitFor(() => screen.getByDisplayValue('/external/templates/Starter'));
+			await fireEvent.click(screen.getByRole('button', { name: /Save Template/i }));
+			await waitFor(() => {
+				expect(templateStore.addTemplate).toHaveBeenCalledWith(
+					'External Template',
+					'/external/templates/Starter'
+				);
+			});
+			expect(mockDesktopHost.pathExists).not.toHaveBeenCalled();
 		});
 
 		it('shows duplicate name error when template name already exists', async () => {

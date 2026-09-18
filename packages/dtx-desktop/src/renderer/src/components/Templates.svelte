@@ -43,7 +43,7 @@
 		}
 	};
 
-	const handleSaveTemplate = async () => {
+	const handleSaveTemplate = () => {
 		if (!newTemplateName.trim()) {
 			templateStore.setError('Please enter a template name');
 			return;
@@ -61,13 +61,6 @@
 		}
 
 		try {
-			// Verify that the selected folder exists
-			const folderResult = await desktopHost.pathExists(selectedTemplateFolder);
-			if (!folderResult.exists) {
-				templateStore.setError('Selected folder does not exist');
-				return;
-			}
-
 			templateStore.addTemplate(newTemplateName, selectedTemplateFolder);
 			showCreateForm = false;
 			newTemplateName = '';

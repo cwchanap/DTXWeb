@@ -53,7 +53,7 @@
 	});
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full min-w-0 flex-1 flex-col">
 	<!-- Header -->
 	<div
 		class="border-hairline bg-surface-1 flex items-center justify-between gap-2 border-b p-6 pb-4"

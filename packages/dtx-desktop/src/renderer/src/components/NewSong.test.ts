@@ -315,6 +315,23 @@ describe('NewSong', () => {
 				expect(screen.getByText('Disk full')).toBeInTheDocument();
 			});
 		});
+
+		it('shows native string errors returned by Tauri', async () => {
+			workspaceStore.setPath('/test/workspace');
+			mockDesktopHost.pathExists.mockResolvedValue({ exists: false, error: 'not-found' });
+			mockDesktopHost.createSong.mockRejectedValue('Path is outside the workspace');
+			render(NewSong);
+			await waitFor(() => screen.getByText('Full path:'));
+			await fireEvent.input(screen.getByLabelText(/Song Name/i), {
+				target: { value: 'New Song' }
+			});
+			const form = screen.getByRole('button', { name: /Create Song/i }).closest('form');
+			await fireEvent.submit(form!);
+
+			await waitFor(() => {
+				expect(screen.getByText('Path is outside the workspace')).toBeInTheDocument();
+			});
+		});
 	});
 
 	describe('folder selection', () => {

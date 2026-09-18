@@ -97,27 +97,16 @@ async fn create_song_rejects_an_unset_managed_workspace_before_mutation() {
 }
 
 #[tokio::test]
-async fn create_song_rejects_selected_and_template_paths_outside_the_managed_workspace() {
-    // Removing either canonical containment check lets renderer-controlled
-    // selectedPath/templateFolderPath write or copy outside the workspace.
+async fn create_song_rejects_selected_path_outside_the_managed_workspace() {
     let workspace = tempdir().expect("workspace");
-    let selected = workspace.path().join("Songs");
-    fs::create_dir(&selected).await.expect("selected directory");
     let outside = tempdir().expect("outside");
     let outside_selected = outside.path().join("Songs");
-    let outside_template = outside.path().join("Template");
     fs::create_dir(&outside_selected)
         .await
         .expect("outside selected directory");
-    fs::create_dir(&outside_template)
-        .await
-        .expect("outside template directory");
-    fs::write(outside_template.join("template.dtx"), "#TITLE: Template")
-        .await
-        .expect("template file");
     let state = managed_workspace_state(workspace.path());
 
-    let outside_selected_result = create_song_with_workspace_state(
+    let result = create_song_with_workspace_state(
         CreateSongOptions {
             selected_path: outside_selected.to_string_lossy().into_owned(),
             sanitized_folder_name: "DTXFiles.Outside".to_string(),
@@ -127,21 +116,44 @@ async fn create_song_rejects_selected_and_template_paths_outside_the_managed_wor
         &state,
     )
     .await;
-    assert!(outside_selected_result.is_err());
-    assert!(!outside_selected.join("DTXFiles.Outside").exists());
 
-    let outside_template_result = create_song_with_workspace_state(
+    assert!(result.is_err());
+    assert!(!outside_selected.join("DTXFiles.Outside").exists());
+}
+
+#[tokio::test]
+async fn create_song_allows_template_path_outside_the_managed_workspace() {
+    let workspace = tempdir().expect("workspace");
+    let selected = workspace.path().join("Songs");
+    fs::create_dir(&selected).await.expect("selected directory");
+    let outside = tempdir().expect("outside");
+    let template = outside.path().join("Template");
+    fs::create_dir(&template).await.expect("template directory");
+    fs::write(template.join("chart.dtx"), b"#TITLE: Template")
+        .await
+        .expect("template dtx");
+    fs::write(template.join("kick.wav"), b"audio")
+        .await
+        .expect("template wav");
+    let state = managed_workspace_state(workspace.path());
+
+    let result = create_song_with_workspace_state(
         CreateSongOptions {
             selected_path: selected.to_string_lossy().into_owned(),
-            sanitized_folder_name: "DTXFiles.Template".to_string(),
-            sanitized_song_name: "Template".to_string(),
-            template_folder_path: Some(outside_template.to_string_lossy().into_owned()),
+            sanitized_folder_name: "NewSong".to_string(),
+            sanitized_song_name: "My Song".to_string(),
+            template_folder_path: Some(template.to_string_lossy().into_owned()),
         },
         &state,
     )
-    .await;
-    assert!(outside_template_result.is_err());
-    assert!(!selected.join("DTXFiles.Template").exists());
+    .await
+    .expect("external template should be copied into the managed workspace");
+
+    assert!(result.success);
+    let song_folder = selected.join("NewSong");
+    assert!(song_folder.join("chart.dtx").is_file());
+    assert!(song_folder.join("kick.wav").is_file());
+    assert!(song_folder.join("SET.def").is_file());
 }
 
 #[cfg(unix)]

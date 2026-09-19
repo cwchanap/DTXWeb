@@ -45,6 +45,9 @@
 		{/if}
 
 		<div aria-live="polite" class="space-y-1">
+			{#if $googleDriveStore.error}
+				<p class="text-yellow text-sm">{$_(`googleDrive.error.${$googleDriveStore.error}`)}</p>
+			{/if}
 			{#if $googleDriveStore.connection?.requiresReconnect}
 				<p class="text-yellow text-sm">{$_('googleDrive.warning.reconnect')}</p>
 			{/if}

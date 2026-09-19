@@ -149,6 +149,22 @@
 			"QUOTA_EXCEEDED": "Google Drive storage quota was exceeded.",
 			"NETWORK": "A network error interrupted the Google Drive upload.",
 			"CREDENTIAL_STORE": "Secure Google Drive credentials are unavailable on this installation."
+		},
+		"connectionError": {
+			"CANCELED": "The Google Drive connection was canceled.",
+			"INVALID_RESPONSE": "The Google Drive connection could not be completed safely.",
+			"NETWORK": "A network error interrupted the Google Drive connection.",
+			"RECONNECT_REQUIRED": "Reconnect Google Drive.",
+			"NOT_CONNECTED": "Google Drive is not connected.",
+			"CREDENTIAL_STORE": "Secure Google Drive credentials are unavailable on this installation.",
+			"LOCAL_STATE": "Local Google Drive connection state could not be saved.",
+			"UPLOAD_IN_PROGRESS": "A Google Drive connection attempt is already in progress.",
+			"FOLDER_UNAVAILABLE": "The selected Google Drive folder is unavailable.",
+			"DOWNLOAD_NOT_PUBLIC": "The Google Drive download link is not public.",
+			"SHARING_CHECK_UNAVAILABLE": "Google Drive sharing could not be checked.",
+			"FILE_NOT_FOUND": "The previously linked Google Drive file is no longer available.",
+			"FILE_PERMISSION_DENIED": "This Google account cannot replace the previously linked file.",
+			"UNKNOWN": "The Google Drive connection could not be completed."
 		}
 	}
 }

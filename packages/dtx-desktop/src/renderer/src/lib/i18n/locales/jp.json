@@ -149,6 +149,22 @@
 			"QUOTA_EXCEEDED": "Google Drive の保存容量上限を超えました。",
 			"NETWORK": "ネットワークエラーにより Google Drive アップロードが中断されました。",
 			"CREDENTIAL_STORE": "このインストールでは安全な Google Drive 認証情報を利用できません。"
+		},
+		"connectionError": {
+			"CANCELED": "Google Drive への接続はキャンセルされました。",
+			"INVALID_RESPONSE": "Google Drive への接続を安全に完了できませんでした。",
+			"NETWORK": "ネットワークエラーにより Google Drive への接続が中断されました。",
+			"RECONNECT_REQUIRED": "Google Drive を再接続してください。",
+			"NOT_CONNECTED": "Google Drive に接続されていません。",
+			"CREDENTIAL_STORE": "このインストールでは安全な Google Drive 認証情報を利用できません。",
+			"LOCAL_STATE": "ローカルの Google Drive 接続状態を保存できませんでした。",
+			"UPLOAD_IN_PROGRESS": "Google Drive への接続はすでに進行中です。",
+			"FOLDER_UNAVAILABLE": "選択した Google Drive フォルダーは利用できません。",
+			"DOWNLOAD_NOT_PUBLIC": "Google Drive のダウンロードリンクは公開されていません。",
+			"SHARING_CHECK_UNAVAILABLE": "Google Drive の共有設定を確認できませんでした。",
+			"FILE_NOT_FOUND": "以前にリンクされた Google Drive ファイルは利用できなくなりました。",
+			"FILE_PERMISSION_DENIED": "この Google アカウントには、以前にリンクされたファイルを置き換える権限がありません。",
+			"UNKNOWN": "Google Drive への接続を完了できませんでした。"
 		}
 	}
 }

@@ -17,6 +17,8 @@
 		}
 	};
 
+	const errorMessageKey = (error: string): string => `googleDrive.error.${error}`;
+
 	onMount(() => {
 		if ($authStore.isAuthenticated) void googleDriveService.refreshConnection();
 	});
@@ -46,7 +48,7 @@
 
 		<div aria-live="polite" class="space-y-1">
 			{#if $googleDriveStore.error}
-				<p class="text-yellow text-sm">{$_(`googleDrive.error.${$googleDriveStore.error}`)}</p>
+				<p class="text-yellow text-sm">{$_(errorMessageKey($googleDriveStore.error))}</p>
 			{/if}
 			{#if $googleDriveStore.connection?.requiresReconnect}
 				<p class="text-yellow text-sm">{$_('googleDrive.warning.reconnect')}</p>

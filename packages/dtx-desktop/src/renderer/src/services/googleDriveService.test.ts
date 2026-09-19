@@ -130,6 +130,22 @@ describe('googleDriveService', () => {
 		expect(unlisten).toHaveBeenCalledOnce();
 	});
 
+	it('preserves renderer-safe native connection error codes', async () => {
+		mockHost.connectGoogleDriveAndChooseFolder.mockRejectedValue('CREDENTIAL_STORE');
+
+		await googleDriveService.connectAndChooseFolder();
+
+		expect(get(googleDriveStore).error).toBe('CREDENTIAL_STORE');
+	});
+
+	it('does not expose arbitrary native connection error details', async () => {
+		mockHost.connectGoogleDriveAndChooseFolder.mockRejectedValue('sensitive provider detail');
+
+		await googleDriveService.connectAndChooseFolder();
+
+		expect(get(googleDriveStore).error).toBe('UNKNOWN');
+	});
+
 	it.each([
 		['refreshConnection', 'getGoogleDriveConnectionState'],
 		['connectAndChooseFolder', 'connectGoogleDriveAndChooseFolder'],

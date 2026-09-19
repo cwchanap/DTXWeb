@@ -142,6 +142,18 @@ describe('GoogleDriveSettings', () => {
 		).toBeInTheDocument();
 	});
 
+	it('renders a sanitized connection failure and keeps Connect available', () => {
+		const generation = googleDriveStore.captureGeneration();
+		googleDriveStore.setErrorIfCurrent(generation, 'CREDENTIAL_STORE');
+
+		render(GoogleDriveSettings);
+
+		expect(
+			screen.getByText(resolve('googleDrive.error.CREDENTIAL_STORE'))
+		).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Connect Google Drive' })).toBeInTheDocument();
+	});
+
 	it('offers refresh instead of a connect flow when the credential store is unavailable', () => {
 		googleDriveStore.setConnection({ connected: false, credentialStoreUnavailable: true });
 		render(GoogleDriveSettings);

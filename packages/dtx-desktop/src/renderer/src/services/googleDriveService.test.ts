@@ -130,7 +130,6 @@ describe('googleDriveService', () => {
 		expect(unlisten).toHaveBeenCalledOnce();
 	});
 
-
 	it('preserves renderer-safe native connection error codes', async () => {
 		mockHost.connectGoogleDriveAndChooseFolder.mockRejectedValue('CREDENTIAL_STORE');
 
@@ -146,7 +145,8 @@ describe('googleDriveService', () => {
 
 		expect(get(googleDriveStore).error).toBe('UNKNOWN');
 	});
-it.each([
+
+	it.each([
 		['refreshConnection', 'getGoogleDriveConnectionState'],
 		['connectAndChooseFolder', 'connectGoogleDriveAndChooseFolder'],
 		['changeFolder', 'changeGoogleDriveFolder'],

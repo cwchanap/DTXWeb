@@ -148,8 +148,33 @@ describe('GoogleDriveSettings', () => {
 
 		render(GoogleDriveSettings);
 
-		expect(screen.getByText(resolve('googleDrive.error.CREDENTIAL_STORE'))).toBeInTheDocument();
+		expect(
+			screen.getByText(resolve('googleDrive.connectionError.CREDENTIAL_STORE'))
+		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Connect Google Drive' })).toBeInTheDocument();
+	});
+
+	it('renders connection-specific copy for codes shared with upload errors', () => {
+		const generation = googleDriveStore.captureGeneration();
+		googleDriveStore.setErrorIfCurrent(generation, 'UPLOAD_IN_PROGRESS');
+
+		render(GoogleDriveSettings);
+
+		expect(
+			screen.getByText(resolve('googleDrive.connectionError.UPLOAD_IN_PROGRESS'))
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText(resolve('googleDrive.error.UPLOAD_IN_PROGRESS'))
+		).not.toBeInTheDocument();
+		cleanup();
+
+		const second = googleDriveStore.captureGeneration();
+		googleDriveStore.setErrorIfCurrent(second, 'CANCELED');
+		render(GoogleDriveSettings);
+		expect(
+			screen.getByText(resolve('googleDrive.connectionError.CANCELED'))
+		).toBeInTheDocument();
+		expect(screen.queryByText(resolve('googleDrive.error.CANCELED'))).not.toBeInTheDocument();
 	});
 
 	it('offers refresh instead of a connect flow when the credential store is unavailable', () => {

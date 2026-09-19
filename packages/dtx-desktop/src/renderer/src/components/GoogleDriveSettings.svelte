@@ -17,7 +17,7 @@
 		}
 	};
 
-	const errorMessageKey = (error: string): string => `googleDrive.error.${error}`;
+	const errorMessageKey = (error: string): string => `googleDrive.connectionError.${error}`;
 
 	onMount(() => {
 		if ($authStore.isAuthenticated) void googleDriveService.refreshConnection();

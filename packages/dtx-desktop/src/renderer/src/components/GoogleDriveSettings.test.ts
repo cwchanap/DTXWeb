@@ -148,9 +148,7 @@ describe('GoogleDriveSettings', () => {
 
 		render(GoogleDriveSettings);
 
-		expect(
-			screen.getByText(resolve('googleDrive.error.CREDENTIAL_STORE'))
-		).toBeInTheDocument();
+		expect(screen.getByText(resolve('googleDrive.error.CREDENTIAL_STORE'))).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Connect Google Drive' })).toBeInTheDocument();
 	});
 

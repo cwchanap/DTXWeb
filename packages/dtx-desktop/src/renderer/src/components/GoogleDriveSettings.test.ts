@@ -142,14 +142,14 @@ describe('GoogleDriveSettings', () => {
 		).toBeInTheDocument();
 	});
 
-	it('shows a sanitized connection failure while keeping Connect available for retry', () => {
+	it('renders a sanitized connection failure and keeps Connect available', () => {
 		const generation = googleDriveStore.captureGeneration();
 		googleDriveStore.setErrorIfCurrent(generation, 'CREDENTIAL_STORE');
 
 		render(GoogleDriveSettings);
 
 		expect(
-			screen.getByText('Secure Google Drive credentials are unavailable on this installation.')
+			screen.getByText(resolve('googleDrive.error.CREDENTIAL_STORE'))
 		).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Connect Google Drive' })).toBeInTheDocument();
 	});

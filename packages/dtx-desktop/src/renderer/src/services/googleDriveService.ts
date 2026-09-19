@@ -39,6 +39,28 @@ export type SaveAndUploadRequest = {
 	driveConnected?: boolean;
 };
 
+const rendererSafeConnectionErrorCodes = new Set([
+	'CANCELED',
+	'INVALID_RESPONSE',
+	'NETWORK',
+	'RECONNECT_REQUIRED',
+	'NOT_CONNECTED',
+	'CREDENTIAL_STORE',
+	'LOCAL_STATE',
+	'UPLOAD_IN_PROGRESS',
+	'FOLDER_UNAVAILABLE',
+	'DOWNLOAD_NOT_PUBLIC',
+	'SHARING_CHECK_UNAVAILABLE',
+	'FILE_NOT_FOUND',
+	'FILE_PERMISSION_DENIED'
+]);
+
+const connectionErrorCode = (error: unknown): string => {
+	const candidate =
+		typeof error === 'string' ? error : error instanceof Error ? error.message : null;
+	return candidate && rendererSafeConnectionErrorCodes.has(candidate) ? candidate : 'UNKNOWN';
+};
+
 const normalizeRelativeSongPath = (workspacePath: string, songPath: string): string | null => {
 	const normalize = (value: string): string =>
 		value.trim().replace(/\\/g, '/').replace(/\/+$/, '');
@@ -172,8 +194,8 @@ export const googleDriveService = {
 			const connection = await desktopHost.getGoogleDriveConnectionState();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'refresh');
 			return connection;
-		} catch {
-			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
+		} catch (error) {
+			googleDriveStore.setErrorIfCurrent(generation, connectionErrorCode(error));
 			return null;
 		}
 	},
@@ -183,8 +205,8 @@ export const googleDriveService = {
 			const connection = await desktopHost.connectGoogleDriveAndChooseFolder();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'connect');
 			return connection;
-		} catch {
-			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
+		} catch (error) {
+			googleDriveStore.setErrorIfCurrent(generation, connectionErrorCode(error));
 			return null;
 		}
 	},
@@ -194,8 +216,8 @@ export const googleDriveService = {
 			const connection = await desktopHost.changeGoogleDriveFolder();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'change-folder');
 			return connection;
-		} catch {
-			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
+		} catch (error) {
+			googleDriveStore.setErrorIfCurrent(generation, connectionErrorCode(error));
 			return null;
 		}
 	},
@@ -205,8 +227,8 @@ export const googleDriveService = {
 			const connection = await desktopHost.recheckGoogleDriveSharing();
 			googleDriveStore.setConnectionIfCurrent(generation, connection, 'recheck-sharing');
 			return connection;
-		} catch {
-			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
+		} catch (error) {
+			googleDriveStore.setErrorIfCurrent(generation, connectionErrorCode(error));
 			return null;
 		}
 	},
@@ -215,8 +237,8 @@ export const googleDriveService = {
 		try {
 			const result = await desktopHost.disconnectGoogleDrive();
 			googleDriveStore.setDisconnectIfCurrent(generation, result);
-		} catch {
-			googleDriveStore.setErrorIfCurrent(generation, 'UNKNOWN');
+		} catch (error) {
+			googleDriveStore.setErrorIfCurrent(generation, connectionErrorCode(error));
 		}
 	},
 	saveAndUpload,

@@ -57,22 +57,22 @@
 		"@lucide/svelte": "^0.511.0",
 		"@skeletonlabs/skeleton-svelte": "^1.0.0",
 		"dayjs": "^1.11.0",
-		"svelte": "^5.57.0",
+		"svelte": "^5.57.1",
 		"phaser": "^3.88.0"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^5.20260904.1",
+		"@cloudflare/workers-types": "^5.20260926.1",
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/package": "^2.5.8",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
-		"@testing-library/dom": "^10.4.1",
+		"@testing-library/dom": "^10.4.2",
 		"@testing-library/jest-dom": "^7.0.1",
 		"@testing-library/svelte": "^5.4.2",
 		"@vitest/coverage-v8": "^4.1.11",
-		"jsdom": "^30.0.1",
+		"jsdom": "^30.1.1",
 		"publint": "^0.3.24",
-		"svelte": "^5.57.0",
+		"svelte": "^5.57.1",
 		"svelte-check": "^4.7.6",
 		"typescript": "^5.0.0",
 		"vite": "^6.2.6",
@@ -85,8 +85,8 @@
 		"svelte"
 	],
 	"dependencies": {
-		"drizzle-orm": "^0.45.2",
-		"jszip": "^3.10.1",
+		"drizzle-orm": "^0.45.3",
+		"jszip": "^3.10.2",
 		"winston": "^3.17.0"
 	}
 }

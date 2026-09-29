@@ -26,7 +26,7 @@ tauri-build = { version = "2", features = [] }
 async-recursion = "1"
 async-trait = "0.1"
 base64 = "0.23"
-dirs = "6"
+dirs = "7"
 encoding_rs = "0.8"
 futures-util = "0.3"
 httpdate = "1"

@@ -76,7 +76,7 @@ const mockPhaserState = vi.hoisted(() => ({
 
 vi.mock('phaser', () => ({
 	default: {
-		Game: vi.fn(() => {
+		Game: vi.fn(function () {
 			if (mockPhaserState.isDestroying) {
 				throw new Error('Previous Phaser game is still destroying');
 			}
@@ -85,7 +85,7 @@ vi.mock('phaser', () => ({
 		}),
 		AUTO: 0
 	},
-	Game: vi.fn(() => {
+	Game: vi.fn(function () {
 		if (mockPhaserState.isDestroying) {
 			throw new Error('Previous Phaser game is still destroying');
 		}

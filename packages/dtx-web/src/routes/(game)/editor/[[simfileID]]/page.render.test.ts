@@ -45,7 +45,10 @@ vi.mock('@dtx/common/game', () => ({
 }));
 
 vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(() => ({})),
+	DTXFile: vi.fn().mockImplementation(function (this: unknown) {
+		// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
+		Object.assign(this, {});
+	}),
 	SoundChip: vi.fn().mockImplementation(function (
 		this: { fileName: string; fetchRemote: ReturnType<typeof vi.fn>; file: File | undefined },
 		_label: string,
@@ -337,7 +340,9 @@ describe('Editor Page – onMount path variations', () => {
 	});
 
 	it('returns early when currentWorkspace has currentDTX (no simfileID path)', async () => {
-		vi.mocked(workspaceService.getCurrentWorkspace).mockReturnValue({
+		// ponytail: vitest 4 clearAllMocks keeps mock return values — use Once so the
+		// early-return stub cannot leak into the next test
+		vi.mocked(workspaceService.getCurrentWorkspace).mockReturnValueOnce({
 			name: 'ExistingWorkspace',
 			path: '/workspace',
 			dtxFiles: [{ name: 'song.dtx', content: '', path: '/workspace/song.dtx' }],
@@ -1182,8 +1187,14 @@ describe('Editor Page – handleFileImport callback', () => {
 			export: vi.fn()
 		};
 		// onMount calls new DTXFile() once (via createNewFile); handleFileImport calls it again
-		vi.mocked(DTXFile).mockImplementationOnce(() => mockDtxInstance as never);
-		vi.mocked(DTXFile).mockImplementationOnce(() => mockDtxInstance as never);
+		vi.mocked(DTXFile).mockImplementationOnce(function () {
+			// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+			return mockDtxInstance as never;
+		});
+		vi.mocked(DTXFile).mockImplementationOnce(function () {
+			// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+			return mockDtxInstance as never;
+		});
 
 		render(EditorPage, { props: { data: defaultData } });
 		const navProps = getLastMockProps<Record<string, () => void>>(
@@ -1236,6 +1247,9 @@ describe('Editor Page – handleFileImport callback', () => {
 
 		const mockFile = new File(['content'], 'test.dtx');
 		const mockEvent = { target: { files: [mockFile] } } as unknown as Event;
+		// ponytail: vitest 4 keeps mock call history effects across mounted
+		// components from earlier tests — scope this assertion to the import act
+		store.currentDifficulty.set.mockClear();
 		// Should not throw – error caught internally
 		await expect(
 			(mockInput.onchange as (e: Event) => Promise<void>)(mockEvent)

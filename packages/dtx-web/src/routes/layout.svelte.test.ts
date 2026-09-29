@@ -17,7 +17,10 @@ vi.mock('@dtx/common', () => ({
 }));
 
 vi.mock('$lib/services/webFileProvider', () => ({
-	WebFileProvider: vi.fn().mockImplementation(() => ({}))
+	WebFileProvider: vi.fn().mockImplementation(function (this: unknown) {
+		// ponytail: vitest 4+ constructable-mock rule — `new WebFileProvider()`
+		Object.assign(this, {});
+	})
 }));
 
 import RootLayout from './+layout.svelte';

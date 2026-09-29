@@ -135,23 +135,27 @@ global.Image = vi.fn().mockImplementation(() => {
 }) as unknown as typeof Image;
 
 // Mock Audio for Phaser audio
-global.Audio = vi.fn().mockImplementation(() => ({
-	play: vi.fn(),
-	pause: vi.fn(),
-	load: vi.fn(),
-	canPlayType: vi.fn(() => 'probably'),
-	addEventListener: vi.fn(),
-	removeEventListener: vi.fn(),
-	volume: 1,
-	currentTime: 0,
-	duration: 0,
-	paused: true,
-	ended: false,
-	readyState: 4
-}));
+// ponytail: vitest 4+ constructable-mock rule — `new Audio(...)` in app code
+global.Audio = vi.fn().mockImplementation(function (this: unknown) {
+	Object.assign(this, {
+		play: vi.fn(),
+		pause: vi.fn(),
+		load: vi.fn(),
+		canPlayType: vi.fn(() => 'probably'),
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+		volume: 1,
+		currentTime: 0,
+		duration: 0,
+		paused: true,
+		ended: false,
+		readyState: 4
+	});
+});
 
 // Mock AudioContext for audio processing
-global.AudioContext = vi.fn().mockImplementation(() => ({
+// ponytail: vitest 4+ requires constructable mocks — XAAudioContext extends this
+const audioContextProps = () => ({
 	createBuffer: vi.fn(),
 	createBufferSource: vi.fn(() => ({
 		buffer: null,
@@ -185,7 +189,10 @@ global.AudioContext = vi.fn().mockImplementation(() => ({
 	resume: vi.fn(),
 	close: vi.fn(),
 	decodeAudioData: vi.fn(() => Promise.resolve({}))
-}));
+});
+global.AudioContext = vi.fn(function (this: unknown) {
+	Object.assign(this, audioContextProps());
+});
 
 // Mock File.prototype.arrayBuffer for encoding tests
 if (typeof File !== 'undefined' && !File.prototype.arrayBuffer) {

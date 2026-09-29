@@ -51,11 +51,14 @@ global.console = {
 global.atob = vi.fn();
 
 // Mock ResizeObserver (not implemented in jsdom)
-global.ResizeObserver = vi.fn().mockImplementation(() => ({
-	observe: vi.fn(),
-	unobserve: vi.fn(),
-	disconnect: vi.fn()
-}));
+global.ResizeObserver = vi.fn().mockImplementation(function (this: unknown) {
+	// ponytail: vitest 4+ constructable-mock rule — `new ResizeObserver(...)` in components
+	Object.assign(this, {
+		observe: vi.fn(),
+		unobserve: vi.fn(),
+		disconnect: vi.fn()
+	});
+});
 
 // Reset the stateful localStorage backing store between tests so seeded
 // values from one test do not leak into another.

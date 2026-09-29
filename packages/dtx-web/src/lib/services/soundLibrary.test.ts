@@ -348,6 +348,9 @@ describe('SoundLibrary', () => {
 			const result = await SoundLibrary.addFiles([audioFile]);
 
 			expect(result.errors).toContain('Failed to save to localStorage: disk write error');
+			// ponytail: vitest 4 clearAllMocks keeps implementations — reset so the
+			// throwing impl cannot leak into later tests
+			mockLocalStorage.setItem.mockReset();
 		});
 	});
 
@@ -418,6 +421,9 @@ describe('SoundLibrary', () => {
 			const result = SoundLibrary.removeFile('hash1');
 
 			expect(result).toBe(false);
+			// ponytail: vitest 4 clearAllMocks keeps implementations — reset so the
+			// throwing impl cannot leak into later tests
+			mockLocalStorage.setItem.mockReset();
 		});
 
 		it('should not persist memory-only entries when removing a localStorage file', () => {
@@ -748,7 +754,13 @@ describe('SoundLibrary', () => {
 				readAsDataURL: vi.fn()
 			};
 
-			vi.spyOn(window, 'FileReader').mockImplementation(() => mockFileReader as any);
+			vi.spyOn(window, 'FileReader').mockImplementation(
+				// ponytail: vitest 4+ constructable-mock rule — new FileReader()
+				function () {
+					// ponytail: vitest 4+ constructable-mock rule - new FileReader()
+					return mockFileReader;
+				}
+			);
 
 			const promise = fileToBase64(mockFile);
 
@@ -771,7 +783,13 @@ describe('SoundLibrary', () => {
 				readAsDataURL: vi.fn()
 			};
 
-			vi.spyOn(window, 'FileReader').mockImplementation(() => mockFileReader as any);
+			vi.spyOn(window, 'FileReader').mockImplementation(
+				// ponytail: vitest 4+ constructable-mock rule — new FileReader()
+				function () {
+					// ponytail: vitest 4+ constructable-mock rule - new FileReader()
+					return mockFileReader;
+				}
+			);
 
 			const promise = fileToBase64(mockFile);
 

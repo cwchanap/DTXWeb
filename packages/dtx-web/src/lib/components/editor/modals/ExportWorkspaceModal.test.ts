@@ -40,7 +40,12 @@ const mockZipInstance = vi.hoisted(() => ({
 	generateAsync: vi.fn().mockResolvedValue(new Blob(['zip content']))
 }));
 
-const mockJSZipConstructor = vi.hoisted(() => vi.fn(() => mockZipInstance));
+const mockJSZipConstructor = vi.hoisted(() =>
+	// ponytail: vitest 4+ constructable-mock rule — `new JSZip()`
+	vi.fn(function (this: unknown) {
+		Object.assign(this, mockZipInstance);
+	})
+);
 
 vi.mock('$lib/services/workspaceService', () => ({
 	workspaceService: mockService,
@@ -73,7 +78,10 @@ describe('ExportWorkspaceModal', () => {
 		]);
 		mockZipInstance.file.mockImplementation(() => undefined);
 		mockZipInstance.generateAsync.mockResolvedValue(new Blob(['zip content']));
-		mockJSZipConstructor.mockImplementation(() => mockZipInstance);
+		mockJSZipConstructor.mockImplementation(function () {
+			// ponytail: vitest 4+ constructable-mock rule - new JSZip()
+			return mockZipInstance;
+		});
 		(global.URL.createObjectURL as ReturnType<typeof vi.fn>).mockReturnValue('blob:mock-url');
 	});
 

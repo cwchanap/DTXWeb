@@ -3,11 +3,12 @@ import { SimFile } from './simFile';
 
 const mockJSZip = vi.hoisted(() => {
 	const mockLoadAsync = vi.fn();
-	const MockJSZip = vi.fn(() => ({
-		loadAsync: mockLoadAsync,
-		file: vi.fn(),
-		generateAsync: vi.fn().mockResolvedValue(new Blob())
-	}));
+	// ponytail: vitest 4+ requires constructable mocks; plain function supports `new JSZip()`
+	const MockJSZip = vi.fn(function (this: any) {
+		this.loadAsync = mockLoadAsync;
+		this.file = vi.fn();
+		this.generateAsync = vi.fn().mockResolvedValue(new Blob());
+	});
 	(MockJSZip as any).mockLoadAsync = mockLoadAsync;
 	return MockJSZip;
 });
@@ -17,11 +18,11 @@ vi.mock('jszip', () => ({ default: mockJSZip }));
 const mockDTXParse = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const MockDTXFile = vi.hoisted(() => vi.fn());
 
-const createMockDTXFile = (file?: File | string, label?: string) => ({
-	parse: mockDTXParse,
-	label,
-	getFileName: () => (file instanceof File ? file.name : null)
-});
+const createMockDTXFile = function (this: any, file?: File | string, label?: string) {
+	this.parse = mockDTXParse;
+	this.label = label;
+	this.getFileName = () => (file instanceof File ? file.name : null);
+};
 
 vi.mock('./dtx', () => ({
 	DTXFile: MockDTXFile

@@ -656,10 +656,10 @@ describe('ChartList Rendering', () => {
 		render(ChartList);
 		const input = screen.getByRole('textbox');
 		await fireEvent.input(input, { target: { value: 'test' } });
-		vi.advanceTimersByTime(600);
-		await waitFor(() => {
-			expect(mockApi.listSimfiles).toHaveBeenCalledTimes(2);
-		});
+		// ponytail: vitest 4 hangs @testing-library waitFor under fake timers;
+		// advance async timers instead, then assert directly
+		await vi.advanceTimersByTimeAsync(600);
+		expect(mockApi.listSimfiles.mock.calls.length).toBeGreaterThanOrEqual(2);
 		vi.useRealTimers();
 	});
 

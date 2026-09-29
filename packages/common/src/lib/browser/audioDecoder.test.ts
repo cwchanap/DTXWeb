@@ -73,7 +73,10 @@ describe('XAAudioContext', () => {
 			free: vi.fn()
 		};
 
-		mockWasmXADecoder.mockImplementation(() => mockDecoder);
+		// ponytail: vitest 4+ constructable-mock rule — source uses `new`
+		mockWasmXADecoder.mockImplementation(function (this: any) {
+			Object.assign(this, mockDecoder);
+		});
 
 		// Reset initialization state
 		mockInit.mockResolvedValue(undefined);

@@ -24,7 +24,12 @@ vi.mock('@pulumi/cloudflare', async (importOriginal) => {
 beforeEach(() => {
 	zeroTrustAccessApplicationMock.mockClear();
 	zeroTrustDevicePostureRuleMock.mockReset();
-	zeroTrustDevicePostureRuleMock.mockReturnValue({ id: 'gateway-posture-rule-id' });
+	zeroTrustDevicePostureRuleMock.mockImplementation(
+		// ponytail: vitest 4+ constructable-mock rule — mocked as `new`-ed
+		class {
+			id = 'gateway-posture-rule-id';
+		}
+	);
 });
 
 const resolveOutput = <T>(output: pulumi.Output<T>): Promise<T> =>

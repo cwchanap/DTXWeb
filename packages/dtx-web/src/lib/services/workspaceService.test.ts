@@ -9,15 +9,20 @@ import { SoundLibrary } from './soundLibrary';
 
 // Mock dependencies
 vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(() => ({
-		parseFromText: vi.fn().mockResolvedValue(undefined),
-		parseSoundChips: vi.fn().mockReturnValue([]),
-		meta: { title: 'Test Song', artist: 'Test Artist' }
-	})),
-	SimFile: vi.fn().mockImplementation(() => ({
-		files: [],
-		meta: {}
-	})),
+	DTXFile: vi.fn().mockImplementation(function (this: any) {
+		// ponytail: vitest 4+ constructable-mock rule â `new DTXFile()`
+		Object.assign(this, {
+			parseFromText: vi.fn().mockResolvedValue(undefined),
+			parseSoundChips: vi.fn().mockReturnValue([]),
+			meta: { title: 'Test Song', artist: 'Test Artist' }
+		});
+	}),
+	SimFile: vi.fn().mockImplementation(function (this: any) {
+		Object.assign(this, {
+			files: [],
+			meta: {}
+		});
+	}),
 	decodeFileWithEncodingDetection: vi.fn().mockResolvedValue({
 		content: 'mocked dtx content',
 		encoding: 'utf-8'
@@ -267,8 +272,14 @@ describe('WorkspaceService', () => {
 			};
 
 			// Mock the constructors to return our mock instances
-			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
-			vi.mocked(SimFile).mockImplementation(() => mockSimFile as any);
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return mockDTXFile as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
+				return mockSimFile as any;
+			});
 
 			const workspace: Workspace = {
 				name: 'Test Workspace',
@@ -338,8 +349,14 @@ describe('WorkspaceService', () => {
 			};
 			const mockSimFile = { files: [], title: '' };
 
-			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
-			vi.mocked(SimFile).mockImplementation(() => mockSimFile as any);
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return mockDTXFile as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
+				return mockSimFile as any;
+			});
 
 			const kickFile = new File(['kick'], 'kick.wav', { type: 'audio/wav' });
 			const largeFile = new File(['large'], 'large.wav', { type: 'audio/wav' });
@@ -384,7 +401,10 @@ describe('WorkspaceService', () => {
 				parseFromText: vi.fn().mockRejectedValue(new Error('parse failed')),
 				parseSoundChips: vi.fn()
 			};
-			vi.mocked(DTXFile).mockImplementation(() => mockDTXFile as any);
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return mockDTXFile as any;
+			});
 
 			const workspace: Workspace = {
 				name: 'Test Workspace',
@@ -643,6 +663,9 @@ describe('WorkspaceService', () => {
 			expect(() => {
 				workspaceService.deleteWorkspace('any-name');
 			}).not.toThrow();
+			// ponytail: vitest 4 clearAllMocks keeps implementations — reset so the
+			// throwing impl cannot leak into later tests
+			mockLocalStorage.setItem.mockReset();
 		});
 	});
 

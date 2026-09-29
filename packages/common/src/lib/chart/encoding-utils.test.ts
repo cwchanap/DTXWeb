@@ -12,7 +12,18 @@ import {
 const RealTextDecoder = globalThis.TextDecoder;
 
 // Mock TextDecoder
-const mockTextDecoder = vi.fn();
+// ponytail: vitest 4+ forbids non-constructable impls for `new`-ed mocks; wrap
+// arrow implementations so `new TextDecoder()` assigns the returned object onto `this`.
+const mockTextDecoder = vi.fn() as any;
+const rawMockImplementation = mockTextDecoder.mockImplementation.bind(mockTextDecoder);
+mockTextDecoder.mockImplementation = (fn: (...args: unknown[]) => unknown) =>
+	rawMockImplementation(function (this: unknown, ...args: unknown[]) {
+		const result = fn.apply(this, args);
+		if (result && typeof result === 'object') {
+			Object.assign(this, result);
+		}
+		return result;
+	});
 global.TextDecoder = mockTextDecoder;
 
 const createMockFile = (content: string, fileName: string = 'test.dtx'): File => {

@@ -56,7 +56,11 @@ describe('createAudioPreview', () => {
 		vi.mocked(mockGet).mockReset();
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => mockAudio)
+			// ponytail: vitest 4+ constructable-mock rule — `new Audio(...)` returns the shared
+			// mockAudio so instance identity checks in handlers keep working
+			vi.fn(function () {
+				return mockAudio;
+			})
 		);
 		retainedPlayingAudioCallback = null;
 		mockPlayingAudio.subscribe.mockImplementation((cb: (v: unknown) => void) => {
@@ -163,7 +167,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		// B's post-await get sees no owner; A never reaches the post-await get
@@ -290,7 +297,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		let audio!: ReturnType<typeof createAudioPreview>;
@@ -403,7 +413,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		// B is clicked after A, so B holds the newer request token. Only B
@@ -472,7 +485,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		// B's get (first call) sees no owner and claims. Under the bug, A's
@@ -526,7 +542,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		// A's post-await get sees no owner; B's post-await get sees A's
@@ -581,7 +600,10 @@ describe('createAudioPreview', () => {
 		let constructCount = 0;
 		vi.stubGlobal(
 			'Audio',
-			vi.fn(() => elements[constructCount++])
+			vi.fn(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new Audio()
+				return elements[constructCount++];
+			})
 		);
 
 		// Call order for get(store.playingAudio): 1st toggle post-await (no

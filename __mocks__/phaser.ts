@@ -334,7 +334,10 @@ const Input = {
 
 // Mock global Phaser object
 const Phaser = {
-	Game: vi.fn().mockImplementation(() => ({ destroy: vi.fn() })),
+	// ponytail: vitest 4+ constructable-mock rule — `new Phaser.Game()` in main.svelte
+	Game: vi.fn().mockImplementation(function (this: unknown) {
+		Object.assign(this, { destroy: vi.fn() });
+	}),
 	GameObjects,
 	Geom,
 	Input,

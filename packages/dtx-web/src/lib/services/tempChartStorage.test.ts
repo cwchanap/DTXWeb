@@ -207,6 +207,9 @@ describe('TempChartStorage', () => {
 			expect(() => {
 				TempChartStorage.remove('test-simfile', 'master');
 			}).not.toThrow();
+			// ponytail: vitest 4 clearAllMocks keeps implementations — reset so the
+			// throwing impl cannot leak into later tests
+			mockLocalStorage.removeItem.mockReset();
 		});
 	});
 

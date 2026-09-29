@@ -39,16 +39,19 @@ const exportToMidiMock = vi.hoisted(() =>
 );
 
 vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(() => ({
-		parse: parseMock,
-		parseNotes: parseNotesMock,
-		exportToMidi: exportToMidiMock,
-		level: 1,
-		artist: 'Mock Artist',
-		bpm: 120,
-		title: 'Mock Title',
-		comment: 'Mock Comment'
-	}))
+	DTXFile: vi.fn().mockImplementation(function (this: any) {
+		// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
+		Object.assign(this, {
+			parse: parseMock,
+			parseNotes: parseNotesMock,
+			exportToMidi: exportToMidiMock,
+			level: 1,
+			artist: 'Mock Artist',
+			bpm: 120,
+			title: 'Mock Title',
+			comment: 'Mock Comment'
+		});
+	})
 }));
 
 import { DTXFile } from '@dtx/common';

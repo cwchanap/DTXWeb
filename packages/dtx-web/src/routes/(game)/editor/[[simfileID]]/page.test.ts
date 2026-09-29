@@ -38,21 +38,26 @@ vi.mock('@dtx/common/game', () => ({
 }));
 
 vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(() => ({
-		header: { title: 'Test Song', artist: 'Test Artist' },
-		soundChips: new Map(),
-		lanes: new Map(),
-		parse: vi.fn(),
-		level: 0,
-		title: '',
-		artist: '',
-		comment: '',
-		bpm: 0
-	})),
-	SimFile: vi.fn().mockImplementation(() => ({
-		files: new Map(),
-		loadFromDTXFile: vi.fn()
-	})),
+	DTXFile: vi.fn().mockImplementation(function (this: any) {
+		// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
+		Object.assign(this, {
+			header: { title: 'Test Song', artist: 'Test Artist' },
+			soundChips: new Map(),
+			lanes: new Map(),
+			parse: vi.fn(),
+			level: 0,
+			title: '',
+			artist: '',
+			comment: '',
+			bpm: 0
+		});
+	}),
+	SimFile: vi.fn().mockImplementation(function (this: any) {
+		Object.assign(this, {
+			files: new Map(),
+			loadFromDTXFile: vi.fn()
+		});
+	}),
 	SoundChip: vi.fn().mockImplementation(function (
 		this: {
 			label: string;

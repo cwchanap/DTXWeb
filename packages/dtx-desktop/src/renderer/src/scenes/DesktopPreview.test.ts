@@ -89,9 +89,10 @@ describe('DesktopPreview', () => {
 		});
 
 		// Default Image mock: triggers onload
-		vi.spyOn(global, 'Image').mockImplementation(
-			() => createSuccessImage() as unknown as HTMLImageElement
-		);
+		// ponytail: vitest 4+ constructable-mock rule — `new Image()`
+		vi.spyOn(global, 'Image').mockImplementation(function () {
+			return createSuccessImage() as unknown as HTMLImageElement;
+		} as unknown as () => HTMLImageElement);
 
 		scene = new DesktopPreview();
 	});

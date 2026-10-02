@@ -51,7 +51,12 @@ jobs:
 
       - name: Generate SvelteKit types
         if: steps.scope.outputs.run_expensive == 'true'
-        run: cd packages/dtx-web && bunx svelte-kit sync
+        run: |
+          # Sync every SvelteKit workspace serially before turbo builds them in
+          # parallel; concurrent lazy syncs have produced broken .svelte-kit output.
+          for pkg in common ui-components dtx-web; do
+            (cd "packages/$pkg" && bunx svelte-kit sync)
+          done
 
       - name: Build packages
         if: steps.scope.outputs.run_expensive == 'true'

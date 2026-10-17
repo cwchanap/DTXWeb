@@ -428,7 +428,7 @@
 
 <svelte:window onkeydown={handleWindowKeydown} />
 
-<div class="mx-auto max-w-5xl p-4">
+<div class="p-4">
 	{#if status === 'error'}
 		<p class="text-center text-lg">{$_('preview.not_available')}</p>
 	{:else if status === 'loading'}

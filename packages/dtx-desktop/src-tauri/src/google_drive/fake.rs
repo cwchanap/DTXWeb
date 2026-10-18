@@ -887,7 +887,7 @@ fn zip_entries(path: &Path) -> Vec<E2eDriveZipEntrySnapshot> {
             continue;
         }
         entries.push(E2eDriveZipEntrySnapshot {
-            name: entry.name().to_string(),
+            name: entry.name().expect("entry name").to_string(),
             size: contents.len() as u64,
             sha256: format!("{:x}", Sha256::digest(&contents)),
         });

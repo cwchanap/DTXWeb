@@ -831,7 +831,14 @@ fn assert_zip_entries(zip_path: &str, expected: &[&str]) {
     let mut archive = ZipArchive::new(cursor).expect("zip archive");
     let mut names = Vec::new();
     for index in 0..archive.len() {
-        names.push(archive.by_index(index).expect("entry").name().to_string());
+        names.push(
+            archive
+                .by_index(index)
+                .expect("entry")
+                .name()
+                .expect("entry name")
+                .to_string(),
+        );
     }
     names.sort();
     let expected = expected

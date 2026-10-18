@@ -51,18 +51,18 @@
 		"@types/eslint": "^8.56.0",
 		"@types/node": "^20.11.25",
 		"@types/uuid": "^10.0.0",
-		"@typescript-eslint/eslint-plugin": "^8.71.0",
-		"@typescript-eslint/parser": "^8.71.0",
-		"eslint": "^10.11.0",
+		"@typescript-eslint/eslint-plugin": "^8.71.1",
+		"@typescript-eslint/parser": "^8.71.1",
+		"eslint": "^10.12.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^2.45.1",
 		"globals": "^17.13.0",
 		"husky": "^9.1.1",
 		"lint-staged": "^17.6.0",
-		"prettier": "^3.9.9",
+		"prettier": "^3.9.10",
 		"prettier-plugin-svelte": "^3.5.0",
 		"prettier-plugin-tailwindcss": "^0.8.1",
-		"svelte-eslint-parser": "^1.8.1",
+		"svelte-eslint-parser": "^1.9.0",
 		"turbo": "^2.11.7"
 	},
 	"type": "module",
@@ -82,9 +82,10 @@
 		"packages/infrastructure"
 	],
 	"dependencies": {
+		"@wdio/native-utils": "^2.8.0",
 		"jszip": "^3.10.2"
 	},
 	"overrides": {
-		"@wdio/native-utils": "^2.5.0"
+		"@wdio/native-utils": "^2.8.0"
 	}
 }

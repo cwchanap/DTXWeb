@@ -128,8 +128,12 @@ describe('NoteManager', () => {
 		});
 
 		it('skips keyboard and mouse tracking setup when document is undefined', () => {
-			const origDocument = global.document;
-			(global as any).document = undefined;
+			// vitest 5 exposes jsdom globals as getter-only, so redefine instead of assign
+			const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'document');
+			Object.defineProperty(globalThis, 'document', {
+				value: undefined,
+				configurable: true
+			});
 			try {
 				const nm = new NoteManager(mockEditor as unknown as Editor);
 				// initialize() calls initializeSelectionRectangle (no document check),
@@ -137,7 +141,11 @@ describe('NoteManager', () => {
 				nm.initialize();
 				expect(nm.selectedNotes.size).toBe(0);
 			} finally {
-				global.document = origDocument;
+				if (descriptor)
+					Object.defineProperty(globalThis, 'document', {
+						...descriptor,
+						configurable: true
+					});
 			}
 		});
 	});

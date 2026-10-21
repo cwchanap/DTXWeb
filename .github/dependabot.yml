@@ -50,6 +50,46 @@ updates:
           - 'minor'
           - 'patch'
 
+  # Python dependencies for repo scripts
+  - package-ecosystem: 'pip'
+    directory: '/scripts'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:15'
+      timezone: 'America/Vancouver'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(deps)'
+      include: 'scope'
+    groups:
+      pip-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # Docker base image for the bgm-transcoder container
+  - package-ecosystem: 'docker'
+    directory: '/packages/dtx-api/container/bgm-transcoder'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '09:45'
+      timezone: 'America/Vancouver'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore(deps)'
+      include: 'scope'
+    groups:
+      docker-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
   # GitHub Actions versions in .github/workflows
   - package-ecosystem: 'github-actions'
     directory: '/'

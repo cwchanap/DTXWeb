@@ -15,7 +15,7 @@
 		"@pulumi/pulumi": "^3.268.0"
 	},
 	"devDependencies": {
-		"@types/node": "^20.11.25",
+		"@types/node": "^25.9.9",
 		"@vitest/coverage-v8": "^5.0.3",
 		"typescript": "^5.8.3",
 		"vitest": "^5.0.3"

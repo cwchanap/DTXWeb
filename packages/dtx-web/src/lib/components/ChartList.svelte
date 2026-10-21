@@ -275,7 +275,8 @@
 
 				<!-- Page Size Selector -->
 				<div class="flex items-center gap-2">
-					<span class="text-sm font-medium text-slate-300">Items:</span>
+					<span class="text-sm font-medium text-slate-300">{$_('chart_list.items')}:</span
+					>
 					<select
 						bind:value={pageSize}
 						onchange={() => handlePageSizeChange({ pageSize })}
@@ -300,7 +301,7 @@
 						}}
 						aria-pressed={selectMode}
 					>
-						{selectMode ? 'Cancel' : 'Select'}
+						{selectMode ? $_('chart_list.cancel') : $_('chart_list.select')}
 					</button>
 					{#if selectMode && selectedIds.size > 0}
 						<button
@@ -309,14 +310,18 @@
 							disabled={bulkDownloading ||
 								selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS}
 						>
-							{bulkDownloading ? 'Downloading…' : `Download (${selectedIds.size})`}
+							{bulkDownloading
+								? $_('chart_actions.downloading')
+								: $_('chart_list.download_count', {
+										values: { count: selectedIds.size }
+									})}
 						</button>
 					{/if}
 				{/if}
 
 				<!-- View Mode Selector -->
 				<div class="flex items-center gap-2">
-					<span class="text-sm font-medium text-slate-300">View:</span>
+					<span class="text-sm font-medium text-slate-300">{$_('chart_list.view')}:</span>
 					<div class="flex overflow-hidden rounded-lg border border-purple-500/30">
 						<button
 							class="inline-flex h-9 w-9 items-center justify-center transition-all duration-200 {viewMode ===
@@ -325,7 +330,7 @@
 								: 'bg-slate-800/50 text-slate-400 hover:bg-purple-600/20 hover:text-purple-300'}"
 							onclick={() => (viewMode = 'card')}
 							aria-pressed={viewMode === 'card'}
-							aria-label="Card view"
+							aria-label={$_('chart_list.card_view')}
 						>
 							<IconGrid size="18" />
 						</button>
@@ -336,7 +341,7 @@
 								: 'bg-slate-800/50 text-slate-400 hover:bg-purple-600/20 hover:text-purple-300'}"
 							onclick={() => (viewMode = 'table')}
 							aria-pressed={viewMode === 'table'}
-							aria-label="Table view"
+							aria-label={$_('chart_list.table_view')}
 						>
 							<IconTable size="18" />
 						</button>
@@ -358,7 +363,7 @@
 					<div class="music-bar" style="height: 8px;"></div>
 				</div>
 			</div>
-			<p class="font-medium text-slate-300">Loading charts...</p>
+			<p class="font-medium text-slate-300">{$_('chart_list.loading')}</p>
 		</div>
 	</div>
 {:else if viewMode === 'table'}
@@ -443,7 +448,9 @@
 						</div>
 						{#if item.dtxFiles && item.dtxFiles.length > 0}
 							<div class="mt-3 flex items-center gap-2">
-								<span class="text-xs font-medium text-slate-400">Levels:</span>
+								<span class="text-xs font-medium text-slate-400"
+									>{$_('blog.level')}:</span
+								>
 								<div class="flex flex-wrap gap-1">
 									{#each formatLevelDisplay(item.dtxFiles).split(', ') as level}
 										<span
@@ -463,7 +470,9 @@
 									type="checkbox"
 									checked={selectedIds.has(item.id)}
 									onchange={() => handleToggleSelect(item.id)}
-									aria-label="Select {item.title}"
+									aria-label={$_('chart_list.select_chart', {
+										values: { title: item.title }
+									})}
 									class="h-4 w-4 cursor-pointer rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 								/>
 							</label>
@@ -492,7 +501,9 @@
 							type="checkbox"
 							checked={selectedIds.has(item.id)}
 							onchange={() => handleToggleSelect(item.id)}
-							aria-label="Select {item.title}"
+							aria-label={$_('chart_list.select_chart', {
+								values: { title: item.title }
+							})}
 							class="h-4 w-4 rounded border-slate-500 bg-slate-700 text-purple-600 focus:ring-purple-500"
 						/>
 					</label>

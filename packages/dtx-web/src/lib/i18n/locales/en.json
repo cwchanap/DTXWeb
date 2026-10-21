@@ -33,8 +33,28 @@
 		"play_audio": "Play audio",
 		"pause_audio": "Pause audio"
 	},
+	"chart_list": {
+		"actions": "Actions",
+		"cancel": "Cancel",
+		"card_view": "Card view",
+		"download_chart": "Download chart",
+		"download_count": "Download ({count})",
+		"download_not_available": "Download not available",
+		"external_download_link": "External download link",
+		"external_link": "External Link",
+		"items": "Items",
+		"loading": "Loading charts...",
+		"no_external_link": "No external link available",
+		"open_in_editor": "Open in Editor",
+		"preview_unavailable": "Preview unavailable",
+		"select": "Select",
+		"select_chart": "Select {title}",
+		"table_view": "Table view",
+		"view": "View"
+	},
 	"toast": {
 		"error_title": "Error",
+		"open_in_editor_failed": "Failed to open chart in editor",
 		"cannot_delete_chart_invalid_id": "Cannot delete chart: invalid chart ID"
 	},
 	"preview": {

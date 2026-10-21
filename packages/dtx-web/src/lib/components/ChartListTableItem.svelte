@@ -43,7 +43,7 @@
 			await goto(`/editor/${item.id}`);
 		} catch (error) {
 			console.error('Failed to navigate to editor:', error);
-			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+			toastStore.error({ title: $_('toast.open_in_editor_failed'), duration: 3000 });
 		}
 	};
 
@@ -59,7 +59,7 @@
 		onOpenChange={(details) => (popoverOpen = details.open)}
 		zIndex="120"
 		positioning={{ placement: 'bottom-start' }}
-		triggerAriaLabel="Actions"
+		triggerAriaLabel={$_('chart_list.actions')}
 		triggerClasses="inline-flex h-9 w-9 items-center justify-center rounded p-1 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2"
 		contentBase="w-48 p-0 rounded-sm border border-gray-300 bg-white shadow-lg"
 	>
@@ -75,7 +75,7 @@
 						fullWidth
 						justify="start"
 					>
-						{#snippet children()}Open in Editor{/snippet}
+						{#snippet children()}{$_('chart_list.open_in_editor')}{/snippet}
 					</Button>
 				{/if}
 
@@ -119,8 +119,8 @@
 				type="button"
 				onclick={handleOpenInEditor}
 				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
-				aria-label="Open in Editor"
-				title="Open in Editor"
+				aria-label={$_('chart_list.open_in_editor')}
+				title={$_('chart_list.open_in_editor')}
 			>
 				<Music size="16" />
 			</button>
@@ -148,8 +148,8 @@
 				target="_blank"
 				rel="noopener noreferrer"
 				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
-				aria-label="External download link"
-				title="External download link"
+				aria-label={$_('chart_list.external_download_link')}
+				title={$_('chart_list.external_download_link')}
 			>
 				<ExternalLink size="16" />
 			</a>
@@ -157,7 +157,7 @@
 			<span
 				class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"
 				aria-disabled="true"
-				title="No external link available"
+				title={$_('chart_list.no_external_link')}
 			>
 				<ExternalLink size="16" />
 			</span>

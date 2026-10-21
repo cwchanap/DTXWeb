@@ -889,7 +889,7 @@ fn zip_entries(path: &Path) -> Vec<E2eDriveZipEntrySnapshot> {
         entries.push(E2eDriveZipEntrySnapshot {
             name: entry.name().expect("entry name").to_string(),
             size: contents.len() as u64,
-            sha256: format!("{:x}", Sha256::digest(&contents)),
+            sha256: hex::encode(Sha256::digest(&contents)),
         });
     }
     entries.sort_by(|left, right| left.name.cmp(&right.name));

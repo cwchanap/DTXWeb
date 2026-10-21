@@ -1179,6 +1179,7 @@ dependencies = [
  "dirs",
  "encoding_rs",
  "futures-util",
+ "hex",
  "httpdate",
  "keyring",
  "png 0.18.1",

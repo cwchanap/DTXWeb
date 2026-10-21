@@ -68,7 +68,9 @@ describe('ChartListTableItem', () => {
 		});
 		const r2Button = screen.getByRole('button', { name: 'chart_actions.download' });
 		expect(r2Button).toBeInTheDocument();
-		const externalLink = screen.getByRole('link', { name: /external download link/i });
+		const externalLink = screen.getByRole('link', {
+			name: /chart_list.external_download_link/i
+		});
 		expect(externalLink).toHaveAttribute('href', 'https://dl.example.com');
 	});
 
@@ -88,7 +90,9 @@ describe('ChartListTableItem', () => {
 		expect(
 			screen.queryByRole('button', { name: 'chart_actions.download' })
 		).not.toBeInTheDocument();
-		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: /chart_list.external_download_link/i })
+		).toBeInTheDocument();
 	});
 
 	it('shows R2 download link in blog mode when downloadUrl is null', () => {
@@ -115,7 +119,7 @@ describe('ChartListTableItem', () => {
 		expect(
 			screen.queryByRole('button', { name: 'chart_actions.download' })
 		).not.toBeInTheDocument();
-		expect(screen.getByTitle('No external link available')).toBeInTheDocument();
+		expect(screen.getByTitle('chart_list.no_external_link')).toBeInTheDocument();
 	});
 
 	it('hides the R2 download link in blog mode when uploaded files are unavailable', () => {
@@ -134,7 +138,9 @@ describe('ChartListTableItem', () => {
 		expect(
 			screen.queryByRole('button', { name: 'chart_actions.download' })
 		).not.toBeInTheDocument();
-		expect(screen.getByRole('link', { name: /external download link/i })).toBeInTheDocument();
+		expect(
+			screen.getByRole('link', { name: /chart_list.external_download_link/i })
+		).toBeInTheDocument();
 	});
 
 	it('does not render the in-app download link in blog table mode when downloads are disabled', () => {
@@ -150,15 +156,14 @@ describe('ChartListTableItem', () => {
 		expect(
 			screen.queryByRole('button', { name: 'chart_actions.download' })
 		).not.toBeInTheDocument();
-		expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
-			'href',
-			'https://dl.example.com'
-		);
+		expect(
+			screen.getByRole('link', { name: /chart_list.external_download_link/i })
+		).toHaveAttribute('href', 'https://dl.example.com');
 	});
 
 	it('renders action buttons in non-blog mode', () => {
 		render(ChartListTableItem, { props: defaultProps });
-		expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_list.actions' })).toBeInTheDocument();
 		expect(screen.getByRole('menuitem', { name: 'Edit details' })).toBeInTheDocument();
 	});
 
@@ -200,23 +205,31 @@ describe('ChartListTableItem', () => {
 
 		it('renders "Open in Editor" button in non-blog mode', () => {
 			render(ChartListTableItem, { props: defaultProps });
-			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
+			expect(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			).toBeInTheDocument();
 		});
 
 		it('clicking "Open in Editor" navigates to the chart editor', async () => {
 			render(ChartListTableItem, { props: defaultProps });
-			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			await fireEvent.click(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			);
 			expect(goto).toHaveBeenCalledWith(`/editor/${mockItem.id}`);
 		});
 
 		it('renders "Open in Editor" button in blog mode for an uploaded chart', () => {
 			render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
-			expect(screen.getByRole('button', { name: 'Open in Editor' })).toBeInTheDocument();
+			expect(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			).toBeInTheDocument();
 		});
 
 		it('clicking "Open in Editor" in blog mode navigates to the chart editor', async () => {
 			render(ChartListTableItem, { props: { ...defaultProps, isBlog: true } });
-			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			await fireEvent.click(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			);
 			expect(goto).toHaveBeenCalledWith(`/editor/${mockItem.id}`);
 		});
 
@@ -229,7 +242,7 @@ describe('ChartListTableItem', () => {
 				}
 			});
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 
@@ -238,7 +251,7 @@ describe('ChartListTableItem', () => {
 				props: { ...defaultProps, item: { ...mockItem, hasUploadedFiles: false } }
 			});
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 
@@ -247,7 +260,7 @@ describe('ChartListTableItem', () => {
 			delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 			render(ChartListTableItem, { props: { ...defaultProps, item } });
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 	});

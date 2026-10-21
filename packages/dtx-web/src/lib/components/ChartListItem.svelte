@@ -57,7 +57,7 @@
 			await goto(`/editor/${item.id}`);
 		} catch (error) {
 			console.error('Failed to navigate to editor:', error);
-			toastStore.error({ title: 'Failed to open chart in editor', duration: 3000 });
+			toastStore.error({ title: $_('toast.open_in_editor_failed'), duration: 3000 });
 		}
 	};
 </script>
@@ -91,7 +91,7 @@
 					onOpenChange={(details) => (popoverOpen = details.open)}
 					zIndex="120"
 					positioning={{ placement: 'bottom-start' }}
-					triggerAriaLabel="Actions"
+					triggerAriaLabel={$_('chart_list.actions')}
 					triggerClasses="rounded-lg p-2 text-slate-400 transition-all duration-200 hover:bg-purple-600/20 hover:text-purple-300"
 					contentBase="w-48 p-0 rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl backdrop-blur-sm"
 				>
@@ -122,7 +122,7 @@
 												d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
 											></path>
 										</svg>
-										Open in Editor
+										{$_('chart_list.open_in_editor')}
 									{/snippet}
 								</Button>
 							{/if}
@@ -285,7 +285,7 @@
 				<div
 					class="flex h-full min-h-[120px] items-center justify-center text-xs text-slate-500"
 				>
-					Preview unavailable
+					{$_('chart_list.preview_unavailable')}
 				</div>
 			{/if}
 		</div>
@@ -334,7 +334,9 @@
 						{$_('blog.download')}
 					</a>
 				{:else}
-					<div class="text-sm text-slate-500 italic">Download not available</div>
+					<div class="text-sm text-slate-500 italic">
+						{$_('chart_list.download_not_available')}
+					</div>
 				{/if}
 			</div>
 		{/if}

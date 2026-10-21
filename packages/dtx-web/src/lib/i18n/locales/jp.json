@@ -33,8 +33,28 @@
 		"play_audio": "音声を再生",
 		"pause_audio": "音声を一時停止"
 	},
+	"chart_list": {
+		"actions": "操作",
+		"cancel": "キャンセル",
+		"card_view": "カード表示",
+		"download_chart": "チャートをダウンロード",
+		"download_count": "ダウンロード ({count})",
+		"download_not_available": "ダウンロードできません",
+		"external_download_link": "外部ダウンロードリンク",
+		"external_link": "外部リンク",
+		"items": "表示件数",
+		"loading": "チャートを読み込み中…",
+		"no_external_link": "外部リンクはありません",
+		"open_in_editor": "エディターで開く",
+		"preview_unavailable": "プレビューできません",
+		"select": "選択",
+		"select_chart": "{title} を選択",
+		"table_view": "テーブル表示",
+		"view": "表示"
+	},
 	"toast": {
 		"error_title": "エラー",
+		"open_in_editor_failed": "エディターでチャートを開けませんでした",
 		"cannot_delete_chart_invalid_id": "チャートを削除できません: 無効なチャートID"
 	},
 	"preview": {

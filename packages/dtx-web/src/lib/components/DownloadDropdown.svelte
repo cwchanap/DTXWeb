@@ -59,7 +59,7 @@
 			aria-label={$_('chart_actions.download')}
 			disabled={isDownloading}
 			class={downloadClass}
-			title="Download chart"
+			title={$_('chart_list.download_chart')}
 		>
 			<Download size="16" />
 			{#if !compact}{isDownloading
@@ -76,16 +76,20 @@
 			target="_blank"
 			rel="noopener noreferrer"
 			class={externalActiveClass}
-			aria-label="External download link"
-			title="External download link"
+			aria-label={$_('chart_list.external_download_link')}
+			title={$_('chart_list.external_download_link')}
 		>
 			<ExternalLink size="16" />
-			{#if !compact}External Link{/if}
+			{#if !compact}{$_('chart_list.external_link')}{/if}
 		</a>
 	{:else}
-		<span class={externalDisabledClass} aria-disabled="true" title="No external link available">
+		<span
+			class={externalDisabledClass}
+			aria-disabled="true"
+			title={$_('chart_list.no_external_link')}
+		>
 			<ExternalLink size="16" />
-			{#if !compact}External Link{/if}
+			{#if !compact}{$_('chart_list.external_link')}{/if}
 		</span>
 	{/if}
 </div>

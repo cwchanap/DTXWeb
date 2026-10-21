@@ -195,7 +195,7 @@ describe('ChartListItem Component Logic', () => {
 				screen.getByRole('button', { name: 'chart_actions.download' })
 			).toBeInTheDocument();
 			expect(
-				screen.getByRole('link', { name: /external download link/i })
+				screen.getByRole('link', { name: /chart_list.external_download_link/i })
 			).toBeInTheDocument();
 		});
 
@@ -205,7 +205,7 @@ describe('ChartListItem Component Logic', () => {
 			expect(
 				screen.queryByRole('button', { name: 'chart_actions.download' })
 			).not.toBeInTheDocument();
-			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
+			expect(screen.getByTitle('chart_list.no_external_link')).toBeInTheDocument();
 		});
 
 		it('omits the uploaded chart download link when only the external URL is available', () => {
@@ -219,10 +219,9 @@ describe('ChartListItem Component Logic', () => {
 			expect(
 				screen.queryByRole('button', { name: 'chart_actions.download' })
 			).not.toBeInTheDocument();
-			expect(screen.getByRole('link', { name: /external download link/i })).toHaveAttribute(
-				'href',
-				mockItem.downloadUrl
-			);
+			expect(
+				screen.getByRole('link', { name: /chart_list.external_download_link/i })
+			).toHaveAttribute('href', mockItem.downloadUrl);
 		});
 	});
 
@@ -265,7 +264,7 @@ describe('ChartListItem Component Logic', () => {
 
 		it('renders action menu trigger button in non-blog mode', () => {
 			render(ChartListItem, { props: renderProps });
-			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'chart_list.actions' })).toBeInTheDocument();
 		});
 
 		it('keeps audio off the owner menu so it remains an image control', () => {
@@ -299,13 +298,13 @@ describe('ChartListItem Component Logic', () => {
 
 			const menuButtons = screen
 				.getAllByRole('button')
-				.filter((button) => button.getAttribute('aria-label') !== 'Actions');
-			expect(menuButtons[0]).toHaveAccessibleName('Open in Editor');
+				.filter((button) => button.getAttribute('aria-label') !== 'chart_list.actions');
+			expect(menuButtons[0]).toHaveAccessibleName('chart_list.open_in_editor');
 		});
 
 		it('renders the action menu in blog mode when entries apply', () => {
 			render(ChartListItem, { props: { ...renderProps, isBlog: true } });
-			expect(screen.getByRole('button', { name: 'Actions' })).toBeInTheDocument();
+			expect(screen.getByRole('button', { name: 'chart_list.actions' })).toBeInTheDocument();
 		});
 
 		it('offers Open in Editor and the music tab on a blog card', () => {
@@ -314,11 +313,11 @@ describe('ChartListItem Component Logic', () => {
 			const entries = [
 				...screen
 					.getAllByRole('button')
-					.filter((button) => button.getAttribute('aria-label') !== 'Actions'),
+					.filter((button) => button.getAttribute('aria-label') !== 'chart_list.actions'),
 				...screen.getAllByRole('menuitem')
 			].map((element) => element.textContent?.trim());
 
-			expect(entries).toEqual(['Open in Editor', 'preview.open']);
+			expect(entries).toEqual(['chart_list.open_in_editor', 'preview.open']);
 		});
 
 		it('labels the preview destination as the music tab in English', () => {
@@ -347,7 +346,9 @@ describe('ChartListItem Component Logic', () => {
 					item: { ...mockItem, id: undefined }
 				}
 			});
-			expect(screen.queryByRole('button', { name: 'Actions' })).not.toBeInTheDocument();
+			expect(
+				screen.queryByRole('button', { name: 'chart_list.actions' })
+			).not.toBeInTheDocument();
 		});
 
 		it('shows R2 download link in blog mode', () => {
@@ -380,7 +381,7 @@ describe('ChartListItem Component Logic', () => {
 				screen.queryByRole('button', { name: 'chart_actions.download' })
 			).not.toBeInTheDocument();
 			expect(
-				screen.getByRole('link', { name: /external download link/i })
+				screen.getByRole('link', { name: /chart_list.external_download_link/i })
 			).toBeInTheDocument();
 		});
 
@@ -414,9 +415,9 @@ describe('ChartListItem Component Logic', () => {
 				}
 			});
 			expect(
-				screen.queryByRole('link', { name: /external download link/i })
+				screen.queryByRole('link', { name: /chart_list.external_download_link/i })
 			).not.toBeInTheDocument();
-			expect(screen.getByText('Download not available')).toBeInTheDocument();
+			expect(screen.getByText('chart_list.download_not_available')).toBeInTheDocument();
 		});
 
 		it('shows R2 download link in blog mode when downloadUrl is null', () => {
@@ -444,7 +445,7 @@ describe('ChartListItem Component Logic', () => {
 			expect(
 				screen.queryByRole('button', { name: 'chart_actions.download' })
 			).not.toBeInTheDocument();
-			expect(screen.getByTitle('No external link available')).toBeInTheDocument();
+			expect(screen.getByTitle('chart_list.no_external_link')).toBeInTheDocument();
 		});
 
 		it('does not render the download dropdown when the simfile id is missing', () => {
@@ -464,7 +465,7 @@ describe('ChartListItem Component Logic', () => {
 				screen.queryByRole('button', { name: 'chart_actions.download' })
 			).not.toBeInTheDocument();
 			expect(
-				screen.queryByRole('link', { name: /external download link/i })
+				screen.queryByRole('link', { name: /chart_list.external_download_link/i })
 			).not.toBeInTheDocument();
 		});
 
@@ -610,20 +611,24 @@ describe('ChartListItem Component Logic', () => {
 
 		it('clicking "Open in Editor" menu item navigates to the editor in non-blog mode', async () => {
 			render(ChartListItem, { props: navProps });
-			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			await fireEvent.click(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			);
 			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
 		it('clicking "Open in Editor" from the blog menu navigates to the editor', async () => {
 			render(ChartListItem, { props: { ...navProps, isBlog: true } });
-			await fireEvent.click(screen.getByRole('button', { name: 'Open in Editor' }));
+			await fireEvent.click(
+				screen.getByRole('button', { name: 'chart_list.open_in_editor' })
+			);
 			expect(goto).toHaveBeenCalledWith('/editor/1');
 		});
 
 		it('"Open in Editor" menu item is not shown when item.id is undefined', () => {
 			render(ChartListItem, { props: { ...navProps, item: { ...mockItem, id: undefined } } });
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 
@@ -632,7 +637,7 @@ describe('ChartListItem Component Logic', () => {
 				props: { ...navProps, item: { ...mockItem, hasUploadedFiles: false } }
 			});
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 
@@ -641,7 +646,7 @@ describe('ChartListItem Component Logic', () => {
 			delete (item as { hasUploadedFiles?: boolean }).hasUploadedFiles;
 			render(ChartListItem, { props: { ...navProps, item } });
 			expect(
-				screen.queryByRole('button', { name: 'Open in Editor' })
+				screen.queryByRole('button', { name: 'chart_list.open_in_editor' })
 			).not.toBeInTheDocument();
 		});
 	});

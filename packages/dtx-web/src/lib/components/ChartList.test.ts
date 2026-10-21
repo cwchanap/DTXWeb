@@ -99,12 +99,12 @@ const renderChartListWithSelection = async () => {
 		}
 	});
 
-	await fireEvent.click(await screen.findByRole('button', { name: 'Select' }));
+	await fireEvent.click(await screen.findByRole('button', { name: 'chart_list.select' }));
 	const checkbox = await screen.findByRole('checkbox', {
-		name: `Select ${mockListedChart.title}`
+		name: 'chart_list.select_chart'
 	});
 	await fireEvent.click(checkbox);
-	await screen.findByRole('button', { name: /download \(1\)/i });
+	await screen.findByRole('button', { name: 'chart_list.download_count' });
 
 	return { checkbox };
 };
@@ -402,7 +402,7 @@ describe('ChartList component bulk download behavior', () => {
 		Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
 
 		render(ChartList, { props: { isBlog: true, enableDownload: true } });
-		await fireEvent.click(await screen.findByRole('button', { name: 'Select' }));
+		await fireEvent.click(await screen.findByRole('button', { name: 'chart_list.select' }));
 
 		// Select all MAX items
 		const checkboxes = await screen.findAllByRole('checkbox');
@@ -413,9 +413,7 @@ describe('ChartList component bulk download behavior', () => {
 		// Exactly MAX should still be allowed — no error at the boundary
 		expect(mockToastStore.error).not.toHaveBeenCalled();
 		expect(
-			screen.getByRole('button', {
-				name: new RegExp(`download \\(${chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS}\\)`, 'i')
-			})
+			screen.getByRole('button', { name: 'chart_list.download_count' })
 		).toBeInTheDocument();
 
 		// Try to select one more beyond the limit
@@ -438,15 +436,17 @@ describe('ChartList component bulk download behavior', () => {
 
 		const { checkbox } = await renderChartListWithSelection();
 
-		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.download_count' }));
 
 		await waitFor(() => expect(startBulkDownloadSpy).toHaveBeenCalled());
 
 		expect(mockApi.listSimfiles).toHaveBeenCalledTimes(1);
 		expect(mockToastStore.error).not.toHaveBeenCalled();
 		expect(consoleErrorSpy).not.toHaveBeenCalled();
-		expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /download \(1\)/i })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_list.cancel' })).toBeInTheDocument();
+		expect(
+			screen.getByRole('button', { name: 'chart_list.download_count' })
+		).toBeInTheDocument();
 		expect(checkbox).toBeChecked();
 	});
 
@@ -458,7 +458,7 @@ describe('ChartList component bulk download behavior', () => {
 
 		await renderChartListWithSelection();
 
-		await fireEvent.click(screen.getByRole('button', { name: /download \(1\)/i }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.download_count' }));
 
 		await waitFor(() =>
 			expect(mockToastStore.error).toHaveBeenCalledWith({
@@ -472,11 +472,13 @@ describe('ChartList component bulk download behavior', () => {
 			'Failed to start bulk download:',
 			expect.any(Error)
 		);
-		expect(screen.getByRole('button', { name: 'Select' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_list.select' })).toBeInTheDocument();
 		expect(
-			screen.queryByRole('checkbox', { name: `Select ${mockListedChart.title}` })
+			screen.queryByRole('checkbox', { name: 'chart_list.select_chart' })
 		).not.toBeInTheDocument();
-		expect(screen.queryByRole('button', { name: /download \(1\)/i })).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole('button', { name: 'chart_list.download_count' })
+		).not.toBeInTheDocument();
 	});
 });
 
@@ -508,21 +510,21 @@ describe('ChartList Rendering', () => {
 
 	it('renders card view button and table view button', async () => {
 		render(ChartList);
-		expect(screen.getByRole('button', { name: 'Card view' })).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Table view' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_list.card_view' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'chart_list.table_view' })).toBeInTheDocument();
 	});
 
 	it('switches to table view when table button clicked', async () => {
 		render(ChartList);
-		const tableBtn = screen.getByRole('button', { name: 'Table view' });
+		const tableBtn = screen.getByRole('button', { name: 'chart_list.table_view' });
 		await fireEvent.click(tableBtn);
 		expect(tableBtn).toHaveAttribute('aria-pressed', 'true');
 	});
 
 	it('switches back to card view when card button clicked', async () => {
 		render(ChartList);
-		const cardBtn = screen.getByRole('button', { name: 'Card view' });
-		const tableBtn = screen.getByRole('button', { name: 'Table view' });
+		const cardBtn = screen.getByRole('button', { name: 'chart_list.card_view' });
+		const tableBtn = screen.getByRole('button', { name: 'chart_list.table_view' });
 		await fireEvent.click(tableBtn);
 		await fireEvent.click(cardBtn);
 		expect(cardBtn).toHaveAttribute('aria-pressed', 'true');
@@ -570,7 +572,7 @@ describe('ChartList Rendering', () => {
 			1
 		);
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => {
 			expect(screen.getByText(/My Song/)).toBeInTheDocument();
 		});
@@ -597,7 +599,7 @@ describe('ChartList Rendering', () => {
 		);
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 
 		await waitFor(() => {
 			expect(screen.getByText('1. My Song')).toBeInTheDocument();
@@ -611,7 +613,7 @@ describe('ChartList Rendering', () => {
 	const renderSingleChartInTableMode = async (isBlog: boolean) => {
 		mockApi.listSimfiles.mockResolvedValue({ data: [mockListedChart], count: 1 });
 		render(ChartList, { props: { isBlog } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await screen.findByText(mockListedChart.title, { exact: false });
 	};
 
@@ -639,7 +641,7 @@ describe('ChartList Rendering', () => {
 			})
 		);
 		render(ChartList);
-		expect(screen.getByText('Loading charts...')).toBeInTheDocument();
+		expect(screen.getByText('chart_list.loading')).toBeInTheDocument();
 		resolveList({ data: [], count: 0 });
 	});
 
@@ -647,7 +649,7 @@ describe('ChartList Rendering', () => {
 		mockApi.listSimfiles.mockRejectedValueOnce(new Error('Network error'));
 		render(ChartList);
 		await waitFor(() => {
-			expect(screen.queryByText('Loading charts...')).not.toBeInTheDocument();
+			expect(screen.queryByText('chart_list.loading')).not.toBeInTheDocument();
 		});
 	});
 
@@ -774,7 +776,7 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		});
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
@@ -800,7 +802,7 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		});
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
@@ -822,7 +824,7 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		mockApi.deleteSimfile.mockRejectedValueOnce(new Error('delete failed: 500'));
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
 		const onFileDelete =
@@ -840,7 +842,7 @@ describe('ChartList – handleFileDelete via ChartListTableItem prop', () => {
 		mockApi.deleteSimfile.mockRejectedValueOnce(new Error('Network failure'));
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => expect(screen.getByText(/Delete Me/)).toBeInTheDocument());
 
 		const onFileDelete =
@@ -878,7 +880,7 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		mockApi.updateSimfile.mockResolvedValueOnce({ ...item, isPublished: false });
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => expect(screen.getByText(/Toggle Chart/)).toBeInTheDocument());
 
 		const props = getLastTableItemProps();
@@ -903,7 +905,7 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		mockApi.updateSimfile.mockRejectedValueOnce(new Error('update failed: 500'));
 
 		render(ChartList, { props: { isBlog: false } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Table view' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => expect(screen.getByText(/Toggle Chart/)).toBeInTheDocument());
 
 		const props = getLastTableItemProps();

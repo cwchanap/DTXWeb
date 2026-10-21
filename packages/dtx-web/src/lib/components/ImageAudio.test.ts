@@ -72,6 +72,6 @@ describe('ImageAudio', () => {
 	it('shows the image error fallback when the image fails to load', async () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio() } });
 		await fireEvent.error(screen.getByRole('img', { name: 'Preview' }));
-		expect(screen.getByText('Preview unavailable')).toBeInTheDocument();
+		expect(screen.getByText('chart_list.preview_unavailable')).toBeInTheDocument();
 	});
 });

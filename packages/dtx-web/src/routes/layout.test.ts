@@ -1,6 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-vi.mock('$lib/i18n', () => ({}));
+vi.mock('$lib/i18n', () => ({
+	normalizeLocale: (l: string) =>
+		l.toLowerCase().split('-')[0] === 'ja' ? 'jp' : l.split('-')[0]
+}));
 vi.mock('$lib/auth/session', () => ({ fetchAuthSession: vi.fn() }));
 
 const mockBrowserEnv = vi.hoisted(() => ({ browser: false }));

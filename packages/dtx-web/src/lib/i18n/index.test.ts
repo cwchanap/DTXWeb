@@ -25,6 +25,10 @@ describe('i18n', () => {
 		vi.clearAllMocks();
 		// Re-import the module to trigger initialization
 		vi.resetModules();
+		Object.defineProperty(global, 'window', {
+			value: { navigator: { language: 'en-US' } },
+			writable: true
+		});
 	});
 
 	it('should register locale files', async () => {
@@ -40,7 +44,21 @@ describe('i18n', () => {
 
 		expect(mockInit).toHaveBeenCalledWith({
 			fallbackLocale: 'en',
-			initialLocale: 'en-US'
+			initialLocale: 'en'
+		});
+	});
+
+	it('should map Japanese browser locales to the jp dictionary', async () => {
+		Object.defineProperty(global, 'window', {
+			value: { navigator: { language: 'ja-JP' } },
+			writable: true
+		});
+
+		await import('./index');
+
+		expect(mockInit).toHaveBeenCalledWith({
+			fallbackLocale: 'en',
+			initialLocale: 'jp'
 		});
 	});
 

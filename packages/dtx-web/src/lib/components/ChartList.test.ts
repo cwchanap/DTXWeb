@@ -349,6 +349,11 @@ describe('ChartList helpers', () => {
 				new Error(chartListHelpers.BULK_DOWNLOAD_NO_FILES_MESSAGE)
 			)
 		).toBe('chart_list.bulk_download_no_files');
+		expect(
+			chartListHelpers.bulkDownloadErrorKey(
+				new Error(chartListHelpers.BULK_DOWNLOAD_API_NO_FILES_MESSAGE)
+			)
+		).toBe('chart_list.bulk_download_no_files');
 		expect(chartListHelpers.bulkDownloadErrorKey(new Error('Some server error'))).toBe(
 			'chart_list.bulk_download_failed'
 		);

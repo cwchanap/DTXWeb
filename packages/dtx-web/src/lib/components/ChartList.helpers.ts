@@ -25,6 +25,9 @@ export const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
 	'Bulk download requires a browser that supports direct file saving.';
 export const BULK_DOWNLOAD_FAILED_MESSAGE = 'Bulk download failed';
 export const BULK_DOWNLOAD_NO_FILES_MESSAGE = 'No uploaded files found for the selected charts';
+/** Error message returned by the bulk-download API when selected charts have no uploaded files. */
+export const BULK_DOWNLOAD_API_NO_FILES_MESSAGE =
+	'Some selected charts do not have uploaded files available.';
 
 const createBulkDownloadRequestInit = async (ids: number[]): Promise<RequestInit> => ({
 	method: 'POST',
@@ -106,7 +109,10 @@ export const bulkDownloadErrorKey = (error: unknown): string => {
 	if (message === BULK_DOWNLOAD_UNSUPPORTED_MESSAGE) {
 		return 'chart_list.bulk_download_unsupported';
 	}
-	if (message === BULK_DOWNLOAD_NO_FILES_MESSAGE) {
+	if (
+		message === BULK_DOWNLOAD_NO_FILES_MESSAGE ||
+		message === BULK_DOWNLOAD_API_NO_FILES_MESSAGE
+	) {
 		return 'chart_list.bulk_download_no_files';
 	}
 	return 'chart_list.bulk_download_failed';

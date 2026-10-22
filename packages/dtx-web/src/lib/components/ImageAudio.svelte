@@ -83,7 +83,7 @@
 			{:else}
 				<img
 					src={previewUrl}
-					alt="Preview"
+					alt={$_('chart_list.preview_alt')}
 					class="h-60 w-full rounded-lg object-cover"
 					onerror={() => (imageError = true)}
 				/>

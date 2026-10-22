@@ -44,7 +44,8 @@
 		try {
 			await downloadSimfile(String(simfileId));
 		} catch (err) {
-			downloadError = err instanceof Error ? err.message : 'Download failed';
+			console.error('Failed to download simfile:', err);
+			downloadError = $_('chart_actions.download_failed');
 		} finally {
 			isDownloading = false;
 		}

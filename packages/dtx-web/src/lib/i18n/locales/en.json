@@ -29,12 +29,17 @@
 	},
 	"chart_actions": {
 		"download": "Download",
+		"download_failed": "Download failed. Please try again.",
 		"downloading": "Downloading…",
 		"play_audio": "Play audio",
 		"pause_audio": "Pause audio"
 	},
 	"chart_list": {
 		"actions": "Actions",
+		"bulk_download_failed": "Bulk download failed. Please try again.",
+		"bulk_download_limit": "You can download up to {max} charts at once",
+		"bulk_download_no_files": "No uploaded files found for the selected charts",
+		"bulk_download_unsupported": "Bulk download requires a browser that supports direct file saving.",
 		"cancel": "Cancel",
 		"card_view": "Card view",
 		"download_chart": "Download chart",
@@ -46,6 +51,7 @@
 		"loading": "Loading charts...",
 		"no_external_link": "No external link available",
 		"open_in_editor": "Open in Editor",
+		"preview_alt": "Preview",
 		"preview_unavailable": "Preview unavailable",
 		"select": "Select",
 		"select_chart": "Select {title}",

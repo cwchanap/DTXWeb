@@ -29,12 +29,17 @@
 	},
 	"chart_actions": {
 		"download": "ダウンロード",
+		"download_failed": "ダウンロードに失敗しました。もう一度お試しください。",
 		"downloading": "ダウンロード中…",
 		"play_audio": "音声を再生",
 		"pause_audio": "音声を一時停止"
 	},
 	"chart_list": {
 		"actions": "操作",
+		"bulk_download_failed": "一括ダウンロードに失敗しました。もう一度お試しください。",
+		"bulk_download_limit": "一度にダウンロードできるチャートは{max}件までです",
+		"bulk_download_no_files": "選択したチャートにアップロード済みのファイルがありません",
+		"bulk_download_unsupported": "一括ダウンロードには、ファイルの直接保存に対応したブラウザが必要です。",
 		"cancel": "キャンセル",
 		"card_view": "カード表示",
 		"download_chart": "チャートをダウンロード",
@@ -46,6 +51,7 @@
 		"loading": "チャートを読み込み中…",
 		"no_external_link": "外部リンクはありません",
 		"open_in_editor": "エディターで開く",
+		"preview_alt": "プレビュー",
 		"preview_unavailable": "プレビューできません",
 		"select": "選択",
 		"select_chart": "{title} を選択",

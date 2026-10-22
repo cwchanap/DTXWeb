@@ -59,9 +59,11 @@ describe('DownloadDropdown', () => {
 		await downloadPromise;
 	});
 
-	it('displays error message when download fails', async () => {
+	it('displays a localized error and logs details when download fails', async () => {
+		const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const { downloadSimfile } = await import('$lib/api');
-		vi.mocked(downloadSimfile).mockRejectedValueOnce(new Error('Network error'));
+		const failure = new Error('Network error');
+		vi.mocked(downloadSimfile).mockRejectedValueOnce(failure);
 
 		const { getByRole, findByRole } = render(DownloadDropdown, {
 			props: { simfileId: 7, externalUrl: null, hasUploadedFiles: true }
@@ -69,6 +71,7 @@ describe('DownloadDropdown', () => {
 		await fireEvent.click(getByRole('button', { name: 'chart_actions.download' }));
 
 		const alert = await findByRole('alert');
-		expect(alert).toHaveTextContent('Network error');
+		expect(alert).toHaveTextContent('chart_actions.download_failed');
+		expect(consoleErrorSpy).toHaveBeenCalledWith('Failed to download simfile:', failure);
 	});
 });

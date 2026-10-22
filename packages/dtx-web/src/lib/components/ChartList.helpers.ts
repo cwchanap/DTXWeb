@@ -23,6 +23,8 @@ const DEFAULT_BULK_DOWNLOAD_FILENAME = 'drumery-charts.zip';
 export const MAX_BULK_DOWNLOAD_CHARTS = 20;
 export const BULK_DOWNLOAD_UNSUPPORTED_MESSAGE =
 	'Bulk download requires a browser that supports direct file saving.';
+export const BULK_DOWNLOAD_FAILED_MESSAGE = 'Bulk download failed';
+export const BULK_DOWNLOAD_NO_FILES_MESSAGE = 'No uploaded files found for the selected charts';
 
 const createBulkDownloadRequestInit = async (ids: number[]): Promise<RequestInit> => ({
 	method: 'POST',
@@ -94,6 +96,22 @@ export const handlePageSizeChange = (pageSize: number) => ({
 	selectedIds: resetBulkSelection()
 });
 
+/**
+ * Maps a bulk-download failure to an i18n key. Expected errors thrown by this
+ * module get dedicated keys; anything else (server-provided English strings,
+ * network failures) falls back to a generic localized message.
+ */
+export const bulkDownloadErrorKey = (error: unknown): string => {
+	const message = error instanceof Error ? error.message : '';
+	if (message === BULK_DOWNLOAD_UNSUPPORTED_MESSAGE) {
+		return 'chart_list.bulk_download_unsupported';
+	}
+	if (message === BULK_DOWNLOAD_NO_FILES_MESSAGE) {
+		return 'chart_list.bulk_download_no_files';
+	}
+	return 'chart_list.bulk_download_failed';
+};
+
 export const isAbortError = (error: unknown): boolean => {
 	if (error instanceof DOMException) {
 		return error.name === 'AbortError';
@@ -146,7 +164,7 @@ export const submitBulkDownload = async (
 ) => {
 	const response = await fetchFn(bulkDownloadBaseUrl(), await createBulkDownloadRequestInit(ids));
 	if (!response.ok) {
-		throw new Error(await getResponseErrorMessage(response, 'Bulk download failed'));
+		throw new Error(await getResponseErrorMessage(response, BULK_DOWNLOAD_FAILED_MESSAGE));
 	}
 	await streamToFile(response, target);
 };
@@ -167,7 +185,9 @@ export const startBulkDownload = async ({
 	);
 
 	if (!validationResponse.ok) {
-		throw new Error(await getResponseErrorMessage(validationResponse, 'Bulk download failed'));
+		throw new Error(
+			await getResponseErrorMessage(validationResponse, BULK_DOWNLOAD_FAILED_MESSAGE)
+		);
 	}
 
 	const validationData = (await validationResponse.json()) as {
@@ -184,7 +204,7 @@ export const startBulkDownload = async ({
 		throw new Error(
 			typeof validationData?.error === 'string'
 				? validationData.error
-				: 'No uploaded files found for the selected charts'
+				: BULK_DOWNLOAD_NO_FILES_MESSAGE
 		);
 	}
 

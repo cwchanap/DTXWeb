@@ -49,8 +49,39 @@ vi.mock('./ChartListTableItem.svelte', async () => {
 vi.mock('$lib/components/ChartListTableItem.svelte', () => ({ default: vi.fn() }));
 
 vi.mock('@lucide/svelte/icons');
+import { _ } from 'svelte-i18n';
+import jpDict from '$lib/i18n/locales/jp.json';
 import ChartList from './ChartList.svelte';
 import * as chartListHelpers from './ChartList.helpers';
+
+// Resolves a dotted i18n key against a real locale dictionary and interpolates
+// {placeholder} values — used to render components under the jp locale.
+const formatDictValue = (
+	dict: Record<string, unknown>,
+	key: string,
+	values: Record<string, unknown> = {}
+): string => {
+	const raw = key
+		.split('.')
+		.reduce<unknown>(
+			(node, part) => (node as Record<string, unknown> | undefined)?.[part],
+			dict
+		);
+	let text = typeof raw === 'string' ? raw : key;
+	for (const [name, value] of Object.entries(values)) {
+		text = text.replaceAll(`{${name}}`, String(value));
+	}
+	return text;
+};
+
+const installLocaleDict = (dict: Record<string, unknown>) => {
+	vi.spyOn(_, 'subscribe').mockImplementation((cb) => {
+		cb((key: unknown, options?: { values?: Record<string, unknown> }) =>
+			formatDictValue(dict, String(key), options?.values)
+		);
+		return () => {};
+	});
+};
 
 const mockListedChart = {
 	id: 1,
@@ -307,6 +338,25 @@ describe('ChartList helpers', () => {
 		expect(chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS).toBe(20);
 	});
 
+	it('maps expected bulk download errors to localized keys', () => {
+		expect(
+			chartListHelpers.bulkDownloadErrorKey(
+				new Error(chartListHelpers.BULK_DOWNLOAD_UNSUPPORTED_MESSAGE)
+			)
+		).toBe('chart_list.bulk_download_unsupported');
+		expect(
+			chartListHelpers.bulkDownloadErrorKey(
+				new Error(chartListHelpers.BULK_DOWNLOAD_NO_FILES_MESSAGE)
+			)
+		).toBe('chart_list.bulk_download_no_files');
+		expect(chartListHelpers.bulkDownloadErrorKey(new Error('Some server error'))).toBe(
+			'chart_list.bulk_download_failed'
+		);
+		expect(chartListHelpers.bulkDownloadErrorKey('not an error')).toBe(
+			'chart_list.bulk_download_failed'
+		);
+	});
+
 	it('allows bulk selection only for charts with uploaded files', () => {
 		expect(chartListHelpers.canBulkSelect(mockListedChart)).toBe(true);
 		expect(
@@ -421,8 +471,54 @@ describe('ChartList component bulk download behavior', () => {
 
 		await waitFor(() => {
 			expect(mockToastStore.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'chart_list.bulk_download_limit' })
+			);
+		});
+	});
+
+	it('shows the Japanese localized toast when selecting beyond the bulk download limit', async () => {
+		installLocaleDict(jpDict);
+
+		const maxCharts = Array.from(
+			{ length: chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS },
+			(_, i) => ({
+				...mockListedChart,
+				id: i + 1,
+				title: `Song ${i + 1}`,
+				displayId: `D${i + 1}`
+			})
+		);
+		const extraChart = {
+			...mockListedChart,
+			id: chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS + 1,
+			title: 'Extra Song',
+			displayId: 'EX'
+		};
+		const allCharts = [...maxCharts, extraChart];
+
+		mockApi.listSimfiles.mockResolvedValue({ data: allCharts, count: allCharts.length });
+		Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: vi.fn() });
+
+		render(ChartList, { props: { isBlog: true, enableDownload: true } });
+		await fireEvent.click(
+			await screen.findByRole('button', { name: jpDict.chart_list.select })
+		);
+
+		const checkboxes = await screen.findAllByRole('checkbox');
+		for (const checkbox of checkboxes.slice(0, chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS)) {
+			await fireEvent.click(checkbox);
+		}
+		expect(mockToastStore.error).not.toHaveBeenCalled();
+
+		await fireEvent.click(checkboxes[chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS]);
+
+		await waitFor(() => {
+			expect(mockToastStore.error).toHaveBeenCalledWith(
 				expect.objectContaining({
-					title: expect.stringContaining(`${chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS}`)
+					title: jpDict.chart_list.bulk_download_limit.replace(
+						'{max}',
+						String(chartListHelpers.MAX_BULK_DOWNLOAD_CHARTS)
+					)
 				})
 			);
 		});
@@ -462,7 +558,7 @@ describe('ChartList component bulk download behavior', () => {
 
 		await waitFor(() =>
 			expect(mockToastStore.error).toHaveBeenCalledWith({
-				title: 'Bulk download failed',
+				title: 'chart_list.bulk_download_failed',
 				duration: 3000
 			})
 		);

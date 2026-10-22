@@ -12,8 +12,8 @@
 	} from '$lib/api';
 	import { Switch, Pagination } from '@skeletonlabs/skeleton-svelte';
 	import {
-		BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
 		MAX_BULK_DOWNLOAD_CHARTS,
+		bulkDownloadErrorKey,
 		canBulkSelect,
 		changePage as getChangedPage,
 		chartTitleHref,
@@ -173,7 +173,9 @@
 		} else {
 			if (next.size >= MAX_BULK_DOWNLOAD_CHARTS) {
 				toastStore.error({
-					title: `You can download up to ${MAX_BULK_DOWNLOAD_CHARTS} charts at once`,
+					title: $_('chart_list.bulk_download_limit', {
+						values: { max: MAX_BULK_DOWNLOAD_CHARTS }
+					}),
 					duration: 3000
 				});
 				return;
@@ -192,7 +194,7 @@
 		if (selectedIds.size === 0) return;
 		if (!supportsBulkDownloadStreaming) {
 			toastStore.error({
-				title: BULK_DOWNLOAD_UNSUPPORTED_MESSAGE,
+				title: $_('chart_list.bulk_download_unsupported'),
 				duration: 4000
 			});
 			clearBulkSelection();
@@ -200,7 +202,9 @@
 		}
 		if (selectedIds.size > MAX_BULK_DOWNLOAD_CHARTS) {
 			toastStore.error({
-				title: `You can download up to ${MAX_BULK_DOWNLOAD_CHARTS} charts at once`,
+				title: $_('chart_list.bulk_download_limit', {
+					values: { max: MAX_BULK_DOWNLOAD_CHARTS }
+				}),
 				duration: 3000
 			});
 			return;
@@ -219,7 +223,7 @@
 
 			console.error('Failed to start bulk download:', error);
 			toastStore.error({
-				title: error instanceof Error ? error.message : 'Bulk download failed',
+				title: $_(bulkDownloadErrorKey(error)),
 				duration: 3000
 			});
 			clearBulkSelection();

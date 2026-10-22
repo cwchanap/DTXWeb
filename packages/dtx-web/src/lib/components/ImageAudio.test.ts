@@ -24,7 +24,7 @@ describe('ImageAudio', () => {
 
 	it('renders the preview image', () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio() } });
-		expect(screen.getByRole('img', { name: 'Preview' })).toBeInTheDocument();
+		expect(screen.getByRole('img', { name: 'chart_list.preview_alt' })).toBeInTheDocument();
 	});
 
 	it('renders the play control when idle and audio is available', () => {
@@ -71,7 +71,7 @@ describe('ImageAudio', () => {
 
 	it('shows the image error fallback when the image fails to load', async () => {
 		render(ImageAudio, { props: { previewUrl, audio: makeAudio() } });
-		await fireEvent.error(screen.getByRole('img', { name: 'Preview' }));
+		await fireEvent.error(screen.getByRole('img', { name: 'chart_list.preview_alt' }));
 		expect(screen.getByText('chart_list.preview_unavailable')).toBeInTheDocument();
 	});
 });

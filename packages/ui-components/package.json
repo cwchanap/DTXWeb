@@ -43,14 +43,14 @@
 		"tailwindcss": "^4.0.0"
 	},
 	"devDependencies": {
-		"@lucide/svelte": "^1.55.0",
+		"@lucide/svelte": "^1.61.0",
 		"@sveltejs/adapter-auto": "^7.0.1",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/package": "^2.5.8",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",
 		"@tailwindcss/vite": "^4.3.3",
 		"@vitest/coverage-v8": "^5.0.3",
-		"shadcn-svelte": "^1.7.0",
+		"shadcn-svelte": "^1.7.1",
 		"publint": "^0.3.25",
 		"svelte": "^5.57.2",
 		"svelte-check": "^4.7.7",

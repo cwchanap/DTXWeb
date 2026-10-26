@@ -56,7 +56,7 @@ jobs:
         run: test -f packages/infrastructure/dist/index.js
 
       - name: Authenticate with Pulumi Cloud
-        uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2 # v2.1.0
+        uses: pulumi/auth-actions@159c3e431aab767d4519b96f3f784d7d3d725622 # v2.1.1
         with:
           organization: ${{ vars.PULUMI_ORG }}
           requested-token-type: urn:pulumi:token-type:access_token:personal
@@ -135,7 +135,7 @@ jobs:
         run: test -f packages/infrastructure/dist/index.js
 
       - name: Authenticate with Pulumi Cloud
-        uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2 # v2.1.0
+        uses: pulumi/auth-actions@159c3e431aab767d4519b96f3f784d7d3d725622 # v2.1.1
         with:
           organization: ${{ vars.PULUMI_ORG }}
           requested-token-type: urn:pulumi:token-type:access_token:personal

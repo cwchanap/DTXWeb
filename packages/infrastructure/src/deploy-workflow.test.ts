@@ -108,7 +108,7 @@ describe('automatic Cloudflare infrastructure deployment workflow', () => {
 			expect(
 				countOccurrences(
 					job,
-					'uses: pulumi/auth-actions@141415910c3beb54e03b48e9057c204c97b956f2'
+					'uses: pulumi/auth-actions@159c3e431aab767d4519b96f3f784d7d3d725622'
 				)
 			).toBe(1);
 			expect(countOccurrences(job, pulumiAction)).toBe(2);

@@ -51,9 +51,9 @@
 		"@types/eslint": "^9.6.1",
 		"@types/node": "^25.9.9",
 		"@types/uuid": "^10.0.0",
-		"@typescript-eslint/eslint-plugin": "^8.72.0",
-		"@typescript-eslint/parser": "^8.72.0",
-		"eslint": "^10.12.0",
+		"@typescript-eslint/eslint-plugin": "^8.72.1",
+		"@typescript-eslint/parser": "^8.72.1",
+		"eslint": "^10.14.0",
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^2.45.1",
 		"globals": "^17.13.0",
@@ -82,7 +82,7 @@
 		"packages/infrastructure"
 	],
 	"dependencies": {
-		"@wdio/native-utils": "^2.8.0",
+		"@wdio/native-utils": "^2.8.1",
 		"jszip": "^3.10.2"
 	},
 	"overrides": {

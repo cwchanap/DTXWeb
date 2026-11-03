@@ -4,6 +4,10 @@ export interface DrumStaff {
 	key: string;
 	/** Short display name (matches the in-game lane label). */
 	name: string;
+	/** General MIDI drum pitch (e.g. 36 = bass drum). */
+	midi: number;
+	/** Full instrument name for MusicXML export. */
+	instrumentName: string;
 }
 
 /**
@@ -12,18 +16,18 @@ export interface DrumStaff {
  * '/x3' -> circled x (open hi-hat).
  */
 const LANE_TO_STAFF: Record<string, DrumStaff> = {
-	'13': { key: 'f/4', name: 'BD' }, // bass drum
-	'1C': { key: 'f/4', name: 'LB' }, // left bass (double pedal) -> same line as BD
-	'12': { key: 'c/5', name: 'SN' }, // snare
-	'14': { key: 'e/5', name: 'HT' }, // high tom
-	'15': { key: 'd/5', name: 'LT' }, // low/mid tom
-	'17': { key: 'a/4', name: 'FT' }, // floor tom
-	'11': { key: 'g/5/x2', name: 'HHC' }, // closed hi-hat
-	'18': { key: 'g/5/x3', name: 'HH' }, // open hi-hat (circled-x)
-	'1B': { key: 'd/4/x2', name: 'LP' }, // pedal hi-hat (foot)
-	'16': { key: 'a/5/x2', name: 'CY' }, // crash
-	'1A': { key: 'b/5/x2', name: 'LC' }, // left crash / china
-	'19': { key: 'f/5/x2', name: 'RD' } // ride
+	'13': { key: 'f/4', name: 'BD', midi: 36, instrumentName: 'Bass' }, // bass drum
+	'1C': { key: 'f/4', name: 'LB', midi: 35, instrumentName: 'Left Bass' }, // left bass (double pedal) -> same line as BD
+	'12': { key: 'c/5', name: 'SN', midi: 38, instrumentName: 'Snare' }, // snare
+	'14': { key: 'e/5', name: 'HT', midi: 50, instrumentName: 'High Tom' }, // high tom
+	'15': { key: 'd/5', name: 'LT', midi: 48, instrumentName: 'Low Tom' }, // low/mid tom
+	'17': { key: 'a/4', name: 'FT', midi: 43, instrumentName: 'Floor Tom' }, // floor tom
+	'11': { key: 'g/5/x2', name: 'HHC', midi: 42, instrumentName: 'Closed Hi-Hat' }, // closed hi-hat
+	'18': { key: 'g/5/x3', name: 'HH', midi: 46, instrumentName: 'Open Hi-Hat' }, // open hi-hat (circled-x)
+	'1B': { key: 'd/4/x2', name: 'LP', midi: 44, instrumentName: 'Pedal Hi-Hat' }, // pedal hi-hat (foot)
+	'16': { key: 'a/5/x2', name: 'CY', midi: 49, instrumentName: 'Crash' }, // crash
+	'1A': { key: 'b/5/x2', name: 'LC', midi: 57, instrumentName: 'Left Crash' }, // left crash / china
+	'19': { key: 'f/5/x2', name: 'RD', midi: 51, instrumentName: 'Ride' } // ride
 };
 
 export const PLAYABLE_DRUM_LANES: string[] = Object.keys(LANE_TO_STAFF);

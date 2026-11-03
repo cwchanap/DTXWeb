@@ -49,7 +49,7 @@ export const ticksToDurations = (ticks: number): string[] => {
 
 interface Onset {
 	tick: number;
-	keys: string[];
+	laneIds: string[];
 }
 
 // 24 = 16th-note triplet (3 16ths in an eighth span, 8-tick slots); 48/96/192
@@ -128,9 +128,11 @@ export const quantizeMeasure = (
 	const measureTicks = Math.round(measureLength * TICKS_PER_WHOLE);
 	const beatsPerMeasure = Math.max(1, Math.round(measureLength * 4));
 
-	// Collect onsets keyed by tick, accumulating chord keys from playable lanes.
-	// laneToStaff returns undefined for non-playable lanes (bpm/bgm), so the
-	// `!staff` guard alone filters them out — no separate lane-list check needed.
+	// Collect onsets keyed by tick, accumulating source lane ids from playable
+	// lanes. laneToStaff returns undefined for non-playable lanes (bpm/bgm), so
+	// the `!staff` guard alone filters them out — no separate lane-list check
+	// needed. Lane ids are canonicalized to uppercase and sorted so each
+	// entry's laneIds is stable for serialization.
 	const byTick = new Map<number, Set<string>>();
 	for (const lane of laneNotes) {
 		const staff = laneToStaff(lane.laneID);
@@ -139,12 +141,12 @@ export const quantizeMeasure = (
 			if (note.noteID === '00') continue;
 			const tick = Math.round(note.position * measureTicks);
 			if (!byTick.has(tick)) byTick.set(tick, new Set());
-			byTick.get(tick)!.add(staff.key);
+			byTick.get(tick)!.add(lane.laneID.toUpperCase());
 		}
 	}
 
 	const onsets: Onset[] = [...byTick.entries()]
-		.map(([tick, keys]) => ({ tick, keys: [...keys] }))
+		.map(([tick, laneIds]) => ({ tick, laneIds: [...laneIds].sort() }))
 		.sort((a, b) => a.tick - b.tick);
 
 	const entries: NotationEntry[] = [];
@@ -203,7 +205,7 @@ export const quantizeMeasure = (
 						kind: 'note',
 						startTick: slotStart,
 						durTicks: triplet.slotTicks,
-						keys: onset.keys
+						laneIds: onset.laneIds
 					});
 				} else {
 					entries.push({
@@ -230,7 +232,12 @@ export const quantizeMeasure = (
 			const noteDur = codes.length
 				? DURATION_TABLE.find(([, c]) => c === codes[0])![0]
 				: span;
-			entries.push({ kind: 'note', startTick: cursor, durTicks: noteDur, keys: onset.keys });
+			entries.push({
+				kind: 'note',
+				startTick: cursor,
+				durTicks: noteDur,
+				laneIds: onset.laneIds
+			});
 			if (span - noteDur > 0) pushRests(cursor + noteDur, span - noteDur);
 			cursor = nextTick;
 			continue;

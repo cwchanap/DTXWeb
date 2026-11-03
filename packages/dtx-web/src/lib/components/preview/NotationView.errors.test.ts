@@ -103,7 +103,7 @@ const chart: NotationChart = {
 			index: 0,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['12'] }],
 			tuplets: []
 		}
 	],

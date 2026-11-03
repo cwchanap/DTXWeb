@@ -159,5 +159,13 @@ export const normalizeLevel = (level: string | number | undefined | null, levelD
 export const formatLevel = (level: string | number | undefined | null): string =>
 	normalizeLevel(level).toFixed(2);
 
+// Re-export the real drum-staff mapping so tests exercise the authoritative
+// laneToStaff in packages/common (no competing copy in this mock).
+export {
+	laneToStaff,
+	PLAYABLE_DRUM_LANES,
+	type DrumStaff
+} from '../../packages/common/src/lib/notation/drumMapping';
+
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

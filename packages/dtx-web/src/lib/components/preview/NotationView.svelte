@@ -12,7 +12,7 @@
 		BarlineType,
 		StaveTempo
 	} from 'vexflow';
-	import type { NotationChart, NotationMeasure } from '@dtx/common';
+	import { laneToStaff, type NotationChart, type NotationMeasure } from '@dtx/common';
 	import {
 		cursorPoint,
 		clickToFraction,
@@ -95,7 +95,8 @@
 				return new StaveNote({ keys: ['b/4'], duration: `${code}r` });
 			}
 			const code = ticksToVexflowCode(durationTicks);
-			return new StaveNote({ keys: entry.keys, duration: code });
+			const keys = [...new Set(entry.laneIds.map((id) => laneToStaff(id)!.key))];
+			return new StaveNote({ keys, duration: code });
 		});
 	};
 

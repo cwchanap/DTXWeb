@@ -5,8 +5,8 @@ export interface NotationNoteEntry {
 	kind: 'note';
 	startTick: number;
 	durTicks: number;
-	/** VexFlow keys for the chord at this onset (e.g. ['f/4', 'g/5/x2'], or ['g/5/x3'] for open hi-hat circled-x). */
-	keys: string[];
+	/** Distinct, sorted playable DTX lane ids at this onset (e.g. ['11', '13']). */
+	laneIds: string[];
 }
 
 export interface NotationRestEntry {

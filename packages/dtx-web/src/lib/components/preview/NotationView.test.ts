@@ -132,7 +132,7 @@ const chart: NotationChart = {
 			index: 0,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['12'] }],
 			tuplets: []
 		}
 	],
@@ -209,10 +209,10 @@ describe('NotationView', () => {
 					measureTicks: 192,
 					beatsPerMeasure: 4,
 					entries: [
-						{ kind: 'note', startTick: 0, durTicks: 24, keys: ['c/5'] },
+						{ kind: 'note', startTick: 0, durTicks: 24, laneIds: ['12'] },
 						{ kind: 'rest', startTick: 24, durTicks: 24 },
-						{ kind: 'note', startTick: 48, durTicks: 24, keys: ['c/5'] },
-						{ kind: 'note', startTick: 72, durTicks: 24, keys: ['c/5'] }
+						{ kind: 'note', startTick: 48, durTicks: 24, laneIds: ['12'] },
+						{ kind: 'note', startTick: 72, durTicks: 24, laneIds: ['12'] }
 					],
 					tuplets: []
 				}
@@ -262,17 +262,18 @@ describe('NotationView', () => {
 		expect(restDurations).toEqual(['64r', 'qr', '32r', 'hr']);
 	});
 
-	it('passes the circled-x key (g/5/x3) through to StaveNote for open hi-hat entries', async () => {
+	it('derives the circled-x key (g/5/x3) from lane 18 for open hi-hat entries', async () => {
 		// The key suffix /x3 selects VexFlow's noteheadCircleX glyph. NotationView
-		// passes entry.keys straight to StaveNote, so this asserts the propagation
-		// contract (VexFlow itself is mocked; the glyph rendering is manual-check).
+		// derives StaveNote keys from entry.laneIds via laneToStaff, so this
+		// asserts the derivation contract (VexFlow itself is mocked; the glyph
+		// rendering is manual-check).
 		const openHatChart: NotationChart = {
 			measures: [
 				{
 					index: 0,
 					measureTicks: 192,
 					beatsPerMeasure: 4,
-					entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['g/5/x3'] }],
+					entries: [{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['18'] }],
 					tuplets: []
 				}
 			],
@@ -284,6 +285,26 @@ describe('NotationView', () => {
 		expect(openHatNote).toBeDefined();
 	});
 
+	it('deduplicates visual keys when lanes share a staff position (13 + 1C)', async () => {
+		// Bass and left bass are two source lanes on f/4; the entry keeps both
+		// laneIds for export but VexFlow must get a single f/4 key.
+		const doubleBassChart: NotationChart = {
+			measures: [
+				{
+					index: 0,
+					measureTicks: 192,
+					beatsPerMeasure: 4,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['13', '1C'] }],
+					tuplets: []
+				}
+			],
+			tempoEvents: []
+		};
+		render(NotationView, { props: { chart: doubleBassChart } });
+		await tick();
+		expect(staveNoteArgs.find((a) => a.keys.includes('f/4'))?.keys).toEqual(['f/4']);
+	});
+
 	it('renders triplet-covered entries with base durations and draws a VexFlow Tuplet', async () => {
 		const tripletChart: NotationChart = {
 			measures: [
@@ -292,9 +313,9 @@ describe('NotationView', () => {
 					measureTicks: 192,
 					beatsPerMeasure: 4,
 					entries: [
-						{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+						{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
 						{ kind: 'rest', startTick: 16, durTicks: 16 },
-						{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+						{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] }
 					],
 					tuplets: [
 						{
@@ -409,7 +430,7 @@ const richChart: NotationChart = {
 			beatsPerMeasure: 4,
 			entries: [
 				{ kind: 'rest', startTick: 0, durTicks: 48 },
-				{ kind: 'note', startTick: 48, durTicks: 48, keys: ['c/5'] }
+				{ kind: 'note', startTick: 48, durTicks: 48, laneIds: ['12'] }
 			],
 			tuplets: []
 		},
@@ -427,7 +448,7 @@ const richChart: NotationChart = {
 			index: 5,
 			measureTicks: 192,
 			beatsPerMeasure: 4,
-			entries: [{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] }],
+			entries: [{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['12'] }],
 			tuplets: []
 		}
 	],

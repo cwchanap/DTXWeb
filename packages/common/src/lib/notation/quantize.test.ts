@@ -44,30 +44,71 @@ describe('quantizeMeasure', () => {
 		const notes = measure.entries.filter((e) => e.kind === 'note');
 		expect(notes).toHaveLength(4);
 		expect(notes.every((n) => n.durTicks === 48)).toBe(true);
-		expect((notes[0] as { keys: string[] }).keys).toEqual(['c/5']);
+		expect((notes[0] as { laneIds: string[] }).laneIds).toEqual(['12']);
 	});
 
 	it('merges simultaneous lanes into a chord', () => {
 		const bass = new LaneMeasureNote(0, '13', [{ noteID: '01', position: 0 }]);
 		const hat = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
 		const measure = quantizeMeasure(0, [bass, hat]);
-		const first = measure.entries.find((e) => e.kind === 'note') as { keys: string[] };
-		expect(first.keys.sort()).toEqual(['f/4', 'g/5/x2']);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['11', '13']);
 	});
 
-	it('renders open hi-hat (lane 18) with the circled-x key g/5/x3', () => {
+	it('keeps simultaneous bass (13) and left-bass (1C) as two laneIds on one entry', () => {
+		// Both pedals share the f/4 staff position, so the old visual `keys`
+		// merged them into a single key. The MusicXML exporter needs both
+		// source lanes to emit distinct GM sounds (36 vs 35).
+		const bass = new LaneMeasureNote(0, '13', [{ noteID: '01', position: 0 }]);
+		const leftBass = new LaneMeasureNote(0, '1C', [{ noteID: '01', position: 0 }]);
+		const measure = quantizeMeasure(0, [bass, leftBass]);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['13', '1C']);
+	});
+
+	it('canonicalizes lowercase lane ids to uppercase for stable identity', () => {
+		const leftBass = new LaneMeasureNote(0, '1c', [{ noteID: '01', position: 0 }]);
+		const measure = quantizeMeasure(0, [leftBass]);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['1C']);
+	});
+
+	it("excludes 00 notes and non-playable lanes from an entry's laneIds", () => {
+		// A '00' noteID is DTX's "no note" marker and channel 08 (BPM) is not a
+		// drum lane — neither may appear among the note's source lanes.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '00', position: 0 }]);
+		const hat = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
+		const bpm = new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0 }]);
+		const measure = quantizeMeasure(0, [snare, hat, bpm]);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['11']);
+	});
+
+	it('keeps the open hi-hat source lane (18) on the entry', () => {
 		const openHat = new LaneMeasureNote(0, '18', [{ noteID: '01', position: 0 }]);
 		const measure = quantizeMeasure(0, [openHat]);
-		const first = measure.entries.find((e) => e.kind === 'note') as { keys: string[] };
-		expect(first.keys).toEqual(['g/5/x3']);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['18']);
 	});
 
-	it('keeps open and closed hi-hat keys distinct in a single chord', () => {
+	it('keeps closed and open hi-hat as distinct source lanes in a single chord', () => {
 		const closed = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
 		const open = new LaneMeasureNote(0, '18', [{ noteID: '01', position: 0 }]);
 		const measure = quantizeMeasure(0, [closed, open]);
-		const first = measure.entries.find((e) => e.kind === 'note') as { keys: string[] };
-		expect(first.keys.sort()).toEqual(['g/5/x2', 'g/5/x3']);
+		const first = measure.entries.find((e) => e.kind === 'note') as {
+			laneIds: string[];
+		};
+		expect(first.laneIds).toEqual(['11', '18']);
 	});
 
 	it('emits a leading rest before the first onset', () => {
@@ -128,8 +169,8 @@ describe('quantizeMeasure', () => {
 		]);
 		const measure = quantizeMeasure(0, [snare]);
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] },
-			{ kind: 'note', startTick: 48, durTicks: 96, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['12'] },
+			{ kind: 'note', startTick: 48, durTicks: 96, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 144, durTicks: 48 }
 		]);
 	});
@@ -178,9 +219,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 3)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -202,9 +243,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 3)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 16, durTicks: 16 },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -224,10 +265,10 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 4)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 32, durTicks: 16 },
-			{ kind: 'note', startTick: 48, durTicks: 96, keys: ['c/5'] }
+			{ kind: 'note', startTick: 48, durTicks: 96, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -248,10 +289,10 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 4)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 48, keys: ['c/5'] },
-			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['12'] },
+			{ kind: 'note', startTick: 48, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -275,9 +316,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 3)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 32, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 32, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -301,9 +342,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 64, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 64, keys: ['c/5'] },
-			{ kind: 'note', startTick: 128, durTicks: 64, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 64, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 64, laneIds: ['12'] },
+			{ kind: 'note', startTick: 128, durTicks: 64, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -329,9 +370,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 3)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
-			{ kind: 'note', startTick: 8, durTicks: 8, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 8, laneIds: ['12'] },
+			{ kind: 'note', startTick: 8, durTicks: 8, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 8, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -357,9 +398,9 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 4)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
-			{ kind: 'note', startTick: 8, durTicks: 8, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 8, laneIds: ['12'] },
+			{ kind: 'note', startTick: 8, durTicks: 8, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 8, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 24, durTicks: 24 }
 		]);
 		expect(measure.tuplets).toEqual([
@@ -408,10 +449,10 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries.slice(0, 4)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 64, durTicks: 32 },
-			{ kind: 'note', startTick: 96, durTicks: 96, keys: ['c/5'] }
+			{ kind: 'note', startTick: 96, durTicks: 96, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -438,12 +479,12 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 48, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 96, durTicks: 96 }
 		]);
 		expect(measure.tuplets).toEqual([
@@ -481,9 +522,9 @@ describe('quantizeMeasure', () => {
 
 		expect(measure.entries).toEqual([
 			{ kind: 'rest', startTick: 0, durTicks: 48 },
-			{ kind: 'note', startTick: 48, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 80, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 48, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 80, durTicks: 16, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 96, durTicks: 96 }
 		]);
 		expect(measure.tuplets).toEqual([
@@ -517,9 +558,9 @@ describe('quantizeMeasure', () => {
 			}
 		]);
 		expect(measure.entries.slice(0, 3)).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 8, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 8, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 8, durTicks: 8 },
-			{ kind: 'note', startTick: 16, durTicks: 8, keys: ['c/5'] }
+			{ kind: 'note', startTick: 16, durTicks: 8, laneIds: ['12'] }
 		]);
 	});
 
@@ -561,9 +602,9 @@ describe('quantizeMeasure', () => {
 
 		expect(measure.measureTicks).toBe(144);
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 64, durTicks: 32, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 64, durTicks: 32, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 96, durTicks: 48 }
 		]);
 		expect(measure.tuplets).toEqual([
@@ -594,9 +635,9 @@ describe('quantizeMeasure', () => {
 
 		expect(measure.measureTicks).toBe(96);
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] },
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] },
 			{ kind: 'rest', startTick: 48, durTicks: 48 }
 		]);
 		expect(measure.tuplets).toEqual([
@@ -614,7 +655,7 @@ describe('quantizeMeasure', () => {
 
 	it('renders a chord inside a triplet group', () => {
 		// Two lanes (hi-hat 11 + snare 12) hitting the same triplet slots
-		// should produce chord keys at each slot, not separate entries.
+		// should produce chord lanes at each slot, not separate entries.
 		const hat = new LaneMeasureNote(0, '11', [
 			{ noteID: '01', position: 0 },
 			{ noteID: '01', position: 16 / 192 },
@@ -627,15 +668,10 @@ describe('quantizeMeasure', () => {
 		]);
 		const measure = quantizeMeasure(0, [hat, snare]);
 
-		// Key order depends on lane processing order (hat 11 before snare 12),
-		// so sort before comparing — same pattern as the chord-merge test above.
-		const notesWithKeys = measure.entries
-			.slice(0, 3)
-			.map((e) => (e.kind === 'note' ? { ...e, keys: [...e.keys].sort() } : e));
-		expect(notesWithKeys).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 16, keys: ['c/5', 'g/5/x2'] },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5', 'g/5/x2'] },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5', 'g/5/x2'] }
+		expect(measure.entries.slice(0, 3)).toEqual([
+			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['11', '12'] },
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['11', '12'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['11', '12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -662,8 +698,8 @@ describe('quantizeMeasure', () => {
 
 		expect(measure.entries.slice(0, 3)).toEqual([
 			{ kind: 'rest', startTick: 0, durTicks: 16 },
-			{ kind: 'note', startTick: 16, durTicks: 16, keys: ['c/5'] },
-			{ kind: 'note', startTick: 32, durTicks: 16, keys: ['c/5'] }
+			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+			{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{
@@ -693,10 +729,10 @@ describe('quantizeMeasure', () => {
 		const measure = quantizeMeasure(0, [snare]);
 
 		expect(measure.entries).toEqual([
-			{ kind: 'note', startTick: 0, durTicks: 96, keys: ['c/5'] },
-			{ kind: 'note', startTick: 96, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 128, durTicks: 32, keys: ['c/5'] },
-			{ kind: 'note', startTick: 160, durTicks: 32, keys: ['c/5'] }
+			{ kind: 'note', startTick: 0, durTicks: 96, laneIds: ['12'] },
+			{ kind: 'note', startTick: 96, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 128, durTicks: 32, laneIds: ['12'] },
+			{ kind: 'note', startTick: 160, durTicks: 32, laneIds: ['12'] }
 		]);
 		expect(measure.tuplets).toEqual([
 			{

@@ -4,9 +4,7 @@ export interface DrumStaff {
 	key: string;
 	/** Short display name (matches the in-game lane label). */
 	name: string;
-	/** General MIDI drum pitch (e.g. 36 = bass drum). */
 	midi: number;
-	/** Full instrument name for MusicXML export. */
 	instrumentName: string;
 }
 

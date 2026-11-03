@@ -58,9 +58,6 @@ describe('quantizeMeasure', () => {
 	});
 
 	it('keeps simultaneous bass (13) and left-bass (1C) as two laneIds on one entry', () => {
-		// Both pedals share the f/4 staff position, so the old visual `keys`
-		// merged them into a single key. The MusicXML exporter needs both
-		// source lanes to emit distinct GM sounds (36 vs 35).
 		const bass = new LaneMeasureNote(0, '13', [{ noteID: '01', position: 0 }]);
 		const leftBass = new LaneMeasureNote(0, '1C', [{ noteID: '01', position: 0 }]);
 		const measure = quantizeMeasure(0, [bass, leftBass]);
@@ -80,8 +77,6 @@ describe('quantizeMeasure', () => {
 	});
 
 	it("excludes 00 notes and non-playable lanes from an entry's laneIds", () => {
-		// A '00' noteID is DTX's "no note" marker and channel 08 (BPM) is not a
-		// drum lane — neither may appear among the note's source lanes.
 		const snare = new LaneMeasureNote(0, '12', [{ noteID: '00', position: 0 }]);
 		const hat = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
 		const bpm = new LaneMeasureNote(0, '08', [{ noteID: 'AA', position: 0 }]);
@@ -668,6 +663,8 @@ describe('quantizeMeasure', () => {
 		]);
 		const measure = quantizeMeasure(0, [hat, snare]);
 
+		// laneIds are sorted by the quantizer (hat 11 before snare 12), so the
+		// expected entries compare directly — same pattern as the chord-merge test above.
 		expect(measure.entries.slice(0, 3)).toEqual([
 			{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['11', '12'] },
 			{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['11', '12'] },

@@ -264,9 +264,8 @@ describe('NotationView', () => {
 
 	it('derives the circled-x key (g/5/x3) from lane 18 for open hi-hat entries', async () => {
 		// The key suffix /x3 selects VexFlow's noteheadCircleX glyph. NotationView
-		// derives StaveNote keys from entry.laneIds via laneToStaff, so this
-		// asserts the derivation contract (VexFlow itself is mocked; the glyph
-		// rendering is manual-check).
+		// derives keys from entry.laneIds, so this asserts the propagation
+		// contract (VexFlow itself is mocked; the glyph rendering is manual-check).
 		const openHatChart: NotationChart = {
 			measures: [
 				{
@@ -286,8 +285,6 @@ describe('NotationView', () => {
 	});
 
 	it('deduplicates visual keys when lanes share a staff position (13 + 1C)', async () => {
-		// Bass and left bass are two source lanes on f/4; the entry keeps both
-		// laneIds for export but VexFlow must get a single f/4 key.
 		const doubleBassChart: NotationChart = {
 			measures: [
 				{

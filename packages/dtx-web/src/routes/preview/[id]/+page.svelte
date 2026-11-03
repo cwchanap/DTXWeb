@@ -3,10 +3,17 @@
 	import { browser } from '$app/environment';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
-	import { SimFile, buildNotationChart, type NotationChart, type ChartTiming } from '@dtx/common';
+	import {
+		SimFile,
+		buildNotationChart,
+		exportNotationChartToMusicXml,
+		type NotationChart,
+		type ChartTiming
+	} from '@dtx/common';
 	import type { DTXFile } from '@dtx/common';
 	import { PreviewAudioEngine } from '@dtx/common/audio';
 	import { getPreviewSimfile, type PreviewLevel } from '$lib/api';
+	import { triggerBrowserDownload } from '$lib/api/download';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import NotationView from '$lib/components/preview/NotationView.svelte';
 	import PreviewTransport from '$lib/components/preview/PreviewTransport.svelte';
@@ -143,6 +150,31 @@
 	// comment on selectedFileUrl.
 	const pickLevel = (fileUrl: string | null) =>
 		(fileUrl != null && levels.find((l) => l.fileUrl === fileUrl)) ?? levels[0];
+
+	const sanitizeExportFilename = (value: string) =>
+		[...value]
+			.map((c) => {
+				const code = c.charCodeAt(0);
+				const unsafe =
+					code < 0x20 || (code >= 0x7f && code <= 0x9f) || '/\\:*?"<>|'.includes(c);
+				return unsafe ? '_' : c;
+			})
+			.join('');
+
+	const handleExportMusicXml = () => {
+		if (!chart) return;
+		try {
+			const xml = exportNotationChartToMusicXml(chart, { title, artist });
+			const label = levels.find((l) => l.fileUrl === committedFileUrl)?.label ?? '';
+			const filename = sanitizeExportFilename(`${artist} - ${title} (${label}).musicxml`);
+			const blob = new Blob([xml], {
+				type: 'application/vnd.recordare.musicxml+xml;charset=utf-8'
+			});
+			triggerBrowserDownload(blob, filename);
+		} catch {
+			toastStore.error({ title: $_('preview.export_musicxml_failed'), duration: 4000 });
+		}
+	};
 
 	const tickCursor = () => {
 		if (!timing) return;
@@ -439,20 +471,30 @@
 				<h1 class="text-2xl font-bold">{title}</h1>
 				<p class="text-sm opacity-70">{artist}</p>
 			</div>
-			{#if levels.length > 1}
-				<label class="flex items-center gap-2">
-					<span>{$_('preview.level')}</span>
-					<select
-						class="rounded border px-2 py-1"
-						value={selectedFileUrl}
-						onchange={handleLevelChange}
-					>
-						{#each levels as lvl (lvl.fileUrl)}
-							<option value={lvl.fileUrl}>{lvl.label}</option>
-						{/each}
-					</select>
-				</label>
-			{/if}
+			<div class="flex items-center gap-3">
+				{#if levels.length > 1}
+					<label class="flex items-center gap-2">
+						<span>{$_('preview.level')}</span>
+						<select
+							class="rounded border px-2 py-1"
+							value={selectedFileUrl}
+							onchange={handleLevelChange}
+						>
+							{#each levels as lvl (lvl.fileUrl)}
+								<option value={lvl.fileUrl}>{lvl.label}</option>
+							{/each}
+						</select>
+					</label>
+				{/if}
+				<button
+					type="button"
+					class="rounded border px-2 py-1 disabled:opacity-50"
+					disabled={selectedFileUrl !== committedFileUrl}
+					onclick={handleExportMusicXml}
+				>
+					{$_('preview.export_musicxml')}
+				</button>
+			</div>
 		</header>
 		<div class="mb-3">
 			<PreviewTransport

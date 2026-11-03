@@ -6,6 +6,8 @@ import PreviewPage from './+page.svelte';
 const getPreviewSimfileMock = vi.hoisted(() => vi.fn());
 const parseLevelFromRemoteURLMock = vi.hoisted(() => vi.fn());
 const buildNotationChartMock = vi.hoisted(() => vi.fn());
+const exportMusicXmlMock = vi.hoisted(() => vi.fn());
+const triggerBrowserDownloadMock = vi.hoisted(() => vi.fn());
 // Controllable PreviewAudioEngine mock state.
 const engineLoad = vi.hoisted(() => ({ reject: false, hang: false, failedFiles: [] as string[] }));
 const engineState = vi.hoisted(() => ({ currentTime: 0, duration: 2 }));
@@ -43,7 +45,11 @@ vi.mock('$lib/components/preview/NotationView.svelte', async () => {
 
 vi.mock('@dtx/common', () => ({
 	SimFile: { parseLevelFromRemoteURL: parseLevelFromRemoteURLMock },
-	buildNotationChart: buildNotationChartMock
+	buildNotationChart: buildNotationChartMock,
+	exportNotationChartToMusicXml: exportMusicXmlMock
+}));
+vi.mock('$lib/api/download', () => ({
+	triggerBrowserDownload: triggerBrowserDownloadMock
 }));
 vi.mock('@dtx/common/audio', () => ({
 	PreviewAudioEngine: class {
@@ -165,6 +171,9 @@ describe('/preview page', () => {
 		buildNotationChartMock.mockReset();
 		buildNotationChartMock.mockReturnValue(readyChart());
 		parseLevelFromRemoteURLMock.mockResolvedValue(makeDtx());
+		exportMusicXmlMock.mockReset();
+		exportMusicXmlMock.mockReturnValue('<score-partwise/>');
+		triggerBrowserDownloadMock.mockReset();
 		engineLoad.reject = false;
 		engineLoad.hang = false;
 		engineLoad.failedFiles = [];
@@ -971,5 +980,81 @@ describe('/preview page', () => {
 			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/6/master.dtx' }]
 		});
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+	});
+
+	it('disables the export button while a level switch is pending', async () => {
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const exportButton = screen.getByRole('button', {
+			name: 'preview.export_musicxml'
+		}) as HTMLButtonElement;
+		expect(exportButton.disabled).toBe(false);
+		parseLevelFromRemoteURLMock.mockImplementation(() => new Promise(() => {}));
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		expect(exportButton.disabled).toBe(true);
+		expect(exportMusicXmlMock).not.toHaveBeenCalled();
+	});
+
+	it('exports the committed chart with the committed level label in the filename', async () => {
+		const built = readyChart();
+		buildNotationChartMock.mockReturnValue(built);
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: '未来/過去',
+			artist: 'DJ☆',
+			levels: [
+				{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' },
+				{ level: 3, label: 'BASIC', fileUrl: 'https://bucket.test/5/basic.dtx' }
+			]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const select = screen.getByRole('combobox') as HTMLSelectElement;
+		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
+		await waitFor(() =>
+			expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore + 1)
+		);
+		const exportButton = screen.getByRole('button', { name: 'preview.export_musicxml' });
+		await fireEvent.click(exportButton);
+		expect(exportMusicXmlMock).toHaveBeenCalledTimes(1);
+		expect(exportMusicXmlMock).toHaveBeenCalledWith(built.chart, {
+			title: '未来/過去',
+			artist: 'DJ☆'
+		});
+		expect(triggerBrowserDownloadMock).toHaveBeenCalledTimes(1);
+		const [blob, filename] = triggerBrowserDownloadMock.mock.calls[0] as [Blob, string];
+		expect(blob).toBeInstanceOf(Blob);
+		expect(filename).toBe('DJ☆ - 未来_過去 (BASIC).musicxml');
+	});
+
+	it('shows a localized toast when the MusicXML writer fails', async () => {
+		exportMusicXmlMock.mockImplementation(() => {
+			throw new Error('MusicXML export: chart has no measures');
+		});
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const exportButton = screen.getByRole('button', { name: 'preview.export_musicxml' });
+		await fireEvent.click(exportButton);
+		expect(toastError).toHaveBeenCalledWith(
+			expect.objectContaining({ title: 'preview.export_musicxml_failed' })
+		);
+		expect(triggerBrowserDownloadMock).not.toHaveBeenCalled();
 	});
 });

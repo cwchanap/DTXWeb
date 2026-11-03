@@ -45,6 +45,7 @@ export {
 	groupNotesByLane,
 	buildNotationChart
 } from './notation/quantize';
+export { exportNotationChartToMusicXml, type MusicXmlMetadata } from './notation/musicxml';
 
 // PreviewAudioEngine lives in the `./audio` subpath export to keep the main
 // barrel free of browser-only audio modules. Re-exporting it here would pull

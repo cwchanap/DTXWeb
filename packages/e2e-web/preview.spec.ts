@@ -135,4 +135,15 @@ test.describe('Preview page', () => {
 		await expect(svgText.filter({ hasText: '= 120' })).toHaveCount(1);
 		await expect(svgText.filter({ hasText: '= 180' })).toHaveCount(1);
 	});
+
+	test('downloads a .musicxml file when exporting the displayed chart', async ({ page }) => {
+		const container = page.getByTestId('notation-container');
+		await expect(container).toBeVisible({ timeout: 15000 });
+		const exportButton = page.getByRole('button', { name: 'Export MusicXML' });
+		await expect(exportButton).toBeEnabled();
+		const downloadPromise = page.waitForEvent('download');
+		await exportButton.click();
+		const download = await downloadPromise;
+		expect(download.suggestedFilename()).toMatch(/\.musicxml$/);
+	});
 });

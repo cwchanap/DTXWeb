@@ -73,6 +73,8 @@
 		"audio_loading": "Loading audio…",
 		"audio_partial": "Some sounds could not be loaded.",
 		"level_load_failed": "This level could not be loaded.",
+		"export_musicxml": "Export MusicXML",
+		"export_musicxml_failed": "MusicXML export failed.",
 		"seek": "Seek position",
 		"seek_value": "Measure {measure} of {total}"
 	},

@@ -29,7 +29,7 @@ export const parseContentDispositionFilename = (header: string | null): string |
 	return raw;
 };
 
-const defaultTriggerBrowserDownload = (blob: Blob, filename: string) => {
+export const triggerBrowserDownload = (blob: Blob, filename: string) => {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
 	a.href = url;
@@ -47,7 +47,7 @@ export type DownloadOpts = {
 
 export const downloadSimfile = async (simfileId: string, opts: DownloadOpts = {}) => {
 	const fetchFn = opts.fetchFn ?? fetch;
-	const trigger = opts.triggerBrowserDownload ?? defaultTriggerBrowserDownload;
+	const trigger = opts.triggerBrowserDownload ?? triggerBrowserDownload;
 	const res = await fetchFn(downloadBaseUrl(simfileId), { credentials: 'include' });
 	if (!res.ok) throw new Error(`Download failed: ${res.status}`);
 	const blob = await res.blob();

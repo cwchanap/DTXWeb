@@ -1,139 +1,138 @@
-# HPA-690 — MusicXML Export Implementation Plan
+# HPA-690 — MusicXML Drum Chart Export Implementation Plan
 
 **Date:** 2026-11-02  
-**Status:** Draft for review (no implementation started)  
+**Status:** Draft plan, revised after review; no implementation started  
 **Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)  
-**Design:** [2026-11-02-hpa-690-musicxml-export-design.md](../specs/2026-11-02-hpa-690-musicxml-export-design.md)
+**Design:** [MusicXML export design](../specs/2026-11-02-hpa-690-musicxml-export-design.md)
 
-> **Single-PR rule:** All steps, including implementation and validation, belong to the **same draft PR and branch** as these documents. Do not open implementation PR B, separate test PRs, or a follow-up PR for work already in scope. Mark ready only after acceptance is met.
+> **One PR for this ticket:** Continue all work on `docs/hpa-690-musicxml-export-design` in the **existing PR #335**. Do not open a separate implementation or testing PR. Keep it draft until implementation and required verification have been recorded.
 
-**Goal:** Download the currently displayed DTX drum chart from the public preview as a valid, importable `.musicxml` file with the correct instruments, rhythm, meter, triplets and BPM.
+**Goal:** A visitor can export the currently committed difficulty on `/preview/[id]` to MusicXML 4.0 for MuseScore 4 and Guitar Pro 8.
 
-**Architecture:** Preserve DTX lane identity through `NotationNoteEntry`, serialize `NotationChart` with a dependency-free function in `@dtx/common`, and add a single browser download action in the existing Svelte preview page. No backend change.
+**Constraints:** Pure TypeScript writer in `@dtx/common`, Svelte button + existing download helper, zero new dependencies/backend work, no separate renderer framework. Every implementation step should leave affected package type checks/tests passing.
 
-**Stack:** TypeScript, Svelte 5, MusicXML 4.0, Vitest, Testing Library, existing Playwright web E2E.
+## File scope
 
-## Existing seams and files
-
-| File | Proposed change |
+| File | Change |
 | --- | --- |
-| `packages/common/src/lib/notation/model.ts` | Add required `laneIds` to `NotationNoteEntry` |
-| `packages/common/src/lib/notation/quantize.ts` | Record playable source lanes in each onset without changing existing visual keys or timing |
-| `packages/common/src/lib/notation/quantize.test.ts` | Update exact objects, add simultaneous kick/left-kick regression |
-| `packages/common/src/lib/notation/musicxml.ts` (new) | Pure XML exporter, small local GM drum mapping and XML escaping |
-| `packages/common/src/lib/notation/musicxml.test.ts` (new) | Golden XML, meter/tuplet/tempo/mapping/timing tests |
-| `packages/common/src/lib/index.ts` | Export writer from root barrel |
-| `packages/dtx-web/src/routes/preview/[id]/+page.svelte` | Export action for committed difficulty and Blob download |
-| `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts` | Download, disabled states, level switch, toast, file name |
-| `packages/dtx-web/src/lib/i18n/locales/en.json` | Export label + failure message |
-| `packages/dtx-web/src/lib/i18n/locales/jp.json` | Japanese equivalents |
-| `packages/e2e-web/preview.spec.ts` | One focused browser smoke check for button/download if practical |
+| `packages/common/src/lib/notation/model.ts` | Replace `NotationNoteEntry.keys` with required `laneIds` |
+| `packages/common/src/lib/notation/quantize.ts` | Collect DTX lane IDs at each onset |
+| `packages/common/src/lib/notation/drumMapping.ts` | Add `midi` and `instrumentName` to existing `DrumStaff` values; no second mapping table |
+| `packages/common/src/lib/notation/drumMapping.test.ts` | Update existing object expectations and test GM pitches |
+| `packages/common/src/lib/notation/quantize.test.ts` | Update note fixtures; add bass + left-bass regression |
+| `packages/dtx-web/src/lib/components/preview/NotationView.svelte` | Compute deduplicated VexFlow keys from `laneIds` |
+| `packages/dtx-web/src/lib/components/preview/NotationView*.test.ts` | Update typed fixtures and assert VexFlow output unchanged |
+| `packages/common/src/lib/notation/musicxml.ts` (new) | Pure `exportNotationChartToMusicXml` writer |
+| `packages/common/src/lib/notation/musicxml.test.ts` (new) | Structural tests via DOMParser and one file snapshot |
+| `packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml` (new) | Deterministic export for regression and manual import |
+| `packages/common/src/lib/index.ts` | Export writer from existing barrel |
+| `packages/dtx-web/src/lib/api/download.ts` | Export the existing private Blob-to-anchor helper as `triggerBrowserDownload` |
+| `packages/dtx-web/src/routes/preview/[id]/+page.svelte` | One export button for committed chart and level |
+| `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts` | Three export-specific tests, reuse existing level-switch tests |
+| `packages/dtx-web/src/lib/i18n/locales/{en,jp}.json` | Two localized keys per locale |
+| `packages/e2e-web/preview.spec.ts` | One browser download smoke test using existing fixture |
 
-Do **not** touch `dtx-api`, GraphQL, D1, R2, auth, Cloudflare workflows, Tauri/Desktop, the unrelated MIDI converter, or the existing Phaser preview. No package or lockfile change expected.
+Do not change `dtx-api`, GraphQL, D1, R2, auth, desktop/Tauri, the separate DTX-to-MIDI converter, package manifests or lockfile unless actual evidence proves an unavoidable dependency.
 
-## Task 1 — Preserve source lane identity (tests first)
+## Task 0 — Importer compatibility spike (before implementing)
 
-**Goal:** Distinguish two drums with the same visual staff key without changing VexFlow presentation.
+**Why first:** The implementation choices for same-staff multi-instrument chords, mid-bar tempo offsets and off-grid duration/type mismatches all depend on importer behavior. It is cheaper to inspect them on a tiny manually authored MusicXML file than after completing the exporter and UI.
 
-- [ ] In `quantize.test.ts` add failing tests for: (a) lane `13` and lane `1C` simultaneously produce visual `keys: ['f/4']` but `laneIds: ['13', '1C']`; (b) non-playable/`00` notes are absent from `laneIds`; (c) separate simultaneous hi-hat lanes stay distinct.
-- [ ] In `model.ts` add `laneIds: string[]` to `NotationNoteEntry`, required (no compatibility shim). Keep `keys`, `startTick`, `durTicks` unchanged.
-- [ ] In `quantize.ts` accumulate `keys: Set<string>` and `laneIds: Set<string>` by tick, then materialize both onto note entries. Sort lane IDs for deterministic output; do not reorder visual `keys` gratuitously. Keep all existing quantization/rest/tuplet logic unchanged.
-- [ ] Update `quantize.test.ts` exact object expectations and any typed `NotationChart`/`NotationNoteEntry` fixtures in common/web tests, including `NotationView` tests, to the required field. Do it within this task; compilation must not temporarily fail on the new field.
-- [ ] Verify shared and web unit/check commands below pass before proceeding.
+- [ ] Make one small **schema-valid hand-authored** MusicXML sample, stored temporarily (do not build a generator). Use two `score-instrument`/`midi-instrument` IDs for real GM kick `13` and left kick `1C` at the same staff `F4` onset with `<chord/>`.
+- [ ] Include two tempo cases: (a) a metronome `<direction>` exactly at a note/rest entry boundary **without** `<offset>`, and (b) one inside a rest with positive `<offset sound="yes">`.
+- [ ] Include a one-tick off-grid mismatch, using explicit `<duration>` with a standard visual `<type>`. For a missing *leading* tick, check the alternative `<forward><duration>1</duration></forward>` rather than inserting an untyped rest.
+- [ ] Validate the sample against the official MusicXML 4.0 XSD with `xmllint`, including its imported `xml.xsd`/`xlink.xsd` support files.
+- [ ] Import into **MuseScore 4** and **Guitar Pro 8**; compare visual position, kick/left kick sounds, tempo timing and onset timing. Record app versions, pass/fail and exact deviations in the PR discussion. Do **not** infer a result from XML parsing alone.
+- [ ] If an app is not available in the execution environment, mark it **unverified** explicitly, retain standards-based defaults, and flag manual importer validation as an unresolved acceptance gate. Do not claim the spike passed.
+- [ ] Adjust the minimal encoding rules in the design before proceeding if the actual import reproduces a problem. No broad compatibility abstraction.
 
-**Done when:** Simultaneous double bass still renders once on the notation staff but has two source lane IDs in the model; all existing tests see the same visual keys and timing.
+**Acceptance:** Either importer results are documented, or the unverified state is explicit; the spec reflects observed evidence rather than guesses.
 
-## Task 2 — XML skeleton, percussion instruments, notes and rests
+## Task 1 — Model and existing VexFlow adapter
 
-**Goal:** Produce valid MusicXML 4.0 for simple 4/4 measures and multi-drum chords.
+- [ ] Add failing quantizer tests asserting simultaneous `13`+`1C` remains **two `laneIds`** on one entry, while closed/open hi-hat source lanes remain distinct and `00` / non-playable entries do not appear.
+- [ ] Replace `keys` with required `laneIds: string[]` on `NotationNoteEntry`; no optional field or compatibility fallback.
+- [ ] In `quantize.ts`, collect distinct playable lanes by tick, sorted for stable serialization; keep all `startTick`, `durTicks`, rest and triplet behavior exactly as before. Do not compute visual keys here.
+- [ ] In `drumMapping.ts` extend `DrumStaff` and every `LANE_TO_STAFF` row with the GM pitch and full MusicXML instrument name from the design. Preserve `key`/`name`. Update `drumMapping.test.ts` exact object fixtures and GM value assertions.
+- [ ] In `NotationView.svelte` derive unique keys from `entry.laneIds` using exported `laneToStaff`, then pass them to `new StaveNote` as currently. Do not change notehead, geometry or transport logic.
+- [ ] Update all affected `quantize.test.ts`, `NotationView.test.ts`, `NotationView.errors.test.ts` and other model fixtures in the same implementation commit. Existing visual-key assertions should now exercise `NotationView`'s derived result.
+- [ ] Run common/web checks and tests before continuing.
 
-- [ ] Write small expected-output tests in `musicxml.test.ts` for a 4/4 chart containing a kick+closed-hi-hat chord, a rest, and a snare. Include XML special characters in title/artist.
-- [ ] Add `musicxml.ts` exporting `exportNotationChartToMusicXml(chart: NotationChart, metadata: { title: string; artist?: string }): string`.
-- [ ] Emit XML declaration, `<score-partwise version="4.0">`, movement metadata, one `score-part`/`part` pair for drums, five-line percussion clef and `<divisions>48</divisions>`.
-- [ ] Add the 12-lane GM mapping from the design. Enumerate only used playable `laneIds`, give each one stable ID, one `score-instrument` and one matching `midi-instrument`. Use channel 10 and `GM pitch + 1`.
-- [ ] For each note entry, serialize every `laneIds` instrument as `<unpitched>`, `<duration>` and `<instrument>` using `laneToStaff` for placement/notehead. Emit `<chord/>` on the second and following drums at one onset. Serialize rests via `<rest/>`. A chord advances time only once.
-- [ ] Escape XML text/attribute values and use deterministic ordering/formatting. Do not introduce XML libraries or a generic DOM builder.
-- [ ] Export writer from `packages/common/src/lib/index.ts` and re-run tests.
+**Acceptance:** Visual preview remains unchanged, yet source double-bass identity is available to the XML serializer with no duplicated model representation.
 
-**Tests:** Assert IDs resolve, open vs closed hi-hat differs, kick/left kick is **two notes** with different instrument IDs, MIDI channels/unpitched values are correct, `<chord/>` does not consume additional beats, and XML escapes `&`/`<`/quotes correctly.
+## Task 2 — MusicXML writer + early snapshot import
 
-## Task 3 — Timing, time signatures, triplets and off-grid gaps
+- [ ] Add initial failing `musicxml.test.ts` tests covering XML-escaped metadata; one drum part + one voice; correct note/instrument IDs; a bass/left-bass chord; open/closed hi-hat noteheads; a rest.
+- [ ] Implement pure `exportNotationChartToMusicXml(chart, {title, artist})` in `musicxml.ts`. Emit UTF-8 XML declaration, `<score-partwise version="4.0">`, `<part-list>`, a single drum `score-part`, five-line percussion clef and `<divisions>48</divisions>`.
+- [ ] Derive used percussion instruments directly from `laneToStaff(laneId)`. Emit stable unique score/midi-instrument IDs; use channel 10, MIDI program 1 and **1-based** `midi-unpitched = staff.midi + 1`. Note elements refer to those IDs and use `<unpitched>` plus `<notehead>` from existing staff keys.
+- [ ] For every note entry, produce one note per distinct lane. First note advances time; remaining ones carry `<chord/>`. Rests remain `<rest/>`; do not introduce multiple voices. Properly escape metadata.
+- [ ] Implement bar lengths and 3:2 tuplets. Derive meter from `measureTicks` and reject nonrepresentable values. Use `<time-modification>` and tuplet start/stop on first/last tuplets. Keep the existing integer tick timebase.
+- [ ] Implement musical-time cursor: every entry's `<duration>` = next `startTick` minus current `startTick` (last entry ends at `measureTicks`); visual `<type>` comes from `entry.durTicks` or the tuplet written base, using the preview's representable-duration lookup.
+- [ ] **Do not insert 1–2-tick artificial rests.** Verify total advancing durations against `measureTicks`, including chord counting. A first entry after tick 0 is an exception: handle the leading gap explicitly with an importer-verified `<forward>` or fail with a specific validation error; do not silently lose the time. Reject invalid ordering/overlaps.
+- [ ] Emit tempo `<direction>` inline, immediately before the entry whose span includes the event. Events at entry start omit offset; events within an entry use a positive `<offset sound="yes">` measured from that entry start. Include `<direction-type>` metronome and `<sound tempo>`, in schema order. Handle measure-end event explicitly.
+- [ ] Add one concise **3-measure fixture** to `musicxml.test.ts`: 4/4 with bass/hi-hat chord; 3/4 with eighth-note triplet, rest and a tempo change at tick 72 inside a rest beginning at tick 48 (offset 24); 7/8 with stable expected durations.
+- [ ] Inspect XML using existing jsdom `DOMParser` (`packages/common/vitest.config.ts` already uses jsdom): validate instrument references, per-measure advancing durations, distinct voices/chord semantics, meter changes, tuplets, tempo event offsets, escaping and off-grid onset timing.
+- [ ] Use Vitest `await expect(xml).toMatchFileSnapshot('./__snapshots__/hpa690-sample.musicxml')`. This creates a human-importable snapshot, not a hand-written 200-line golden literal. Check it in, and do not automatically update snapshots without diff review.
+- [ ] Run **once locally** `xmllint --noout --schema /path/to/musicxml.xsd packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml` with the published MusicXML 4.0 XSD and its imported support files. Record pass/fail; a DOM parse does not catch element-order violations.
+- [ ] **Before UI changes**, import this generated snapshot into the two apps where available; re-check the Task 0 assumptions. Record failures or unavailable apps.
+- [ ] Export the writer from `packages/common/src/lib/index.ts`, run common tests/checks.
 
-**Goal:** Preserve the chart's musical positions in the file rather than merely producing well-formed XML.
+**Important:** MusicXML `<duration>` represents intended timing and `<type>` visual duration; deliberately different values are valid but importer interpretation must be checked. Do not add a new rhythm engine to hide a small mismatch.
 
-- [ ] Build a deterministic three-measure fixture in `musicxml.test.ts`:
-  - measure 0: 4/4, simultaneous kick/hi-hat, remaining notes/rests;
-  - measure 1: 3/4 (144 ticks), three 16-tick eighth-triplet notes or notes + a rest and a 96-tick rest;
-  - measure 2: 7/8 (168 ticks), simple durations that fill the measure;
-  - tempo events at measure 0/fraction 0 (120 BPM) and measure 1/fraction 0.5 (160 BPM, offset **72** ticks).
-- [ ] Add a golden expected XML fixture (inline string is sufficient; no extra tooling) and focused structural assertions. It must verify `<time>` changes, `<time-modification>3:2`, tuplet start/stop, and a mid-bar `<offset sound="yes">72</offset>` plus `<sound tempo="160"/>`.
-- [ ] Map standard `durTicks` to legal `<type>` values. Within a triplet derive written type from `slotTicks * 3 / 2`; retain actual `durTicks` as `<duration>`. Put tuplet start/stop on the first/last *entry*, attaching only to the first note of a chord.
-- [ ] Track the write cursor by `startTick` and `durTicks`. Insert exact-duration rests for any omitted sub-3-tick gaps, including before the barline. Do not modify the quantizer solely to help XML. Do not assign a misleading note type to non-standard tick counts.
-- [ ] Compute meter as the largest exact divisor among quarter/eighth/16th/32nd/64th tick units. Emit time signature only on first measure or a change. Return a descriptive error for unsupported meter or overfull measure, rather than silent truncation.
-- [ ] Place each tempo direction at its measure offset; include `sound="yes"` to ensure timing applies to playback. Add a test for a tempo event at measure start and another in the middle.
-- [ ] Assert for every fixture measure: sum of **advancing** XML durations == `measureTicks`; chord members are counted only once. Add a targeted off-grid case with a one-tick gap after a note.
-- [ ] Use a simple existing XML parsing/inspection method for structural tests if available; no new library is needed for this PR. If schema validation is available locally, validate the generated sample against MusicXML 4.0.
+## Task 3 — Preview button, reuse helper, small tests
 
-**Important constraints:** Keep the writer one voice and one percussion part. Do not add multi-voice engraving, tempo quantization, a new timebase, or a general rhythmic event model.
+- [ ] Export existing private `defaultTriggerBrowserDownload` from `packages/dtx-web/src/lib/api/download.ts` as `triggerBrowserDownload`, and use it from `downloadSimfile` as before. No copied Blob/anchor/revoke code in the page.
+- [ ] Add a single **Export MusicXML** button to the existing ready-chart header in `+page.svelte`. Disable while `selectedFileUrl !== committedFileUrl`; the header already hides it while loading/error. Do not gate on audio readiness.
+- [ ] On click, serialize the **current committed `chart`**, create a UTF-8 `.musicxml` Blob, and call `triggerBrowserDownload(blob, filename)`.
+- [ ] Lookup the label from `levels.find(l => l.fileUrl === committedFileUrl)` and construct `<artist> - <title> (<committed level label>).musicxml`, sanitizing path/control characters and retaining Unicode. Avoid accidentally naming the chart for a pending selection.
+- [ ] Add `preview.export_musicxml` and `preview.export_musicxml_failed` in English/Japanese locale files. Catch writer/download errors and display the localized toast.
+- [ ] Extend the existing page test's `vi.mock('@dtx/common')` with an exporter mock and mock `$lib/api/download`, similar to the existing chart-detail tests.
+- [ ] Add exactly **three focused tests**: (a) pending level switch disables export, (b) clicking exports the committed chart and correctly labeled filename, (c) writer error displays a localized toast. Rely on existing tests for not-ready render and failed/committed level switching.
+- [ ] Add one lightweight Playwright check in `packages/e2e-web/preview.spec.ts` with the existing chart fixture. Use **`const downloadPromise = page.waitForEvent('download')`** before clicking, then assert `download.suggestedFilename()` ends in `.musicxml`. Do not use Playwright Python's `page.expect_download` syntax.
+- [ ] Run web tests/check and targeted E2E if the local test stack is available.
 
-## Task 4 — Preview download UX and localization
+**Acceptance:** Download requires no backend or persisted export, uses the right currently displayed chart, and leaves playback/seek and normal download paths unchanged.
 
-**Goal:** A chart visitor can export the currently *committed* difficulty with one click.
+## Task 4 — Verification and readiness
 
-- [ ] Add failing page tests for: ready chart shows **Export MusicXML**; loading/error state hides it; selected level pending asynchronously disables it; audio still loading does **not** disable it; level switch commits and export uses the **new** chart object; failed switch reverts and allows the old chart; failure displays localized toast.
-- [ ] Extend the existing `vi.mock('@dtx/common')` in `preview-page.test.ts` with the new writer function and stub Blob/URL click as needed. Keep new tests at the page seam; do not rewrite the test harness.
-- [ ] Put the button in `+page.svelte` header beside the current level selector. Disable while `selectedFileUrl !== committedFileUrl` (and while not ready). Do not use the audio-ready flag to gate the export.
-- [ ] On click, call the pure writer on the current `chart`, wrap the text in a UTF-8 MusicXML Blob, create and click a browser download link, then revoke the object URL.
-- [ ] Use `<artist> - <title>.musicxml`, with safe path/control-character replacement and Unicode retained. Provide reasonable missing-metadata fallbacks. The filename must reflect the chart's current song metadata, not a pending level label.
-- [ ] Add `preview.export_musicxml` and `preview.export_musicxml_failed` to both language JSON files and wire the toast to the error key.
-- [ ] Run web tests and check. Add one small Playwright assertion using the already-seeded preview if existing E2E is available, preferably `page.expect_download`; do not grow E2E infrastructure for this action.
-
-**Done when:** Clicking export on ready/committed notation saves one local file; pressing it during a difficulty switch cannot produce a mislabeled chart; existing playback remains untouched.
-
-## Task 5 — Review, format, verification and import proof
-
-- [ ] Check against the design's full acceptance table and inspect the final PR diff for unrelated changes.
-- [ ] Verify MusicXML document order and (when locally possible) schema validity; inspect emitted `<instrument>` ID references and note/chord duration accounting.
+- [ ] Review complete PR diff against the design; do not include unrelated MIDI converter fixes or architecture refactors.
 - [ ] Run from repository root:
   - `bun run --filter=@dtx/common check`
   - `bun run --filter=@dtx/common test`
   - `bun run --filter=dtx-web check`
   - `bun run --filter=dtx-web test`
-  - `bun run --filter=dtx-e2e-web check` (if E2E file changed)
-  - `bun run --filter=dtx-e2e-web e2e -- preview.spec.ts` (with existing local stack if available)
-  - `bun run lint` / `bun run build:web` if affected CI requires them.
-- [ ] Use a real imported DTX drum chart to visually inspect **MuseScore 4**: noteheads, hi-hat openness, drum staff positions, time signatures, mid-bar BPM and tuplets.
-- [ ] Separately import the same output via **Guitar Pro 8 → File > Import → MusicXML**, then verify which MIDI drums sound, especially kick vs left kick, open/closed/pedal hi-hat and cymbals. Only adjust the MIDI-unpitched values based on an observed importer problem; record the difference in PR notes/tests.
-- [ ] Record any manual verification that could not be run (e.g. target app unavailable) explicitly as **unverified**, not “passed.”
-- [ ] Keep this PR in draft until code, automated checks and agreed importer validation are complete. Do not run production deployment.
+  - `bun run --filter=dtx-e2e-web check`
+  - `bun run --filter=dtx-e2e-web e2e -- preview.spec.ts` (with local stack; if not available, report unverified)
+  - `bun run lint` and `bun run build:web` where affected CI expects them
+- [ ] Confirm the schema validation and the snapshot are up-to-date and document the command used.
+- [ ] Import a **real DTX chart** into MuseScore 4: inspect drums, open hi-hat, chord, 3/4, BPM and triplets.
+- [ ] Import the same output via Guitar Pro 8 → File > Import → MusicXML. Listen to kick vs left kick, cymbals and hi-hat; check tempo change playback and exact onsets.
+- [ ] Post specific results (apps/versions), unresolved defects and any unverified manual checks on PR #335. Do not label parser-only tests as proof of importer success.
+- [ ] Keep the PR draft until required automated verification and agreed manual acceptance are complete.
 
-## Expected acceptance matrix
+## Acceptance matrix
 
-| Case | Expected result | Proof |
-| --- | --- | --- |
-| Simple note + chord | Correct percussion staff; two simultaneous sounds | Unit / XML structural test |
-| Kick + left kick | Both lanes preserved despite same `f/4` display key | Quantizer + XML test |
-| Open/closed hi-hat | Distinct x vs circle-x and distinct MIDI sounds | Unit + importer |
-| 4/4 → 3/4 → 7/8 | Meter changes and exactly filled measures | Golden test + MuseScore |
-| Eighth triplet | Three slots in 2 eighths with explicit 3:2 and tuplet start/stop | Golden test + MuseScore |
-| Mid-bar tempo | Direction offset applies to notation and sound | XML test + importer playback |
-| Off-grid 1–2 tick gap | No shifted onset or lost measure length | Structural test |
-| Difficulty switch pending | Export cannot download stale committed level under pending selection | Page test |
-| Normal download | Unicode-safe filename, UTF-8 `.musicxml`, one click | Page / Playwright |
-| Failure | Localized error, page stays usable | Page test |
-| Non-regression | Preview audio, seek, VexFlow and chart loading still work | Existing suites |
+| Scenario | Expected evidence |
+| --- | --- |
+| Simultaneous kick and left kick | Two `laneIds` and two MIDI instruments; one visual staff note |
+| Open/closed hi-hat | Distinct `x` and `circle-x` and correct GM sounds |
+| 4/4 → 3/4 → 7/8 | Proper `<time>` transitions and total advancing durations |
+| Triplet | 3:2 modifier, correct written type, first/last tuplet notation |
+| Mid-bar tempo | No offset at entry boundary, `sound="yes"` offset inside entry |
+| 1-tick gap | Exact intended onset times; no artificial untyped rest |
+| Export while level pending | Button disabled; committed level is never misrepresented |
+| Ready export | Correct XML, Unicode-safe filename with committed level and successful download |
+| Error | Localized toast, preview remains usable |
+| Regression | Existing quantizer, VexFlow, audio, seek and level-switch tests pass |
+| Target app import | Actual MuseScore 4 and Guitar Pro 8 observations recorded |
 
-## Risks, boundaries, stop conditions
+## Explicitly outside HPA-690
 
-- **Importer-specific drums:** MusicXML's MIDI-unpitched values are 1-based by specification. Guitar Pro 8 playback behavior needs manual observation. Do not invent compatibility code before testing.
-- **Non-standard DTX quantization:** Preserve exact tick positions and avoid assigning false written durations. A readable export for arbitrary micro-gaps is a future feature only if actual charts demand it.
-- **Changes to model fixture shape:** The new `laneIds` is required; update fixtures in the same task. No backwards-compatibility layer is justified.
-- **No feature expansion:** Do not include batch export, MusicXML import, standalone editor tool, server jobs, PDF, metadata management or improved engraving beyond this ticket.
-- **Single PR:** The draft planning PR is the delivery PR. No second PR for implementation or acceptance.
+The DTX-to-MIDI tool appears to map source `11`–`1C` lanes through `01`–`0C`-keyed maps, potentially falling back to MIDI note 60. It merits independent investigation/ticket if desired; **do not fix it in this PR**.
 
-## Source references
+## References
 
-- Existing notation and preview model: `packages/common/src/lib/notation/`, `packages/dtx-web/src/routes/preview/[id]/`
-- Existing tests: `packages/common/src/lib/notation/quantize.test.ts`, `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts`, `packages/e2e-web/preview.spec.ts`
-- MusicXML 4.0 percussion tutorial: https://www.w3.org/2021/06/musicxml40/tutorial/percussion/
-- MusicXML 4.0 offset (sound attribute): https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/offset/
+- [MusicXML 4.0 percussion](https://www.w3.org/2021/06/musicxml40/tutorial/percussion/)
+- [MusicXML 4.0 offset](https://www.w3.org/2021/06/musicxml40/musicxml-reference/elements/offset/)
+- [MusicXML 4.0 XSD](https://www.w3.org/2021/06/musicxml40/listings/musicxml.xsd/)
+- [Vitest file snapshots](https://vitest.dev/guide/snapshot.html)

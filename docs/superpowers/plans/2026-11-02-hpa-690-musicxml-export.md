@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-02
 
-**Status:** Implementation completed — automated verification passed; typecheck baseline and manual importer caveats recorded in Task 4; PR remains draft
+**Status:** Implementation completed — tests, browser smoke, lint and environment-qualified build passed; package typechecks still fail and manual importer checks remain open (details recorded in Task 4); PR remains draft
 
 **Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)
 

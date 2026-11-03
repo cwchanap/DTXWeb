@@ -269,6 +269,25 @@ describe('exportNotationChartToMusicXml', () => {
 		parse(xml);
 	});
 
+	it('rejects control characters that are not allowed in XML 1.0', () => {
+		for (const bad of ['\u0000', '\u0001', '\u0008', '\u000b', '\u000c', '\u000e', '\u001f']) {
+			expect(() => exportChart(simpleChart(), `bad${bad}title`)).toThrow(/XML 1\.0/);
+		}
+		expect(() => exportChart(simpleChart(), 'ok', 'bad\u0001artist')).toThrow(/U\+0001/);
+	});
+
+	it('rejects lone surrogates and noncharacters that are not allowed in XML 1.0', () => {
+		for (const bad of ['\ud800', '\udc00', '\udfff', '\ufffe', '\uffff']) {
+			expect(() => exportChart(simpleChart(), `bad${bad}title`)).toThrow(/XML 1\.0/);
+		}
+	});
+
+	it('accepts valid Unicode including allowed whitespace controls and astral characters', () => {
+		const xml = exportChart(simpleChart(), 'Tab\tLF\nCR\r Del\u007f 音楽 🥁', 'アーティスト 𝄞');
+		expect(xml).toContain('🥁');
+		parse(xml);
+	});
+
 	it('derives meter from measureTicks and re-emits time only on change', () => {
 		const doc = parse(exportChart(threeMeasureChart()));
 		const measures = measuresOf(doc);

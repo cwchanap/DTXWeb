@@ -1,7 +1,7 @@
 # HPA-690 — MusicXML Drum Chart Export Implementation Plan
 
 **Date:** 2026-11-02  
-**Status:** Draft plan, revised after review; no implementation started  
+**Status:** Draft plan, revised after review and the Task 0 importer spike; encoding decided per the user-approved "proceed with caveats" ruling; no implementation started  
 **Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)  
 **Design:** [MusicXML export design](../specs/2026-11-02-hpa-690-musicxml-export-design.md)
 
@@ -13,24 +13,24 @@
 
 ## File scope
 
-| File | Change |
-| --- | --- |
-| `packages/common/src/lib/notation/model.ts` | Replace `NotationNoteEntry.keys` with required `laneIds` |
-| `packages/common/src/lib/notation/quantize.ts` | Collect DTX lane IDs at each onset |
-| `packages/common/src/lib/notation/drumMapping.ts` | Add `midi` and `instrumentName` to existing `DrumStaff` values; no second mapping table |
-| `packages/common/src/lib/notation/drumMapping.test.ts` | Update existing object expectations and test GM pitches |
-| `packages/common/src/lib/notation/quantize.test.ts` | Update note fixtures; add bass + left-bass regression |
-| `packages/dtx-web/src/lib/components/preview/NotationView.svelte` | Compute deduplicated VexFlow keys from `laneIds` |
-| `packages/dtx-web/src/lib/components/preview/NotationView*.test.ts` | Update typed fixtures and assert VexFlow output unchanged |
-| `packages/common/src/lib/notation/musicxml.ts` (new) | Pure `exportNotationChartToMusicXml` writer |
-| `packages/common/src/lib/notation/musicxml.test.ts` (new) | Structural tests via DOMParser and one file snapshot |
-| `packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml` (new) | Deterministic export for regression and manual import |
-| `packages/common/src/lib/index.ts` | Export writer from existing barrel |
-| `packages/dtx-web/src/lib/api/download.ts` | Export the existing private Blob-to-anchor helper as `triggerBrowserDownload` |
-| `packages/dtx-web/src/routes/preview/[id]/+page.svelte` | One export button for committed chart and level |
-| `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts` | Three export-specific tests, reuse existing level-switch tests |
-| `packages/dtx-web/src/lib/i18n/locales/{en,jp}.json` | Two localized keys per locale |
-| `packages/e2e-web/preview.spec.ts` | One browser download smoke test using existing fixture |
+| File                                                                          | Change                                                                                  |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `packages/common/src/lib/notation/model.ts`                                   | Replace `NotationNoteEntry.keys` with required `laneIds`                                |
+| `packages/common/src/lib/notation/quantize.ts`                                | Collect DTX lane IDs at each onset                                                      |
+| `packages/common/src/lib/notation/drumMapping.ts`                             | Add `midi` and `instrumentName` to existing `DrumStaff` values; no second mapping table |
+| `packages/common/src/lib/notation/drumMapping.test.ts`                        | Update existing object expectations and test GM pitches                                 |
+| `packages/common/src/lib/notation/quantize.test.ts`                           | Update note fixtures; add bass + left-bass regression                                   |
+| `packages/dtx-web/src/lib/components/preview/NotationView.svelte`             | Compute deduplicated VexFlow keys from `laneIds`                                        |
+| `packages/dtx-web/src/lib/components/preview/NotationView*.test.ts`           | Update typed fixtures and assert VexFlow output unchanged                               |
+| `packages/common/src/lib/notation/musicxml.ts` (new)                          | Pure `exportNotationChartToMusicXml` writer                                             |
+| `packages/common/src/lib/notation/musicxml.test.ts` (new)                     | Structural tests via DOMParser and one file snapshot                                    |
+| `packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml` (new) | Deterministic export for regression and manual import                                   |
+| `packages/common/src/lib/index.ts`                                            | Export writer from existing barrel                                                      |
+| `packages/dtx-web/src/lib/api/download.ts`                                    | Export the existing private Blob-to-anchor helper as `triggerBrowserDownload`           |
+| `packages/dtx-web/src/routes/preview/[id]/+page.svelte`                       | One export button for committed chart and level                                         |
+| `packages/dtx-web/src/routes/preview/[id]/preview-page.test.ts`               | Three export-specific tests, reuse existing level-switch tests                          |
+| `packages/dtx-web/src/lib/i18n/locales/{en,jp}.json`                          | Two localized keys per locale                                                           |
+| `packages/e2e-web/preview.spec.ts`                                            | One browser download smoke test using existing fixture                                  |
 
 Do not change `dtx-api`, GraphQL, D1, R2, auth, desktop/Tauri, the separate DTX-to-MIDI converter, package manifests or lockfile unless actual evidence proves an unavoidable dependency.
 
@@ -40,7 +40,7 @@ Do not change `dtx-api`, GraphQL, D1, R2, auth, desktop/Tauri, the separate DTX-
 
 - [ ] Make one small **schema-valid hand-authored** MusicXML sample, stored temporarily (do not build a generator). Use two `score-instrument`/`midi-instrument` IDs for real GM kick `13` and left kick `1C` at the same staff `F4` onset with `<chord/>`.
 - [ ] Include two tempo cases: (a) a metronome `<direction>` exactly at a note/rest entry boundary **without** `<offset>`, and (b) one inside a rest with positive `<offset sound="yes">`.
-- [ ] Include a one-tick off-grid mismatch, using explicit `<duration>` with a standard visual `<type>`. For a missing *leading* tick, check the alternative `<forward><duration>1</duration></forward>` rather than inserting an untyped rest.
+- [ ] Include a one-tick off-grid mismatch, using explicit `<duration>` with a standard visual `<type>`. For a missing _leading_ tick, check the alternative `<forward><duration>1</duration></forward>` rather than inserting an untyped rest.
 - [ ] Validate the sample against the official MusicXML 4.0 XSD using `xmllint --nonet` with the bundled `catalog.xml` as well as `xml.xsd`/`xlink.xsd` (same offline command as Task 2). The schema imports absolute MusicXML URLs, so simply placing the XSDs in the same folder is insufficient.
 - [ ] Import into **MuseScore 4** and **Guitar Pro 8**; compare visual position, kick/left kick sounds, tempo timing and onset timing. Record app versions, pass/fail and exact deviations in the PR discussion. Do **not** infer a result from XML parsing alone.
 - [ ] If an app is not available in the execution environment, mark it **unverified** explicitly, retain standards-based defaults, and flag manual importer validation as an unresolved acceptance gate. Do not claim the spike passed.
@@ -67,25 +67,26 @@ Do not change `dtx-api`, GraphQL, D1, R2, auth, desktop/Tauri, the separate DTX-
 - [ ] Derive used percussion instruments directly from `laneToStaff(laneId)`. Emit stable unique score/midi-instrument IDs; use channel 10, MIDI program 1 and **1-based** `midi-unpitched = staff.midi + 1`. Note elements refer to those IDs and use `<unpitched>` plus `<notehead>` from existing staff keys.
 - [ ] For every note entry, produce one note per distinct lane. First note advances time; remaining ones carry `<chord/>`. Rests remain `<rest/>`; do not introduce multiple voices. Properly escape metadata.
 - [ ] Implement bar lengths and 3:2 tuplets. Derive meter from `measureTicks` and reject nonrepresentable values. Use `<time-modification>` and tuplet start/stop on first/last tuplets. Keep the existing integer tick timebase.
-- [ ] Implement musical-time cursor: every entry's `<duration>` = next `startTick` minus current `startTick` (last entry ends at `measureTicks`); visual `<type>` comes from `entry.durTicks` or the tuplet written base, using the preview's representable-duration lookup.
-- [ ] **Do not insert 1–2-tick artificial rests.** Validate strictly increasing entry start ticks and advance once per onset (not once per chord member). If the first entry starts at tick `g > 0`, emit the tick-zero tempo direction and any other events at ticks `< g` **before** a `<forward><duration>g</duration></forward>`; a direction at tick `g` comes after the forward. A nonzero tempo tick inside the leading gap uses `<offset sound="yes">eventTick</offset>` relative to cursor 0. Adopt `<forward>` only if the Task 0 import spike supports it; otherwise **reject with a specific export error**, not a fake rest. Verify the forward plus all advancing durations exactly equals `measureTicks`.
+- [ ] Implement musical-time cursor: every entry's `<duration>` equals its **effective written duration** — the ticks of its `<type>` (dots included), multiplied by `normal/actual` inside a `<time-modification>` group — never the raw gap to the next onset. Visual `<type>` comes from `entry.durTicks` (or the tuplet written base `slotTicks * 3/2`), using the preview's representable-duration lookup, degraded to the largest type whose effective duration fits the span to the next onset. Then emit `<forward>` for the remaining ticks to the next onset/measure end — the Task 0 `t7` encoding, XSD-valid and MuseScore-exact at tick precision. For a 3:2 member, `<duration>` = `slotTicks` while the written base is `slotTicks * 3/2`: the equality check applies _after_ the ratio.
+- [ ] **Do not insert 1–2-tick artificial rests.** Validate strictly increasing entry start ticks and advance once per onset (not once per chord member). If the first entry starts at tick `g > 0`, emit the tick-zero tempo direction and any other events at ticks `< g` **before** a `<forward><duration>g</duration></forward>`; a direction at tick `g` comes after the forward. A nonzero tempo tick inside the leading gap uses `<offset sound="yes">eventTick</offset>` relative to cursor 0. `<forward>` is adopted for gaps of any size (leading and inter-onset) per the Task 0 result and the user-approved "proceed with caveats" decision: MuseScore-verified at tick precision incl. 1 tick; GP8 renders a 24-tick forward exactly but other sizes are unverified (documented, not gated). Reject with a **specific export error** only when a span between consecutive onsets is shorter than the finest supported written type (3 ticks / 64th at divisions=48) — the one genuinely unrepresentable case — never an untyped note, a mismatched duration/type, or a fake rest. Verify forwards plus all advancing durations exactly equals `measureTicks`.
 - [ ] Emit normalized tempo `<direction>` elements **exactly once, in order**, applying three boundaries: **leading gap** `[0, first.startTick)` before `<forward>`; **entry half-open spans** `[entry.startTick, next.startTick)` before the corresponding entry (offset omitted at the boundary, positive `<offset sound="yes">` only for interior ticks); and **measure end** `eventTick === measureTicks` **after** all advancing notes/rests at the barline, without an offset, **before** the next measure's directions. Normalization accepts `fraction === 1` and supplies an initial tick-zero event. Preserve the relative order when a previous measure's end and next measure's start represent the same absolute time. Include `<direction-type>` metronome and `<sound tempo>` in schema order.
 - [ ] Add one concise **3-measure fixture** to `musicxml.test.ts`: 4/4 with bass/hi-hat chord; 3/4 with eighth-note triplet, rest and a tempo change at tick 72 inside a rest beginning at tick 48 (offset 24); 7/8 with stable expected durations.
 - [ ] Inspect XML using existing jsdom `DOMParser` (`packages/common/vitest.config.ts` already uses jsdom): validate instrument references, per-measure advancing durations, distinct voices/chord semantics, meter changes, tuplets, tempo event offsets, escaping and off-grid onset timing. **Add two small focused writer regressions:** (a) a first entry starting at tick 1, with the normalized initial BPM emitted at tick 0 **before** the forward (and any leading-gap interior direction at its correct absolute tick), and (b) a tempo event with `fraction: 1` serialized **after** the final advancing entry and **before** any next-measure tick-zero direction, without offset. Walk the output as a single MusicXML time cursor (including forwards, chords and direction offsets) to assert each event's reconstructed position, not only measure-duration totals.
 - [ ] Use Vitest `await expect(xml).toMatchFileSnapshot('./__snapshots__/hpa690-sample.musicxml')`. This creates a human-importable snapshot, not a hand-written 200-line golden literal. Check it in, and do not automatically update snapshots without diff review.
 - [ ] Run **once locally** with the official MusicXML 4.0 `musicxml.xsd`, `xml.xsd`, `xlink.xsd`, and **`catalog.xml`** downloaded as raw XML into the same temporary directory (`/path/to/musicxml-4.0/`). The XSD imports use absolute `http://www.musicxml.org/xsd/...` URLs; the catalog rewrites them to the local copies. Validate the actual checked-in snapshot using the exact command below; record success/failure and schema source, and do not skip merely because `DOMParser` succeeds:
 
-  ```sh
-  XML_CATALOG_FILES=/path/to/musicxml-4.0/catalog.xml xmllint --nonet --noout \
-    --schema /path/to/musicxml-4.0/musicxml.xsd \
-    packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml
-  ```
+    ```sh
+    XML_CATALOG_FILES=/path/to/musicxml-4.0/catalog.xml xmllint --nonet --noout \
+      --schema /path/to/musicxml-4.0/musicxml.xsd \
+      packages/common/src/lib/notation/__snapshots__/hpa690-sample.musicxml
+    ```
 
-  Confirm `--nonet` does not report unresolved imports; failing to load the catalog or XSD is **not** exporter validation.
-- [ ] **Before UI changes**, import this generated snapshot into the two apps where available; re-check the Task 0 assumptions. Record failures or unavailable apps.
+    Confirm `--nonet` does not report unresolved imports; failing to load the catalog or XSD is **not** exporter validation.
+
+- [ ] **Before UI changes**, import this generated snapshot into the two apps where a working session is available; re-check the Task 0 assumptions. Record observations and mark unverified apps/criteria explicitly — unverified is an accepted documented state under the user-approved caveats decision, not a blocker.
 - [ ] Export the writer from `packages/common/src/lib/index.ts`, run common tests/checks.
 
-**Important:** MusicXML `<duration>` represents intended timing and `<type>` visual duration; deliberately different values are valid but importer interpretation must be checked. Do not add a new rhythm engine to hide a small mismatch.
+**Important:** Task 0 proved `<duration>` must equal the **effective written duration** — MusicXML nominally permits intended vs notated duration to differ, but both importers break on it (MuseScore recalculates from `<type>` and hard-fails; GP8 empties the measure). The gap between an entry's written duration and the next onset is carried by `<forward>` elements, not by a mismatched `<duration>` and not by a new rhythm engine.
 
 ## Task 3 — Preview button, reuse helper, small tests
 
@@ -105,36 +106,36 @@ Do not change `dtx-api`, GraphQL, D1, R2, auth, desktop/Tauri, the separate DTX-
 
 - [ ] Review complete PR diff against the design; do not include unrelated MIDI converter fixes or architecture refactors.
 - [ ] Run from repository root:
-  - `bun run --filter=@dtx/common check`
-  - `bun run --filter=@dtx/common test`
-  - `bun run --filter=dtx-web check`
-  - `bun run --filter=dtx-web test`
-  - `bun run --filter=dtx-e2e-web check`
-  - `bun run --filter=dtx-e2e-web e2e -- preview.spec.ts` (with local stack; if not available, report unverified)
-  - `bun run lint` and `bun run build:web` where affected CI expects them
+    - `bun run --filter=@dtx/common check`
+    - `bun run --filter=@dtx/common test`
+    - `bun run --filter=dtx-web check`
+    - `bun run --filter=dtx-web test`
+    - `bun run --filter=dtx-e2e-web check`
+    - `bun run --filter=dtx-e2e-web e2e -- preview.spec.ts` (with local stack; if not available, report unverified)
+    - `bun run lint` and `bun run build:web` where affected CI expects them
 - [ ] Confirm the schema validation and the snapshot are up-to-date and document the command used.
 - [ ] Import a **real DTX chart** into MuseScore 4: inspect drums, open hi-hat, chord, 3/4, BPM and triplets.
-- [ ] Import the same output via Guitar Pro 8 → File > Import → MusicXML. Listen to kick vs left kick, cymbals and hi-hat; check tempo change playback and exact onsets.
+- [ ] Import the same output via Guitar Pro 8 where a working GUI session is available (File > Import → MusicXML) and record what is actually observed — kick vs left kick sounds, cymbals/hi-hat, tempo playback, onsets. Expected documented caveats from Task 0: mid-bar tempo marks may be dropped or repositioned to bar start (observed on one encoding — timing-affecting, not just lossy), forward sizes other than 24 ticks are unverified, and `drum.group.set` tolerance is unverified. Mark unobserved criteria explicitly unverified; do not report passes that were not observed.
 - [ ] Post specific results (apps/versions), unresolved defects and any unverified manual checks on PR #335. Do not label parser-only tests as proof of importer success.
 - [ ] Keep the PR draft until required automated verification and agreed manual acceptance are complete.
 
 ## Acceptance matrix
 
-| Scenario | Expected evidence |
-| --- | --- |
-| Simultaneous kick and left kick | Two `laneIds` and two MIDI instruments; one visual staff note |
-| Open/closed hi-hat | Distinct `x` and `circle-x` and correct GM sounds |
-| 4/4 → 3/4 → 7/8 | Proper `<time>` transitions and total advancing durations |
-| Triplet | 3:2 modifier, correct written type, first/last tuplet notation |
-| Mid-bar tempo | No offset at entry boundary, `sound="yes"` offset inside entry |
-| Leading gap + tick-zero tempo | Direction before forward, proper absolute time and measure cursor; fallback error if importer cannot accept forward |
-| Barline tempo (`fraction: 1`) | Direction after last entry with no offset; ordered before next measure start event |
-| 1-tick gap | Exact intended onset times; no artificial untyped rest |
-| Export while level pending | Button disabled; committed level is never misrepresented |
-| Ready export | Correct XML, Unicode-safe filename with committed level and successful download |
-| Error | Localized toast, preview remains usable |
-| Regression | Existing quantizer, VexFlow, audio, seek and level-switch tests pass |
-| Target app import | Actual MuseScore 4 and Guitar Pro 8 observations recorded |
+| Scenario                        | Expected evidence                                                                                                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Simultaneous kick and left kick | Two `laneIds` and two MIDI instruments; one visual staff note                                                                                                                                  |
+| Open/closed hi-hat              | Distinct `x` and `circle-x` and correct GM sounds                                                                                                                                              |
+| 4/4 → 3/4 → 7/8                 | Proper `<time>` transitions and total advancing durations                                                                                                                                      |
+| Triplet                         | 3:2 modifier, correct written type, first/last tuplet notation                                                                                                                                 |
+| Mid-bar tempo                   | No offset at entry boundary, `sound="yes"` offset inside entry                                                                                                                                 |
+| Leading gap + tick-zero tempo   | Direction before forward, proper absolute time and measure cursor; `<forward>` is the adopted encoding (MuseScore tick-exact; GP8 support beyond 24 ticks documented as unverified, not gated) |
+| Barline tempo (`fraction: 1`)   | Direction after last entry with no offset; ordered before next measure start event                                                                                                             |
+| 1-tick gap                      | Exact intended onset times in the MusicXML; no artificial untyped rest (MuseScore tick-exact verified; GP8 onset preservation at sub-24-tick sizes unverified — documented limitation)         |
+| Export while level pending      | Button disabled; committed level is never misrepresented                                                                                                                                       |
+| Ready export                    | Correct XML, Unicode-safe filename with committed level and successful download                                                                                                                |
+| Error                           | Localized toast, preview remains usable                                                                                                                                                        |
+| Regression                      | Existing quantizer, VexFlow, audio, seek and level-switch tests pass                                                                                                                           |
+| Target app import               | Actual MuseScore 4 and Guitar Pro 8 observations recorded                                                                                                                                      |
 
 ## Explicitly outside HPA-690
 

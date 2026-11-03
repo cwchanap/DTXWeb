@@ -411,7 +411,10 @@ describe('exportNotationChartToMusicXml', () => {
 			[
 				measure({
 					index: 0,
-					entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+					entries: [
+						{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['13'] },
+						{ kind: 'note', startTick: 96, durTicks: 48, laneIds: ['12'] }
+					]
 				}),
 				measure({
 					index: 1,
@@ -434,6 +437,7 @@ describe('exportNotationChartToMusicXml', () => {
 		const lastAdvance = firstKids
 			.filter((c) => c.tagName === 'note' || c.tagName === 'forward')
 			.at(-1)!;
+		expect(lastAdvance.tagName).toBe('forward');
 		expect(firstKids.indexOf(lastAdvance)).toBeLessThan(firstKids.length - 1);
 		const secondKids = children(second);
 		const secondDirection = secondKids.find((c) => c.tagName === 'direction');
@@ -443,6 +447,23 @@ describe('exportNotationChartToMusicXml', () => {
 		expect(secondKids.indexOf(secondDirection!)).toBeLessThan(
 			secondKids.findIndex((c) => c.tagName === 'note' || c.tagName === 'forward')
 		);
+		const temposInDocOrder = Array.from(doc.querySelectorAll('direction > sound')).map((el) =>
+			el.getAttribute('tempo')
+		);
+		expect(temposInDocOrder).toEqual(['120', '150', '100']);
+		const firstWalk = walkMeasure(first);
+		const secondWalk = walkMeasure(second);
+		expect(firstWalk.endTick).toBe(192);
+		expect(secondWalk.endTick).toBe(192);
+		const firstDirectionEvents = firstWalk.events.filter((e) => e.kind === 'direction');
+		expect(firstDirectionEvents.map((e) => e.tick)).toEqual([0, 192]);
+		const secondDirectionEvents = secondWalk.events.filter((e) => e.kind === 'direction');
+		expect(secondDirectionEvents.map((e) => e.tick)).toEqual([0]);
+		expect(firstDirectionEvents[1].tick).toBe(
+			firstWalk.endTick + secondDirectionEvents[0].tick
+		);
+		const forwardEvents = firstWalk.events.filter((e) => e.kind === 'forward');
+		expect(forwardEvents.map((e) => e.tick)).toEqual([48, 144]);
 	});
 
 	it('rejects a final onset whose span to the barline is below the finest written type', () => {
@@ -468,6 +489,123 @@ describe('exportNotationChartToMusicXml', () => {
 			})
 		]);
 		expect(() => exportChart(c)).toThrow(/measure 1, tick 0/);
+	});
+
+	it('rejects tempo events with non-finite fractions', () => {
+		for (const fraction of [NaN, Infinity, -Infinity]) {
+			const c = chart(
+				[
+					measure({
+						entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+					})
+				],
+				[{ measure: 0, fraction, bpm: 120 }]
+			);
+			expect(() => exportChart(c)).toThrow(/measure 1 has an invalid fraction/);
+		}
+	});
+
+	it('rejects duplicate measure indices', () => {
+		const c = chart(
+			[
+				measure({
+					index: 0,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+				}),
+				measure({
+					index: 0,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['12'] }]
+				})
+			],
+			[{ measure: 0, fraction: 0, bpm: 120 }]
+		);
+		expect(() => exportChart(c)).toThrow(/duplicate measure 1/);
+	});
+
+	it('rejects measures with non-integer or negative indices', () => {
+		for (const index of [-1, 0.5, NaN]) {
+			const c = chart(
+				[
+					measure({
+						index,
+						entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+					})
+				],
+				[{ measure: index, fraction: 0, bpm: 120 }]
+			);
+			expect(() => exportChart(c)).toThrow(/invalid index/);
+		}
+	});
+
+	it('routes each tempo event to the measure with the matching index', () => {
+		const c = chart(
+			[
+				measure({
+					index: 0,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+				}),
+				measure({
+					index: 2,
+					measureTicks: 96,
+					beatsPerMeasure: 2,
+					entries: [{ kind: 'note', startTick: 0, durTicks: 96, laneIds: ['12'] }]
+				})
+			],
+			[
+				{ measure: 0, fraction: 0, bpm: 120 },
+				{ measure: 2, fraction: 0.5, bpm: 150 }
+			]
+		);
+		const doc = parse(exportChart(c));
+		const measures = measuresOf(doc);
+		expect(measures.map((m) => m.getAttribute('number'))).toEqual(['1', '3']);
+		const firstDirections = children(measures[0]).filter((c) => c.tagName === 'direction');
+		expect(firstDirections).toHaveLength(1);
+		expect(directChild(firstDirections[0], 'offset')).toBeUndefined();
+		expect(requiredChild(firstDirections[0], 'sound').getAttribute('tempo')).toBe('120');
+		const secondDirections = children(measures[1]).filter((c) => c.tagName === 'direction');
+		expect(secondDirections).toHaveLength(1);
+		expect(requiredChild(secondDirections[0], 'offset').textContent).toBe('48');
+		expect(requiredChild(secondDirections[0], 'sound').getAttribute('tempo')).toBe('150');
+		expect(children(measures[1]).indexOf(secondDirections[0])).toBeLessThan(
+			children(measures[1]).findIndex((c) => c.tagName === 'note')
+		);
+	});
+
+	it('emits one note per distinct canonical lane id', () => {
+		const c = chart([
+			measure({
+				entries: [
+					{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['13', '13', '1c', '1C'] },
+					{ kind: 'rest', startTick: 48, durTicks: 144 }
+				]
+			})
+		]);
+		const doc = parse(exportChart(c));
+		const notes = children(measuresOf(doc)[0]).filter((c) => c.tagName === 'note');
+		expect(notes).toHaveLength(3);
+		expect(directChild(notes[0], 'chord')).toBeUndefined();
+		expect(directChild(notes[1], 'chord')).toBeDefined();
+		expect(requiredChild(notes[0], 'instrument').getAttribute('id')).toBe('I-13');
+		expect(requiredChild(notes[1], 'instrument').getAttribute('id')).toBe('I-1C');
+		expect(directChild(notes[2], 'rest')).toBeDefined();
+		expect(doc.querySelectorAll('score-instrument')).toHaveLength(2);
+		const { events, endTick } = walkMeasure(measuresOf(doc)[0]);
+		expect(endTick).toBe(192);
+		expect(events.filter((e) => e.kind === 'note').map((e) => e.tick)).toEqual([0, 0]);
+	});
+
+	it('rejects a singleton tuplet that cannot carry a 3:2 group', () => {
+		const c = chart([
+			measure({
+				entries: [
+					{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['13'] },
+					{ kind: 'rest', startTick: 48, durTicks: 144 }
+				],
+				tuplets: [{ startIndex: 0, count: 1, slotTicks: 16 }]
+			})
+		]);
+		expect(() => exportChart(c)).toThrow(/measure 1.*at least 2 members/);
 	});
 
 	it('advances once per onset for chords and sums each measure exactly', () => {

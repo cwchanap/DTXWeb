@@ -82,6 +82,12 @@ const measureTempos = (
 	const positioned: PositionedTempo[] = [];
 	for (const event of tempoEvents) {
 		if (event.measure !== measure.index) continue;
+		if (!Number.isFinite(event.fraction)) {
+			throw new Error(
+				`MusicXML export: tempo event in measure ${measure.index + 1} has an ` +
+					`invalid fraction ${event.fraction}`
+			);
+		}
 		const eventTick = Math.round(event.fraction * measure.measureTicks);
 		if (eventTick < 0 || eventTick > measure.measureTicks) {
 			throw new Error(
@@ -159,11 +165,15 @@ const buildTupletMap = (measure: NotationMeasure): Map<number, TupletMember> => 
 	const members = new Map<number, TupletMember>();
 	for (const tuplet of measure.tuplets) {
 		const { startIndex, count, slotTicks } = tuplet;
+		if (!Number.isInteger(count) || count < 2) {
+			throw new Error(
+				`MusicXML export: measure ${measure.index + 1} tuplet at entry index ` +
+					`${startIndex} has count ${count}; a 3:2 group needs at least 2 members`
+			);
+		}
 		if (
 			!Number.isInteger(startIndex) ||
 			startIndex < 0 ||
-			!Number.isInteger(count) ||
-			count < 1 ||
 			startIndex + count > measure.entries.length
 		) {
 			throw new Error(
@@ -271,7 +281,18 @@ export const exportNotationChartToMusicXml = (
 	if (chart.measures.length === 0) {
 		throw new Error('MusicXML export: chart has no measures');
 	}
-	const measureIndexes = new Set(chart.measures.map((measure) => measure.index));
+	const measureIndexes = new Set<number>();
+	for (const measure of chart.measures) {
+		if (!Number.isInteger(measure.index) || measure.index < 0) {
+			throw new Error(
+				`MusicXML export: chart has a measure with invalid index ${measure.index}`
+			);
+		}
+		if (measureIndexes.has(measure.index)) {
+			throw new Error(`MusicXML export: chart has duplicate measure ${measure.index + 1}`);
+		}
+		measureIndexes.add(measure.index);
+	}
 	for (const event of chart.tempoEvents) {
 		if (!Number.isInteger(event.measure) || !measureIndexes.has(event.measure)) {
 			throw new Error(
@@ -354,7 +375,8 @@ export const exportNotationChartToMusicXml = (
 			push(3, `</note>`);
 			return;
 		}
-		entry.laneIds.forEach((laneId, laneIndex) => {
+		const laneIds = [...new Set(entry.laneIds.map((laneId) => laneId.toUpperCase()))];
+		laneIds.forEach((laneId, laneIndex) => {
 			push(3, `<note>`);
 			emitNoteBody(spec, laneIndex === 0 ? mark : undefined, false, laneIndex > 0, laneId);
 			push(3, `</note>`);

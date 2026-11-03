@@ -1,8 +1,11 @@
 # HPA-690 — MusicXML Drum Chart Export Implementation Plan
 
-**Date:** 2026-11-02  
-**Status:** Draft plan, revised after review and the Task 0 importer spike; encoding decided per the user-approved "proceed with caveats" ruling; no implementation started  
-**Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)  
+**Date:** 2026-11-02
+
+**Status:** Implementation completed — automated verification passed; typecheck baseline and manual importer caveats recorded in Task 4; PR remains draft
+
+**Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)
+
 **Design:** [MusicXML export design](../specs/2026-11-02-hpa-690-musicxml-export-design.md)
 
 > **One PR for this ticket:** Continue all work on `docs/hpa-690-musicxml-export-design` in the **existing PR #335**. Do not open a separate implementation or testing PR. Keep it draft until implementation and required verification have been recorded.

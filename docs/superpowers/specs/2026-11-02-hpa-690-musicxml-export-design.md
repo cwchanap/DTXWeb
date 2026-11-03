@@ -1,8 +1,11 @@
 # HPA-690 — MusicXML Drum Chart Export Design
 
-**Date:** 2026-11-02  
-**Status:** Draft, revised after GitHub design review and the Task 0 importer spike; timing encoding settled per the user-approved "proceed with caveats" ruling  
-**Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)  
+**Date:** 2026-11-02
+
+**Status:** Draft, revised after GitHub design review and the Task 0 importer spike; timing encoding settled per the user-approved "proceed with caveats" ruling
+
+**Linear:** [HPA-690](https://linear.app/cwchanap/issue/HPA-690/export-dtx-drum-charts-to-musicxml-for-musescore-and-guitar-pro)
+
 **Delivery:** One PR for design, implementation and tests. This documentation-only draft PR becomes the implementation PR; no second PR.
 
 ## Goal and boundaries

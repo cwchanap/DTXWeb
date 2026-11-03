@@ -1006,8 +1006,6 @@ describe('/preview page', () => {
 	});
 
 	it('exports the committed chart with the committed level label in the filename', async () => {
-		const built = readyChart();
-		buildNotationChartMock.mockReturnValue(built);
 		getPreviewSimfileMock.mockResolvedValue({
 			id: 5,
 			title: '未来/過去',
@@ -1021,6 +1019,12 @@ describe('/preview page', () => {
 		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
 		const select = screen.getByRole('combobox') as HTMLSelectElement;
 		const buildsBefore = buildNotationChartMock.mock.calls.length;
+		const basicBuilt = readyChart();
+		basicBuilt.chart = {
+			...basicBuilt.chart,
+			measures: [{ index: 0, measureTicks: 96, beatsPerMeasure: 2, entries: [], tuplets: [] }]
+		};
+		buildNotationChartMock.mockReturnValueOnce(basicBuilt);
 		await fireEvent.change(select, { target: { value: 'https://bucket.test/5/basic.dtx' } });
 		await waitFor(() =>
 			expect(buildNotationChartMock.mock.calls.length).toBe(buildsBefore + 1)
@@ -1028,7 +1032,7 @@ describe('/preview page', () => {
 		const exportButton = screen.getByRole('button', { name: 'preview.export_musicxml' });
 		await fireEvent.click(exportButton);
 		expect(exportMusicXmlMock).toHaveBeenCalledTimes(1);
-		expect(exportMusicXmlMock).toHaveBeenCalledWith(built.chart, {
+		expect(exportMusicXmlMock).toHaveBeenCalledWith(basicBuilt.chart, {
 			title: '未来/過去',
 			artist: 'DJ☆'
 		});

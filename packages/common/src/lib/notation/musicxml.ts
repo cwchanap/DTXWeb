@@ -33,13 +33,29 @@ const METER_UNITS: ReadonlyArray<readonly [number, number]> = [
 	[3, 64]
 ];
 
-const escapeXml = (value: string): string =>
-	value
+const escapeXml = (value: string): string => {
+	for (const c of value) {
+		const cp = c.codePointAt(0)!;
+		const legal =
+			cp === 0x9 ||
+			cp === 0xa ||
+			cp === 0xd ||
+			(cp >= 0x20 && cp <= 0xd7ff) ||
+			(cp >= 0xe000 && cp <= 0xfffd) ||
+			(cp >= 0x10000 && cp <= 0x10ffff);
+		if (!legal) {
+			throw new Error(
+				`MusicXML export: text contains a character not allowed in XML 1.0 (U+${cp.toString(16).toUpperCase().padStart(4, '0')})`
+			);
+		}
+	}
+	return value
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
 		.replace(/"/g, '&quot;')
 		.replace(/'/g, '&apos;');
+};
 
 const instrumentId = (laneId: string): string => `I-${laneId.toUpperCase()}`;
 

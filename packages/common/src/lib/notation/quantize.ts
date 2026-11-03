@@ -128,11 +128,9 @@ export const quantizeMeasure = (
 	const measureTicks = Math.round(measureLength * TICKS_PER_WHOLE);
 	const beatsPerMeasure = Math.max(1, Math.round(measureLength * 4));
 
-	// Collect onsets keyed by tick, accumulating source lane ids from playable
-	// lanes. laneToStaff returns undefined for non-playable lanes (bpm/bgm), so
-	// the `!staff` guard alone filters them out — no separate lane-list check
-	// needed. Lane ids are canonicalized to uppercase and sorted so each
-	// entry's laneIds is stable for serialization.
+	// Collect onsets keyed by tick, accumulating lane ids from playable lanes.
+	// laneToStaff returns undefined for non-playable lanes (bpm/bgm), so the
+	// `!staff` guard alone filters them out — no separate lane-list check needed.
 	const byTick = new Map<number, Set<string>>();
 	for (const lane of laneNotes) {
 		const staff = laneToStaff(lane.laneID);

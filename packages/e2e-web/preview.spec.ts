@@ -145,5 +145,13 @@ test.describe('Preview page', () => {
 		await exportButton.click();
 		const download = await downloadPromise;
 		expect(download.suggestedFilename()).toMatch(/\.musicxml$/);
+		// A matching filename alone does not prove the export produced MusicXML;
+		// read the downloaded artifact and assert on the emitted encoding. The
+		// fixture's base #BPM:120 lands as <per-minute>120</per-minute> — match
+		// the XML encoding, not VexFlow's displayed "= 120" tempo label, which
+		// never reaches the file.
+		const xml = readFileSync((await download.path())!, 'utf-8');
+		expect(xml).toContain('<score-partwise');
+		expect(xml).toContain('<per-minute>120</per-minute>');
 	});
 });

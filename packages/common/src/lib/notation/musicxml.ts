@@ -1,6 +1,7 @@
 import { laneToStaff, type DrumStaff } from './drumMapping';
 import {
 	TICKS_PER_WHOLE,
+	DURATION_TABLE,
 	type NotationChart,
 	type NotationEntry,
 	type NotationMeasure,
@@ -15,16 +16,6 @@ export interface MusicXmlMetadata {
 const DIVISIONS = TICKS_PER_WHOLE / 4;
 const MIN_WRITTEN_TICKS = 3;
 
-const TYPE_BY_TICKS: ReadonlyArray<readonly [number, string]> = [
-	[192, 'whole'],
-	[96, 'half'],
-	[48, 'quarter'],
-	[24, 'eighth'],
-	[12, '16th'],
-	[6, '32nd'],
-	[3, '64th']
-];
-
 const METER_UNITS: ReadonlyArray<readonly [number, number]> = [
 	[48, 4],
 	[24, 8],
@@ -34,6 +25,10 @@ const METER_UNITS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 const escapeXml = (value: string): string => {
+	// Characters outside the XML 1.0 legal set can't be encoded at any cost;
+	// replace them with U+FFFD rather than aborting the whole export over a
+	// stray control byte in server-side metadata the user can't fix.
+	let sanitized = '';
 	for (const c of value) {
 		const cp = c.codePointAt(0)!;
 		const legal =
@@ -43,13 +38,9 @@ const escapeXml = (value: string): string => {
 			(cp >= 0x20 && cp <= 0xd7ff) ||
 			(cp >= 0xe000 && cp <= 0xfffd) ||
 			(cp >= 0x10000 && cp <= 0x10ffff);
-		if (!legal) {
-			throw new Error(
-				`MusicXML export: text contains a character not allowed in XML 1.0 (U+${cp.toString(16).toUpperCase().padStart(4, '0')})`
-			);
-		}
+		sanitized += legal ? c : '\uFFFD';
 	}
-	return value
+	return sanitized
 		.replace(/&/g, '&amp;')
 		.replace(/</g, '&lt;')
 		.replace(/>/g, '&gt;')
@@ -58,21 +49,6 @@ const escapeXml = (value: string): string => {
 };
 
 const instrumentId = (laneId: string): string => `I-${laneId.toUpperCase()}`;
-
-interface StaffPosition {
-	step: string;
-	octave: string;
-	notehead?: string;
-}
-
-const staffPosition = (key: string): StaffPosition => {
-	const [letter, octave, modifier] = key.split('/');
-	return {
-		step: letter.toUpperCase(),
-		octave,
-		notehead: modifier === 'x2' ? 'x' : modifier === 'x3' ? 'circle-x' : undefined
-	};
-};
 
 const meterFor = (measure: NotationMeasure): { beats: number; beatType: number } => {
 	for (const [unit, beatType] of METER_UNITS) {
@@ -97,7 +73,6 @@ const measureTempos = (
 ): PositionedTempo[] => {
 	const positioned: PositionedTempo[] = [];
 	for (const event of tempoEvents) {
-		if (event.measure !== measure.index) continue;
 		if (!Number.isFinite(event.fraction)) {
 			throw new Error(
 				`MusicXML export: tempo event in measure ${measure.index + 1} has an ` +
@@ -181,10 +156,13 @@ const buildTupletMap = (measure: NotationMeasure): Map<number, TupletMember> => 
 	const members = new Map<number, TupletMember>();
 	for (const tuplet of measure.tuplets) {
 		const { startIndex, count, slotTicks } = tuplet;
-		if (!Number.isInteger(count) || count < 2) {
+		// The writer always emits a single 3:2 time-modification and one
+		// bracket, so only a real 3-member triplet can be written — anything
+		// else serializes as a broken tuplet in importers.
+		if (count !== 3) {
 			throw new Error(
 				`MusicXML export: measure ${measure.index + 1} tuplet at entry index ` +
-					`${startIndex} has count ${count}; a 3:2 group needs at least 2 members`
+					`${startIndex} has count ${count}; only exactly 3 members are writable`
 			);
 		}
 		if (
@@ -204,6 +182,22 @@ const buildTupletMap = (measure: NotationMeasure): Map<number, TupletMember> => 
 			);
 		}
 		for (let i = startIndex; i < startIndex + count; i++) {
+			const member = measure.entries[i];
+			const expectedTick =
+				measure.entries[startIndex].startTick + (i - startIndex) * slotTicks;
+			if (member.startTick !== expectedTick) {
+				throw new Error(
+					`MusicXML export: measure ${measure.index + 1} tuplet members must be ` +
+						`evenly spaced ${slotTicks} ticks apart; entry index ${i} is at ` +
+						`tick ${member.startTick}, expected ${expectedTick}`
+				);
+			}
+			if (member.durTicks !== slotTicks) {
+				throw new Error(
+					`MusicXML export: measure ${measure.index + 1} tuplet entry index ${i} ` +
+						`has written duration ${member.durTicks}, expected slotTicks ${slotTicks}`
+				);
+			}
 			if (members.has(i)) {
 				throw new Error(
 					`MusicXML export: measure ${measure.index + 1} has overlapping tuplet ` +
@@ -241,7 +235,7 @@ const resolveWritten = (
 					`integer 3:2 written base`
 			);
 		}
-		const base = TYPE_BY_TICKS.find(([ticks]) => ticks === baseTicks);
+		const base = DURATION_TABLE.find((d) => d.ticks === baseTicks);
 		if (!base) {
 			throw new Error(
 				`MusicXML export: ${where} tuplet written base ${baseTicks} ticks has no ` +
@@ -254,9 +248,9 @@ const resolveWritten = (
 					`the ${span}-tick span to the next onset`
 			);
 		}
-		return { advance: tuplet.slotTicks, typeName: base[1], inTuplet: true };
+		return { advance: tuplet.slotTicks, typeName: base.musicxml, inTuplet: true };
 	}
-	const type = TYPE_BY_TICKS.find(([ticks]) => ticks <= entry.durTicks && ticks <= span);
+	const type = DURATION_TABLE.find((d) => d.ticks <= entry.durTicks && d.ticks <= span);
 	if (!type) {
 		throw new Error(
 			`MusicXML export: ${where} ` +
@@ -266,7 +260,7 @@ const resolveWritten = (
 					: `written duration ${entry.durTicks} ticks has no representable note type`)
 		);
 	}
-	return { advance: type[0], typeName: type[1], inTuplet: false };
+	return { advance: type.ticks, typeName: type.musicxml, inTuplet: false };
 };
 
 const collectInstruments = (chart: NotationChart): { laneId: string; staff: DrumStaff }[] => {
@@ -275,15 +269,10 @@ const collectInstruments = (chart: NotationChart): { laneId: string; staff: Drum
 		for (const entry of measure.entries) {
 			if (entry.kind !== 'note') continue;
 			for (const laneId of entry.laneIds) {
-				const staff = laneToStaff(laneId);
-				if (!staff) {
-					throw new Error(
-						`MusicXML export: measure ${measure.index + 1}, tick ${entry.startTick} ` +
-							`references unmapped lane ${laneId}`
-					);
-				}
+				// validateMeasure already rejected unmapped lanes, so the lookup
+				// cannot miss here.
 				const id = laneId.toUpperCase();
-				if (!seen.has(id)) seen.set(id, staff);
+				if (!seen.has(id)) seen.set(id, laneToStaff(laneId)!);
 			}
 		}
 	}
@@ -318,16 +307,28 @@ export const exportNotationChartToMusicXml = (
 	}
 	for (const measure of chart.measures) validateMeasure(measure);
 	const instruments = collectInstruments(chart);
+	// Group tempo events by measure once so each measure positions only its own
+	// events instead of rescanning the whole list per measure.
+	const temposByMeasure = new Map<number, NotationTempoEvent[]>();
+	for (const event of chart.tempoEvents) {
+		const list = temposByMeasure.get(event.measure);
+		if (list) list.push(event);
+		else temposByMeasure.set(event.measure, [event]);
+	}
 
 	const lines: string[] = [];
 	const push = (indent: number, content: string) => lines.push('  '.repeat(indent) + content);
 
 	const emitDirection = (bpm: number, offset: number) => {
+		// per-minute is the visible metronome mark: fractional source BPMs would
+		// render as 133.33333333333334, so the display value rounds to 2
+		// decimals while <sound tempo> keeps full precision.
+		const display = Number(bpm.toFixed(2));
 		push(3, `<direction placement="above">`);
 		push(4, `<direction-type>`);
 		push(5, `<metronome>`);
 		push(6, `<beat-unit>quarter</beat-unit>`);
-		push(6, `<per-minute>${bpm}</per-minute>`);
+		push(6, `<per-minute>${display}</per-minute>`);
 		push(5, `</metronome>`);
 		push(4, `</direction-type>`);
 		if (offset > 0) push(4, `<offset sound="yes">${offset}</offset>`);
@@ -350,14 +351,15 @@ export const exportNotationChartToMusicXml = (
 		laneId?: string
 	) => {
 		if (chord) push(4, `<chord/>`);
-		let position: StaffPosition | undefined;
+		let notehead: DrumStaff['notehead'];
 		if (rest) {
 			push(4, `<rest/>`);
 		} else {
-			position = staffPosition(laneToStaff(laneId!)!.key);
+			const staff = laneToStaff(laneId!)!;
+			notehead = staff.notehead;
 			push(4, `<unpitched>`);
-			push(5, `<display-step>${position.step}</display-step>`);
-			push(5, `<display-octave>${position.octave}</display-octave>`);
+			push(5, `<display-step>${staff.step}</display-step>`);
+			push(5, `<display-octave>${staff.octave}</display-octave>`);
 			push(4, `</unpitched>`);
 		}
 		push(4, `<duration>${spec.advance}</duration>`);
@@ -370,7 +372,7 @@ export const exportNotationChartToMusicXml = (
 			push(5, `<normal-notes>2</normal-notes>`);
 			push(4, `</time-modification>`);
 		}
-		if (position?.notehead) push(4, `<notehead>${position.notehead}</notehead>`);
+		if (notehead) push(4, `<notehead>${notehead}</notehead>`);
 		if (tupletMark) {
 			push(4, `<notations>`);
 			push(
@@ -405,13 +407,11 @@ export const exportNotationChartToMusicXml = (
 		previousMeter: { beats: number; beatType: number } | undefined
 	): { beats: number; beatType: number } => {
 		const meter = meterFor(measure);
+		const meterChanged =
+			previousMeter !== undefined &&
+			(previousMeter.beats !== meter.beats || previousMeter.beatType !== meter.beatType);
 		push(2, `<measure number="${measure.index + 1}">`);
-		if (
-			isFirst ||
-			!previousMeter ||
-			previousMeter.beats !== meter.beats ||
-			previousMeter.beatType !== meter.beatType
-		) {
+		if (isFirst || meterChanged) {
 			push(3, `<attributes>`);
 			if (isFirst) {
 				push(4, `<divisions>${DIVISIONS}</divisions>`);
@@ -431,7 +431,7 @@ export const exportNotationChartToMusicXml = (
 			push(3, `</attributes>`);
 		}
 
-		const tempos = measureTempos(measure, chart.tempoEvents);
+		const tempos = measureTempos(measure, temposByMeasure.get(measure.index) ?? []);
 		const entries = measure.entries;
 		const firstStart = entries.length ? entries[0].startTick : measure.measureTicks;
 		for (const tempo of tempos.filter((t) => t.eventTick < firstStart)) {

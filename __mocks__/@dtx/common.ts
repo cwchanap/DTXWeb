@@ -161,9 +161,11 @@ export const formatLevel = (level: string | number | undefined | null): string =
 
 export {
 	laneToStaff,
+	staffKey,
 	PLAYABLE_DRUM_LANES,
 	type DrumStaff
 } from '../../packages/common/src/lib/notation/drumMapping';
+export { DURATION_TABLE } from '../../packages/common/src/lib/notation/model';
 
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

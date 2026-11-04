@@ -12,7 +12,13 @@
 		BarlineType,
 		StaveTempo
 	} from 'vexflow';
-	import { laneToStaff, type NotationChart, type NotationMeasure } from '@dtx/common';
+	import {
+		laneToStaff,
+		staffKey,
+		DURATION_TABLE,
+		type NotationChart,
+		type NotationMeasure
+	} from '@dtx/common';
 	import {
 		cursorPoint,
 		clickToFraction,
@@ -95,36 +101,21 @@
 				return new StaveNote({ keys: ['b/4'], duration: `${code}r` });
 			}
 			const code = ticksToVexflowCode(durationTicks);
-			const keys = [...new Set(entry.laneIds.map((id) => laneToStaff(id)!.key))];
+			const keys = [...new Set(entry.laneIds.map((id) => staffKey(laneToStaff(id)!)))];
 			return new StaveNote({ keys, duration: code });
 		});
 	};
 
-	// Map each (binary) duration-tick value to its VexFlow code. quantize
-	// emits these plain values for notes, but off-grid positions can produce
-	// rests with non-table durations (e.g. a 5-tick rest from the sub-3-tick
-	// fold in pushRests). Those have no exact VexFlow glyph, so the fallback
-	// picks the largest representable duration <= ticks instead of defaulting
-	// to a quarter — a 5-tick rest renders as a 64th (3 ticks), not a quarter
-	// (48 ticks), keeping VexFlow's glyph and spacing close to the real span.
-	const TICK_CODE: Record<number, string> = {
-		192: 'w',
-		96: 'h',
-		48: 'q',
-		24: '8',
-		12: '16',
-		6: '32',
-		3: '64'
-	};
-	const TICK_ENTRIES = Object.entries(TICK_CODE)
-		.map(([t, c]) => [Number(t), c] as const)
-		.sort((a, b) => b[0] - a[0]);
-	const ticksToVexflowCode = (ticks: number): string => {
-		const exact = TICK_CODE[ticks];
-		if (exact) return exact;
-		const entry = TICK_ENTRIES.find(([t]) => t <= ticks);
-		return entry ? entry[1] : '64';
-	};
+	// Map each duration-tick value to its VexFlow code via the shared
+	// DURATION_TABLE. quantize emits table values for notes, but off-grid
+	// positions can produce rests with non-table durations (e.g. a 5-tick rest
+	// from the sub-3-tick fold in pushRests). Those have no exact VexFlow
+	// glyph, so the fallback picks the largest representable duration <= ticks
+	// instead of defaulting to a quarter — a 5-tick rest renders as a 64th
+	// (3 ticks), not a quarter (48 ticks), keeping VexFlow's glyph and spacing
+	// close to the real span.
+	const ticksToVexflowCode = (ticks: number): string =>
+		DURATION_TABLE.find((d) => d.ticks <= ticks)?.vexflow ?? '64';
 
 	const onsetCount = (measure: NotationMeasure): number =>
 		measure.entries.reduce((n, e) => n + (e.kind === 'note' ? 1 : 0), 0);

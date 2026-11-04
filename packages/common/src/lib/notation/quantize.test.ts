@@ -583,6 +583,83 @@ describe('quantizeMeasure', () => {
 		).toBe(true);
 	});
 
+	it('merges onsets closer than 3 ticks into a single onset', () => {
+		// A flam 1/192 apart: positions 0 and 1/192 -> ticks 0 and 1. The written
+		// grid can't place two attacks under a 64th apart, so they collapse into
+		// one onset instead of producing a span the writer must reject.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 1 / 192 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+		const notes = measure.entries.filter((e) => e.kind === 'note');
+		expect(notes).toHaveLength(1);
+		expect(notes[0].startTick).toBe(0);
+	});
+
+	it('unions lane ids when a cross-lane flam merges', () => {
+		const hat = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 0 }]);
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 1 / 192 }]);
+		const measure = quantizeMeasure(0, [hat, snare]);
+		const first = measure.entries.find((e) => e.kind === 'note') as { laneIds: string[] };
+		expect(first.laneIds).toEqual(['11', '12']);
+	});
+
+	it('keeps a dense roll at half density rather than collapsing it to one hit', () => {
+		// 1/96 roll: ticks 0, 2, 4. Tick 2 merges into kept onset 0; tick 4 is
+		// 4 ticks after the last KEPT onset (not the last raw one), so it stays.
+		const snare = new LaneMeasureNote(0, '12', [
+			{ noteID: '01', position: 0 },
+			{ noteID: '01', position: 1 / 96 },
+			{ noteID: '01', position: 2 / 96 }
+		]);
+		const measure = quantizeMeasure(0, [snare]);
+		const notes = measure.entries.filter((e) => e.kind === 'note');
+		expect(notes.map((n) => n.startTick)).toEqual([0, 4]);
+	});
+
+	it('pulls a lone onset near the barline back to the last representable slot', () => {
+		// position 191/192 -> tick 191, one tick short of the barline. Shifted to
+		// tick 189 so a 64th still fits — at most a 2-tick move, inaudible.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 191 / 192 }]);
+		const measure = quantizeMeasure(0, [snare]);
+		const notes = measure.entries.filter((e) => e.kind === 'note');
+		expect(notes).toHaveLength(1);
+		expect(notes[0].startTick).toBe(189);
+	});
+
+	it('merges an end-of-bar onset into the previous onset when the pulled-back slot is taken', () => {
+		// Onsets at 188 and 191: 3 ticks apart, so no onset-merge. The 191 onset
+		// is 1 tick from the barline; pulling it back to 189 would leave a 1-tick
+		// gap to 188, so it merges into the 188 onset instead.
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 188 / 192 }]);
+		const hat = new LaneMeasureNote(0, '11', [{ noteID: '01', position: 191 / 192 }]);
+		const measure = quantizeMeasure(0, [hat, snare]);
+		const notes = measure.entries.filter((e) => e.kind === 'note');
+		expect(notes).toHaveLength(1);
+		expect(notes[0].startTick).toBe(188);
+		expect((notes[0] as { laneIds: string[] }).laneIds).toEqual(['11', '12']);
+	});
+
+	it('clamps a position that rounds onto the barline in a single-measure chart', () => {
+		// position 383/384 -> tick 192 == measureTicks, which the entry loop can
+		// never emit. The clamp lands it on the final tick, then the end-of-bar
+		// pullback moves it to the last representable slot (189).
+		const snare = new LaneMeasureNote(0, '12', [{ noteID: '01', position: 383 / 384 }]);
+		const measure = quantizeMeasure(0, [snare]);
+		const notes = measure.entries.filter((e) => e.kind === 'note');
+		expect(notes).toHaveLength(1);
+		expect(notes[0].startTick).toBe(189);
+	});
+
+	it('snaps a bar length that is not a multiple of 3 ticks', () => {
+		// 0.96 * 192 = 184.32 ticks. No power-of-2 meter unit divides 184, so the
+		// MusicXML meter derivation would fail outright. Snap to the nearest
+		// multiple of 3 (183) — at most a 1.5-tick change to the bar length.
+		const measure = quantizeMeasure(0, [], 0.96);
+		expect(measure.measureTicks).toBe(183);
+	});
+
 	it('detects a triplet group in a 3/4 measure (96-tick group in 144 ticks)', () => {
 		// 3/4 = 0.75 * 192 = 144 ticks. A 96-tick triplet group fits (96 ≤ 144):
 		// slots at 0, 32, 64. The remaining 48 ticks become a quarter rest.
@@ -924,5 +1001,29 @@ describe('buildNotationChart', () => {
 			{ measure: 0, fraction: 0, bpm: 120 },
 			{ measure: 0, fraction: 0.5, bpm: 180 }
 		]);
+	});
+
+	it('moves a note that rounds onto the barline to tick 0 of the next measure', () => {
+		// A 384-division pattern places a note at position 383/384, which rounds
+		// to tick 192 == measureTicks. Without relocation it never becomes an
+		// entry: dropped from the preview and the export while still playing.
+		// A barline-rounded attack sounds at the next downbeat, so it moves
+		// there — losing it entirely is not an option.
+		const dtx = makeDtx(['#00012: ' + '01' + '00'.repeat(382) + '01', '#00112: 0001'], 120);
+		const { chart } = buildNotationChart(dtx);
+		const m0Notes = chart.measures[0].entries.filter((e) => e.kind === 'note');
+		expect(m0Notes.map((n) => n.startTick)).toEqual([0]);
+		const m1Notes = chart.measures[1].entries.filter((e) => e.kind === 'note');
+		expect(m1Notes.map((n) => n.startTick)).toEqual([0, 96]);
+	});
+
+	it('keeps a barline-rounded note in the final measure when there is no next bar', () => {
+		// The last measure has no next bar to spill into: the note clamps into
+		// the bar's last representable slot (189) instead of being dropped.
+		const dtx = makeDtx(['#00012: ' + '00'.repeat(383) + '01'], 120);
+		const { chart } = buildNotationChart(dtx);
+		const notes = chart.measures[0].entries.filter((e) => e.kind === 'note');
+		expect(notes).toHaveLength(1);
+		expect(notes[0].startTick).toBe(189);
 	});
 });

@@ -12,7 +12,8 @@ import {
 	bulkDownloadHeaders,
 	downloadBaseUrl,
 	parseContentDispositionFilename,
-	downloadSimfile
+	downloadSimfile,
+	triggerBrowserDownload
 } from './download';
 
 beforeEach(() => {
@@ -65,6 +66,31 @@ describe('parseContentDispositionFilename', () => {
 		expect(parseContentDispositionFilename("attachment; filename*=UTF-8''%E0%A4%A.zip")).toBe(
 			'%E0%A4%A.zip'
 		);
+	});
+});
+
+describe('triggerBrowserDownload', () => {
+	it('defers revoking the object URL so the download can start', () => {
+		// Safari and some Firefox versions lose the file when the object URL is
+		// revoked synchronously after a.click() — the revoke must be deferred.
+		vi.useFakeTimers();
+		const createSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:fake-url');
+		const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+		const clickSpy = vi
+			.spyOn(HTMLAnchorElement.prototype, 'click')
+			.mockImplementation(() => {});
+		try {
+			triggerBrowserDownload(new Blob(['x']), 'a.zip');
+			expect(clickSpy).toHaveBeenCalledTimes(1);
+			expect(revokeSpy).not.toHaveBeenCalled();
+			vi.runAllTimers();
+			expect(revokeSpy).toHaveBeenCalledWith('blob:fake-url');
+		} finally {
+			vi.useRealTimers();
+			createSpy.mockRestore();
+			revokeSpy.mockRestore();
+			clickSpy.mockRestore();
+		}
 	});
 });
 

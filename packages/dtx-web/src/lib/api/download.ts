@@ -29,6 +29,11 @@ export const parseContentDispositionFilename = (header: string | null): string |
 	return raw;
 };
 
+// Revoking the object URL synchronously after a.click() can lose the download
+// in Safari and some Firefox versions — the browser hasn't opened the blob yet.
+// Defer the revoke so the download has time to start.
+const REVOKE_DELAY_MS = 1000;
+
 export const triggerBrowserDownload = (blob: Blob, filename: string) => {
 	const url = URL.createObjectURL(blob);
 	const a = document.createElement('a');
@@ -37,7 +42,7 @@ export const triggerBrowserDownload = (blob: Blob, filename: string) => {
 	document.body.appendChild(a);
 	a.click();
 	a.remove();
-	URL.revokeObjectURL(url);
+	setTimeout(() => URL.revokeObjectURL(url), REVOKE_DELAY_MS);
 };
 
 export type DownloadOpts = {

@@ -155,6 +155,37 @@ Manual importer acceptance:
 - **Guitar Pro 8** — **unverified**: no working GUI session in this environment (documented since Task 0; opening/closing GUI apps is prohibited). GP8 mid-bar tempo _repositioning_ (last-declared tempo kept, moved to bar position 0) was **observed on an earlier tested encoding** during the Task 0 spike — the emitted encoding's tempo handling is untested. `<forward>` was verified exact only at 24 ticks; GP8 behavior at other sizes (both sub-24 and larger/non-24 values) is unverified. `drum.group.set` tolerance, kick vs left-kick sounds, onsets and playback all remain unobserved.
 - Results are recorded here because PR comments were not permitted in this verification round; the PR remains draft.
 
+### Review fixes (recorded 2026-11-03)
+
+A 13-item code review on the export work was verified item-by-item against the codebase; all items were technically valid and implemented. Changes:
+
+- **Sub-3-tick aborts + non-multiple-of-3 bars** — `quantizeMeasure` now merges onsets closer than 3 ticks into the previous kept onset (union of lane ids, so a flam or >1/96 roll becomes one attack), pulls an onset within a 64th of the barline back to `measureTicks - 3` (or merges it), and snaps `measureTicks` to a multiple of 3 (e.g. a 0.96 bar: 184.32→183 ticks).
+- **Barline-vanishing notes** — `buildNotationChart` relocates notes rounding to `>= measureTicks` to tick 0 of the next measure; the last measure keeps them and `quantizeMeasure` clamps them into the bar.
+- **XML-illegal metadata** — `escapeXml` replaces illegal code points with U+FFFD instead of throwing (reverses the earlier `11fe787e` hard-fail decision: server-side metadata blocked every difficulty and wasn't user-fixable).
+- **Loose tuplets** — `buildTupletMap` requires exactly `count === 3`, evenly spaced members, and `durTicks === slotTicks`.
+- **Lost error details** — the page catch logs `console.error('MusicXML export failed', err)` and keeps the localized toast.
+- **Early blob revocation** — `triggerBrowserDownload` defers `URL.revokeObjectURL` by 1000 ms (Safari/Firefox compat).
+- **Odd filenames** — filename joins non-empty trimmed artist/title parts and adds `(<label>)` only when non-empty; `chart` fallback.
+- **Long tempo display** — `<per-minute>` rounds to 2 decimals; `<sound tempo>` keeps full precision.
+- **Triplicated duration table** — single `DURATION_TABLE` (`{ticks, vexflow, musicxml}`) exported from `model.ts`; consumed by `quantize.ts`, `musicxml.ts`, `NotationView.svelte`; exported via `index.ts`.
+- **Renderer-format coupling** — `DrumStaff` now stores `step`/`octave`/`notehead` directly; `staffKey()` derives the VexFlow key; the writer no longer parses key strings.
+- **Dead code** — removed the unreachable unmapped-lane branch in `collectInstruments` and the redundant `!previousMeter` disjunct (now `meterChanged`).
+- **Repeated tempo scans** — `tempoEvents` grouped into a per-measure map once per export.
+- **Table-copy test** — removed the `drumMapping.test.ts` test that duplicated `LANE_TO_STAFF` per the repo's code-logic-only test rule; added a `staffKey` behavior test.
+- **Global mock** — `__mocks__/@dtx/common.ts` extended with `staffKey`/`DURATION_TABLE` re-exports (dtx-web tests resolve `@dtx/common` through this mock; without them the NotationView tests failed with `DURATION_TABLE` undefined).
+
+Verification after all changes:
+
+| Command                                          | Result                                                                                                                                                                                                                                                   |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bun run --filter=@dtx/common test`              | 48 files, **1404 passed**, exit 0 (+13 vs the earlier 1391 baseline)                                                                                                                                                                                     |
+| `bun run --filter=dtx-web test`                  | 64 files, **898 passed**, exit 0 (+3 vs the earlier 895 baseline)                                                                                                                                                                                        |
+| `bun run --filter=@dtx/common check`             | exit 1 — 44 errors / 8 files (no env set; same categories as the documented baseline — none in `notation/`, `drumMapping`, `quantize`, or `musicxml` code)                                                                                               |
+| `bun run --filter=dtx-web check`                 | exit 1 — 31 errors / 4 warnings / 21 files (no env set; same categories as baseline, incl. pre-existing `$env/static/public` errors also present on untouched pages)                                                                                     |
+| `bunx playwright test preview.spec.ts` (e2e-web) | **6 passed** (23.9s) — the pattern matched `preview.spec.ts` and `midi-preview.spec.ts`; incl. `downloads a .musicxml file when exporting the displayed chart` asserting `<score-partwise` and `<per-minute>120</per-minute>` in the downloaded artifact |
+| `bunx eslint` (all touched files)                | exit 0                                                                                                                                                                                                                                                   |
+| `bunx prettier --write` (all touched files)      | 8 files reformatted; `--check` clean afterwards                                                                                                                                                                                                          |
+
 ## Acceptance matrix
 
 | Scenario                        | Expected evidence                                                                                                                                                                                                       |

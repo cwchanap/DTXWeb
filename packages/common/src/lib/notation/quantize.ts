@@ -3,6 +3,7 @@ import { LaneMeasureNote } from '../chart/note';
 import { laneToStaff } from './drumMapping';
 import {
 	TICKS_PER_WHOLE,
+	DURATION_TABLE,
 	type NotationEntry,
 	type NotationTuplet,
 	type NotationMeasure,
@@ -16,21 +17,6 @@ const BPM_CHANNEL = '08';
 const LEGACY_BPM_CHANNEL = '03';
 
 /**
- * Representable binary single durations, largest first: [ticks, vexflowCode].
- * Triplet groups are detected separately and rendered with these binary base
- * durations inside VexFlow Tuplet objects.
- */
-const DURATION_TABLE: ReadonlyArray<readonly [number, string]> = [
-	[192, 'w'],
-	[96, 'h'],
-	[48, 'q'],
-	[24, '8'],
-	[12, '16'],
-	[6, '32'],
-	[3, '64']
-];
-
-/**
  * Greedily decompose a tick span into plain (non-dotted) VexFlow duration codes,
  * largest-first. Binary-only keeps note/rest duration strings simple ('q', 'qr',
  * '8', '8r', …) and avoids dotted-rest parsing issues in VexFlow.
@@ -39,10 +25,10 @@ export const ticksToDurations = (ticks: number): string[] => {
 	const out: string[] = [];
 	let remaining = ticks;
 	while (remaining >= 3) {
-		const entry = DURATION_TABLE.find(([t]) => t <= remaining);
+		const entry = DURATION_TABLE.find((d) => d.ticks <= remaining);
 		if (!entry) break;
-		out.push(entry[1]);
-		remaining -= entry[0];
+		out.push(entry.vexflow);
+		remaining -= entry.ticks;
 	}
 	return out;
 };
@@ -51,6 +37,24 @@ interface Onset {
 	tick: number;
 	laneIds: string[];
 }
+
+// The written grid can't place two attacks under a 64th (3 ticks) apart, so
+// onsets closer than this merge into one rather than producing a span the
+// MusicXML writer must reject.
+const MIN_ONSET_GAP_TICKS = 3;
+
+/**
+ * Measure length multiplier -> integer measure ticks, snapped to a multiple of
+ * 3. The MusicXML meter derivation needs a bar length divisible by some
+ * power-of-2 meter unit (smallest unit is 3 ticks / 64th), and no power-of-2
+ * unit divides a non-multiple-of-3 tick count (e.g. a 0.96 bar = 184.32 ->
+ * 184 ticks). Snapping changes the bar length by at most 1.5 ticks.
+ */
+const toMeasureTicks = (measureLength: number): number =>
+	Math.max(
+		MIN_ONSET_GAP_TICKS,
+		Math.round((measureLength * TICKS_PER_WHOLE) / MIN_ONSET_GAP_TICKS) * MIN_ONSET_GAP_TICKS
+	);
 
 // 24 = 16th-note triplet (3 16ths in an eighth span, 8-tick slots); 48/96/192
 // = eighth/quarter/half-note triplets. 8-tick slots aren't in DURATION_TABLE,
@@ -125,7 +129,7 @@ export const quantizeMeasure = (
 	laneNotes: LaneMeasureNote[],
 	measureLength = 1
 ): NotationMeasure => {
-	const measureTicks = Math.round(measureLength * TICKS_PER_WHOLE);
+	const measureTicks = toMeasureTicks(measureLength);
 	const beatsPerMeasure = Math.max(1, Math.round(measureLength * 4));
 
 	// Collect onsets keyed by tick, accumulating lane ids from playable lanes.
@@ -137,26 +141,65 @@ export const quantizeMeasure = (
 		if (!staff) continue;
 		for (const note of lane.notes) {
 			if (note.noteID === '00') continue;
-			const tick = Math.round(note.position * measureTicks);
+			// Clamp into the bar: a position that rounds onto the barline lands
+			// on the final tick so the end-of-bar adjustment below can fold it
+			// into the bar's last representable slot instead of dropping it.
+			// buildNotationChart normally relocates these to the next measure
+			// first; the clamp is the fallback for the last measure and for
+			// direct callers.
+			const tick = Math.min(
+				Math.max(0, Math.round(note.position * measureTicks)),
+				measureTicks - 1
+			);
 			if (!byTick.has(tick)) byTick.set(tick, new Set());
 			byTick.get(tick)!.add(lane.laneID.toUpperCase());
 		}
 	}
 
-	const onsets: Onset[] = [...byTick.entries()]
+	const rawOnsets: Onset[] = [...byTick.entries()]
 		.map(([tick, laneIds]) => ({ tick, laneIds: [...laneIds].sort() }))
 		.sort((a, b) => a.tick - b.tick);
+
+	// Merge onsets closer than a 64th into the previous kept onset, unioning
+	// lane ids — a flam or a faster-than-1/96 roll becomes one attack carrying
+	// all lanes. Comparing against the last KEPT onset (not the previous raw
+	// one) keeps an ultra-dense roll at roughly half density instead of
+	// collapsing the whole run into a single hit.
+	const onsets: Onset[] = [];
+	for (const onset of rawOnsets) {
+		const last = onsets[onsets.length - 1];
+		if (last && onset.tick - last.tick < MIN_ONSET_GAP_TICKS) {
+			last.laneIds = [...new Set([...last.laneIds, ...onset.laneIds])].sort();
+		} else {
+			onsets.push(onset);
+		}
+	}
+
+	// An onset within a 64th of the barline has no representable span. Pull it
+	// back to the last representable slot when that slot is free (at most a
+	// 2-tick shift); otherwise merge it into the previous onset.
+	const lastOnset = onsets[onsets.length - 1];
+	if (lastOnset && measureTicks - lastOnset.tick < MIN_ONSET_GAP_TICKS) {
+		const pulled = measureTicks - MIN_ONSET_GAP_TICKS;
+		const prev = onsets[onsets.length - 2];
+		if (!prev || pulled - prev.tick >= MIN_ONSET_GAP_TICKS) {
+			lastOnset.tick = pulled;
+		} else {
+			prev.laneIds = [...new Set([...prev.laneIds, ...lastOnset.laneIds])].sort();
+			onsets.pop();
+		}
+	}
 
 	const entries: NotationEntry[] = [];
 	const pushRests = (startTick: number, spanTicks: number) => {
 		let cursor = startTick;
 		let remaining = spanTicks;
 		while (remaining >= 3) {
-			const entry = DURATION_TABLE.find(([t]) => t <= remaining);
+			const entry = DURATION_TABLE.find((d) => d.ticks <= remaining);
 			if (!entry) break;
-			entries.push({ kind: 'rest', startTick: cursor, durTicks: entry[0] });
-			cursor += entry[0];
-			remaining -= entry[0];
+			entries.push({ kind: 'rest', startTick: cursor, durTicks: entry.ticks });
+			cursor += entry.ticks;
+			remaining -= entry.ticks;
 		}
 		// Off-grid onsets (e.g. position 1/11) leave a 1-2 tick remainder that no
 		// binary duration can represent. Fold it into the last rest so the span is
@@ -228,7 +271,7 @@ export const quantizeMeasure = (
 			const span = nextTick - cursor;
 			const codes = ticksToDurations(span);
 			const noteDur = codes.length
-				? DURATION_TABLE.find(([, c]) => c === codes[0])![0]
+				? DURATION_TABLE.find((d) => d.vexflow === codes[0])!.ticks
 				: span;
 			entries.push({
 				kind: 'note',
@@ -303,9 +346,48 @@ export const buildNotationChart = (
 		else notesByMeasure.set(note.measure, [note]);
 	}
 
+	// Notes that round onto or past the barline (position >= ~1-0.5/measureTicks)
+	// never produce an entry — the quantize cursor never reaches measureTicks —
+	// so without relocation they vanish from the preview and the export while
+	// still playing. A barline-rounded attack sounds at the next downbeat, so
+	// relocate it to tick 0 of the next measure. The final measure has no next
+	// bar; its leftovers stay put and quantizeMeasure clamps them into the bar.
+	const notationLanesByMeasure = new Map<number, LaneMeasureNote[]>();
+	const pushLane = (m: number, lane: LaneMeasureNote) => {
+		const list = notationLanesByMeasure.get(m);
+		if (list) list.push(lane);
+		else notationLanesByMeasure.set(m, [lane]);
+	};
+	for (const [m, lanes] of notesByMeasure) {
+		const measureTicks = toMeasureTicks(measureLengths[m]);
+		for (const lm of lanes) {
+			if (!laneToStaff(lm.laneID)) continue;
+			const kept: LaneMeasureNote['notes'] = [];
+			const spilled: LaneMeasureNote['notes'] = [];
+			for (const note of lm.notes) {
+				const spills =
+					Math.round(note.position * measureTicks) >= measureTicks &&
+					m + 1 < measureCount;
+				(spills ? spilled : kept).push(note);
+			}
+			if (kept.length) pushLane(m, new LaneMeasureNote(m, lm.laneID, kept, lm.measureLength));
+			if (spilled.length) {
+				pushLane(
+					m + 1,
+					new LaneMeasureNote(
+						m + 1,
+						lm.laneID,
+						spilled.map((note) => ({ ...note, position: 0 })),
+						measureLengths[m + 1]
+					)
+				);
+			}
+		}
+	}
+
 	const measures: NotationMeasure[] = [];
 	for (let m = 0; m < measureCount; m++) {
-		measures.push(quantizeMeasure(m, notesByMeasure.get(m) ?? [], measureLengths[m]));
+		measures.push(quantizeMeasure(m, notationLanesByMeasure.get(m) ?? [], measureLengths[m]));
 	}
 
 	// Channel 08 (#BPMzz references) and channel 03 (legacy direct-hex BPM) both

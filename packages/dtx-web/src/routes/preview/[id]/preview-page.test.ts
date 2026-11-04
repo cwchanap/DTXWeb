@@ -1042,9 +1042,40 @@ describe('/preview page', () => {
 		expect(filename).toBe('DJ☆ - 未来_過去 (BASIC).musicxml');
 	});
 
-	it('shows a localized toast when the MusicXML writer fails', async () => {
+	it('omits the artist separator from the filename when the artist is empty', async () => {
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: '',
+			levels: [{ level: 4, label: 'MASTER', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const exportButton = screen.getByRole('button', { name: 'preview.export_musicxml' });
+		await fireEvent.click(exportButton);
+		const [, filename] = triggerBrowserDownloadMock.mock.calls[0] as [Blob, string];
+		expect(filename).toBe('Song (MASTER).musicxml');
+	});
+
+	it('omits the label parens from the filename when the label is empty', async () => {
+		getPreviewSimfileMock.mockResolvedValue({
+			id: 5,
+			title: 'Song',
+			artist: 'Artist',
+			levels: [{ level: 4, label: '', fileUrl: 'https://bucket.test/5/master.dtx' }]
+		});
+		render(PreviewPage);
+		await waitFor(() => expect(screen.getByTestId('notation-stub')).toBeTruthy());
+		const exportButton = screen.getByRole('button', { name: 'preview.export_musicxml' });
+		await fireEvent.click(exportButton);
+		const [, filename] = triggerBrowserDownloadMock.mock.calls[0] as [Blob, string];
+		expect(filename).toBe('Artist - Song.musicxml');
+	});
+
+	it('shows a localized toast and logs details when the MusicXML writer fails', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		exportMusicXmlMock.mockImplementation(() => {
-			throw new Error('MusicXML export: chart has no measures');
+			throw new Error('MusicXML export: measure 3, tick 48 has an entry at invalid tick');
 		});
 		getPreviewSimfileMock.mockResolvedValue({
 			id: 5,
@@ -1060,5 +1091,8 @@ describe('/preview page', () => {
 			expect.objectContaining({ title: 'preview.export_musicxml_failed' })
 		);
 		expect(triggerBrowserDownloadMock).not.toHaveBeenCalled();
+		// The writer's measure/tick context must not be swallowed silently.
+		expect(consoleSpy).toHaveBeenCalledWith('MusicXML export failed', expect.any(Error));
+		consoleSpy.mockRestore();
 	});
 });

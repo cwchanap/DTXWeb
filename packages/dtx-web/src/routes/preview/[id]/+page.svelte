@@ -166,12 +166,24 @@
 		try {
 			const xml = exportNotationChartToMusicXml(chart, { title, artist });
 			const label = levels.find((l) => l.fileUrl === committedFileUrl)?.label ?? '';
-			const filename = sanitizeExportFilename(`${artist} - ${title} (${label}).musicxml`);
+			// Join only non-empty parts: an empty artist must not produce a
+			// leading ' - ', and a missing label must not leave empty parens.
+			const name =
+				[artist, title]
+					.map((part) => part.trim())
+					.filter(Boolean)
+					.join(' - ') || 'chart';
+			const filename = sanitizeExportFilename(
+				`${name}${label ? ` (${label})` : ''}.musicxml`
+			);
 			const blob = new Blob([xml], {
 				type: 'application/vnd.recordare.musicxml+xml;charset=utf-8'
 			});
 			triggerBrowserDownload(blob, filename);
-		} catch {
+		} catch (err) {
+			// The writer's message carries measure/tick context — keep it in the
+			// console even though the toast stays generic and localized.
+			console.error('MusicXML export failed', err);
 			toastStore.error({ title: $_('preview.export_musicxml_failed'), duration: 4000 });
 		}
 	};

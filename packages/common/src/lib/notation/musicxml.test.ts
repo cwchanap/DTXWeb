@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { exportNotationChartToMusicXml } from './musicxml';
+import { quantizeMeasure } from './quantize';
+import { LaneMeasureNote } from '../chart/note';
 import type { NotationChart, NotationMeasure, NotationTempoEvent } from './model';
 
 const measure = (overrides: Partial<NotationMeasure>): NotationMeasure => ({
@@ -269,16 +271,25 @@ describe('exportNotationChartToMusicXml', () => {
 		parse(xml);
 	});
 
-	it('rejects control characters that are not allowed in XML 1.0', () => {
+	it('replaces control characters that are not allowed in XML 1.0 with U+FFFD', () => {
+		// Title/artist come from server-side simfile metadata the user cannot
+		// fix, so an illegal character sanitizes instead of aborting every
+		// difficulty of the song.
 		for (const bad of ['\u0000', '\u0001', '\u0008', '\u000b', '\u000c', '\u000e', '\u001f']) {
-			expect(() => exportChart(simpleChart(), `bad${bad}title`)).toThrow(/XML 1\.0/);
+			const xml = exportChart(simpleChart(), `bad${bad}title`);
+			expect(xml).toContain('<movement-title>bad\uFFFDtitle</movement-title>');
+			parse(xml);
 		}
-		expect(() => exportChart(simpleChart(), 'ok', 'bad\u0001artist')).toThrow(/U\+0001/);
+		const xml = exportChart(simpleChart(), 'ok', 'bad\u0001artist');
+		expect(xml).toContain('bad\uFFFDartist');
+		parse(xml);
 	});
 
-	it('rejects lone surrogates and noncharacters that are not allowed in XML 1.0', () => {
+	it('replaces lone surrogates and noncharacters that are not allowed in XML 1.0', () => {
 		for (const bad of ['\ud800', '\udc00', '\udfff', '\ufffe', '\uffff']) {
-			expect(() => exportChart(simpleChart(), `bad${bad}title`)).toThrow(/XML 1\.0/);
+			const xml = exportChart(simpleChart(), `bad${bad}title`);
+			expect(xml).toContain('<movement-title>bad\uFFFDtitle</movement-title>');
+			parse(xml);
 		}
 	});
 
@@ -423,6 +434,25 @@ describe('exportNotationChartToMusicXml', () => {
 		expect(endTick).toBe(192);
 		expect(events.find((e) => e.kind === 'note')?.tick).toBe(1);
 		expect(events.find((e) => e.kind === 'direction')?.tick).toBe(0);
+	});
+
+	it('rounds the displayed per-minute and keeps full precision in sound tempo', () => {
+		// Fractional source BPMs (e.g. a #BPM header of 133.33) serialize as
+		// unreadably long metronome marks; the visible value rounds to 2
+		// decimals while playback tempo keeps full precision.
+		const c = chart(
+			[
+				measure({
+					entries: [{ kind: 'note', startTick: 0, durTicks: 192, laneIds: ['13'] }]
+				})
+			],
+			[{ measure: 0, fraction: 0, bpm: 400 / 3 }]
+		);
+		const doc = parse(exportChart(c));
+		const direction = children(measuresOf(doc)[0]).find((e) => e.tagName === 'direction')!;
+		const metronome = requiredChild(requiredChild(direction, 'direction-type'), 'metronome');
+		expect(requiredChild(metronome, 'per-minute').textContent).toBe('133.33');
+		expect(requiredChild(direction, 'sound').getAttribute('tempo')).toBe(String(400 / 3));
 	});
 
 	it('emits a barline tempo after the final advancing entry and before the next measure', () => {
@@ -614,17 +644,56 @@ describe('exportNotationChartToMusicXml', () => {
 		expect(events.filter((e) => e.kind === 'note').map((e) => e.tick)).toEqual([0, 0]);
 	});
 
-	it('rejects a singleton tuplet that cannot carry a 3:2 group', () => {
+	it('rejects tuplets that are not exactly 3 members', () => {
+		// The writer always emits a single 3:2 time-modification and bracket;
+		// a group of 2 or 6 would serialize as a broken tuplet in MuseScore.
+		for (const count of [1, 2, 4, 6]) {
+			const c = chart([
+				measure({
+					entries: [
+						{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['13'] },
+						{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+						{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['13'] },
+						{ kind: 'note', startTick: 48, durTicks: 16, laneIds: ['12'] },
+						{ kind: 'note', startTick: 64, durTicks: 16, laneIds: ['13'] },
+						{ kind: 'note', startTick: 80, durTicks: 16, laneIds: ['12'] },
+						{ kind: 'rest', startTick: 96, durTicks: 96 }
+					],
+					tuplets: [{ startIndex: 0, count, slotTicks: 16 }]
+				})
+			]);
+			expect(() => exportChart(c)).toThrow(/measure 1.*count/);
+		}
+	});
+
+	it('rejects tuplet members that are not evenly spaced slotTicks apart', () => {
 		const c = chart([
 			measure({
 				entries: [
-					{ kind: 'note', startTick: 0, durTicks: 48, laneIds: ['13'] },
-					{ kind: 'rest', startTick: 48, durTicks: 144 }
+					{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['13'] },
+					{ kind: 'note', startTick: 16, durTicks: 16, laneIds: ['12'] },
+					{ kind: 'note', startTick: 48, durTicks: 16, laneIds: ['13'] },
+					{ kind: 'rest', startTick: 96, durTicks: 96 }
 				],
-				tuplets: [{ startIndex: 0, count: 1, slotTicks: 16 }]
+				tuplets: [{ startIndex: 0, count: 3, slotTicks: 16 }]
 			})
 		]);
-		expect(() => exportChart(c)).toThrow(/measure 1.*at least 2 members/);
+		expect(() => exportChart(c)).toThrow(/measure 1.*evenly spaced/);
+	});
+
+	it('rejects tuplet members whose written duration differs from slotTicks', () => {
+		const c = chart([
+			measure({
+				entries: [
+					{ kind: 'note', startTick: 0, durTicks: 16, laneIds: ['13'] },
+					{ kind: 'note', startTick: 16, durTicks: 24, laneIds: ['12'] },
+					{ kind: 'note', startTick: 32, durTicks: 16, laneIds: ['13'] },
+					{ kind: 'rest', startTick: 96, durTicks: 96 }
+				],
+				tuplets: [{ startIndex: 0, count: 3, slotTicks: 16 }]
+			})
+		]);
+		expect(() => exportChart(c)).toThrow(/measure 1.*slotTicks/);
 	});
 
 	it('advances once per onset for chords and sums each measure exactly', () => {
@@ -642,6 +711,39 @@ describe('exportNotationChartToMusicXml', () => {
 		expect(secondMeasureOnsets).toEqual([0, 16, 32, 48, 96]);
 		const secondDirection = walkMeasure(measures[1]).events.find((e) => e.kind === 'direction');
 		expect(secondDirection?.tick).toBe(72);
+	});
+
+	it('exports charts whose onsets quantize to sub-64th spacings', () => {
+		// Regression for real-world repros that used to abort the whole export:
+		// a flam 1/192 apart, a 1/96 roll, a note at 191/192, and a 0.96 bar.
+		// quantizeMeasure merges, pulls back, or snaps these into representable
+		// onsets instead of leaving a span the writer must reject.
+		const flam = quantizeMeasure(0, [
+			new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 0 },
+				{ noteID: '01', position: 1 / 192 }
+			])
+		]);
+		const roll = quantizeMeasure(1, [
+			new LaneMeasureNote(1, '12', [
+				{ noteID: '01', position: 0 },
+				{ noteID: '01', position: 1 / 96 },
+				{ noteID: '01', position: 2 / 96 }
+			])
+		]);
+		const tail = quantizeMeasure(2, [
+			new LaneMeasureNote(2, '12', [{ noteID: '01', position: 191 / 192 }])
+		]);
+		const shortBar = quantizeMeasure(3, [], 0.96);
+		const doc = parse(exportChart({ measures: [flam, roll, tail, shortBar], tempoEvents: [] }));
+		const measures = measuresOf(doc);
+		expect(measures).toHaveLength(4);
+		// The merged flam emits as one onset; the 1/96 roll keeps hits at 0 and
+		// 4 ticks; the 191/192 note lands at tick 189; the 0.96 bar snapped to
+		// 183 ticks and fills exactly.
+		expect(walkMeasure(measures[0]).endTick).toBe(192);
+		expect(walkMeasure(measures[2]).events.find((e) => e.kind === 'note')?.tick).toBe(189);
+		expect(walkMeasure(measures[3]).endTick).toBe(183);
 	});
 
 	it('matches the checked-in human-importable snapshot', async () => {

@@ -28,9 +28,10 @@ export type { IFileProvider } from './services/fileProvider';
 export { setFileProvider, getFileProvider } from './services/fileProvider';
 
 // Notation model (pure; safe for SSR — no Phaser/Svelte)
-export { laneToStaff, PLAYABLE_DRUM_LANES, type DrumStaff } from './notation/drumMapping';
+export { laneToStaff, staffKey, PLAYABLE_DRUM_LANES, type DrumStaff } from './notation/drumMapping';
 export {
 	TICKS_PER_WHOLE,
+	DURATION_TABLE,
 	type NotationNoteEntry,
 	type NotationRestEntry,
 	type NotationEntry,

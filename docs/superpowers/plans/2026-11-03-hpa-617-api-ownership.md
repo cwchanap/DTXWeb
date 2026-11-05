@@ -23,9 +23,9 @@
 3. Confirm the **two** uses of the pure `decodeArrayBufferWithBomDetection` from `@dtx/common/server`: the web editor's `+page.server.ts` **and** `dtx-api/src/services/r2Enrichment.ts`. Both switch to `@dtx/common` in Task 4; keep the decoder pure and shared.
 4. Inspect `dtx-api/{vitest.config.ts,tsconfig.json,wrangler.jsonc}`: today each aliases only `@dtx/common/server` to source, whereas `@dtx/common` main resolves through the built `dist` export. Confirm the current root Turbo `check` has no `^build` dependency and the git-connected Workers Builds status for this PR. Before moving files, add an **explicit source alias** `@dtx/common` → `../common/src/lib/index.ts` to all three resolvers. For intermediate commits retain the more specific `@dtx/common/server` alias until its consumers are all migrated; ensure alias ordering or exact matching prevents the main alias from intercepting the `/server` import. Do not introduce a dependency on `common/dist`.
 5. Record existing focused test results (do not change assertions yet):
-   - `bun run --filter=@dtx/common test -- src/lib/server/db.integration.test.ts`
-   - `bun run --filter=@dtx/common test -- src/lib/server/db.test.ts`
-   - `bun run --filter=dtx-api test`
+    - `bun run --filter=@dtx/common test -- src/lib/server/db.integration.test.ts`
+    - `bun run --filter=@dtx/common test -- src/lib/server/db.test.ts`
+    - `bun run --filter=dtx-api test`
 6. If this audit shows the same move has already landed on `main`, stop rather than recreating it.
 
 **Exit:** exact moved-file list and all impacted imports/configs confirmed. No new infrastructure introduced.
@@ -33,6 +33,7 @@
 ## Task 2 — Move D1 persistence, API row types and their tests
 
 **Move:**
+
 - `packages/common/src/lib/server/db.ts` → `packages/dtx-api/src/db/queries.ts`
 - `packages/common/src/lib/server/db/schema.ts` → `packages/dtx-api/src/db/schema.ts`
 - `packages/common/src/lib/types/d1.types.ts` → `packages/dtx-api/src/db/types.ts`
@@ -51,6 +52,7 @@
 ## Task 3 — Move R2, ZIP, rate limit and Worker logging
 
 **Move/merge with existing tests:**
+
 - Merge `common/src/lib/server/r2.ts` into **existing** `dtx-api/src/lib/r2Files.ts`, and its tests into **existing** `r2Files.test.ts` (do not create a second R2 module)
 - `common/src/lib/server/rateLimiter*` → `dtx-api/src/lib/rateLimiter*`
 - `common/src/lib/server/zipBuilder*` → `dtx-api/src/lib/zipBuilder*`
@@ -83,15 +85,15 @@
 2. The current `CLAUDE.md` **already correctly names Better Auth**; don't invent a Supabase cleanup. Focus on confirmed stale lines: workspace count (`:7`), `./server` export (`:137`), and old `localStorage.removeItem('auth_session')` cache guidance (`:205`). Describe web/API service binding and desktop Device Authorization/Bearer sessions only where guidance is incomplete.
 3. Update import examples and package descriptions to avoid `@dtx/common/server`. Correct manual-only Worker deployment claims (`CLAUDE.md:90`, `:319`, `:336`): the Git-connected Cloudflare Workers Builds bot already reported success for both production-labeled web/API builds on this PR. **Verify actual build-vs-deploy/promotion behavior in the Cloudflare setup** before documenting automation; do not assert that deploys are manual-only or that every PR build publishes production.
 4. Repeat the clean-output API check from Task 4.6 **before** building common, then run after dependency reinstall/lockfile update:
-   - `bun run --filter=@dtx/common build`
-   - `bun run --filter=@dtx/common check` and `bun run --filter=@dtx/common test`
-   - `bun run --filter=dtx-api check`, `bun run --filter=dtx-api test` and `bun run --filter=dtx-api build` (Worker dry run)
-   - `bun run --filter=dtx-web check`, `bun run --filter=dtx-web test` and `bun run --filter=dtx-web build`
-   - `bun run --filter=dtx-desktop typecheck` and `bun run --filter=dtx-desktop test`
-   - `bun run lint` and `bun run check`
+    - `bun run --filter=@dtx/common build`
+    - `bun run --filter=@dtx/common check` and `bun run --filter=@dtx/common test`
+    - `bun run --filter=dtx-api check`, `bun run --filter=dtx-api test` and `bun run --filter=dtx-api build` (Worker dry run)
+    - `bun run --filter=dtx-web check`, `bun run --filter=dtx-web test` and `bun run --filter=dtx-web build`
+    - `bun run --filter=dtx-desktop typecheck` and `bun run --filter=dtx-desktop test`
+    - `bun run lint` and `bun run check`
 5. Run relevant web E2E for sign-in, chart listing/editor set.def, scores, and downloads; check desktop E2E/smoke for cloud chart/score/download paths where the existing CI matrix supports it. Do not run migrations/deployments; no schema or infrastructure should change.
 6. Review `git diff` for mechanical scope: **no D1 migration SQL statement/schema** or GraphQL/API response changes (comment-only migration references allowed), no dependency version campaign, no new abstraction, no duplicate R2 exports. Confirm the source aliases in API TS/Vitest/Wrangler and `rg '@dtx/common/server' packages` are clean, tests remain discoverable, and Codecov reflects moved paths.
-7. Update this *same draft PR* with implementation commits, evidence, and exact test results. Mark ready for review when relevant CI passes. Update HPA-617 with the single PR link and close on merge.
+7. Update this _same draft PR_ with implementation commits, evidence, and exact test results. Mark ready for review when relevant CI passes. Update HPA-617 with the single PR link and close on merge.
 
 **Exit:** one reviewable PR contains design, plan, mechanical refactor and verification proof.
 

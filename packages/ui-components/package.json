@@ -44,7 +44,7 @@
 	},
 	"devDependencies": {
 		"@lucide/svelte": "^1.61.0",
-		"@sveltejs/adapter-auto": "^7.0.1",
+		"@sveltejs/adapter-auto": "^8.0.0",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/package": "^3.0.1",
 		"@sveltejs/vite-plugin-svelte": "^5.0.0",

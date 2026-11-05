@@ -82,8 +82,7 @@
 		"packages/infrastructure"
 	],
 	"dependencies": {
-		"@wdio/native-utils": "^2.8.0",
-		"jszip": "^3.10.2"
+		"@wdio/native-utils": "^2.8.0"
 	},
 	"overrides": {
 		"@wdio/native-utils": "^2.8.0"

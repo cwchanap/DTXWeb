@@ -4,9 +4,8 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
 	resolve: {
 		alias: {
-			// Keep '@dtx/common/server' before '@dtx/common': Vite matches string aliases
-			// by prefix, so the main alias would otherwise intercept the /server import.
-			'@dtx/common/server': path.resolve(__dirname, '../common/src/lib/server.ts'),
+			// Alias @dtx/common to source so Vitest never depends on the built
+			// dist output of the shared workspace package.
 			'@dtx/common': path.resolve(__dirname, '../common/src/lib/index.ts')
 		}
 	},

@@ -62,19 +62,32 @@ export interface R2ObjectMeta {
 	uploaded: Date;
 }
 
+// Bounds R2 list calls when an adapter keeps returning `truncated: true`
+// with fresh cursors. R2 returns up to 1000 objects per page, so 1000
+// pages covers ~1M objects under a prefix — far beyond any legitimate
+// simfile listing.
+const MAX_R2_LIST_PAGES = 1000;
+
 /**
  * Yields each page of R2 objects under a prefix using cursor-based pagination.
  * Consumers can stop iterating early (e.g. on the first matching object);
  * the generator stops fetching pages once iteration ends.
- * Throws if the pagination cursor is missing or repeating (broken R2 state).
+ * Throws if the pagination cursor is missing, repeats any previously seen
+ * cursor (broken R2 state), or the page count exceeds MAX_R2_LIST_PAGES.
  */
 export const listR2ObjectPages = async function* (
 	bucket: R2Bucket,
 	prefix: string
 ): AsyncGenerator<R2ObjectMeta[]> {
 	let cursor: string | undefined;
+	const seenCursors = new Set<string>();
+	let pages = 0;
 
 	while (true) {
+		if (++pages > MAX_R2_LIST_PAGES) {
+			workerLogger.warn(`R2 list exceeded ${MAX_R2_LIST_PAGES} pages for prefix "${prefix}"`);
+			throw new Error('R2 pagination exceeded maximum page count');
+		}
 		const listResult = await bucket.list({ prefix, limit: 1000, cursor });
 		yield (listResult.objects ?? []).map((obj) => ({
 			key: obj.key,
@@ -85,17 +98,19 @@ export const listR2ObjectPages = async function* (
 		if (!listResult.truncated) return;
 
 		const nextCursor = listResult.cursor;
-		if (!nextCursor || nextCursor === cursor) {
+		if (!nextCursor || seenCursors.has(nextCursor)) {
 			workerLogger.warn(`R2 list truncated without valid cursor for prefix "${prefix}"`);
 			throw new Error('R2 pagination cursor unavailable');
 		}
+		seenCursors.add(nextCursor);
 		cursor = nextCursor;
 	}
 };
 
 /**
  * Lists all R2 objects under a prefix using cursor-based pagination.
- * Throws if the pagination cursor is missing or repeating (broken R2 state).
+ * Throws if the pagination cursor is missing, repeats any previously seen
+ * cursor (broken R2 state), or the page count exceeds MAX_R2_LIST_PAGES.
  */
 export const listAllR2Objects = async (
 	bucket: R2Bucket,

@@ -261,6 +261,46 @@ describe('listAllR2Objects', () => {
 		expect(calls).toBe(2);
 	});
 
+	it('throws when cursors alternate in a cycle (A → B → A)', async () => {
+		const bucket = {
+			list: vi.fn(async ({ cursor }: { cursor?: string }) => ({
+				objects: [makeR2Object('a.dtx')],
+				truncated: true,
+				cursor: cursor === 'cursor-a' ? 'cursor-b' : 'cursor-a'
+			}))
+		} as unknown as R2Bucket;
+
+		await expect(listAllR2Objects(bucket, 'prefix/')).rejects.toThrow(
+			'R2 pagination cursor unavailable'
+		);
+		expect(mockedWarn).toHaveBeenCalledWith(
+			'R2 list truncated without valid cursor for prefix "prefix/"'
+		);
+		// Throws on the third call when 'cursor-a' is seen a second time
+		expect(bucket.list).toHaveBeenCalledTimes(3);
+	});
+
+	it('throws when pagination exceeds the maximum page count', async () => {
+		let calls = 0;
+		const bucket = {
+			list: vi.fn(async () => {
+				calls++;
+				return {
+					objects: [makeR2Object('a.dtx')],
+					truncated: true,
+					// Always-fresh cursors: no cycle, but the listing never ends
+					cursor: `cursor-${calls}`
+				};
+			})
+		} as unknown as R2Bucket;
+
+		await expect(listAllR2Objects(bucket, 'prefix/')).rejects.toThrow(
+			'R2 pagination exceeded maximum page count'
+		);
+		expect(mockedWarn).toHaveBeenCalledWith('R2 list exceeded 1000 pages for prefix "prefix/"');
+		expect(calls).toBe(1000);
+	});
+
 	it('maps object metadata (key, size, uploaded) correctly', async () => {
 		const uploadDate = new Date('2024-06-15T12:00:00Z');
 		const bucket = makeBucket([

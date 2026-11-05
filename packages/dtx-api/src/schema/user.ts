@@ -1,6 +1,7 @@
 import { GraphQLError } from 'graphql';
 import { z } from 'zod';
-import { getUserProfile, upsertUserProfile, type UserProfileRow } from '@dtx/common/server';
+import { getUserProfile, upsertUserProfile } from '../db/queries';
+import type { UserProfileRow } from '../db/types';
 import { builder } from './builder';
 
 builder.mutationType({});

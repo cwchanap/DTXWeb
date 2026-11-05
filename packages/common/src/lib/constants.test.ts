@@ -24,8 +24,7 @@ import {
 import {
 	DTXFile as ServerDTXFile,
 	SimFile as ServerSimFile,
-	VALID_DTX_FILE_EXTENSIONS as ServerExtensions,
-	toSimfileWithDtx as ServerToSimfile
+	VALID_DTX_FILE_EXTENSIONS as ServerExtensions
 } from './server';
 
 describe('constants', () => {
@@ -163,6 +162,5 @@ describe('package barrel exports', () => {
 		expect(ServerDTXFile).toBeDefined();
 		expect(ServerSimFile).toBeDefined();
 		expect(ServerExtensions).toBeDefined();
-		expect(ServerToSimfile).toBeDefined();
 	});
 });

@@ -4,10 +4,10 @@
 -- intermediate holding aggregates; scores holds individual plays.
 --
 -- Dual source of truth: Drizzle table definitions for chart_scores/scores
--- live in packages/common/src/lib/server/db/schema.ts (used for type
+-- live in packages/dtx-api/src/db/schema.ts (used for type
 -- inference + test fixtures only — production queries use raw SQL against
 -- these tables). The CHECK constraints and partial unique indexes below
--- MUST stay in sync with that Drizzle schema; db.test.ts has a parity test
+-- MUST stay in sync with that Drizzle schema; queries.test.ts has a parity test
 -- (parseMigrationChecks) that fails if they drift. If you edit a CHECK
 -- here, update schema.ts too, and vice versa.
 --

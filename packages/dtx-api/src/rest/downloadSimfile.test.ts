@@ -7,7 +7,6 @@ vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {
 		...actual,
-		getSimfileOwner: vi.fn(),
 		listAllR2Objects: vi.fn(),
 		validateZipSources: vi.fn(async () => {}),
 		buildZipStream: vi.fn(() => new ReadableStream()),
@@ -17,12 +16,17 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
+	return { ...actual, getSimfileOwner: vi.fn() };
+});
+
 vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 
-const { getSimfileOwner, tryConsumeRateLimit, createZipSources } =
-	await import('@dtx/common/server');
+const { getSimfileOwner } = await import('../db/queries');
 const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
+const { tryConsumeRateLimit, createZipSources } = await import('@dtx/common/server');
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedCreateZipSources = vi.mocked(createZipSources);
 const mockedResolveAuthSession = vi.mocked(resolveAuthSession);

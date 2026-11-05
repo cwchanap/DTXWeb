@@ -5,7 +5,6 @@ import type { Env } from '../env';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
 vi.mock('@dtx/common/server', () => ({
-	getSimfileOwner: vi.fn(),
 	workerLogger: {
 		info: vi.fn(),
 		warn: vi.fn(),
@@ -14,7 +13,11 @@ vi.mock('@dtx/common/server', () => ({
 	}
 }));
 
-const { getSimfileOwner } = await import('@dtx/common/server');
+vi.mock('../db/queries', () => ({
+	getSimfileOwner: vi.fn()
+}));
+
+const { getSimfileOwner } = await import('../db/queries');
 const mockedGetOwner = getSimfileOwner as ReturnType<typeof vi.fn>;
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({

@@ -1,10 +1,6 @@
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
-import {
-	workerLogger,
-	type WorkerLogger,
-	type ChartScoreRow,
-	type ScoreRow
-} from '@dtx/common/server';
+import { workerLogger, type WorkerLogger } from '@dtx/common/server';
+import type { ChartScoreRow, ScoreRow } from './db/types';
 import { resolveAuthSession, type ApiAuthSession, type ApiAuthUser } from './auth/session';
 import type { Env } from './env';
 import type { CatalogFileDiscovery, R2FileEntry } from './services/r2Enrichment';

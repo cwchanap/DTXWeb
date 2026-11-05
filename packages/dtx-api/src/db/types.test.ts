@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { toSimfileWithDtx } from './d1.types';
-import type { SimfileRow } from './d1.types';
+import { toSimfileWithDtx } from './types';
+import type { SimfileRow } from './types';
 
 describe('toSimfileWithDtx', () => {
 	const baseRow: SimfileRow = {

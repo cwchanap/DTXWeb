@@ -1,10 +1,5 @@
-import {
-	getChartVisibilityBatch,
-	upsertChartScoreAndReplaceScores,
-	type ScoreRow,
-	type ChartScoreRow,
-	type ScoreInsert
-} from '@dtx/common/server';
+import { getChartVisibilityBatch, upsertChartScoreAndReplaceScores } from '../db/queries';
+import type { ScoreRow, ChartScoreRow, ScoreInsert } from '../db/types';
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { GraphQLError } from 'graphql';
 import { builder } from './builder';

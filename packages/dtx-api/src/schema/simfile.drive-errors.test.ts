@@ -2,8 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Ctx } from '../context';
 import { makeCtx, makeEnv, runQuery } from './simfileTestHarness';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return {
 		...actual,
 		getSimfile: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-const { getSimfile, getSimfileOwner, updateSimfileDriveFile } = await import('@dtx/common/server');
+const { getSimfile, getSimfileOwner, updateSimfileDriveFile } = await import('../db/queries');
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedUpdateDriveFile = vi.mocked(updateSimfileDriveFile);

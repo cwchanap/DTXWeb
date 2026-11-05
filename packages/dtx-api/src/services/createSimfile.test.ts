@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createSimfileWithDtx } from './createSimfile';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return {
 		...actual,
 		createSimfile: vi.fn(),
@@ -11,7 +11,7 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-const { createSimfile, createDtxFiles, deleteSimfile } = await import('@dtx/common/server');
+const { createSimfile, createDtxFiles, deleteSimfile } = await import('../db/queries');
 const mockedCreate = vi.mocked(createSimfile);
 const mockedCreateDtx = vi.mocked(createDtxFiles);
 const mockedDelete = vi.mocked(deleteSimfile);

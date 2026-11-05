@@ -4,8 +4,8 @@ import { workerLogger } from '@dtx/common/server';
 import type { Ctx } from '../context';
 import type { Env } from '../env';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return {
 		...actual,
 		getSimfile: vi.fn(),
@@ -19,16 +19,15 @@ vi.mock('@dtx/common/server', async () => {
 });
 
 const { schema } = await import('./index');
-const { getSimfile, getSimfileOwner, getUserChartScore } = await import('@dtx/common/server');
+const { getSimfile, getSimfileOwner, getUserChartScore } = await import('../db/queries');
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedGetUserChartScore = vi.mocked(getUserChartScore);
 
-const { listUserChartScores } = await import('@dtx/common/server');
+const { listUserChartScores } = await import('../db/queries');
 const mockedListChartScores = vi.mocked(listUserChartScores);
 
-const { getChartVisibilityBatch, upsertChartScoreAndReplaceScores } =
-	await import('@dtx/common/server');
+const { getChartVisibilityBatch, upsertChartScoreAndReplaceScores } = await import('../db/queries');
 const mockedVisibility = vi.mocked(getChartVisibilityBatch);
 const mockedUpsertReplace = vi.mocked(upsertChartScoreAndReplaceScores);
 
@@ -1679,7 +1678,7 @@ describe('uploadScores', () => {
 	});
 });
 
-const { listUserScoredSimfiles } = await import('@dtx/common/server');
+const { listUserScoredSimfiles } = await import('../db/queries');
 const mockedListScored = vi.mocked(listUserScoredSimfiles);
 
 describe('myScoredSimfiles', () => {

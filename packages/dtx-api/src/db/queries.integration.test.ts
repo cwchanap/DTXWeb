@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Real-DB integration test for the score upsert/replace path. Unlike db.test.ts
+// Real-DB integration test for the score upsert/replace path. Unlike queries.test.ts
 // (fully mock-based), this file spins up a Miniflare D1 instance (real SQLite
 // under the hood), runs the actual D1 migrations, and exercises
 // upsertChartScoreAndReplaceScores end-to-end: the transactional replace, the
@@ -19,20 +19,10 @@ import {
 	getChartVisibilityBatch,
 	updateSimfile,
 	updateSimfileDriveFile
-} from './db';
+} from './queries';
 import type { D1Database } from '@cloudflare/workers-types';
 
-const MIGRATIONS_DIR = join(
-	__dirname,
-	'..',
-	'..',
-	'..',
-	'..',
-	'..',
-	'packages',
-	'dtx-api',
-	'd1-migrations'
-);
+const MIGRATIONS_DIR = join(__dirname, '..', '..', 'd1-migrations');
 
 // Read the migration files once. They create the full schema including
 // CHECK constraints and partial unique indexes that Drizzle's schema.ts cannot

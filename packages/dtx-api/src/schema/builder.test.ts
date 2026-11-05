@@ -11,12 +11,12 @@ const { resolveAuthSession } = await import('../auth/session');
 const { createContext } = await import('../context');
 const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return { ...actual, getSimfileOwner: vi.fn() };
 });
 
-const { getSimfileOwner } = await import('@dtx/common/server');
+const { getSimfileOwner } = await import('../db/queries');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 
 const makeEnv = (): Env => ({

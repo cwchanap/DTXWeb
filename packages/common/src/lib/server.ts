@@ -13,23 +13,6 @@ export {
 // Export constants (server-safe)
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
-// Export D1 types
-export type {
-	SimfileRow,
-	SimfileInsert,
-	SimfileUpdate,
-	DtxFileRow,
-	DtxFileInsert,
-	UserProfileRow,
-	UserProfileInsert,
-	UserProfileUpdate,
-	SimfileWithDtxFiles,
-	ChartScoreRow,
-	ScoreRow,
-	ScoreInsert
-} from './types/d1.types';
-export { toSimfileWithDtx } from './types/d1.types';
-
 // Shared logging utility
 export { default as logger } from './server/logger';
 
@@ -47,37 +30,6 @@ export {
 	type ZipEntry,
 	type ZipSource
 } from './server/zipBuilder';
-
-// Drizzle schema
-export { simfiles, dtxFiles, userProfiles, chartScores, scores } from './server/db/schema';
-
-// D1 queries + mock factory
-export {
-	createDrizzleDb,
-	createMockD1Database,
-	escapeLikePattern,
-	getSimfile,
-	getSimfileOwner,
-	getChartVisibilityBatch,
-	listSimfiles,
-	searchSimfiles,
-	getNextDisplayId,
-	createSimfile,
-	updateSimfile,
-	updateSimfileDriveFile,
-	deleteSimfile,
-	createDtxFiles,
-	getUserProfile,
-	upsertUserProfile,
-	updateUserProfile,
-	upsertChartScoreAndReplaceScores,
-	getUserChartScore,
-	listUserScoredSimfiles,
-	listUserChartScores,
-	type ListSimfilesOptions,
-	type SearchSimfilesOptions,
-	type SearchSimfileResult
-} from './server/db';
 
 // Workers-safe logger (use this from any code running in a Cloudflare Worker)
 export { workerLogger, type WorkerLogger } from './server/workerLogger';

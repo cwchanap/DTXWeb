@@ -18,7 +18,14 @@ vi.mock('@dtx/common/server', async () => {
 				size: o.size,
 				path: o.key
 			}))
-		),
+		)
+	};
+});
+
+vi.mock('../lib/rateLimiter', async () => {
+	const actual = await vi.importActual<typeof import('../lib/rateLimiter')>('../lib/rateLimiter');
+	return {
+		...actual,
 		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
 		getClientIp: vi.fn(() => '1.2.3.4')
 	};
@@ -34,7 +41,8 @@ vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) 
 const { getSimfileOwner } = await import('../db/queries');
 const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
-const { tryConsumeRateLimit, listAllR2Objects } = await import('@dtx/common/server');
+const { listAllR2Objects } = await import('@dtx/common/server');
+const { tryConsumeRateLimit } = await import('../lib/rateLimiter');
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedListAllR2Objects = vi.mocked(listAllR2Objects);
 const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
@@ -336,7 +344,7 @@ describe('POST /downloads/bulk', () => {
 	});
 
 	it('400 when client IP is unavailable', async () => {
-		const { getClientIp } = await import('@dtx/common/server');
+		const { getClientIp } = await import('../lib/rateLimiter');
 		vi.mocked(getClientIp).mockReturnValueOnce(null);
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());

@@ -10,7 +10,14 @@ vi.mock('@dtx/common/server', async () => {
 		listAllR2Objects: vi.fn(),
 		validateZipSources: vi.fn(async () => {}),
 		buildZipStream: vi.fn(() => new ReadableStream()),
-		createZipSources: vi.fn(() => [{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]),
+		createZipSources: vi.fn(() => [{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }])
+	};
+});
+
+vi.mock('../lib/rateLimiter', async () => {
+	const actual = await vi.importActual<typeof import('../lib/rateLimiter')>('../lib/rateLimiter');
+	return {
+		...actual,
 		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true })),
 		getClientIp: vi.fn(() => '1.2.3.4')
 	};
@@ -26,7 +33,8 @@ vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) 
 const { getSimfileOwner } = await import('../db/queries');
 const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
-const { tryConsumeRateLimit, createZipSources } = await import('@dtx/common/server');
+const { createZipSources } = await import('@dtx/common/server');
+const { tryConsumeRateLimit } = await import('../lib/rateLimiter');
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedCreateZipSources = vi.mocked(createZipSources);
 const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
@@ -199,7 +207,7 @@ describe('GET /downloads/:id', () => {
 	});
 
 	it('400 when client IP is unavailable', async () => {
-		const { getClientIp } = await import('@dtx/common/server');
+		const { getClientIp } = await import('../lib/rateLimiter');
 		vi.mocked(getClientIp).mockReturnValueOnce(null);
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
 		const response = await routeDownloadSimfile(

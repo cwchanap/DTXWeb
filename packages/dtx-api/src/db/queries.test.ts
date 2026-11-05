@@ -29,40 +29,6 @@ import {
 import type { D1Database } from '@cloudflare/workers-types';
 import type { SimfileInsert, SimfileUpdate } from './types';
 
-/**
- * Mock D1Database for local development when Cloudflare bindings are not available.
- * This allows local development to continue without requiring wrangler dev.
- */
-export const createMockD1Database = (): D1Database => {
-	const createMockStmt = () => {
-		const stmt = {
-			// eslint-disable-next-line @typescript-eslint/no-unused-vars
-			bind: (..._args: unknown[]) => stmt,
-			first: async () => null,
-			all: async () => ({ results: [] }),
-			run: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
-			raw: async () => []
-		};
-		return stmt;
-	};
-
-	return {
-		// eslint-disable-next-line @typescript-eslint/no-unused-vars
-		prepare: (_query: string) => createMockStmt(),
-		batch: async (statements: unknown[]) => {
-			// Simulate batch operations returning success
-			return statements.map(() => ({
-				success: true,
-				meta: { changes: 0, duration: 0 },
-				results: []
-			})) as unknown as ReturnType<D1Database['batch']>;
-		},
-		exec: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
-		dump: async () => [],
-		withSession: () => createMockD1Database()
-	} as unknown as D1Database;
-};
-
 const drizzleSelectResults = vi.hoisted(() => [] as unknown[]);
 const createMockDrizzleQuery = vi.hoisted(() => {
 	return () => {

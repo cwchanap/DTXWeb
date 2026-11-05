@@ -12,6 +12,3 @@ export {
 
 // Export constants (server-safe)
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
-
-// Shared logging utility
-export { default as logger } from './server/logger';

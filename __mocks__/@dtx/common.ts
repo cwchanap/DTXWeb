@@ -166,6 +166,9 @@ export {
 	type DrumStaff
 } from '../../packages/common/src/lib/notation/drumMapping';
 export { DURATION_TABLE } from '../../packages/common/src/lib/notation/model';
+// Re-export the real pure decoder so server routes importing it from the main
+// barrel keep exercising actual BOM detection in tests.
+export { decodeArrayBufferWithBomDetection } from '../../packages/common/src/lib/chart/encoding-utils';
 
 // UploadedAssetFiles component is now exported from @dtx/common/components
 // This mock is no longer needed here since the component is in a separate export

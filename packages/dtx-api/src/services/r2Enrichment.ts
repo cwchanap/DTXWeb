@@ -1,4 +1,4 @@
-import { decodeArrayBufferWithBomDetection } from '@dtx/common/server';
+import { decodeArrayBufferWithBomDetection } from '@dtx/common';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {

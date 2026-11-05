@@ -1,5 +1,5 @@
 import type { KVNamespace } from '@cloudflare/workers-types';
-import logger from './logger';
+import { workerLogger } from './workerLogger';
 
 const RATE_LIMIT_BYTES = 1073741824; // 1 GiB per minute
 const KV_TTL_SECONDS = 120; // cover current and previous minute window
@@ -65,7 +65,7 @@ export const tryConsumeRateLimit = async (
 			remainingBytes: Math.max(0, Math.floor(RATE_LIMIT_BYTES - windowTotal))
 		};
 	} catch (error) {
-		logger.error('Rate limit KV error', { key, error });
+		workerLogger.error('Rate limit KV error', { key, error });
 		throw error;
 	}
 };

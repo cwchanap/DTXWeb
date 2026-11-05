@@ -15,8 +15,6 @@ export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } fr
 
 // Shared logging utility
 export { default as logger } from './server/logger';
-// Rate limiting utilities
-export { getClientIp, tryConsumeRateLimit, type RateLimitResult } from './server/rateLimiter';
 
 // R2 storage utilities
 export { isPreviewKey, listAllR2Objects, type R2ObjectMeta } from './server/r2';

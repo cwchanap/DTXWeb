@@ -54,7 +54,10 @@ vi.mock('@dtx/common/server', () => ({
 	listAllR2Objects: vi.fn(async () => []),
 	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
 	validateZipSources: vi.fn(async () => {}),
-	buildZipStream: vi.fn(() => new ReadableStream()),
+	buildZipStream: vi.fn(() => new ReadableStream())
+}));
+
+vi.mock('./lib/rateLimiter', () => ({
 	getClientIp: vi.fn(() => null),
 	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 }))
 }));
@@ -264,7 +267,7 @@ describe('worker fetch router', () => {
 
 describe('Phase 2 routes', () => {
 	it('GET /downloads/123 dispatches to downloadSimfile route', async () => {
-		const { getClientIp } = await import('@dtx/common/server');
+		const { getClientIp } = await import('./lib/rateLimiter');
 		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const env = makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' });
 		const response = await worker.fetch(
@@ -533,7 +536,7 @@ describe('Phase 2 routes', () => {
 			PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true',
 			CORS_ALLOWED_ORIGINS: 'http://localhost:5173'
 		});
-		const { getClientIp } = await import('@dtx/common/server');
+		const { getClientIp } = await import('./lib/rateLimiter');
 		(getClientIp as ReturnType<typeof vi.fn>).mockReturnValueOnce('1.2.3.4');
 		const response = await worker.fetch(
 			new Request('http://api/downloads/123', {

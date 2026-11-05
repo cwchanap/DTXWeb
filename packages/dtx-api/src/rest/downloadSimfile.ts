@@ -1,4 +1,4 @@
-import { getClientIp, tryConsumeRateLimit } from '@dtx/common/server';
+import { getClientIp, tryConsumeRateLimit } from '../lib/rateLimiter';
 import type { ExecutionContext } from '@cloudflare/workers-types';
 import { resolveAuthSession } from '../auth/session';
 import {

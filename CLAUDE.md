@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-workspaces monorepo (orchestrated by Turborepo) with 7 packages:
+Drumery is a rhythm game platform for DTX (drum simulation) files. It's a Bun-workspaces monorepo (orchestrated by Turborepo) with 8 packages:
 
 - `packages/common` (`@dtx/common`) - Shared Svelte component library and DTX file parsing
 - `packages/dtx-web` (`dtx-web`) - SvelteKit web application (main app), deployed to Cloudflare Workers
 - `packages/dtx-desktop` (`dtx-desktop`) - Tauri 2 desktop app: Svelte/Vite frontend (`src/`) + Rust backend (`src-tauri/`)
-- `packages/dtx-api` (`dtx-api`) - GraphQL API on Cloudflare Workers (Pothos + GraphQL Yoga), backing both web and desktop
+- `packages/dtx-api` (`dtx-api`) - GraphQL API on Cloudflare Workers (Pothos + GraphQL Yoga), backing both web and desktop; owns D1 access/queries/migrations, R2 helpers, and KV rate limiting
+- `packages/infrastructure` (`@dtx/infrastructure`) - Pulumi infrastructure as code for Cloudflare resources (Zero Trust Access, D1 instances, R2 buckets, KV namespaces, Worker custom domains)
 - `packages/ui-components` (`@dtx/ui-components`) - Shadcn-Svelte UI component library (export-only components)
 - `packages/e2e-web` (`dtx-e2e-web`) - Playwright end-to-end tests for the web application
 - `packages/e2e-desktop` (`dtx-e2e-desktop`) - WebdriverIO/Tauri end-to-end tests for the desktop application
@@ -87,7 +88,7 @@ bun run e2e:desktop             # Build and run the desktop Tauri e2e tests
 bun run fixtures:generate       # Generate MIDI test fixtures for e2e tests
 bun run fixtures:verify         # Verify e2e test fixtures are valid
 
-# Deployment (Cloudflare Workers) — manual, no CI/CD
+# Deployment (Cloudflare Workers) — explicit Wrangler scripts (see notes below on Workers Builds)
 bun run deploy:web                       # Build and deploy web app with Wrangler env production
 bun run deploy:web:preprod               # Build and deploy web app with Wrangler env pre-prod
 bun run deploy:api                       # Apply production migrations and deploy API with Wrangler env production
@@ -134,7 +135,6 @@ The common package exports:
 - Svelte components via `./components` export
 - Types and utilities via main export
 - Game-related exports via `./game` export
-- Server utilities via `./server` export
 - DTX file parsing classes (`DTXFile`, `SimFile`, `LaneMeasureNote`, `SoundChip`)
 
 The ui-components package exports:
@@ -145,9 +145,10 @@ The ui-components package exports:
 ### GraphQL API (`dtx-api`)
 
 - A Cloudflare Worker exposing a GraphQL endpoint via GraphQL Yoga; the schema is built code-first with Pothos (`schema/`), backed by `services/` (D1/R2) and `rest/` handlers.
-- Auth uses Better Auth and Pothos scope-auth; requests carry the Better Auth session context (`context.ts`).
+- The API Worker owns its persistence layer: D1 queries and schema live in `src/db/`, D1 migrations in `d1-migrations/` (applied via Wrangler), R2 helpers in `src/lib/r2Files.ts`, and the KV-backed rate limiter in `src/lib/rateLimiter.ts`. Worker-only helpers (`workerLogger`, `zipBuilder`) also live in `src/lib/` — `@dtx/common` stays a pure parsing/UI/game package with no server utilities.
+- Auth uses Better Auth and Pothos scope-auth; requests carry the Better Auth session context (`context.ts`). Desktop clients authenticate through OAuth Device Authorization and send Bearer session tokens (`Authorization: Bearer`).
 - The web client consumes it through generated typed documents: edit a GraphQL operation, then run the web `codegen` script to refresh `src/lib/api/generated/`. `lint:codegen` fails CI if generated output is stale, so commit regenerated files.
-- Local dev runs on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
+- In production the web Worker reaches the API through a service binding (`API` → `dtx-api` in `wrangler.jsonc`, used by `ctx.platform.env.API` during SSR); browsers call the API directly at `PUBLIC_DTX_API_URL`. Local dev runs on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
 
 ### Desktop (Tauri) Backend
 
@@ -204,6 +205,11 @@ localStorage.removeItem('song_templates');
 // localStorage.removeItem('workspace_path');
 // localStorage.removeItem('auth_session');
 ```
+
+The `auth_session` key is the desktop session mirror: the Tauri backend
+completes the OAuth Device Authorization flow and makes API calls with a
+`Bearer` session token, while the renderer seeds sign-in state from this key
+and revalidates it natively on startup. Clearing it forces a re-login.
 
 ## Testing
 
@@ -316,7 +322,7 @@ The Worker packages use local-only top-level Wrangler configuration plus explici
 | `bun run deploy:web`         | `production` | `dtx.hapadona.com`          | `dtx-web`         | `simfile-dtx`         | Production releases         |
 | `bun run deploy:web:preprod` | `pre-prod`   | `pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` | Isolated pre-production use |
 
-All web commands build first (`vite build`) then deploy via `wrangler deploy --env` with the named environment. API commands apply the matching remote D1 migrations before `wrangler deploy --env`. Worker deploys are manual (no CI/CD pipeline); Pulumi infrastructure updates run through the generalized infrastructure workflow.
+All web commands build first (`vite build`) then deploy via `wrangler deploy --env` with the named environment. API commands apply the matching remote D1 migrations before `wrangler deploy --env`. Both Workers are connected to Git through Cloudflare Workers Builds, which builds them on every push and pull request (reported as the `Workers Builds: dtx-api` / `Workers Builds: dtx-web` GitHub checks); no GitHub Actions workflow deploys Workers. Whether a Workers Builds build is promoted to a production deployment is an account-level setting — use the Wrangler scripts above for an explicit deploy, and check the Workers Builds console for the account's promotion behavior. Pulumi infrastructure updates run through the generalized infrastructure workflow.
 
 ### R2 Bucket Configuration
 
@@ -333,7 +339,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
 - Wrangler for local D1 development and Cloudflare Workers tooling
-- CI (`.github/workflows/`) includes required `lint-and-format` and `unit-test` workflows, plus path-filtered pull-request checks for web/desktop E2E, Rust, and CodeQL. `desktop-build-deploy` runs only on `preview`/`main` pushes, version tags, or `workflow_dispatch`. Worker deploys are manual.
+- CI (`.github/workflows/`) includes required `lint-and-format` and `unit-test` workflows, plus path-filtered pull-request checks for web/desktop E2E, Rust, and CodeQL. `desktop-build-deploy` runs only on `preview`/`main` pushes, version tags, or `workflow_dispatch`. Both Workers build automatically on every push via Git-connected Cloudflare Workers Builds; production promotion is account-configured and the Wrangler `deploy:*` scripts remain the explicit deploy path.
 
 ## Code Maintenance
 

@@ -6,13 +6,18 @@ vi.mock('@dtx/common/server', async () => {
 	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
 	return {
 		...actual,
-		getSimfileOwner: vi.fn(),
 		listAllR2Objects: vi.fn(),
 		createZipSources: vi.fn()
 	};
 });
 
-const { getSimfileOwner, listAllR2Objects, createZipSources } = await import('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
+	return { ...actual, getSimfileOwner: vi.fn() };
+});
+
+const { getSimfileOwner } = await import('../db/queries');
+const { listAllR2Objects, createZipSources } = await import('@dtx/common/server');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedListAll = vi.mocked(listAllR2Objects);
 const mockedCreateZipSources = vi.mocked(createZipSources);

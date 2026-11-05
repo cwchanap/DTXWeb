@@ -1,12 +1,12 @@
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 import {
-	getSimfileOwner,
 	listAllR2Objects,
 	createZipSources,
 	validateZipSources,
 	buildZipStream,
 	type ZipSource
 } from '@dtx/common/server';
+import { getSimfileOwner } from '../db/queries';
 import { selectTopLevelFullTrackObject } from '../lib/r2Files';
 import { isCanonicalBgmDerivativeKey } from './bgmM4a';
 

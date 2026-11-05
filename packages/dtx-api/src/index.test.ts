@@ -48,13 +48,16 @@ vi.mock('@dtx/common/server', () => ({
 		error: vi.fn(),
 		debug: vi.fn()
 	},
-	getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
 	listAllR2Objects: vi.fn(async () => []),
 	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
 	validateZipSources: vi.fn(async () => {}),
 	buildZipStream: vi.fn(() => new ReadableStream()),
 	getClientIp: vi.fn(() => null),
-	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
+	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 }))
+}));
+
+vi.mock('./db/queries', () => ({
+	getSimfileOwner: vi.fn(async () => ({ user_id: 'u1', is_published: 1 as const })),
 	createSimfile: vi.fn(),
 	createDtxFiles: vi.fn(),
 	deleteSimfile: vi.fn(),
@@ -67,7 +70,6 @@ vi.mock('@dtx/common/server', () => ({
 	listSimfiles: vi.fn(),
 	listUserScoredSimfiles: vi.fn(),
 	searchSimfiles: vi.fn(),
-	toSimfileWithDtx: vi.fn(),
 	updateSimfile: vi.fn(),
 	updateSimfileDriveFile: vi.fn(),
 	getUserChartScore: vi.fn(),
@@ -358,7 +360,7 @@ describe('Phase 2 routes', () => {
 	});
 
 	it('CORS-wraps 500 when a route handler throws', async () => {
-		const { getSimfileOwner } = await import('@dtx/common/server');
+		const { getSimfileOwner } = await import('./db/queries');
 		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
 			new Error('R2 listing failed')
 		);
@@ -520,7 +522,7 @@ describe('Phase 2 routes', () => {
 	});
 
 	it('CORS-wraps 500 when downloadSimfile handler throws', async () => {
-		const { getSimfileOwner } = await import('@dtx/common/server');
+		const { getSimfileOwner } = await import('./db/queries');
 		(getSimfileOwner as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('R2 error'));
 
 		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

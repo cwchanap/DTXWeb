@@ -2,7 +2,7 @@ import SchemaBuilder from '@pothos/core';
 import ScopeAuthPlugin from '@pothos/plugin-scope-auth';
 import ErrorsPlugin from '@pothos/plugin-errors';
 import { GraphQLError } from 'graphql';
-import { getSimfileOwner } from '@dtx/common/server';
+import { getSimfileOwner } from '../db/queries';
 import type { Ctx, OwnerCacheEntry } from '../context';
 
 // Per-request in-flight promise map to deduplicate concurrent lookups for the same simfileId.

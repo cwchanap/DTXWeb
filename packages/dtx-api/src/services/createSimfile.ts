@@ -1,5 +1,6 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import { createSimfile, createDtxFiles, deleteSimfile, type SimfileRow } from '@dtx/common/server';
+import { createSimfile, createDtxFiles, deleteSimfile } from '../db/queries';
+import type { SimfileRow } from '../db/types';
 
 export type CreateSimfileArgs = {
 	userId: string;

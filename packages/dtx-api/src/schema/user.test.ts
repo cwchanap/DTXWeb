@@ -5,8 +5,8 @@ import { workerLogger } from '@dtx/common/server';
 import type { Ctx } from '../context';
 import type { Env } from '../env';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return {
 		...actual,
 		getUserProfile: vi.fn(),
@@ -15,7 +15,7 @@ vi.mock('@dtx/common/server', async () => {
 	};
 });
 
-const { getUserProfile, upsertUserProfile } = await import('@dtx/common/server');
+const { getUserProfile, upsertUserProfile } = await import('../db/queries');
 const mockedGet = vi.mocked(getUserProfile);
 const mockedUpsert = vi.mocked(upsertUserProfile);
 

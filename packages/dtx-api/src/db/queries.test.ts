@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { toSimfileWithDtx } from '../types/d1.types';
-import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './db/schema';
+import { toSimfileWithDtx } from './types';
+import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './schema';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/d1';
 import {
@@ -25,9 +25,43 @@ import {
 	getUserChartScore,
 	listUserScoredSimfiles,
 	listUserChartScores
-} from './db';
+} from './queries';
 import type { D1Database } from '@cloudflare/workers-types';
-import type { SimfileInsert, SimfileUpdate } from '../types/d1.types';
+import type { SimfileInsert, SimfileUpdate } from './types';
+
+/**
+ * Mock D1Database for local development when Cloudflare bindings are not available.
+ * This allows local development to continue without requiring wrangler dev.
+ */
+export const createMockD1Database = (): D1Database => {
+	const createMockStmt = () => {
+		const stmt = {
+			// eslint-disable-next-line @typescript-eslint/no-unused-vars
+			bind: (..._args: unknown[]) => stmt,
+			first: async () => null,
+			all: async () => ({ results: [] }),
+			run: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
+			raw: async () => []
+		};
+		return stmt;
+	};
+
+	return {
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
+		prepare: (_query: string) => createMockStmt(),
+		batch: async (statements: unknown[]) => {
+			// Simulate batch operations returning success
+			return statements.map(() => ({
+				success: true,
+				meta: { changes: 0, duration: 0 },
+				results: []
+			})) as unknown as ReturnType<D1Database['batch']>;
+		},
+		exec: async () => ({ success: true, meta: { changes: 0, duration: 0 } }),
+		dump: async () => [],
+		withSession: () => createMockD1Database()
+	} as unknown as D1Database;
+};
 
 const drizzleSelectResults = vi.hoisted(() => [] as unknown[]);
 const createMockDrizzleQuery = vi.hoisted(() => {
@@ -58,8 +92,8 @@ vi.mock('drizzle-orm/d1', () => ({
 	drizzle: vi.fn(() => mockDrizzleDb)
 }));
 
-vi.mock('../types/d1.types', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('../types/d1.types')>();
+vi.mock('./types', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('./types')>();
 	return {
 		...actual,
 		toSimfileWithDtx: vi.fn((row, dtxFiles) => ({
@@ -250,18 +284,8 @@ describe('score schema', () => {
 // asserts they define the same set of constraints.
 // ---------------------------------------------------------------------------
 describe('CHECK constraint parity (0002_scores.sql + 0007_score_semantics.sql vs schema.ts)', () => {
-	const MIGRATIONS_DIR = join(
-		__dirname,
-		'..',
-		'..',
-		'..',
-		'..',
-		'..',
-		'packages',
-		'dtx-api',
-		'd1-migrations'
-	);
-	const SCHEMA_PATH = join(__dirname, 'db', 'schema.ts');
+	const MIGRATIONS_DIR = join(__dirname, '..', '..', 'd1-migrations');
+	const SCHEMA_PATH = join(__dirname, 'schema.ts');
 
 	// Normalize a SQL expression for comparison: lowercase, collapse whitespace,
 	// strip surrounding parens, and remove redundant spacing around operators.

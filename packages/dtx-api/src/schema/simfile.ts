@@ -5,14 +5,13 @@ import {
 	listSimfiles,
 	listUserScoredSimfiles,
 	searchSimfiles,
-	toSimfileWithDtx,
 	updateSimfile,
 	updateSimfileDriveFile,
 	deleteSimfile,
 	getUserChartScore,
-	listUserChartScores,
-	type SimfileWithDtxFiles
-} from '@dtx/common/server';
+	listUserChartScores
+} from '../db/queries';
+import { toSimfileWithDtx, type SimfileWithDtxFiles } from '../db/types';
 import { builder } from './builder';
 import { ChartScoreRef } from './score';
 import {

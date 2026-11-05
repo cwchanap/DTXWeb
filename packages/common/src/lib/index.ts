@@ -14,7 +14,7 @@ export { formatLevel, normalizeLevel } from './utils/level';
 // Export constants
 export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } from './constants';
 
-// Export current simfile model (D1 row types stay server-only under '@dtx/common/server')
+// Export current simfile model (D1 row types live in dtx-api under src/db)
 export type { SimfileModel, SimfileDtxFile, SimfileAssetFile } from './types/simfile';
 
 // Game classes are exported in './game' to avoid SSR issues with Phaser

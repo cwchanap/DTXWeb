@@ -3,8 +3,8 @@ import type { R2Bucket } from '@cloudflare/workers-types';
 import type { Ctx } from '../context';
 import { makeEnv, makeCtx, runQuery } from './simfileTestHarness';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../db/queries', async () => {
+	const actual = await vi.importActual<typeof import('../db/queries')>('../db/queries');
 	return {
 		...actual,
 		getSimfile: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock('@dtx/common/server', async () => {
 });
 
 const { getSimfile, getSimfileOwner, getNextDisplayId, updateSimfileDriveFile } =
-	await import('@dtx/common/server');
+	await import('../db/queries');
 const mockedGetSimfile = vi.mocked(getSimfile);
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedNextDisplayId = vi.mocked(getNextDisplayId);
@@ -216,7 +216,7 @@ describe('Query.nextDisplayId', () => {
 	});
 });
 
-const { listSimfiles, searchSimfiles } = await import('@dtx/common/server');
+const { listSimfiles, searchSimfiles } = await import('../db/queries');
 const mockedList = vi.mocked(listSimfiles);
 const mockedSearch = vi.mocked(searchSimfiles);
 
@@ -1695,7 +1695,7 @@ describe('Simfile.files / Simfile.hasUploadedFiles (lazy)', () => {
 	});
 });
 
-const { updateSimfile } = await import('@dtx/common/server');
+const { updateSimfile } = await import('../db/queries');
 const mockedUpdate = vi.mocked(updateSimfile);
 
 describe('Mutation.updateSimfileDriveFile', () => {
@@ -2145,7 +2145,7 @@ const makeR2ListFailure = (): R2Bucket => {
 	return { list: listMock, delete: deleteMock } as unknown as R2Bucket;
 };
 
-const { deleteSimfile } = await import('@dtx/common/server');
+const { deleteSimfile } = await import('../db/queries');
 const mockedDelete = vi.mocked(deleteSimfile);
 
 describe('Mutation.deleteSimfile', () => {

@@ -2,7 +2,7 @@
 -- Move chart-level score records out of scores so recent plays can retain
 -- their own achievement/rank/clear metadata while the best row is canonical.
 -- CHECK parity spans 0002_scores.sql + 0007_score_semantics.sql; keep both
--- migration files and packages/common/src/lib/server/db/schema.ts aligned.
+-- migration files and packages/dtx-api/src/db/schema.ts aligned.
 
 ALTER TABLE chart_scores ADD COLUMN full_combo INTEGER NOT NULL DEFAULT 0 CHECK (full_combo IN (0, 1));
 ALTER TABLE chart_scores ADD COLUMN max_combo INTEGER NOT NULL DEFAULT 0 CHECK (max_combo >= 0);

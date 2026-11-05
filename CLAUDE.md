@@ -322,7 +322,7 @@ The Worker packages use local-only top-level Wrangler configuration plus explici
 | `bun run deploy:web`         | `production` | `dtx.hapadona.com`          | `dtx-web`         | `simfile-dtx`         | Production releases         |
 | `bun run deploy:web:preprod` | `pre-prod`   | `pre-prod.dtx.hapadona.com` | `dtx-web-preprod` | `simfile-dtx-preprod` | Isolated pre-production use |
 
-All web commands build first (`vite build`) then deploy via `wrangler deploy --env` with the named environment. API commands apply the matching remote D1 migrations before `wrangler deploy --env`. Both Workers are connected to Git through Cloudflare Workers Builds, which builds them on every push and pull request (reported as the `Workers Builds: dtx-api` / `Workers Builds: dtx-web` GitHub checks); no GitHub Actions workflow deploys Workers. Whether a Workers Builds build is promoted to a production deployment is an account-level setting — use the Wrangler scripts above for an explicit deploy, and check the Workers Builds console for the account's promotion behavior. Pulumi infrastructure updates run through the generalized infrastructure workflow.
+All web commands build first (`vite build`) then deploy via `wrangler deploy --env` with the named environment. API commands apply the matching remote D1 migrations before `wrangler deploy --env`. Both Workers are connected to Git through Cloudflare Workers Builds, which has produced automated builds for pull-request revisions observed on this repository (the `Workers Builds: dtx-api` / `Workers Builds: dtx-web` GitHub checks); the services' full branch/trigger configuration lives in the Cloudflare dashboard and is not verifiable from this repo. No GitHub Actions workflow deploys Workers. Whether a Workers Builds build is promoted to a production deployment is an account-level setting that is explicitly unverified here — use the Wrangler scripts above for an explicit deploy, and check the Workers Builds console for the account's promotion behavior. Pulumi infrastructure updates run through the generalized infrastructure workflow.
 
 ### R2 Bucket Configuration
 
@@ -339,7 +339,7 @@ Production and pre-production have separate R2 buckets (`simfile-dtx` and `simfi
 - Prettier for code formatting (tabs, single quotes, width 100)
 - ESLint for TypeScript and Svelte linting
 - Wrangler for local D1 development and Cloudflare Workers tooling
-- CI (`.github/workflows/`) includes required `lint-and-format` and `unit-test` workflows, plus path-filtered pull-request checks for web/desktop E2E, Rust, and CodeQL. `desktop-build-deploy` runs only on `preview`/`main` pushes, version tags, or `workflow_dispatch`. Both Workers build automatically on every push via Git-connected Cloudflare Workers Builds; production promotion is account-configured and the Wrangler `deploy:*` scripts remain the explicit deploy path.
+- CI (`.github/workflows/`) includes required `lint-and-format` and `unit-test` workflows, plus path-filtered pull-request checks for web/desktop E2E, Rust, and CodeQL. `desktop-build-deploy` runs only on `preview`/`main` pushes, version tags, or `workflow_dispatch`. Both Workers have Git-connected Cloudflare Workers Builds that have produced automated builds for observed pull-request revisions (push/branch trigger coverage is Cloudflare-side and unverified here); production promotion is likewise unverified, and the Wrangler `deploy:*` scripts remain the explicit deploy path.
 
 ## Code Maintenance
 

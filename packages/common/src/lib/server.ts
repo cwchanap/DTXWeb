@@ -15,15 +15,3 @@ export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } fr
 
 // Shared logging utility
 export { default as logger } from './server/logger';
-
-// R2 storage utilities
-export { isPreviewKey, listAllR2Objects, type R2ObjectMeta } from './server/r2';
-
-// ZIP streaming utilities
-export {
-	buildZipStream,
-	createZipSources,
-	validateZipSources,
-	type ZipEntry,
-	type ZipSource
-} from './server/zipBuilder';

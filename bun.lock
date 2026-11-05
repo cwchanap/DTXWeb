@@ -84,6 +84,7 @@
         "@vitest/coverage-v8": "^4.1.11",
         "auth": "1.7.12",
         "drizzle-kit": "^0.31.11",
+        "jszip": "^3.10.2",
         "miniflare": "^4.20260730.0",
         "typescript": "^5.8.3",
         "vitest": "^4.1.11",

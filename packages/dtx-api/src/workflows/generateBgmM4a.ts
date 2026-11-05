@@ -1,6 +1,6 @@
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from 'cloudflare:workers';
 import { NonRetryableError } from 'cloudflare:workflows';
-import { workerLogger } from '@dtx/common/server';
+import { workerLogger } from '../lib/workerLogger';
 import type { Env } from '../env';
 import {
 	BGM_TRANSCODE_STEP_CONFIG,

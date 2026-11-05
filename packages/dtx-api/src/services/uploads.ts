@@ -1,4 +1,4 @@
-import type { WorkerLogger } from '@dtx/common/server';
+import type { WorkerLogger } from '../lib/workerLogger';
 import { getSimfileOwner } from '../db/queries';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { sanitizeFilename } from '../lib/sanitizeFilename';

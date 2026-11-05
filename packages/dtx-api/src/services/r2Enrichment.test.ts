@@ -8,7 +8,7 @@ import {
 	discoverCatalogFiles
 } from './r2Enrichment';
 import type { R2Bucket } from '@cloudflare/workers-types';
-import type { WorkerLogger } from '@dtx/common/server';
+import type { WorkerLogger } from '../lib/workerLogger';
 
 const silentLogger: WorkerLogger = {
 	info: vi.fn(),

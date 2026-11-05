@@ -1,4 +1,4 @@
-import type { WorkerLogger } from '@dtx/common/server';
+import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Env } from '../env';

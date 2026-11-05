@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { routeUpload } from './upload';
 import type { Env } from '../env';
 import type { ExecutionContext, R2Bucket } from '@cloudflare/workers-types';
-import { workerLogger } from '@dtx/common/server';
+import { workerLogger } from '../lib/workerLogger';
 
 vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) }));
 

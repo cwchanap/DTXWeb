@@ -15,7 +15,6 @@ export { VALID_DTX_FILE_EXTENSIONS, isValidDtxFileExtension, isValidDtxFile } fr
 
 // Shared logging utility
 export { default as logger } from './server/logger';
-
 // Rate limiting utilities
 export { getClientIp, tryConsumeRateLimit, type RateLimitResult } from './server/rateLimiter';
 
@@ -30,6 +29,3 @@ export {
 	type ZipEntry,
 	type ZipSource
 } from './server/zipBuilder';
-
-// Workers-safe logger (use this from any code running in a Cloudflare Worker)
-export { workerLogger, type WorkerLogger } from './server/workerLogger';

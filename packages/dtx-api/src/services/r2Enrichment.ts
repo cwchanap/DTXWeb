@@ -2,9 +2,9 @@ import {
 	listAllR2Objects,
 	isPreviewKey,
 	decodeArrayBufferWithBomDetection,
-	type R2ObjectMeta,
-	type WorkerLogger
+	type R2ObjectMeta
 } from '@dtx/common/server';
+import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
 	FULL_TRACK_AUDIO_EXTENSIONS,

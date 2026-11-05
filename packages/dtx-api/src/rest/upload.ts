@@ -1,4 +1,4 @@
-import { workerLogger } from '@dtx/common/server';
+import { workerLogger } from '../lib/workerLogger';
 import type { ExecutionContext } from '@cloudflare/workers-types';
 import { resolveAuthSession } from '../auth/session';
 import { uploadSimfileFile, purgeCacheForFile } from '../services/uploads';

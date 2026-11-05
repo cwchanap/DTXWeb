@@ -1,5 +1,5 @@
 import type { D1Database, KVNamespace, R2Bucket } from '@cloudflare/workers-types';
-import { workerLogger, type WorkerLogger } from '@dtx/common/server';
+import { workerLogger, type WorkerLogger } from './lib/workerLogger';
 import type { ChartScoreRow, ScoreRow } from './db/types';
 import { resolveAuthSession, type ApiAuthSession, type ApiAuthUser } from './auth/session';
 import type { Env } from './env';

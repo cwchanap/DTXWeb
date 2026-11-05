@@ -61,7 +61,7 @@ vi.mock('../services/bgmM4aGeneration', async (importOriginal) => {
 
 const { GenerateBgmM4aWorkflow } = await import('./generateBgmM4a');
 const { NonRetryableError } = await import('cloudflare:workflows');
-const { workerLogger } = await import('@dtx/common/server');
+const { workerLogger } = await import('../lib/workerLogger');
 
 const payload: GenerateBgmM4aPayload = {
 	simfileId: 42,

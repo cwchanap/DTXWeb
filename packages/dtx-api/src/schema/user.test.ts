@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createYoga } from 'graphql-yoga';
 import { schema } from './index';
-import { workerLogger } from '@dtx/common/server';
+import { workerLogger } from '../lib/workerLogger';
 import type { Ctx } from '../context';
 import type { Env } from '../env';
 

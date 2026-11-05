@@ -41,13 +41,16 @@ vi.mock('cloudflare:workflows', () => ({
 	}
 }));
 
-vi.mock('@dtx/common/server', () => ({
+vi.mock('./lib/workerLogger', () => ({
 	workerLogger: {
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
 		debug: vi.fn()
-	},
+	}
+}));
+
+vi.mock('@dtx/common/server', () => ({
 	listAllR2Objects: vi.fn(async () => []),
 	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
 	validateZipSources: vi.fn(async () => {}),

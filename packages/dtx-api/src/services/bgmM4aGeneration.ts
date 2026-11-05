@@ -1,5 +1,5 @@
 import { getContainer, type Container } from '@cloudflare/containers';
-import type { WorkerLogger } from '@dtx/common/server';
+import type { WorkerLogger } from '../lib/workerLogger';
 import type { Env } from '../env';
 import { toPublicR2Url } from '../lib/r2Files';
 import {

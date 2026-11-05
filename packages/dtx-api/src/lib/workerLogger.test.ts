@@ -42,6 +42,26 @@ describe('workerLogger', () => {
 		expect(payload.ts).not.toBe('not-a-timestamp');
 	});
 
+	it('serializes a logged Error as { message, stack } instead of {}', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const failure = new Error('R2 fetch failed');
+
+		workerLogger.error('download failed', { error: failure, simfileId: 42 });
+
+		const payload = JSON.parse(spy.mock.calls[0][0] as string);
+		expect(payload.error).toEqual({ message: 'R2 fetch failed', stack: failure.stack });
+		expect(payload.simfileId).toBe(42);
+	});
+
+	it('does not wrap non-Error meta values', () => {
+		const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		workerLogger.info('timing', { durationMs: 1234, nested: { ok: true } });
+
+		const payload = JSON.parse(spy.mock.calls[0][0] as string);
+		expect(payload.durationMs).toBe(1234);
+		expect(payload.nested).toEqual({ ok: true });
+	});
+
 	it('warn/error/debug route to their respective console methods', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 		const error = vi.spyOn(console, 'error').mockImplementation(() => {});

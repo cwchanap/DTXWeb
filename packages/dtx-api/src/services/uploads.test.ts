@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { uploadSimfileFile, purgeCacheForFile } from './uploads';
-import { workerLogger } from '@dtx/common/server';
+import { workerLogger } from '../lib/workerLogger';
 import type { Env } from '../env';
 import type { R2Bucket } from '@cloudflare/workers-types';
 
-vi.mock('@dtx/common/server', () => ({
+vi.mock('../lib/workerLogger', () => ({
 	workerLogger: {
 		info: vi.fn(),
 		warn: vi.fn(),

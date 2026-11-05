@@ -50,12 +50,19 @@ vi.mock('./lib/workerLogger', () => ({
 	}
 }));
 
-vi.mock('@dtx/common/server', () => ({
-	listAllR2Objects: vi.fn(async () => []),
+vi.mock('./lib/zipBuilder', () => ({
 	createZipSources: vi.fn(() => [{ key: '123/a.dtx', size: 1, prefix: '', name: 'a.dtx' }]),
 	validateZipSources: vi.fn(async () => {}),
 	buildZipStream: vi.fn(() => new ReadableStream())
 }));
+
+vi.mock('./lib/r2Files', async () => {
+	const actual = await vi.importActual<typeof import('./lib/r2Files')>('./lib/r2Files');
+	return {
+		...actual,
+		listAllR2Objects: vi.fn(async () => [])
+	};
+});
 
 vi.mock('./lib/rateLimiter', () => ({
 	getClientIp: vi.fn(() => null),

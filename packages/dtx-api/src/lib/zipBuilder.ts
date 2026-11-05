@@ -1,6 +1,6 @@
 import type { R2Bucket } from '@cloudflare/workers-types';
-import { isPreviewKey, type R2ObjectMeta } from './r2';
-import logger from './logger';
+import { isPreviewKey, type R2ObjectMeta } from './r2Files';
+import { workerLogger } from './workerLogger';
 
 export interface ZipEntry {
 	path: string;
@@ -202,7 +202,7 @@ export const fetchR2Entries = async (
 			const data = await r2obj.arrayBuffer();
 			return { path, data } satisfies ZipEntry;
 		} catch (error) {
-			logger.warn(`Failed to fetch R2 object: ${obj.key}`, error);
+			workerLogger.warn(`Failed to fetch R2 object: ${obj.key}`, { error });
 			return null;
 		}
 	};
@@ -249,7 +249,7 @@ const zipChunks = async function* (
 		try {
 			r2obj = await bucket.get(source.objectKey);
 		} catch (error) {
-			logger.warn(`Failed to fetch R2 object: ${source.objectKey}`, error);
+			workerLogger.warn(`Failed to fetch R2 object: ${source.objectKey}`, { error });
 			throw new Error(`Failed to fetch R2 object for ZIP source: ${source.objectKey}`);
 		}
 

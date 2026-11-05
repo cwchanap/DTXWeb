@@ -1,3 +1,6 @@
+import type { R2Bucket } from '@cloudflare/workers-types';
+import { workerLogger } from './workerLogger';
+
 export const FULL_TRACK_AUDIO_EXTENSIONS = ['.ogg', '.m4a', '.mp3', '.wav', '.flac'] as const;
 
 export const r2FileName = (key: string): string => key.split('/').at(-1) ?? '';
@@ -42,3 +45,52 @@ export const selectTopLevelFullTrackObject = <T extends { key: string }>(
 			);
 			return aExtension - bExtension || a.key.localeCompare(b.key);
 		})[0];
+
+const PREVIEW_FILENAMES = new Set(['preview.jpg', 'preview.mp3']);
+
+export const isPreviewKey = (key: string): boolean => {
+	const filename = key.slice(key.lastIndexOf('/') + 1);
+	return PREVIEW_FILENAMES.has(filename);
+};
+
+export interface R2ObjectMeta {
+	key: string;
+	size: number;
+	uploaded: Date;
+}
+
+/**
+ * Lists all R2 objects under a prefix using cursor-based pagination.
+ * Throws if the pagination cursor is missing or repeating (broken R2 state).
+ */
+export const listAllR2Objects = async (
+	bucket: R2Bucket,
+	prefix: string
+): Promise<R2ObjectMeta[]> => {
+	const allObjects: R2ObjectMeta[] = [];
+	let cursor: string | undefined;
+	let isTruncated = true;
+
+	while (isTruncated) {
+		const listResult = await bucket.list({ prefix, limit: 1000, cursor });
+		const objects = listResult.objects ?? [];
+		const mappedObjects = objects.map((obj) => ({
+			key: obj.key,
+			size: obj.size,
+			uploaded: obj.uploaded
+		}));
+		allObjects.push(...mappedObjects);
+
+		isTruncated = listResult.truncated === true;
+		if (isTruncated) {
+			const nextCursor = (listResult as { cursor?: string }).cursor;
+			if (!nextCursor || nextCursor === cursor) {
+				workerLogger.warn(`R2 list truncated without valid cursor for prefix "${prefix}"`);
+				throw new Error('R2 pagination cursor unavailable');
+			}
+			cursor = nextCursor;
+		}
+	}
+
+	return allObjects;
+};

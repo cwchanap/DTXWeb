@@ -3,14 +3,21 @@ import { routeDownloadSimfile } from './downloadSimfile';
 import type { Env } from '../env';
 import type { ExecutionContext, R2Bucket, KVNamespace } from '@cloudflare/workers-types';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../lib/zipBuilder', async () => {
+	const actual = await vi.importActual<typeof import('../lib/zipBuilder')>('../lib/zipBuilder');
 	return {
 		...actual,
-		listAllR2Objects: vi.fn(),
 		validateZipSources: vi.fn(async () => {}),
 		buildZipStream: vi.fn(() => new ReadableStream()),
 		createZipSources: vi.fn(() => [{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }])
+	};
+});
+
+vi.mock('../lib/r2Files', async () => {
+	const actual = await vi.importActual<typeof import('../lib/r2Files')>('../lib/r2Files');
+	return {
+		...actual,
+		listAllR2Objects: vi.fn()
 	};
 });
 
@@ -33,13 +40,13 @@ vi.mock('../auth/session', () => ({ resolveAuthSession: vi.fn(async () => null) 
 const { getSimfileOwner } = await import('../db/queries');
 const { resolveAuthSession } = await import('../auth/session');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
-const { createZipSources } = await import('@dtx/common/server');
+const { createZipSources } = await import('../lib/zipBuilder');
 const { tryConsumeRateLimit } = await import('../lib/rateLimiter');
 const mockedRate = vi.mocked(tryConsumeRateLimit);
 const mockedCreateZipSources = vi.mocked(createZipSources);
 const mockedResolveAuthSession = vi.mocked(resolveAuthSession);
 
-const { validateZipSources } = await import('@dtx/common/server');
+const { validateZipSources } = await import('../lib/zipBuilder');
 const mockedValidateZipSources = vi.mocked(validateZipSources);
 
 const makeEnv = (overrides: Partial<Env> = {}): Env => ({

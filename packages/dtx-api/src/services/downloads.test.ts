@@ -2,12 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { resolveAccessibleSimfiles, collectZipSources } from './downloads';
 import type { D1Database, R2Bucket } from '@cloudflare/workers-types';
 
-vi.mock('@dtx/common/server', async () => {
-	const actual = await vi.importActual<typeof import('@dtx/common/server')>('@dtx/common/server');
+vi.mock('../lib/zipBuilder', async () => {
+	const actual = await vi.importActual<typeof import('../lib/zipBuilder')>('../lib/zipBuilder');
 	return {
 		...actual,
-		listAllR2Objects: vi.fn(),
 		createZipSources: vi.fn()
+	};
+});
+
+vi.mock('../lib/r2Files', async () => {
+	const actual = await vi.importActual<typeof import('../lib/r2Files')>('../lib/r2Files');
+	return {
+		...actual,
+		listAllR2Objects: vi.fn()
 	};
 });
 
@@ -17,7 +24,8 @@ vi.mock('../db/queries', async () => {
 });
 
 const { getSimfileOwner } = await import('../db/queries');
-const { listAllR2Objects, createZipSources } = await import('@dtx/common/server');
+const { listAllR2Objects } = await import('../lib/r2Files');
+const { createZipSources } = await import('../lib/zipBuilder');
 const mockedGetOwner = vi.mocked(getSimfileOwner);
 const mockedListAll = vi.mocked(listAllR2Objects);
 const mockedCreateZipSources = vi.mocked(createZipSources);

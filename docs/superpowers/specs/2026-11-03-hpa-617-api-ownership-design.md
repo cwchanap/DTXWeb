@@ -1,6 +1,6 @@
 # HPA-617 — API Infrastructure Ownership Cleanup: Design Spec
 
-**Status:** Proposed; documentation-only draft, to be implemented in this *same* PR.
+**Status:** Proposed; documentation-only draft, to be implemented in this _same_ PR.
 **Linear:** https://linear.app/cwchanap/issue/HPA-617
 **Baseline:** `main` reviewed 2026-11-03. No runtime code is changed by this planning commit.
 
@@ -21,22 +21,22 @@ This ownership inversion increases incidental dependencies and test coupling:
 
 ## Decision
 
-Perform one mechanical ownership refactor. **Move API-specific implementations and tests into the existing `dtx-api` package; keep pure DTX/chart/notation/UI code in `@dtx/common`.** Delete unused imports, exports, aliases, dependencies and outdated *current* guidance as consumers move. Introduce no new package or generic data-access interface.
+Perform one mechanical ownership refactor. **Move API-specific implementations and tests into the existing `dtx-api` package; keep pure DTX/chart/notation/UI code in `@dtx/common`.** Delete unused imports, exports, aliases, dependencies and outdated _current_ guidance as consumers move. Introduce no new package or generic data-access interface.
 
 ### Target ownership
 
-| Current path | Intended destination | Notes |
-| --- | --- | --- |
-| `common/src/lib/server/db.ts` | `dtx-api/src/db/queries.ts` | Preserve SQL, batch order and error behavior; move test-only `createMockD1Database` into `queries.test.ts`, not production code |
-| `common/src/lib/server/db/schema.ts` | `dtx-api/src/db/schema.ts` | Existing D1/Drizzle table definitions, not a new migration |
-| `common/src/lib/types/d1.types.ts` | `dtx-api/src/db/types.ts` | Server-only D1 rows and API-facing `SimfileWithDtxFiles`; **not** the neutral `SimfileModel` |
-| `common/src/lib/server/db.test.ts`, `db.integration.test.ts`, `common/src/lib/types/d1.types.test.ts` | `dtx-api/src/db/*.test.ts` | Retarget local import/mocks and D1 migration path; retain real D1 behavior |
-| `common/src/lib/server/r2.ts` + tests | Merge into existing `dtx-api/src/lib/r2Files.ts` + `r2Files.test.ts` | One R2-key helper module; preserve `isPreviewKey` and existing preview/full-track behavior |
-| `common/src/lib/server/rateLimiter.ts` + tests | `dtx-api/src/lib/rateLimiter.ts` + tests | Keep KV semantics unchanged |
-| `common/src/lib/server/zipBuilder.ts` + tests | `dtx-api/src/lib/zipBuilder.ts` + tests | Keep stream/CRC/ordering/security behavior and tests |
-| `common/src/lib/server/workerLogger.ts` + tests | `dtx-api/src/lib/workerLogger.ts` + tests | Preserve Winston's `{ message, stack }` serialization for Error metadata and add a regression test |
-| `common/src/lib/server/logger.ts` + tests | Delete after switching internal callers to the existing Worker logger | Remove Winston only after verifying no live consumer |
-| `common/src/lib/server.ts` and `@dtx/common/server` export | Trim exports alongside each move, then delete | Expose pure buffer decoding from main `@dtx/common`, retarget web editor **and API** decoder imports; never leave intermediate broken re-exports |
+| Current path                                                                                          | Intended destination                                                  | Notes                                                                                                                                            |
+| ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `common/src/lib/server/db.ts`                                                                         | `dtx-api/src/db/queries.ts`                                           | Preserve SQL, batch order and error behavior; move test-only `createMockD1Database` into `queries.test.ts`, not production code                  |
+| `common/src/lib/server/db/schema.ts`                                                                  | `dtx-api/src/db/schema.ts`                                            | Existing D1/Drizzle table definitions, not a new migration                                                                                       |
+| `common/src/lib/types/d1.types.ts`                                                                    | `dtx-api/src/db/types.ts`                                             | Server-only D1 rows and API-facing `SimfileWithDtxFiles`; **not** the neutral `SimfileModel`                                                     |
+| `common/src/lib/server/db.test.ts`, `db.integration.test.ts`, `common/src/lib/types/d1.types.test.ts` | `dtx-api/src/db/*.test.ts`                                            | Retarget local import/mocks and D1 migration path; retain real D1 behavior                                                                       |
+| `common/src/lib/server/r2.ts` + tests                                                                 | Merge into existing `dtx-api/src/lib/r2Files.ts` + `r2Files.test.ts`  | One R2-key helper module; preserve `isPreviewKey` and existing preview/full-track behavior                                                       |
+| `common/src/lib/server/rateLimiter.ts` + tests                                                        | `dtx-api/src/lib/rateLimiter.ts` + tests                              | Keep KV semantics unchanged                                                                                                                      |
+| `common/src/lib/server/zipBuilder.ts` + tests                                                         | `dtx-api/src/lib/zipBuilder.ts` + tests                               | Keep stream/CRC/ordering/security behavior and tests                                                                                             |
+| `common/src/lib/server/workerLogger.ts` + tests                                                       | `dtx-api/src/lib/workerLogger.ts` + tests                             | Preserve Winston's `{ message, stack }` serialization for Error metadata and add a regression test                                               |
+| `common/src/lib/server/logger.ts` + tests                                                             | Delete after switching internal callers to the existing Worker logger | Remove Winston only after verifying no live consumer                                                                                             |
+| `common/src/lib/server.ts` and `@dtx/common/server` export                                            | Trim exports alongside each move, then delete                         | Expose pure buffer decoding from main `@dtx/common`, retarget web editor **and API** decoder imports; never leave intermediate broken re-exports |
 
 The exact API paths may be adjusted during implementation to reuse an existing directory, **not** to add new layers. API source/test imports should use relative paths within `dtx-api`; ordinary cross-package chart/notation imports stay on `@dtx/common`.
 

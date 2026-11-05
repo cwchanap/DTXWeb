@@ -21,11 +21,6 @@ import {
 	setFileProvider,
 	getFileProvider
 } from './index';
-import {
-	DTXFile as ServerDTXFile,
-	SimFile as ServerSimFile,
-	VALID_DTX_FILE_EXTENSIONS as ServerExtensions
-} from './server';
 
 describe('constants', () => {
 	describe('isValidDtxFileExtension', () => {
@@ -156,11 +151,5 @@ describe('package barrel exports', () => {
 		expect(VALID_DTX_FILE_EXTENSIONS).toBeDefined();
 		expect(setFileProvider).toBeDefined();
 		expect(getFileProvider).toBeDefined();
-	});
-
-	it('server.ts exports all expected symbols', () => {
-		expect(ServerDTXFile).toBeDefined();
-		expect(ServerSimFile).toBeDefined();
-		expect(ServerExtensions).toBeDefined();
 	});
 });

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/public';
-import { decodeArrayBufferWithBomDetection } from '@dtx/common/server';
+import { decodeArrayBufferWithBomDetection } from '@dtx/common';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {

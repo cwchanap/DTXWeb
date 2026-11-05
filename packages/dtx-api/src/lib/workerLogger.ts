@@ -1,8 +1,23 @@
 type Meta = Record<string, unknown>;
 
-// Winston's Error replacer: JSON.stringify alone serializes Error to {}
+// Winston's Error replacer: JSON.stringify alone serializes Error to {}.
+// name/cause/code and other own properties are lost by default — cause is a
+// non-enumerable own property on Error, so it is restored explicitly.
+const serializeError = (error: Error): Record<string, unknown> => {
+	const serialized: Record<string, unknown> = {
+		...error,
+		name: error.name,
+		message: error.message,
+		stack: error.stack
+	};
+	if (error.cause !== undefined) {
+		serialized.cause = error.cause instanceof Error ? serializeError(error.cause) : error.cause;
+	}
+	return serialized;
+};
+
 const errorReplacer = (_: string, value: unknown): unknown =>
-	value instanceof Error ? { message: value.message, stack: value.stack } : value;
+	value instanceof Error ? serializeError(value) : value;
 
 const format = (level: string, msg: string, meta?: Meta): string =>
 	JSON.stringify({ ...(meta ?? {}), ts: new Date().toISOString(), level, msg }, errorReplacer);

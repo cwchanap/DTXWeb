@@ -33,7 +33,7 @@ vi.mock('../lib/rateLimiter', async () => {
 	const actual = await vi.importActual<typeof import('../lib/rateLimiter')>('../lib/rateLimiter');
 	return {
 		...actual,
-		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 })),
+		tryConsumeRateLimit: vi.fn(async () => ({ allowed: true })),
 		getClientIp: vi.fn(() => '1.2.3.4')
 	};
 });
@@ -105,7 +105,7 @@ const formReq = (ids: (string | number)[], search = '') => {
 
 beforeEach(() => {
 	mockedGetOwner.mockReset();
-	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
+	mockedRate.mockReset().mockResolvedValue({ allowed: true });
 	mockedListAllR2Objects
 		.mockReset()
 		.mockResolvedValue([{ key: '1/song.dtx', size: 100, uploaded: new Date() }]);
@@ -184,7 +184,7 @@ describe('POST /downloads/bulk', () => {
 
 	it('429 on validate-only when rate limit exceeded', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
-		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
+		mockedRate.mockResolvedValue({ allowed: false });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1] }, '?validate=1'), makeEnv());
 		expect(response.status).toBe(429);
 	});
@@ -331,7 +331,7 @@ describe('POST /downloads/bulk', () => {
 
 	it('429 on rate limit hit', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
-		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
+		mockedRate.mockResolvedValue({ allowed: false });
 		const response = await routeDownloadBulk(jsonReq({ ids: [1] }), makeEnv());
 		expect(response.status).toBe(429);
 		// HEAD checks should NOT run when rate limit blocks the download

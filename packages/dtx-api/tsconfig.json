@@ -6,7 +6,8 @@
 		"moduleResolution": "Bundler",
 		"baseUrl": ".",
 		"paths": {
-			"@dtx/common": ["../common/src/lib/index.ts"]
+			"@dtx/common": ["../common/src/lib/index.ts"],
+			"@dtx/common/encoding": ["../common/src/lib/encoding.ts"]
 		},
 		"lib": ["ES2022"],
 		"types": ["@cloudflare/workers-types"],

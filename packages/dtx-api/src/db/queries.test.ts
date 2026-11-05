@@ -20,7 +20,6 @@ import {
 	createDtxFiles,
 	getUserProfile,
 	upsertUserProfile,
-	updateUserProfile,
 	upsertChartScoreAndReplaceScores,
 	getUserChartScore,
 	listUserScoredSimfiles,
@@ -1542,27 +1541,6 @@ describe('upsertUserProfile', () => {
 		await expect(
 			upsertUserProfile(db as unknown as D1Database, { user_id: 'user-1', username: 'x' })
 		).rejects.toThrow('Failed to upsert user profile');
-	});
-});
-
-// ---------------------------------------------------------------------------
-// updateUserProfile
-// ---------------------------------------------------------------------------
-describe('updateUserProfile', () => {
-	it('updates username and returns profile', async () => {
-		const profile = { id: 1, user_id: 'user-1', username: 'newname' };
-		const db = createMockDb(() => createMockStmt(profile));
-		const result = await updateUserProfile(db as unknown as D1Database, 'user-1', {
-			username: 'newname'
-		});
-		expect(result).toEqual(profile);
-	});
-
-	it('returns existing profile when no username provided', async () => {
-		const profile = { id: 1, user_id: 'user-1', username: 'oldname' };
-		const db = createMockDb(() => createMockStmt(profile));
-		const result = await updateUserProfile(db as unknown as D1Database, 'user-1', {});
-		expect(result).toEqual(profile);
 	});
 });
 

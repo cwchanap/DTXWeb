@@ -2,18 +2,12 @@ import type { R2Bucket } from '@cloudflare/workers-types';
 import { isPreviewKey, type R2ObjectMeta } from './r2Files';
 import { workerLogger } from './workerLogger';
 
-export interface ZipEntry {
-	path: string;
-	data: ArrayBuffer;
-}
-
 export interface ZipSource {
 	path: string;
 	objectKey: string;
 	size: number;
 }
 
-const MAX_CONCURRENT_R2_FETCHES = 4;
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const ZIP_DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
@@ -175,52 +169,6 @@ export const createZipSources = (
 			];
 		});
 
-/**
- * Fetches the body of each R2 object and returns ZipEntry records.
- * Objects whose key yields an empty filename after stripping the keyPrefix are skipped.
- * Objects that R2 returns null for (deleted between list and get) are silently skipped.
- *
- * @param pathPrefix if non-empty, files are nested under this folder in the ZIP
- */
-export const fetchR2Entries = async (
-	bucket: R2Bucket,
-	objects: R2ObjectMeta[],
-	keyPrefix: string,
-	pathPrefix: string
-): Promise<ZipEntry[]> => {
-	const entries: Array<ZipEntry | null> = new Array(objects.length).fill(null);
-	let nextIndex = 0;
-
-	const fetchEntry = async (obj: R2ObjectMeta): Promise<ZipEntry | null> => {
-		const path = toZipPath(obj.key, keyPrefix, pathPrefix);
-		if (!path) return null;
-
-		try {
-			const r2obj = await bucket.get(obj.key);
-			if (!r2obj) return null;
-
-			const data = await r2obj.arrayBuffer();
-			return { path, data } satisfies ZipEntry;
-		} catch (error) {
-			workerLogger.warn(`Failed to fetch R2 object: ${obj.key}`, { error });
-			return null;
-		}
-	};
-
-	const workerCount = Math.min(MAX_CONCURRENT_R2_FETCHES, objects.length);
-	await Promise.all(
-		Array.from({ length: workerCount }, async () => {
-			while (nextIndex < objects.length) {
-				const currentIndex = nextIndex;
-				nextIndex += 1;
-				entries[currentIndex] = await fetchEntry(objects[currentIndex]);
-			}
-		})
-	);
-
-	return entries.filter((e): e is ZipEntry => e !== null);
-};
-
 export const validateZipSources = async (bucket: R2Bucket, sources: ZipSource[]): Promise<void> => {
 	const headResults = await Promise.all(sources.map((source) => bucket.head(source.objectKey)));
 	for (let i = 0; i < sources.length; i += 1) {
@@ -269,20 +217,25 @@ const zipChunks = async function* (
 
 		if (r2obj.body) {
 			const reader = r2obj.body.getReader();
-			let streamDone = false;
-			while (!streamDone) {
-				const { done, value } = await reader.read();
-				streamDone = done;
-				if (streamDone) {
-					break;
-				}
+			try {
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) {
+						break;
+					}
 
-				const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
-				size += chunk.byteLength;
-				ensureZip32Range(size, `Streamed size for ${source.path}`);
-				crc32 = updateCrc32(crc32, chunk);
-				yield chunk;
-				offset += chunk.byteLength;
+					const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+					size += chunk.byteLength;
+					ensureZip32Range(size, `Streamed size for ${source.path}`);
+					crc32 = updateCrc32(crc32, chunk);
+					yield chunk;
+					offset += chunk.byteLength;
+				}
+			} finally {
+				// Release the R2 body when the consumer aborts mid-file or the
+				// loop exits with an error; cancel() is a no-op on an
+				// already-drained stream.
+				await reader.cancel();
 			}
 		} else {
 			const chunk = new Uint8Array(await r2obj.arrayBuffer());
@@ -349,8 +302,8 @@ export const buildZipStream = (
 				controller.enqueue(value);
 			}
 		},
-		cancel() {
-			iterator.return(undefined);
+		async cancel() {
+			await iterator.return(undefined);
 		}
 	});
 };

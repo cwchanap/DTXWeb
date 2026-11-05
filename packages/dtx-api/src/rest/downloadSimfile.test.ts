@@ -84,7 +84,7 @@ const validAuthSession = (): NonNullable<Awaited<ReturnType<typeof resolveAuthSe
 
 beforeEach(() => {
 	mockedGetOwner.mockReset();
-	mockedRate.mockReset().mockResolvedValue({ allowed: true, remainingBytes: 0 });
+	mockedRate.mockReset().mockResolvedValue({ allowed: true });
 	mockedCreateZipSources
 		.mockReset()
 		.mockReturnValue([{ objectKey: '42/a.dtx', size: 100, path: 'a.dtx' }]);
@@ -201,7 +201,7 @@ describe('GET /downloads/:id', () => {
 
 	it('429 on rate limit hit', async () => {
 		mockedGetOwner.mockResolvedValue({ user_id: 'u1', is_published: 1 });
-		mockedRate.mockResolvedValue({ allowed: false, remainingBytes: 0 });
+		mockedRate.mockResolvedValue({ allowed: false });
 		const response = await routeDownloadSimfile(
 			req(),
 			makeEnv({ PUBLIC_ENABLE_BLOG_DOWNLOAD: 'true' }),

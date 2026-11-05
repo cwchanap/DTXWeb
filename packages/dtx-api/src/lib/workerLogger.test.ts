@@ -42,15 +42,41 @@ describe('workerLogger', () => {
 		expect(payload.ts).not.toBe('not-a-timestamp');
 	});
 
-	it('serializes a logged Error as { message, stack } instead of {}', () => {
+	it('serializes a logged Error with name/message/stack instead of {}', () => {
 		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 		const failure = new Error('R2 fetch failed');
 
 		workerLogger.error('download failed', { error: failure, simfileId: 42 });
 
 		const payload = JSON.parse(spy.mock.calls[0][0] as string);
-		expect(payload.error).toEqual({ message: 'R2 fetch failed', stack: failure.stack });
+		expect(payload.error).toEqual({
+			name: 'Error',
+			message: 'R2 fetch failed',
+			stack: failure.stack
+		});
 		expect(payload.simfileId).toBe(42);
+	});
+
+	it('serializes error cause chains and enumerable own properties', () => {
+		const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		const cause = new TypeError('underlying SQLite constraint');
+		const failure = new Error('D1 query failed', { cause });
+		(failure as Error & { code: string }).code = 'D1_ERROR';
+
+		workerLogger.error('query failed', { error: failure });
+
+		const payload = JSON.parse(spy.mock.calls[0][0] as string);
+		expect(payload.error).toEqual({
+			name: 'Error',
+			message: 'D1 query failed',
+			stack: failure.stack,
+			code: 'D1_ERROR',
+			cause: {
+				name: 'TypeError',
+				message: 'underlying SQLite constraint',
+				stack: cause.stack
+			}
+		});
 	});
 
 	it('does not wrap non-Error meta values', () => {

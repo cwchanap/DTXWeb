@@ -46,6 +46,11 @@
 			"types": "./dist/audio.d.ts",
 			"import": "./dist/audio.js",
 			"default": "./dist/audio.js"
+		},
+		"./encoding": {
+			"types": "./dist/encoding.d.ts",
+			"import": "./dist/encoding.js",
+			"default": "./dist/encoding.js"
 		}
 	},
 	"peerDependencies": {

@@ -116,10 +116,6 @@ export interface UserProfileInsert {
 	username: string;
 }
 
-export interface UserProfileUpdate {
-	username?: string;
-}
-
 /** Simfile with joined dtx_files — the API-facing shape with boolean is_published.
  * Owner-only fields are optional because publishedOnly queries intentionally omit them. */
 export interface SimfileWithDtxFiles extends Omit<

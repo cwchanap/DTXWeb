@@ -6,7 +6,6 @@ const KV_TTL_SECONDS = 120; // cover current and previous minute window
 
 export interface RateLimitResult {
 	allowed: boolean;
-	remainingBytes: number;
 }
 
 const getRateLimitKey = (ip: string, nowMinute: number): string => `dl:${ip}:${nowMinute}`;
@@ -60,10 +59,7 @@ export const tryConsumeRateLimit = async (
 		if (allowed && consume) {
 			await kv.put(key, String(current + bytes), { expirationTtl: KV_TTL_SECONDS });
 		}
-		return {
-			allowed,
-			remainingBytes: Math.max(0, Math.floor(RATE_LIMIT_BYTES - windowTotal))
-		};
+		return { allowed };
 	} catch (error) {
 		workerLogger.error('Rate limit KV error', { key, error });
 		throw error;

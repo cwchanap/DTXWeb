@@ -148,7 +148,7 @@ The ui-components package exports:
 - The API Worker owns its persistence layer: D1 queries and schema live in `src/db/`, D1 migrations in `d1-migrations/` (applied via Wrangler), R2 helpers in `src/lib/r2Files.ts`, and the KV-backed rate limiter in `src/lib/rateLimiter.ts`. Worker-only helpers (`workerLogger`, `zipBuilder`) also live in `src/lib/` — `@dtx/common` stays a pure parsing/UI/game package with no server utilities.
 - Auth uses Better Auth and Pothos scope-auth; requests carry the Better Auth session context (`context.ts`). Desktop clients authenticate through OAuth Device Authorization and send Bearer session tokens (`Authorization: Bearer`).
 - The web client consumes it through generated typed documents: edit a GraphQL operation, then run the web `codegen` script to refresh `src/lib/api/generated/`. `lint:codegen` fails CI if generated output is stale, so commit regenerated files.
-- In production the web Worker reaches the API through a service binding (`API` → `dtx-api` in `wrangler.jsonc`, used by `ctx.platform.env.API` during SSR); browsers call the API directly at `PUBLIC_DTX_API_URL`. Local dev runs on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
+- During SSR the web Worker reaches the API through the `API` service binding when one is configured (`ctx.platform.env.API` in `wrangler.jsonc`): production binds `API` → `dtx-api`, pre-prod binds `API` → `dtx-api-pre-prod`, and local dev declares no binding, so SSR falls back to `PUBLIC_DTX_API_URL` the same way browsers do. Local dev runs the API on port `8787` (`dtx-api#dev:local`); web/desktop point at it via `VITE_DTX_API_URL` / `PUBLIC_DTX_API_URL`.
 
 ### Desktop (Tauri) Backend
 

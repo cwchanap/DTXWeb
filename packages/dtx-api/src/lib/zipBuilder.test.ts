@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import JSZip from 'jszip';
-import { buildZipStream, createZipSources, fetchR2Entries, validateZipSources } from './zipBuilder';
+import { buildZipStream, createZipSources, validateZipSources } from './zipBuilder';
 import type { R2ObjectMeta } from './r2Files';
 
 vi.mock('./workerLogger', () => ({
@@ -50,72 +50,6 @@ const findSignatureOffset = (bytes: Uint8Array, signature: number) => {
 
 	return -1;
 };
-
-describe('fetchR2Entries', () => {
-	it('limits concurrent R2 fetches while preserving entry order', async () => {
-		let activeFetches = 0;
-		let maxConcurrentFetches = 0;
-
-		const bucket = {
-			get: vi.fn(async (key: string) => {
-				activeFetches += 1;
-				maxConcurrentFetches = Math.max(maxConcurrentFetches, activeFetches);
-
-				return {
-					arrayBuffer: async () => {
-						await wait(5);
-						activeFetches -= 1;
-						return new TextEncoder().encode(key).buffer;
-					}
-				};
-			})
-		} as unknown as R2Bucket;
-
-		const objects: R2ObjectMeta[] = Array.from({ length: 10 }, (_, index) => ({
-			key: `42/file-${index}.dtx`,
-			size: 32,
-			uploaded: new Date()
-		}));
-
-		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
-
-		expect(entries).toHaveLength(10);
-		expect(entries.map((entry) => entry.path)).toEqual(
-			objects.map((obj) => `chart-42/${obj.key.slice('42/'.length)}`)
-		);
-		expect(maxConcurrentFetches).toBeLessThanOrEqual(4);
-	});
-
-	it('skips unsafe filenames when building ZIP entries', async () => {
-		const bucket = {
-			get: vi.fn(async (key: string) => ({
-				arrayBuffer: async () => new TextEncoder().encode(key).buffer
-			}))
-		} as unknown as R2Bucket;
-
-		const objects: R2ObjectMeta[] = [
-			{ key: '42/file.dtx', size: 32, uploaded: new Date() },
-			{ key: '42/hi:hat.wav', size: 32, uploaded: new Date() },
-			{ key: '42/../secret.txt', size: 32, uploaded: new Date() },
-			{ key: '42/folder\\evil.dtx', size: 32, uploaded: new Date() },
-			{ key: '42/C:/evil.dtx', size: 32, uploaded: new Date() },
-			{ key: '42//double-slash.dtx', size: 32, uploaded: new Date() }
-		];
-
-		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
-
-		expect(entries).toHaveLength(2);
-		expect(entries.map((entry) => entry.path)).toEqual([
-			'chart-42/file.dtx',
-			'chart-42/hi:hat.wav'
-		]);
-		expect(entries[0].data.byteLength).toBeGreaterThan(0);
-		expect(entries[1].data.byteLength).toBeGreaterThan(0);
-		expect(bucket.get).toHaveBeenCalledTimes(2);
-		expect(bucket.get).toHaveBeenCalledWith('42/file.dtx');
-		expect(bucket.get).toHaveBeenCalledWith('42/hi:hat.wav');
-	});
-});
 
 describe('buildZipStream', () => {
 	it('streams ZIP contents directly from R2 object bodies', async () => {
@@ -351,44 +285,6 @@ describe('createZipSources', () => {
 
 	it('returns empty array for empty input', () => {
 		expect(createZipSources([], '42/', 'chart-42')).toEqual([]);
-	});
-});
-
-describe('fetchR2Entries – additional cases', () => {
-	it('skips objects when bucket.get returns null (deleted between list and fetch)', async () => {
-		const bucket = {
-			get: vi.fn(async (key: string) => {
-				if (key === '42/deleted.wav') return null;
-				return { arrayBuffer: async () => new TextEncoder().encode('data').buffer };
-			})
-		} as unknown as R2Bucket;
-
-		const objects: R2ObjectMeta[] = [
-			{ key: '42/song.dtx', size: 10, uploaded: new Date() },
-			{ key: '42/deleted.wav', size: 10, uploaded: new Date() }
-		];
-
-		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
-		expect(entries).toHaveLength(1);
-		expect(entries[0].path).toBe('chart-42/song.dtx');
-	});
-
-	it('silently skips objects when bucket.get throws', async () => {
-		const bucket = {
-			get: vi.fn(async (key: string) => {
-				if (key === '42/broken.wav') throw new Error('R2 error');
-				return { arrayBuffer: async () => new TextEncoder().encode('ok').buffer };
-			})
-		} as unknown as R2Bucket;
-
-		const objects: R2ObjectMeta[] = [
-			{ key: '42/song.dtx', size: 10, uploaded: new Date() },
-			{ key: '42/broken.wav', size: 10, uploaded: new Date() }
-		];
-
-		const entries = await fetchR2Entries(bucket, objects, '42/', 'chart-42');
-		expect(entries).toHaveLength(1);
-		expect(entries[0].path).toBe('chart-42/song.dtx');
 	});
 });
 

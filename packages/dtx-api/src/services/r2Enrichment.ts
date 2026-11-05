@@ -1,12 +1,14 @@
-import { decodeArrayBufferWithBomDetection } from '@dtx/common';
+import { decodeArrayBufferWithBomDetection } from '@dtx/common/encoding';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
 	FULL_TRACK_AUDIO_EXTENSIONS,
 	isPreviewKey,
+	isPreviewMp3Key,
 	isTopLevelNamedR2Key,
 	isTopLevelR2Key,
 	listAllR2Objects,
+	listR2ObjectPages,
 	r2FileName,
 	selectTopLevelFullTrackObject,
 	toPublicR2Url,
@@ -71,8 +73,6 @@ export type CatalogDiscoveryOptions = {
  * dtx-web REST endpoint (MAX_CONCURRENT_R2_CHECKS = 4).
  */
 const MAX_CONCURRENT_R2_LIST = 4;
-
-const isPreviewMp3Key = (key: string): boolean => r2FileName(key).toLowerCase() === 'preview.mp3';
 
 const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
 
@@ -411,33 +411,11 @@ export const enrichHasUploadedFiles = async (
 	simfileId: number
 ): Promise<boolean> => {
 	const prefix = `${simfileId}/`;
-	let cursor: string | undefined;
-	let truncated: boolean;
-	const MAX_PAGES = 1000;
-	let pages = 0;
-	do {
-		if (++pages > MAX_PAGES) {
-			throw new Error(
-				`R2 pagination exceeded MAX_PAGES in enrichHasUploadedFiles for simfile ${simfileId}`
-			);
+	for await (const page of listR2ObjectPages(bucket, prefix)) {
+		if (page.some((obj) => obj.key.length > prefix.length && !isPreviewKey(obj.key))) {
+			return true;
 		}
-		const listed = await bucket.list({ prefix, cursor });
-		for (const obj of listed.objects) {
-			if (obj.key.length > prefix.length && !isPreviewKey(obj.key)) {
-				return true;
-			}
-		}
-		truncated = listed.truncated;
-		if (truncated) {
-			const nextCursor = (listed as { cursor?: string }).cursor;
-			if (!nextCursor || nextCursor === cursor) {
-				throw new Error(
-					`R2 pagination stalled in enrichHasUploadedFiles for simfile ${simfileId}`
-				);
-			}
-			cursor = nextCursor;
-		}
-	} while (truncated);
+	}
 	return false;
 };
 

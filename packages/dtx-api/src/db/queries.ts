@@ -6,7 +6,6 @@ import type {
 	DtxFileInsert,
 	UserProfileRow,
 	UserProfileInsert,
-	UserProfileUpdate,
 	SimfileWithDtxFiles,
 	ChartScoreRow,
 	ScoreRow,
@@ -561,19 +560,6 @@ export const upsertUserProfile = async (
 
 	if (!result) throw new Error('Failed to upsert user profile');
 	return result;
-};
-
-export const updateUserProfile = async (
-	db: D1Database,
-	userId: string,
-	data: UserProfileUpdate
-): Promise<UserProfileRow | null> => {
-	if (!data.username) return getUserProfile(db, userId);
-
-	return db
-		.prepare('UPDATE user_profiles SET username = ? WHERE user_id = ? RETURNING *')
-		.bind(data.username, userId)
-		.first<UserProfileRow>();
 };
 
 // ---------------------------------------------------------------------------

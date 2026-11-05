@@ -21,14 +21,7 @@ async function parseDefFileContent(content: string): Promise<SimFileMetadata> {
 
 	// Extract title - handle both space and colon separators
 	const titleLine = lines.find((line: string) => line.startsWith('#TITLE'));
-	let title = '';
-	if (titleLine) {
-		if (titleLine.includes(':')) {
-			title = titleLine.split(':')[1]?.trim() || '';
-		} else {
-			title = titleLine.split('#TITLE ')[1]?.trim() || '';
-		}
-	}
+	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/, '').trim() : '';
 
 	// Extract level information - use regex for more robust parsing
 	const levels: SimFileMetadata['levels'] = {};

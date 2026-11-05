@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
 	FULL_TRACK_AUDIO_EXTENSIONS,
 	isPreviewKey,
+	isPreviewMp3Key,
 	isTopLevelNamedR2Key,
 	isTopLevelR2Key,
 	listAllR2Objects,
@@ -10,16 +11,15 @@ import {
 	selectTopLevelFullTrackObject,
 	toPublicR2Url
 } from './r2Files';
+import { workerLogger } from './workerLogger';
 
 vi.mock('./workerLogger', () => ({
 	workerLogger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() }
 }));
 
-beforeEach(() => {
-	vi.clearAllMocks();
-});
+const mockedWarn = vi.mocked(workerLogger.warn);
 
-afterEach(() => {
+beforeEach(() => {
 	vi.clearAllMocks();
 });
 
@@ -114,6 +114,13 @@ describe('isPreviewKey', () => {
 
 	it('returns true for preview.mp3 in a nested subdirectory', () => {
 		expect(isPreviewKey('charts/42/preview.mp3')).toBe(true);
+	});
+
+	it('matches preview filenames case-insensitively', () => {
+		expect(isPreviewKey('123/Preview.MP3')).toBe(true);
+		expect(isPreviewKey('PREVIEW.JPG')).toBe(true);
+		expect(isPreviewMp3Key('42/PREVIEW.MP3')).toBe(true);
+		expect(isPreviewMp3Key('42/preview.jpg')).toBe(false);
 	});
 
 	it('returns false for other filenames', () => {
@@ -226,6 +233,9 @@ describe('listAllR2Objects', () => {
 		await expect(listAllR2Objects(bucket, 'prefix/')).rejects.toThrow(
 			'R2 pagination cursor unavailable'
 		);
+		expect(mockedWarn).toHaveBeenCalledWith(
+			'R2 list truncated without valid cursor for prefix "prefix/"'
+		);
 	});
 
 	it('throws when cursor repeats (infinite loop guard)', async () => {
@@ -243,6 +253,9 @@ describe('listAllR2Objects', () => {
 
 		await expect(listAllR2Objects(bucket, 'prefix/')).rejects.toThrow(
 			'R2 pagination cursor unavailable'
+		);
+		expect(mockedWarn).toHaveBeenCalledWith(
+			'R2 list truncated without valid cursor for prefix "prefix/"'
 		);
 		// Should throw on the second call (cursor repeated)
 		expect(calls).toBe(2);

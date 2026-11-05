@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { KVNamespace } from '@cloudflare/workers-types';
 import { getClientIp, tryConsumeRateLimit } from './rateLimiter';
 
@@ -55,10 +55,6 @@ describe('tryConsumeRateLimit', () => {
 		vi.clearAllMocks();
 	});
 
-	afterEach(() => {
-		vi.clearAllMocks();
-	});
-
 	it('falls back to zero when KV contains an invalid value', async () => {
 		const kv = {
 			get: vi.fn().mockResolvedValueOnce('not-a-number').mockResolvedValueOnce(null),
@@ -67,7 +63,7 @@ describe('tryConsumeRateLimit', () => {
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123 * 60000);
 
-		expect(result).toEqual({ allowed: true, remainingBytes: 1073741824 });
+		expect(result).toEqual({ allowed: true });
 		expect(kv.get).toHaveBeenNthCalledWith(1, 'dl:1.2.3.4:123');
 		expect(kv.get).toHaveBeenNthCalledWith(2, 'dl:1.2.3.4:122');
 		expect(kv.put).toHaveBeenCalledWith('dl:1.2.3.4:123', '128', { expirationTtl: 120 });
@@ -81,7 +77,7 @@ describe('tryConsumeRateLimit', () => {
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, 123 * 60000);
 
-		expect(result).toEqual({ allowed: false, remainingBytes: 0 });
+		expect(result).toEqual({ allowed: false });
 		expect(kv.put).not.toHaveBeenCalled();
 	});
 
@@ -93,7 +89,7 @@ describe('tryConsumeRateLimit', () => {
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 128, 123 * 60000, false);
 
-		expect(result).toEqual({ allowed: true, remainingBytes: 1073741056 });
+		expect(result).toEqual({ allowed: true });
 		expect(kv.put).not.toHaveBeenCalled();
 	});
 
@@ -103,11 +99,10 @@ describe('tryConsumeRateLimit', () => {
 			put: vi.fn().mockResolvedValue(undefined)
 		} as unknown as KVNamespace;
 
-		const expectedRemainingBytes = 1055845623;
 		const now = 123 * 60000 + 59000;
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 1, now);
 
-		expect(result).toEqual({ allowed: true, remainingBytes: expectedRemainingBytes });
+		expect(result).toEqual({ allowed: true });
 		expect(kv.put).toHaveBeenCalledWith('dl:1.2.3.4:123', '513', { expirationTtl: 120 });
 	});
 
@@ -136,14 +131,14 @@ describe('tryConsumeRateLimit', () => {
 		expect(kv.put).not.toHaveBeenCalled();
 	});
 
-	it('remainingBytes is 0 when limit is exactly met', async () => {
+	it('allows a request that exactly meets the limit', async () => {
 		const kv = {
 			get: vi.fn().mockResolvedValueOnce('1073741824').mockResolvedValueOnce(null),
 			put: vi.fn()
 		} as unknown as KVNamespace;
 
 		const result = await tryConsumeRateLimit(kv, '1.2.3.4', 0, 123 * 60000);
-		expect(result.remainingBytes).toBe(0);
+		expect(result.allowed).toBe(true);
 	});
 
 	it('handles negative stored values gracefully by treating them as zero', async () => {

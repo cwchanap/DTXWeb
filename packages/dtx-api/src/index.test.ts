@@ -66,7 +66,7 @@ vi.mock('./lib/r2Files', async () => {
 
 vi.mock('./lib/rateLimiter', () => ({
 	getClientIp: vi.fn(() => null),
-	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true, remainingBytes: 0 }))
+	tryConsumeRateLimit: vi.fn(async () => ({ allowed: true }))
 }));
 
 vi.mock('./db/queries', () => ({

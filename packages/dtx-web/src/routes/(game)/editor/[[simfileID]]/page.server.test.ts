@@ -151,6 +151,16 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		expect(result.metadata?.title).toBe('Colon Title');
 	});
 
+	it('preserves colons inside the title itself', async () => {
+		const defContent = '#TITLE: Re: Zero\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+		const buffer = new TextEncoder().encode(defContent).buffer;
+		const fetchSpy = vi.fn().mockResolvedValue(arrayBufferResponse(buffer));
+		const result = requirePageLoadResult(
+			await callLoad('colon-in-title', fetchSpy as unknown as typeof fetch)
+		);
+		expect(result.metadata?.title).toBe('Re: Zero');
+	});
+
 	it('throws 500 with Unknown error when fetch rejects with non-Error', async () => {
 		const fetchSpy = vi.fn().mockRejectedValue('string error');
 		await expect(callLoad('err', fetchSpy as unknown as typeof fetch)).rejects.toMatchObject({

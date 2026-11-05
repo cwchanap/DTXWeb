@@ -32,7 +32,6 @@ export default defineConfig({
 			'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib'),
 			'@dtx/common/components': path.resolve(__dirname, '../common/src/lib/components.ts'),
 			'@dtx/common/game': path.resolve(__dirname, '../common/src/lib/game.ts'),
-			'@dtx/common/server': path.resolve(__dirname, '../common/src/lib/server.ts'),
 			'@dtx/common': path.resolve(__dirname, '../common/src/lib')
 		}
 	}

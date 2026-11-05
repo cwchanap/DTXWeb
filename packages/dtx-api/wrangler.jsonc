@@ -3,7 +3,6 @@
 	"name": "dtx-api-local",
 	"main": "src/index.ts",
 	"alias": {
-		"@dtx/common/server": "../common/src/lib/server.ts",
 		"@dtx/common": "../common/src/lib/index.ts"
 	},
 	"compatibility_date": "2025-01-01",

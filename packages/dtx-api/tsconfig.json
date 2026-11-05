@@ -6,7 +6,6 @@
 		"moduleResolution": "Bundler",
 		"baseUrl": ".",
 		"paths": {
-			"@dtx/common/server": ["../common/src/lib/server.ts"],
 			"@dtx/common": ["../common/src/lib/index.ts"]
 		},
 		"lib": ["ES2022"],

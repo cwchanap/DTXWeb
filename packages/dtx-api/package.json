@@ -39,21 +39,21 @@
 		"@pothos/core": "^4.16.0",
 		"@pothos/plugin-errors": "^4.9.3",
 		"@pothos/plugin-scope-auth": "^4.2.2",
-		"better-auth": "1.7.12",
+		"better-auth": "1.7.15",
 		"drizzle-orm": "^0.45.4",
 		"graphql": "^17.0.2",
 		"graphql-yoga": "^5.24.4",
 		"zod": "^4.6.7"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^5.20261023.1",
-		"@vitest/coverage-v8": "^4.1.11",
-		"auth": "1.7.12",
+		"@cloudflare/workers-types": "^5.20261103.1",
+		"@vitest/coverage-v8": "^5.1.0",
+		"auth": "1.7.15",
 		"drizzle-kit": "^0.31.11",
 		"jszip": "^3.10.2",
 		"miniflare": "^4.20260730.0",
 		"typescript": "^5.8.3",
-		"vitest": "^4.1.11",
-		"wrangler": "^4.152.0"
+		"vitest": "^5.1.0",
+		"wrangler": "^4.156.2"
 	}
 }

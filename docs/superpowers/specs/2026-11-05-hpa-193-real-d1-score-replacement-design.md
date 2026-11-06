@@ -1,49 +1,44 @@
 # HPA-193 — Real-D1 Score Replacement Regression Design
 
 **Date:** 2026-11-05  
-**Status:** Draft — design only; implementation to follow on this same PR  
+**Status:** Draft, revised after [GitHub design review](https://github.com/cwchanap/DTXWeb/pull/337#issuecomment-6673745114)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-193/dtxwebquality-add-one-real-d1-score-replacement-test  
-**Delivery:** One PR for design, plan, implementation, and verification. Do not open a second PR.
+**Delivery:** One PR for design, implementation, tests, and verification; no follow-up PR.
 
 ## Goal
 
-Prove that the existing `upsertChartScoreAndReplaceScores` operation retains only the latest score set after **insert → replace → replace** on real D1, with correct column bindings, sort order, one best row, and no orphaned scores.
+Prove on real D1 that **insert → replace → replace** on the same chart/user retains only the final score set, correctly maps every score INSERT binding, sorts best-first then by `display_order`, and preserves one aggregate with no stale/extra score records.
 
-## Current repository evidence
+## Existing setup — reuse it
 
-- The persistence function now lives in `packages/dtx-api/src/db/queries.ts` (moved from `@dtx/common/server` under HPA-617). It executes one `db.batch`: visible-chart-gated `chart_scores` upsert, delete of previous `scores`, and inserts whose `chart_score_id` resolves by `(user_id, chart_id)`.
-- `packages/dtx-api/src/db/queries.integration.test.ts` already creates a Miniflare D1 database, applies numbered migrations from `packages/dtx-api/d1-migrations`, resets tables per test, and seeds `user-1` / chart `1`. Reuse its `db`, `scoreInput`, and `defaultChartScoreFields` helpers.
-- The existing real-D1 suite verifies initial insertion, a **single** replacement, aggregate upsert, TOCTOU visibility, the `idx_scores_one_best` and `idx_scores_display_order` partial unique indexes, and the score read path. The three-write final-state regression is the missing focused scenario, not a reason to recreate any harness.
-- `0002_scores.sql` creates score indexes and checks; `0007_score_semantics.sql` relocates chart-level fields and constrains best-row metadata. Both are already covered by the migration setup. `queries.test.ts` retains fast mock/statement-shape tests.
+- `packages/dtx-api/src/db/queries.integration.test.ts` already runs Miniflare D1, applies all numbered migrations from `dtx-api/d1-migrations`, resets schema per test, and seeds `user-1` / chart `1`. Add **one `it()`** inside its existing `describe('upsertChartScoreAndReplaceScores (real D1)')`; reuse `db`, `scoreInput` and `defaultChartScoreFields`.
+- `packages/dtx-api/src/db/queries.ts` writes a chart aggregate, DELETEs prior scores and INSERTs replacements as one D1 batch. `getUserChartScore` already orders by `is_best DESC, display_order ASC`.
+- `queries.integration.test.ts` already covers a single replacement, aggregate upsert, TOCTOU, and negative tests for partial unique indexes `idx_scores_one_best` and `idx_scores_display_order`. `queries.test.ts` covers mock statement shapes. **Do not repeat those tests** or create another harness.
+- `0002_scores.sql` and `0007_score_semantics.sql` define the real constraints. Keep best-row rate/rank/cleared/performed-at/display-order **NULL**; chart-level rate/rank live on `chart_scores`.
 
-## One new integration scenario
+## Single test fixture
 
-Add a single `it(...)` case under the existing `describe('upsertChartScoreAndReplaceScores (real D1)')` in `queries.integration.test.ts`.
-
-| Phase | Aggregate and score contents | Intent |
+| Write | Data | Purpose |
 | --- | --- | --- |
-| Insert | `playCount=2`, `clearCount=1`; best score `700000`; recent result at `display_order=1` | Establish first chart-score row and first child set. |
-| First replace | `playCount=5`, `clearCount=3`; best `800000`; recents at orders `1` and `2` with different rate/rank values | Replace first set, changing row count and metadata. |
-| Final replace | `playCount=9`, `clearCount=7`, `fullCombo=true`, `maxCombo=913`, chart best rate `98.5`, chart rank `SS`, a distinct last-played timestamp; best `990000` with distinct judgment counts; **insert recent order `2` before order `1`** with distinct rate, rank, cleared, and played-at values | Show final writes win and read-path ordering is independent of insert order. |
+| First insert | `playCount=2`, `clearCount=1`; best score `700000`, recent order 1 | Initial chart-score and two children |
+| First replace | `playCount=5`, `clearCount=3`; best `800000`, recents at orders 1 and 2 | Overwrite earlier children |
+| Final replace | `playCount=9`, `clearCount=7`, `fullCombo=true`, `maxCombo=913`, `bestAchievementRate=98.5`, `bestRankLabel='SS'`, a fixed `lastPlayedAt`; best `990000` and two recents, **inserted order 2 then order 1** | Verify final bindings, replacement, and read ordering |
 
-All phase values must satisfy the existing migration constraints. The best row includes numerical score/judgments but **no** achievement, rank, cleared, performed-at, or display-order fields; recent rows use their own nullable metadata. Use visibly different sentinels for `perfect`, `great`, `good`, `poor`, `miss`, `cleared`, `achievement_rate`, `rank_label`, and `performed_at` to expose bind-position mistakes.
+Use **pairwise-distinct judgment sentinels within each final score row** to catch swapped bind positions, not elaborate phase-one/two fixtures. For example:
+- Best: `score=990000`, `perfect=501`, `great=402`, `good=303`, `poor=204`, `miss=105`; score-level `achievement_rate`, `rank_label`, `cleared`, `performed_at`, `display_order` are NULL.
+- Recent **order 2** (inserted first): `achievement_rate=83.25`, `rank_label='A'`, `cleared=false`, `perfect=31`, `great=22`, `good=13`, `poor=4`, `miss=1`, `performed_at='2026-10-02T14:00:00Z'`.
+- Recent **order 1** (inserted second): `achievement_rate=94.5`, `rank_label='S'`, `cleared=true`, `perfect=61`, `great=42`, `good=23`, `poor=4`, `miss=2`, `performed_at='2026-10-03T16:00:00Z'`.
 
-## Assertions
+Leave recent `score` values NULL and use `scoreInput` defaults where possible. Set `lastPlayedAt` to a distinctive fixed value. The false/true `cleared` pair specifically verifies `false` binds as `0`, not NULL.
 
-1. The same `chart_scores.id` is returned by all three writes and exactly **one** aggregate exists for `(user-1, chart 1)`; its final chart-level values match phase three.
-2. A direct `scores` query and/or existing `getUserChartScore` returns **only** the three final rows, in order: one best, then `display_order` 1 and 2. Exact selected fields match phase three (including `NULL`, 0/1 booleans, timestamps, and judgment counts). No phase-one/two sentinel score or recent metadata survives.
-3. Count best rows for this chart-score ID and assert exactly one; count `display_order` values and assert they are distinct. The existing real-D1 negative tests already prove both **partial unique indexes reject duplicate inserts**; retain them without duplicating a framework or test matrix.
-4. Run a `scores LEFT JOIN chart_scores` orphan query and assert zero rows where `chart_scores.id IS NULL`; all final rows reference the same surviving aggregate ID.
+## Minimal assertions
 
-## Guardrails and non-goals
+1. All three writes return the **same** `chart_scores.id`. Assert the final chart-level fields with `toMatchObject` on the third result (do not compare generated `created_at`/`updated_at` with a full-row `toEqual`). Optionally confirm `third.created_at === first.created_at` to verify the conflict update preserves creation time.
+2. Call `getUserChartScore(db, 'user-1', 1)` **once**; project each score row to remove generated `id`, `chart_score_id` and `created_at`, then `toEqual` the exact ordered `[best, recentOrder1, recentOrder2]` values, including nulls, booleans (0/1), rank, rates, judgments, and timestamps. This single assertion proves best uniqueness and distinct display orders; the existing negative index tests enforce the actual constraints.
+3. Assert `SELECT COUNT(*) AS cnt FROM scores` **without WHERE** returns `3`, and `SELECT COUNT(*) AS cnt FROM chart_scores` returns `1`. The setup contains no other scores. Together with the three retrieved rows and real-D1 foreign-key constraints, these counts rule out stale rows under any ID or orphaned score records. **Do not add a `LEFT JOIN ... WHERE cs.id IS NULL` assertion:** Miniflare enforces the foreign key, and this case never deletes `chart_scores`; the join would add no useful signal.
 
-- Touch only the existing API integration test when implementing. Do not change production SQL, migrations, schema, GraphQL, CI configuration, workspace layout, packages, or lockfile.
-- No shared Miniflare setup, new test helper abstraction, new package, or separate integration-test runner.
-- Keep current mock tests and independent constraint tests. Do not add a second redundant suite just to repeat their coverage.
-- Test the current source location in `dtx-api`, not historical `@dtx/common/server` paths.
+## Guardrails and acceptance
 
-## Acceptance
-
-- One new real-D1 regression follows all three writes and asserts the complete final state, ordering, uniqueness, bind values, and absence of orphans.
-- Existing real-D1 constraint tests continue to pass; no new infrastructure is added.
-- Focused integration test, API test suite, and API typecheck pass in the implementation phase. Record actual results in this PR; do not claim tests passed while the PR contains only docs.
+- Only the existing API integration test changes in the implementation phase. No production SQL, schema, migrations, new mocks/helpers/frameworks, dependencies, CI jobs, GraphQL, or cross-package refactors.
+- Keep existing mock and partial-unique-index tests intact. Do not expand test coverage outside the requested three-write regression.
+- The focused integration test, API test suite, and API typecheck should pass. **Put observed commands/results in the PR description**, not duplicated in this design and plan. Keep both docs stable unless design decisions actually change.

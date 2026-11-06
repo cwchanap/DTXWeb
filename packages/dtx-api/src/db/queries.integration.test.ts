@@ -21,6 +21,7 @@ import {
 	updateSimfileDriveFile
 } from './queries';
 import type { D1Database } from '@cloudflare/workers-types';
+import type { ScoreRow } from './types';
 
 const MIGRATIONS_DIR = join(__dirname, '..', '..', 'd1-migrations');
 
@@ -803,6 +804,158 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(result.user_id).toBe('user-1');
 		const fetched = await getUserChartScore(db, 'user-1', 1);
 		expect(fetched!.scores).toHaveLength(1);
+	});
+
+	it('keeps only the final score set across repeated replacements', async () => {
+		const first = await upsertChartScoreAndReplaceScores(db, {
+			chartId: 1,
+			userId: 'user-1',
+			playCount: 2,
+			clearCount: 1,
+			...defaultChartScoreFields,
+			scores: [
+				scoreInput({ is_best: true, score: 700000 }),
+				scoreInput({ is_best: false, display_order: 1 })
+			]
+		});
+
+		const second = await upsertChartScoreAndReplaceScores(db, {
+			chartId: 1,
+			userId: 'user-1',
+			playCount: 5,
+			clearCount: 3,
+			...defaultChartScoreFields,
+			scores: [
+				scoreInput({ is_best: true, score: 800000 }),
+				scoreInput({ is_best: false, display_order: 1 }),
+				scoreInput({ is_best: false, display_order: 2 })
+			]
+		});
+
+		const third = await upsertChartScoreAndReplaceScores(db, {
+			chartId: 1,
+			userId: 'user-1',
+			playCount: 9,
+			clearCount: 7,
+			fullCombo: true,
+			maxCombo: 913,
+			bestAchievementRate: 98.5,
+			bestRankLabel: 'SS',
+			lastPlayedAt: '2026-10-04T18:30:00Z',
+			scores: [
+				scoreInput({
+					is_best: true,
+					score: 990000,
+					perfect: 501,
+					great: 402,
+					good: 303,
+					poor: 204,
+					miss: 105
+				}),
+				scoreInput({
+					display_order: 2,
+					achievement_rate: 83.25,
+					rank_label: 'A',
+					cleared: false,
+					perfect: 31,
+					great: 22,
+					good: 13,
+					poor: 4,
+					miss: 1,
+					performed_at: '2026-10-02T14:00:00Z'
+				}),
+				scoreInput({
+					display_order: 1,
+					achievement_rate: 94.5,
+					rank_label: 'S',
+					cleared: true,
+					perfect: 61,
+					great: 42,
+					good: 23,
+					poor: 4,
+					miss: 2,
+					performed_at: '2026-10-03T16:00:00Z'
+				})
+			]
+		});
+
+		expect(second.id).toBe(first.id);
+		expect(third.id).toBe(first.id);
+		expect(third.created_at).toBe(first.created_at);
+		expect(third).toMatchObject({
+			chart_id: 1,
+			user_id: 'user-1',
+			play_count: 9,
+			clear_count: 7,
+			full_combo: 1,
+			max_combo: 913,
+			best_achievement_rate: 98.5,
+			best_rank_label: 'SS',
+			last_played_at: '2026-10-04T18:30:00Z'
+		});
+
+		const finalBest = {
+			is_best: 1,
+			score: 990000,
+			achievement_rate: null,
+			rank_label: null,
+			cleared: null,
+			perfect: 501,
+			great: 402,
+			good: 303,
+			poor: 204,
+			miss: 105,
+			performed_at: null,
+			display_order: null
+		};
+		const finalRecent1 = {
+			is_best: 0,
+			score: null,
+			achievement_rate: 94.5,
+			rank_label: 'S',
+			cleared: 1,
+			perfect: 61,
+			great: 42,
+			good: 23,
+			poor: 4,
+			miss: 2,
+			performed_at: '2026-10-03T16:00:00Z',
+			display_order: 1
+		};
+		const finalRecent2 = {
+			is_best: 0,
+			score: null,
+			achievement_rate: 83.25,
+			rank_label: 'A',
+			cleared: 0,
+			perfect: 31,
+			great: 22,
+			good: 13,
+			poor: 4,
+			miss: 1,
+			performed_at: '2026-10-02T14:00:00Z',
+			display_order: 2
+		};
+
+		const fetched = await getUserChartScore(db, 'user-1', 1);
+		expect(fetched).not.toBeNull();
+		const projected = fetched!.scores.map((s) => {
+			const row = { ...s } as Partial<ScoreRow>;
+			delete row.id;
+			delete row.chart_score_id;
+			delete row.created_at;
+			return row;
+		});
+		expect(projected).toEqual([finalBest, finalRecent1, finalRecent2]);
+
+		const scoreCount = await db
+			.prepare('SELECT COUNT(*) AS cnt FROM scores')
+			.first<{ cnt: number }>();
+		expect(scoreCount!.cnt).toBe(3);
+		const chartScoreCount = await db
+			.prepare('SELECT COUNT(*) AS cnt FROM chart_scores')
+			.first<{ cnt: number }>();
+		expect(chartScoreCount!.cnt).toBe(1);
 	});
 });
 

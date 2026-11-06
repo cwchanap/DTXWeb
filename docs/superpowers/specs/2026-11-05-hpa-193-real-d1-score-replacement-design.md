@@ -1,7 +1,7 @@
 # HPA-193 — Real-D1 Score Replacement Regression Design
 
 **Date:** 2026-11-05  
-**Status:** Draft, revised after [GitHub design review](https://github.com/cwchanap/DTXWeb/pull/337#issuecomment-6673745114)  
+**Status:** Draft, revised after [design review Revision 2](https://github.com/cwchanap/DTXWeb/pull/337#pullrequestreview-5795402409)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-193/dtxwebquality-add-one-real-d1-score-replacement-test  
 **Delivery:** One PR for design, implementation, tests, and verification; no follow-up PR.
 
@@ -26,15 +26,62 @@ Prove on real D1 that **insert → replace → replace** on the same chart/user 
 
 Use **pairwise-distinct judgment sentinels within each final score row** to catch swapped bind positions, not elaborate phase-one/two fixtures. For example:
 - Best: `score=990000`, `perfect=501`, `great=402`, `good=303`, `poor=204`, `miss=105`; score-level `achievement_rate`, `rank_label`, `cleared`, `performed_at`, `display_order` are NULL.
-- Recent **order 2** (inserted first): `achievement_rate=83.25`, `rank_label='A'`, `cleared=false`, `perfect=31`, `great=22`, `good=13`, `poor=4`, `miss=1`, `performed_at='2026-10-02T14:00:00Z'`.
-- Recent **order 1** (inserted second): `achievement_rate=94.5`, `rank_label='S'`, `cleared=true`, `perfect=61`, `great=42`, `good=23`, `poor=4`, `miss=2`, `performed_at='2026-10-03T16:00:00Z'`.
+- Recent **order 2** (inserted first): **`display_order=2`**, `achievement_rate=83.25`, `rank_label='A'`, `cleared=false`, `perfect=31`, `great=22`, `good=13`, `poor=4`, `miss=1`, `performed_at='2026-10-02T14:00:00Z'`.
+- Recent **order 1** (inserted second): **`display_order=1`**, `achievement_rate=94.5`, `rank_label='S'`, `cleared=true`, `perfect=61`, `great=42`, `good=23`, `poor=4`, `miss=2`, `performed_at='2026-10-03T16:00:00Z'`.
 
 Leave recent `score` values NULL and use `scoreInput` defaults where possible. Set `lastPlayedAt` to a distinctive fixed value. The false/true `cleared` pair specifically verifies `false` binds as `0`, not NULL.
 
+The expected score-row projection excludes only generated `id`, `chart_score_id`, and `created_at`. Define these **exact 12-column objects** in the test and compare them in **read order** (not input order). D1/SQLite returns `is_best` and `cleared` as `0 | 1`, not JS booleans:
+
+```ts
+const finalBest = {
+	is_best: 1,
+	score: 990000,
+	achievement_rate: null,
+	rank_label: null,
+	cleared: null,
+	perfect: 501,
+	great: 402,
+	good: 303,
+	poor: 204,
+	miss: 105,
+	performed_at: null,
+	display_order: null
+};
+const finalRecent1 = {
+	is_best: 0,
+	score: null,
+	achievement_rate: 94.5,
+	rank_label: 'S',
+	cleared: 1,
+	perfect: 61,
+	great: 42,
+	good: 23,
+	poor: 4,
+	miss: 2,
+	performed_at: '2026-10-03T16:00:00Z',
+	display_order: 1
+};
+const finalRecent2 = {
+	is_best: 0,
+	score: null,
+	achievement_rate: 83.25,
+	rank_label: 'A',
+	cleared: 0,
+	perfect: 31,
+	great: 22,
+	good: 13,
+	poor: 4,
+	miss: 1,
+	performed_at: '2026-10-02T14:00:00Z',
+	display_order: 2
+};
+```
+
 ## Minimal assertions
 
-1. All three writes return the **same** `chart_scores.id`. Assert the final chart-level fields with `toMatchObject` on the third result (do not compare generated `created_at`/`updated_at` with a full-row `toEqual`). Optionally confirm `third.created_at === first.created_at` to verify the conflict update preserves creation time.
-2. Call `getUserChartScore(db, 'user-1', 1)` **once**; project each score row to remove generated `id`, `chart_score_id` and `created_at`, then `toEqual` the exact ordered `[best, recentOrder1, recentOrder2]` values, including nulls, booleans (0/1), rank, rates, judgments, and timestamps. This single assertion proves best uniqueness and distinct display orders; the existing negative index tests enforce the actual constraints.
+1. All three writes return the **same** `chart_scores.id`. Assert the final chart-level fields with `toMatchObject` on the third result (do not compare generated `created_at`/`updated_at` with a full-row `toEqual`). **Require** `expect(third.created_at).toBe(first.created_at)` to verify the conflict update preserves creation time.
+2. Call `getUserChartScore(db, 'user-1', 1)` **once**; project each score row to remove generated `id`, `chart_score_id` and `created_at`, then `toEqual([finalBest, finalRecent1, finalRecent2])` using the literal objects above, including nulls, SQLite integer flags (0/1), rank, rates, judgments, and timestamps. This single assertion proves best uniqueness and distinct display orders; the existing negative index tests enforce the actual constraints.
 3. Assert `SELECT COUNT(*) AS cnt FROM scores` **without WHERE** returns `3`, and `SELECT COUNT(*) AS cnt FROM chart_scores` returns `1`. The setup contains no other scores. Together with the three retrieved rows and real-D1 foreign-key constraints, these counts rule out stale rows under any ID or orphaned score records. **Do not add a `LEFT JOIN ... WHERE cs.id IS NULL` assertion:** Miniflare enforces the foreign key, and this case never deletes `chart_scores`; the join would add no useful signal.
 
 ## Guardrails and acceptance

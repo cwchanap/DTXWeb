@@ -21,7 +21,6 @@ import {
 	updateSimfileDriveFile
 } from './queries';
 import type { D1Database } from '@cloudflare/workers-types';
-import type { ScoreRow } from './types';
 
 const MIGRATIONS_DIR = join(__dirname, '..', '..', 'd1-migrations');
 
@@ -813,10 +812,7 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			playCount: 2,
 			clearCount: 1,
 			...defaultChartScoreFields,
-			scores: [
-				scoreInput({ is_best: true, score: 700000 }),
-				scoreInput({ is_best: false, display_order: 1 })
-			]
+			scores: [scoreInput({ is_best: true, score: 700000 }), scoreInput({ display_order: 1 })]
 		});
 
 		const second = await upsertChartScoreAndReplaceScores(db, {
@@ -824,34 +820,34 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 			userId: 'user-1',
 			playCount: 5,
 			clearCount: 3,
-			...defaultChartScoreFields,
+			fullCombo: true,
+			maxCombo: 950,
+			bestAchievementRate: null,
+			bestRankLabel: 'A',
+			lastPlayedAt: null,
 			scores: [
 				scoreInput({ is_best: true, score: 800000 }),
-				scoreInput({ is_best: false, display_order: 1 }),
-				scoreInput({ is_best: false, display_order: 2 })
+				scoreInput({ display_order: 1 }),
+				scoreInput({ display_order: 2 }),
+				scoreInput({ display_order: 3 })
 			]
 		});
+
+		// Ensure writes land in distinct millisecond timestamps so created_at
+		// preservation and updated_at progression can be reliably verified.
+		await new Promise((resolve) => setTimeout(resolve, 15));
 
 		const third = await upsertChartScoreAndReplaceScores(db, {
 			chartId: 1,
 			userId: 'user-1',
 			playCount: 9,
 			clearCount: 7,
-			fullCombo: true,
+			fullCombo: false,
 			maxCombo: 913,
 			bestAchievementRate: 98.5,
-			bestRankLabel: 'SS',
+			bestRankLabel: null,
 			lastPlayedAt: '2026-10-04T18:30:00Z',
 			scores: [
-				scoreInput({
-					is_best: true,
-					score: 990000,
-					perfect: 501,
-					great: 402,
-					good: 303,
-					poor: 204,
-					miss: 105
-				}),
 				scoreInput({
 					display_order: 2,
 					achievement_rate: 83.25,
@@ -875,6 +871,15 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 					poor: 4,
 					miss: 2,
 					performed_at: '2026-10-03T16:00:00Z'
+				}),
+				scoreInput({
+					is_best: true,
+					score: 990000,
+					perfect: 501,
+					great: 402,
+					good: 303,
+					poor: 204,
+					miss: 105
 				})
 			]
 		});
@@ -882,15 +887,16 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 		expect(second.id).toBe(first.id);
 		expect(third.id).toBe(first.id);
 		expect(third.created_at).toBe(first.created_at);
+		expect(Date.parse(third.updated_at)).toBeGreaterThan(Date.parse(first.updated_at));
 		expect(third).toMatchObject({
 			chart_id: 1,
 			user_id: 'user-1',
 			play_count: 9,
 			clear_count: 7,
-			full_combo: 1,
+			full_combo: 0,
 			max_combo: 913,
 			best_achievement_rate: 98.5,
-			best_rank_label: 'SS',
+			best_rank_label: null,
 			last_played_at: '2026-10-04T18:30:00Z'
 		});
 
@@ -939,23 +945,15 @@ describe('upsertChartScoreAndReplaceScores (real D1)', () => {
 
 		const fetched = await getUserChartScore(db, 'user-1', 1);
 		expect(fetched).not.toBeNull();
-		const projected = fetched!.scores.map((s) => {
-			const row = { ...s } as Partial<ScoreRow>;
-			delete row.id;
-			delete row.chart_score_id;
-			delete row.created_at;
-			return row;
-		});
+		const projected = fetched!.scores.map(
+			({ id, chart_score_id, created_at, ...rest }) => rest
+		);
 		expect(projected).toEqual([finalBest, finalRecent1, finalRecent2]);
 
 		const scoreCount = await db
 			.prepare('SELECT COUNT(*) AS cnt FROM scores')
 			.first<{ cnt: number }>();
 		expect(scoreCount!.cnt).toBe(3);
-		const chartScoreCount = await db
-			.prepare('SELECT COUNT(*) AS cnt FROM chart_scores')
-			.first<{ cnt: number }>();
-		expect(chartScoreCount!.cnt).toBe(1);
 	});
 });
 

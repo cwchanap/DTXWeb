@@ -1,97 +1,92 @@
-# HPA-567 — Prevent incomplete workspace ZIP exports
+# HPA-567 — Prevent incomplete or incorrect workspace ZIP exports
 
-**Status:** Proposed design (documentation-only draft)  
+**Status:** Design updated after PR #340 review (implementation remains pending)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-567/dtxwebbug-prevent-incomplete-workspace-zip-exports  
-**Repository:** DTXWeb  
-**Implementation:** Complete on this same PR after design review.
+**Review addressed:** https://github.com/cwchanap/DTXWeb/pull/340#issuecomment-6703010130  
+**Delivery:** Continue implementing on the *same* draft PR #340.
 
-## Problem and evidence
+## Problem and code evidence
 
-The web editor's `ExportWorkspaceModal.svelte` builds a ZIP from browser workspace records. Its present algorithm treats failed entries as best-effort:
+`ExportWorkspaceModal.svelte` currently treats workspace ZIP construction as best-effort. It skips missing audio, catches `zip.file` failures, and reports the workspace metadata counts even if the ZIP contains fewer entries. In addition, its small-file lookup `SoundLibrary.findByFileName(name)[0]` is global: a different workspace's earlier `kick.wav` may be selected even though the ZIP appears complete. JSZip replaces an entry when the same flat filename is added twice.
 
-- An empty DTX `content` string is omitted.
-- A normal audio entry absent from `SoundLibrary.findByFileName` (or whose `toFile` returns null) is omitted.
-- A large audio entry absent from the session-only `WorkspaceService.getLargeFile` cache (for example, after reload) is omitted.
-- A thrown `zip.file` call is caught and skipped.
-- Provided any other entry was added, `generateAsync` runs, the modal closes, and the success toast reports the *declared* counts (`workspace.dtxFiles.length` and `workspace.audioFiles.length`), even for absent entries.
-
-Existing tests in `ExportWorkspaceModal.test.ts` explicitly accept silent omissions and per-entry failures. This can produce an incomplete backup that looks complete.
+The browser workspace stores DTX as decoded text; audio files at or under 2 MiB live in the shared sound library, while larger audio has a session-only `File` cache (`WorkspaceService.getLargeFile`). Reloading loses large files but retains workspace records.
 
 ## Product contract
 
-An export is **all-or-nothing for the selected scope**:
+An export is **all-or-nothing for the selected entries**:
 
-| User option | Required ZIP entries | Missing entry outcome |
+| Option | Required entries | Failure |
 | --- | --- | --- |
-| Include audio files **on** (default) | Every DTX in `workspace.dtxFiles` plus every audio entry in `workspace.audioFiles` | Abort with error; no download |
-| Include audio files **off** | Every DTX in `workspace.dtxFiles` | Missing audio is irrelevant; DTX-only ZIP can download |
+| **Include audio files** selected (default) | Every DTX record, **including a valid zero-byte DTX**, and every listed audio record | Abort without generating or downloading the ZIP |
+| **Include audio files** unchecked | Every DTX record, including zero-byte files | Unavailable audio is irrelevant; DTX-only ZIP works |
 
-- Empty/missing DTX content counts as unavailable, not a valid exported chart.
-- An unavailable audio object (both regular sound-library and large session-cache paths), failed audio conversion, or thrown ZIP entry add counts as unavailable.
-- A workspace with no included entries still shows the existing no-files error.
-- When required files are unavailable, keep the modal open and display an actionable error identifying the failed file name(s). Mention re-importing the folder or selecting DTX-only export if audio is missing.
-- Once **every selected entry** has been added, generate one ZIP and download as today. The success toast uses the number of entries *successfully added*, not metadata counts.
-- Preserve existing ZIP filename sanitization, include-audio checkbox, single workspace-select button, and modal-close behavior on success.
+- A zero-byte DTX is valid input for a faithful backup; never skip it based on empty content. If no files of any selected kind exist, show the existing no-files error.
+- Every selected filename must map to **one unique flat ZIP entry**. If names repeat among selected DTX/audio records, fail with the offending names (e.g. “Two files named bgm.ogg; import songs separately”). No ZIP layout change or silent overwrite.
+- Every selected **small audio** record must have a content hash that identifies *that workspace's audio bytes*. Missing hash, missing hash match, or failed `toFile` conversion means the requested file is unavailable. Never substitute the oldest library file sharing the same name.
+- For **large audio**, keep the current session-only lookup. If the file is gone after reload, say so: “bgm.ogg is only available until the page reloads. Uncheck Include audio files, or re-import the folder and **export the newly imported copy**.” Re-import creates a distinct workspace name (e.g. `Name (1)`), not a repair of the previous workspace.
+- Failed `zip.file` additions are errors with the affected filename. No `generateAsync`, object URL, success toast, or modal close on a failure.
+- Keep the modal open and show the error **inline above the workspace list** (e.g. `role="alert"`), as well as in the existing error toast. Preserve it until the next export attempt; remove the unused 10-second clear timer.
+- On success, count entries actually added to JSZip and retain the existing filename and single-download flow.
 
-## Technical design
+## Small-audio identity: reuse existing hash mechanism
 
-Change **only the existing** `packages/dtx-web/src/lib/components/editor/modals/ExportWorkspaceModal.svelte` and its component tests.
+`SoundLibrary.addFiles` already computes a SHA-256 content hash, persists it with each small file, and deduplicates identical contents. `SoundLibrary.getByHash` already resolves it. However `WorkspaceFile` currently has no hash; its `saveWorkspace` serializer explicitly selects only `name`, `path`, and `isLarge`. So the export cannot know which same-named audio file belongs to its workspace.
 
-Inside `exportWorkspace(workspace)`:
+Make the smallest boundary change:
 
-1. Retain the existing `new JSZip()` and file-resolution paths. Track `addedDtxCount`, `addedAudioCount`, and an array of failed-entry names (optionally include whether each is DTX or audio).
-2. For every DTX record, require nonempty `content` and a successful `zip.file(dtx.name, dtx.content)`. Otherwise record that DTX as failed. Do not count it.
-3. Only when the checkbox is checked, resolve each audio record through the existing paths:
-   - `isLarge`: `WorkspaceService.getLargeFile(workspace.name, audioFile.name)`.
-   - Otherwise: the first entry from `SoundLibrary.findByFileName(audioFile.name)`, passed through `SoundLibrary.toFile`.
-   Require a resolved `File` and successful `zip.file(audioFile.name, file)`; otherwise record the audio name as failed. Do not count it.
-4. Before calling `zip.generateAsync`, if **any required** entry failed, throw one descriptive error from the existing outer `try/catch`. It should identify the affected entry(s) and an appropriate retry path. Reuse `exportWorkspaceError` and `toastStore.error`; do not add another state machine or modal.
-5. If no entries were added, preserve the existing no-files error. Generate only after every required entry is accounted for.
-6. Report `addedDtxCount` and `addedAudioCount` on success; retain existing download via `URL.createObjectURL`, temporary anchor, and `URL.revokeObjectURL`.
+1. Change `SoundLibrary.generateFileHash(file)` from private to public static; keep the same implementation. Do not introduce a second hashing utility or change `addFiles`'s signature.
+2. Add optional `hash?: string` to `WorkspaceFile`. During `WorkspaceService.importFolder`, compute and assign the content hash **for small audio files** (≤2 MiB) using that existing method. Continue to call `SoundLibrary.addFiles([file])`; no new storage.
+3. Include `hash: af.hash` in the `saveWorkspace` audio-file serializer so it survives reload. Large audio continues using the existing in-session `File` cache, without a required hash.
+4. In the export modal, use `SoundLibrary.getByHash(audioFile.hash)` followed by `SoundLibrary.toFile`. If a small audio record has no hash (e.g. imported before this change) or no resolvable data, fail with a named error and say to re-import and export the **new** workspace. **Do not add filename fallback** or a backward-compatibility migration.
 
-A failure to write an entry is an export error; it should never be silently accepted as a best-effort success. The outer `finally` already resets the exporting indicator and selection.
+The importer may hash a small audio file again when calling `addFiles`. This is acceptable for files capped at 2 MiB; avoid a new API just to deduplicate that cheap work.
 
-### Failure UX
+## ZIP construction: keep it in the modal
 
-Examples of acceptable text (copy can be tightened in implementation):
+Update only the existing `exportWorkspace(workspace)` flow:
 
-- Audio missing: “Cannot export with audio: kick.wav is unavailable. Re-import the folder or export DTX files only.”
-- DTX missing: “Cannot export: basic.dtx has no available chart content. Re-import the folder.”
-- ZIP entry failure: “Cannot add advanced.dtx to the ZIP. Please retry.”
+1. Use a single `Set<string>` of names already selected/added (including across DTX and audio) to detect duplicates in the **flat** ZIP. Track duplicate names independently of missing audio. A duplicate is a failure, not an overwrite.
+2. Always call `zip.file(dtxFile.name, dtxFile.content)` for each nonduplicated DTX record, even if content is `''`; increment `addedDtxCount` after a successful call. A thrown add error is reported with the DTX filename via the existing outer catch.
+3. When audio is selected, for each nonduplicated audio record:
+   - Large: resolve `WorkspaceService.getLargeFile(workspace.name, audioFile.name)`.
+   - Small: require `audioFile.hash` and resolve `SoundLibrary.getByHash(audioFile.hash)` → `SoundLibrary.toFile`.
+   - Collect unavailable audio names and their useful recovery hints. Only call `zip.file` after resolution and increment `addedAudioCount` after successful addition. A thrown add error is reported with the audio filename.
+4. If any missing-audio or duplicate-name errors were collected, throw **one** informative error through the existing outer `catch` before `generateAsync`. Keep the error categories separate so the recovery text is accurate.
+5. If no entries were added, use the existing “No files found in workspace to export” failure. Otherwise generate and download one ZIP. The success toast reports `addedDtxCount` and `addedAudioCount`.
 
-Use one error toast, plus the existing error state; do not emit a success toast, close the modal, or create the download URL for failed exports. No new i18n architecture is required for this existing hard-coded-copy component.
+Do not extract a cross-package export service, conflate this with `parseDTXFile` playback lookup, add an up-front availability precheck, or change the persistent-large-file policy.
 
-## Tests
+## Tests and regression requirements
 
-Update `packages/dtx-web/src/lib/components/editor/modals/ExportWorkspaceModal.test.ts` using its current Vitest/Svelte Testing Library and JSZip mocks:
+Modify the **existing** suites rather than create another test framework.
 
-1. Fix successful fixture defaults: a mock workspace declaring `kick.wav` must also resolve `kick.wav` from the sound library. Keep the mocks explicitly reset in `beforeEach` so failure cases cannot leak into other tests.
-2. Successful include-audio export: assert that both DTX records and requested audio are added, `generateAsync` runs once, download URL is created, success reports exact included counts, and `onClose` fires.
-3. Missing normal audio (lookup empty or conversion fails) and missing session-only large audio: assert named error and **no** `generateAsync`, URL creation, success toast, or close.
-4. Empty DTX content and thrown `zip.file` (test DTX and audio paths): assert abort rather than best-effort continuation.
-5. With audio disabled, even if declared audio is missing, the DTX-only ZIP succeeds and no audio lookup/ZIP addition is required.
-6. Keep existing coverage for empty workspaces, ZIP generation errors, rendering, checkbox, and Cancel.
+**`ExportWorkspaceModal.test.ts`**
 
-Replace the old “skips large audio” and “catches per-file error and continues export” expectations; they encode the bug.
+- Repair default fixtures so the declared small audio has a matching **hash** and `getByHash`/`toFile` resolves it. Explicitly reset `getByHash`, `toFile`, `getLargeFile` and `zip.file` implementations in `beforeEach`; `vi.clearAllMocks()` alone does *not* reset them.
+- Add a tiny local helper for the repeated render → find-workspace-button → click sequence.
+- In failure tests, **wait until the error toast or inline alert appears** before asserting that `generateAsync`, `URL.createObjectURL`, `onClose` and the success toast have *not* been called.
+- Test missing hashed small audio, old small audio with no hash, hash collision in filenames across two workspaces (the correct hash must win), missing large session audio with “newly imported copy” guidance, repeated selected ZIP names (DTX/DTX, audio/audio and DTX/audio where useful), and `zip.file` errors.
+- Zero-byte DTX is exported faithfully. Change the old “no exportable files” fixture to have `dtxFiles: []` and `audioFiles: []`, not an empty DTX content string.
+- Verify DTX-only export ignores missing audio, and a fully available export adds the correct unique entries, reports actual counts, creates one download, closes, and clears any previously displayed error on a new attempt.
+- Replace the existing tests that assert skipping missing files or continuing after add failures. Remove the 10-second-timer test because the timer is removed.
 
-## Scope boundaries and decisions
+**`workspaceService.test.ts` and `soundLibrary.test.ts`**
 
-- **Use current services.** No new export abstraction, backup format, IndexedDB migration, server API, or dependency.
-- **Keep stored-workspace semantics.** Large audio is intentionally held in session memory; missing data after reload is surfaced, not reconstructed from stale metadata.
-- **Do not rework ZIP path layout or same-name collision behavior** in this bug-fix slice. This issue targets silently absent entries, not ZIP hierarchy semantics.
-- **Do not extend to desktop Google Drive uploads.** That is a separate export path.
-- **Do not split PRs.** This planning draft becomes the implementation PR; additional commits on the same branch finish the work.
+- Assert that a small audio import stores the correct content hash on its `WorkspaceFile` and that `saveWorkspace` retains the field in localStorage.
+- Assert large audio remains session-only (no hash required) and remains available through the current cache for the same workspace session.
+- Reuse existing hash tests/mocks; only extend `soundLibrary.test.ts` if public `generateFileHash` needs a focused direct regression.
 
-## Acceptance
+## Scope, risk, and non-goals
 
-- No incomplete ZIP can be downloaded and announced as complete within the selected export scope.
-- Failure names required unavailable/failed entries and offers a practical recovery path.
-- DTX-only export stays usable when audio is missing.
-- Success counts are based on entries actually added.
-- Focused component tests, web typecheck, and applicable lint/format checks pass.
+- **Files:** `ExportWorkspaceModal.svelte`, its test, `workspaceService.ts`, its test, `soundLibrary.ts`, and its existing test only if necessary. The boundary expands slightly beyond the original modal-only proposal to fix **wrong content**, not to add infrastructure.
+- No new libraries, D1/Cloudflare changes, upload endpoints, ZIP directory layout, persistent audio cache, new UI dialog, or second PR.
+- No compatibility fallback for pre-fix workspaces with no hash. The error explicitly asks for a fresh import/new copy.
+- **Separate follow-up (not HPA-567):** DTX strings are decoded on import and serialized as UTF-8 by JSZip; on re-import, `importFolder` tries Shift-JIS first with a weak ASCII-header validator, potentially producing mojibake in Japanese titles. This is a distinct **text encoding round-trip fidelity** issue. Keep it visible for a later ticket and focused byte-level regression; do not mix an encoding overhaul into this ZIP completeness PR.
 
-## Source references
+## Acceptance criteria
 
-- [Web export modal](../../../packages/dtx-web/src/lib/components/editor/modals/ExportWorkspaceModal.svelte)
-- [Export modal tests](../../../packages/dtx-web/src/lib/components/editor/modals/ExportWorkspaceModal.test.ts)
-- [Workspace service](../../../packages/dtx-web/src/lib/services/workspaceService.ts)
+- No export is reported successful when a selected entry is missing, an entry-add fails, or flat entry names collide.
+- Distinct workspaces with same-named but different audio content export their own bytes, selected by hash.
+- An empty DTX can be backed up.
+- Unavailable large audio after reload produces a filename-specific inline error that explains the need to export the **new** imported workspace or use DTX-only.
+- Focused tests, web typecheck, and relevant lint/format checks pass on the same PR.

@@ -18,13 +18,14 @@ Prove on real D1 that **insert → replace → replace** on the same chart/user 
 
 ## Single test fixture
 
-| Write | Data | Purpose |
-| --- | --- | --- |
-| First insert | `playCount=2`, `clearCount=1`; best score `700000`, recent order 1 | Initial chart-score and two children |
-| First replace | `playCount=5`, `clearCount=3`; best `800000`, recents at orders 1 and 2 | Overwrite earlier children |
+| Write         | Data                                                                                                                                                                                                        | Purpose                                               |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| First insert  | `playCount=2`, `clearCount=1`; best score `700000`, recent order 1                                                                                                                                          | Initial chart-score and two children                  |
+| First replace | `playCount=5`, `clearCount=3`; best `800000`, recents at orders 1 and 2                                                                                                                                     | Overwrite earlier children                            |
 | Final replace | `playCount=9`, `clearCount=7`, `fullCombo=true`, `maxCombo=913`, `bestAchievementRate=98.5`, `bestRankLabel='SS'`, a fixed `lastPlayedAt`; best `990000` and two recents, **inserted order 2 then order 1** | Verify final bindings, replacement, and read ordering |
 
 Use **pairwise-distinct judgment sentinels within each final score row** to catch swapped bind positions, not elaborate phase-one/two fixtures. For example:
+
 - Best: `score=990000`, `perfect=501`, `great=402`, `good=303`, `poor=204`, `miss=105`; score-level `achievement_rate`, `rank_label`, `cleared`, `performed_at`, `display_order` are NULL.
 - Recent **order 2** (inserted first): **`display_order=2`**, `achievement_rate=83.25`, `rank_label='A'`, `cleared=false`, `perfect=31`, `great=22`, `good=13`, `poor=4`, `miss=1`, `performed_at='2026-10-02T14:00:00Z'`.
 - Recent **order 1** (inserted second): **`display_order=1`**, `achievement_rate=94.5`, `rank_label='S'`, `cleared=true`, `perfect=61`, `great=42`, `good=23`, `poor=4`, `miss=2`, `performed_at='2026-10-03T16:00:00Z'`.

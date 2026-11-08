@@ -6,6 +6,7 @@ export interface WorkspaceFile {
 	path: string;
 	file?: File; // Store large files directly here
 	isLarge?: boolean; // Flag to indicate if file is too large for localStorage
+	hash?: string;
 }
 
 export interface WorkspaceDTX {
@@ -88,6 +89,10 @@ export class WorkspaceService {
 					path: relativePath,
 					isLarge
 				};
+
+				if (!isLarge) {
+					workspaceFile.hash = await SoundLibrary.generateFileHash(file);
+				}
 
 				audioFiles.push(workspaceFile);
 
@@ -284,7 +289,8 @@ export class WorkspaceService {
 				audioFiles: workspace.audioFiles.map((af) => ({
 					name: af.name,
 					path: af.path,
-					isLarge: af.isLarge
+					isLarge: af.isLarge,
+					hash: af.hash
 					// Don't store the File object
 				}))
 			};

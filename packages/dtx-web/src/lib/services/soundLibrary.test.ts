@@ -849,5 +849,11 @@ describe('SoundLibrary', () => {
 			await (SoundLibrary as any).generateFileHash(file);
 			expect(crypto.subtle.digest).toHaveBeenCalledWith('SHA-256', expect.any(ArrayBuffer));
 		});
+
+		it('should expose generateFileHash publicly for workspace hashing reuse', async () => {
+			const file = new File([], 'public.wav');
+			const hash = await SoundLibrary.generateFileHash(file);
+			expect(hash).toMatch(/^[0-9a-f]{64}$/);
+		});
 	});
 });

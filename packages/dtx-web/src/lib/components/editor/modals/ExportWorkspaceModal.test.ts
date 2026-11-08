@@ -639,12 +639,13 @@ describe('ExportWorkspaceModal', () => {
 			]);
 			render(ExportWorkspaceModal, { props: defaultProps });
 
-			await clickExport('Retry Workspace');
-			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/lost\.wav/);
-
 			vi.useFakeTimers();
 			try {
+				await clickExport('Retry Workspace');
+				await vi.waitFor(() => {
+					expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
+				});
+
 				await vi.advanceTimersByTimeAsync(11_000);
 				expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
 

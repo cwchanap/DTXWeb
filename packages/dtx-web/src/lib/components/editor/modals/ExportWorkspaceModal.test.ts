@@ -238,6 +238,32 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).toHaveBeenCalledTimes(1);
 		});
 
+		it('preserves the original filename casing of every ZIP entry on success', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Mixed Case Workspace',
+					dtxFiles: [
+						{ name: 'BASIC.dtx', content: 'DTX', path: '/workspace/test/BASIC.dtx' },
+						{
+							name: 'Advanced.DTX',
+							content: 'DTX',
+							path: '/workspace/test/Advanced.DTX'
+						}
+					],
+					audioFiles: [smallAudioFile('Kick.WAV', 'mock-hash-kick')]
+				})
+			]);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+			await clickExport('Mixed Case Workspace');
+
+			await vi.waitFor(() => {
+				expect(toastMock.success).toHaveBeenCalled();
+			});
+			const entryNames = mockZipInstance.file.mock.calls.map((call) => call[0]);
+			expect(entryNames).toEqual(['BASIC.dtx', 'Advanced.DTX', 'Kick.WAV']);
+		});
+
 		it('includes a zero-byte DTX file in the export', async () => {
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
@@ -359,15 +385,20 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('calls toastStore.error when ZIP generation fails', async () => {
+		it('surfaces a ZIP generation failure without downloading', async () => {
 			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-			render(ExportWorkspaceModal, { props: defaultProps });
 			await clickExport('Workspace A');
 
-			await vi.waitFor(() => {
-				expect(toastMock.error).toHaveBeenCalled();
-			});
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent('zip failed');
+			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
 		});
 	});
 
@@ -464,13 +495,13 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('fails when two DTX files share the same flat ZIP name', async () => {
+		it('fails when two DTX files share a case-insensitive ZIP name', async () => {
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
 					name: 'Duplicate DTX Workspace',
 					dtxFiles: [
-						{ name: 'chart.dtx', content: 'first', path: '/workspace/a/chart.dtx' },
-						{ name: 'chart.dtx', content: 'second', path: '/workspace/b/chart.dtx' }
+						{ name: 'Chart.dtx', content: 'first', path: '/workspace/a/Chart.dtx' },
+						{ name: 'chart.DTX', content: 'second', path: '/workspace/b/chart.DTX' }
 					],
 					audioFiles: []
 				})
@@ -481,7 +512,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Duplicate DTX Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/chart\.dtx/);
+			expect(alert).toHaveTextContent(/chart\.dtx/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -529,19 +560,19 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('fails when a DTX file and an audio file share the same ZIP name', async () => {
+		it('fails when a DTX file and an audio file share a case-insensitive ZIP name', async () => {
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
 					name: 'Cross Collision Workspace',
 					dtxFiles: [{ name: 'chart.dtx', content: 'dtx', path: '/workspace/chart.dtx' }],
-					audioFiles: [smallAudioFile('chart.dtx', 'hash-chart-audio')]
+					audioFiles: [smallAudioFile('CHART.DTX', 'hash-chart-audio')]
 				})
 			]);
 			soundLibMock.getByHash.mockImplementation((hash) =>
-				hash === 'hash-chart-audio' ? libraryRecord('hash-chart-audio', 'chart.dtx') : null
+				hash === 'hash-chart-audio' ? libraryRecord('hash-chart-audio', 'CHART.DTX') : null
 			);
 			soundLibMock.toFile.mockImplementation((libraryFile) =>
-				libraryFile.hash === 'hash-chart-audio' ? new File(['audio'], 'chart.dtx') : null
+				libraryFile.hash === 'hash-chart-audio' ? new File(['audio'], 'CHART.DTX') : null
 			);
 			const onClose = vi.fn();
 			render(ExportWorkspaceModal, { props: { show: true, onClose } });
@@ -549,7 +580,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Cross Collision Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/chart\.dtx/);
+			expect(alert).toHaveTextContent(/chart\.dtx/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -599,7 +630,7 @@ describe('ExportWorkspaceModal', () => {
 	});
 
 	describe('Export error display', () => {
-		it('keeps the inline error visible until the next export attempt', async () => {
+		it('keeps the inline error until the next export attempt and has no auto-clear timer', async () => {
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
 					name: 'Retry Workspace',
@@ -611,20 +642,35 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Retry Workspace');
 			const alert = await screen.findByRole('alert');
 			expect(alert).toHaveTextContent(/lost\.wav/);
-			expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
 
-			soundLibMock.getByHash.mockImplementation((hash) =>
-				hash === 'hash-lost' ? libraryRecord('hash-lost', 'lost.wav') : null
-			);
-			soundLibMock.toFile.mockImplementation((libraryFile) =>
-				libraryFile.hash === 'hash-lost' ? new File(['lost bytes'], 'lost.wav') : null
-			);
+			vi.useFakeTimers();
+			try {
+				await vi.advanceTimersByTimeAsync(11_000);
+				expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
 
-			await clickExport('Retry Workspace');
-			await vi.waitFor(() => {
+				soundLibMock.getByHash.mockImplementation((hash) =>
+					hash === 'hash-lost' ? libraryRecord('hash-lost', 'lost.wav') : null
+				);
+				soundLibMock.toFile.mockImplementation((libraryFile) =>
+					libraryFile.hash === 'hash-lost' ? new File(['lost bytes'], 'lost.wav') : null
+				);
+				let resolveZip: (blob: Blob) => void = () => undefined;
+				const pendingZip = new Promise<Blob>((resolve) => {
+					resolveZip = resolve;
+				});
+				mockZipInstance.generateAsync.mockImplementation(() => pendingZip);
+
+				await clickExport('Retry Workspace');
+				expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+				expect(toastMock.success).not.toHaveBeenCalled();
+
+				resolveZip(new Blob(['zip content']));
+				await vi.advanceTimersByTimeAsync(0);
 				expect(toastMock.success).toHaveBeenCalled();
-			});
-			expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+				expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 
 		it('clears the inline error when the modal is closed and reopened', async () => {

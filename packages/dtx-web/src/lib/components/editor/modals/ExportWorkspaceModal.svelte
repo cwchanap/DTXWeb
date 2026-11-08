@@ -25,6 +25,7 @@
 	// Refresh workspaces when modal opens
 	$effect(() => {
 		if (show) {
+			exportWorkspaceError = '';
 			refreshWorkspaces();
 		}
 	});
@@ -40,53 +41,112 @@
 
 		try {
 			const zip = new JSZip();
-			let fileCount = 0;
+			const seenNames = new Set<string>();
+			const missingAudio: string[] = [];
+			const duplicates: string[] = [];
+			let addedDtxCount = 0;
+			let addedAudioCount = 0;
 
 			// Add DTX files to zip (from stored content)
 			for (const dtxFile of workspace.dtxFiles) {
+				const key = dtxFile.name.toLowerCase();
+				if (seenNames.has(key)) {
+					duplicates.push(dtxFile.name);
+					continue;
+				}
+				seenNames.add(key);
 				try {
-					if (dtxFile.content) {
-						zip.file(dtxFile.name, dtxFile.content);
-						fileCount++;
-					}
+					zip.file(dtxFile.name, dtxFile.content);
+					addedDtxCount++;
 				} catch (error) {
-					console.warn(`Failed to add DTX file ${dtxFile.name}:`, error);
+					throw new Error(
+						`Failed to add DTX file ${dtxFile.name}: ${error instanceof Error ? error.message : String(error)}`
+					);
 				}
 			}
 
 			// Add audio files to zip (from sound library and session storage) if enabled
 			if (includeAudioInExport) {
 				for (const audioFile of workspace.audioFiles) {
-					try {
-						if (audioFile.isLarge) {
-							// Get large file from session storage
-							const file = WorkspaceService.getLargeFile(
-								workspace.name,
-								audioFile.name
+					const key = audioFile.name.toLowerCase();
+					if (seenNames.has(key)) {
+						duplicates.push(audioFile.name);
+						continue;
+					}
+					seenNames.add(key);
+
+					let file: File;
+					if (audioFile.isLarge) {
+						// Get large file from session storage
+						const largeFile = WorkspaceService.getLargeFile(
+							workspace.name,
+							audioFile.name
+						);
+						if (!largeFile) {
+							missingAudio.push(
+								`${audioFile.name}: only available until the page reloads. Uncheck "Include audio files", or re-import the folder and export the newly imported copy.`
 							);
-							if (file) {
-								zip.file(audioFile.name, file);
-								fileCount++;
-							}
-						} else {
-							// Get small file from sound library
-							const libraryFiles = SoundLibrary.findByFileName(audioFile.name);
-							if (libraryFiles.length > 0) {
-								const libraryFile = libraryFiles[0];
-								const file = SoundLibrary.toFile(libraryFile);
-								if (file) {
-									zip.file(audioFile.name, file);
-									fileCount++;
-								}
-							}
+							continue;
 						}
+						file = largeFile;
+					} else {
+						// Get small file from sound library by its stored content hash
+						if (!audioFile.hash) {
+							missingAudio.push(
+								`${audioFile.name}: no stored content hash (imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+							);
+							continue;
+						}
+						const libraryFile = SoundLibrary.getByHash(audioFile.hash);
+						if (!libraryFile) {
+							missingAudio.push(
+								`${audioFile.name}: no matching audio in the sound library. Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+							);
+							continue;
+						}
+						const convertedFile = SoundLibrary.toFile(libraryFile);
+						if (!convertedFile) {
+							missingAudio.push(
+								`${audioFile.name}: stored audio could not be converted back to a file. Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+							);
+							continue;
+						}
+						file = convertedFile;
+					}
+
+					try {
+						zip.file(audioFile.name, file);
+						addedAudioCount++;
 					} catch (error) {
-						console.warn(`Failed to add audio file ${audioFile.name}:`, error);
+						throw new Error(
+							`Failed to add audio file ${audioFile.name}: ${error instanceof Error ? error.message : String(error)}`
+						);
 					}
 				}
 			}
 
-			if (fileCount === 0) {
+			if (duplicates.length > 0 || missingAudio.length > 0) {
+				const problems: string[] = [];
+				if (duplicates.length > 0) {
+					problems.push(
+						`Duplicate file names would overwrite each other in the ZIP:\n${duplicates
+							.map((name) => `- ${name}`)
+							.join('\n')}\nRename the files or import the songs separately.`
+					);
+				}
+				if (missingAudio.length > 0) {
+					problems.push(
+						`Audio files that could not be included:\n${missingAudio
+							.map((entry) => `- ${entry}`)
+							.join('\n')}`
+					);
+				}
+				throw new Error(
+					`Cannot export workspace "${workspace.name}".\n${problems.join('\n')}`
+				);
+			}
+
+			if (addedDtxCount + addedAudioCount === 0) {
 				throw new Error('No files found in workspace to export');
 			}
 
@@ -108,11 +168,9 @@
 			onClose();
 
 			// Show success message
-			const dtxCount = workspace.dtxFiles.length;
-			const audioCount = includeAudioInExport ? workspace.audioFiles.length : 0;
 			const message = includeAudioInExport
-				? `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files, ${audioCount} audio files)`
-				: `Workspace "${workspace.name}" exported successfully! (${dtxCount} DTX files only)`;
+				? `Workspace "${workspace.name}" exported successfully! (${addedDtxCount} DTX files, ${addedAudioCount} audio files)`
+				: `Workspace "${workspace.name}" exported successfully! (${addedDtxCount} DTX files only)`;
 			toastStore.success({
 				title: message
 			});
@@ -123,11 +181,6 @@
 			toastStore.error({
 				title: `Failed to export workspace: ${exportWorkspaceError}`
 			});
-
-			// Clear error message after 10 seconds
-			setTimeout(() => {
-				exportWorkspaceError = '';
-			}, 10000);
 		} finally {
 			isExportingWorkspace = false;
 			workspaceToExport = null;
@@ -157,6 +210,15 @@
 					Uncheck to export only DTX files (smaller file size)
 				</p>
 			</div>
+
+			{#if exportWorkspaceError}
+				<div
+					role="alert"
+					class="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm whitespace-pre-line text-red-700"
+				>
+					{exportWorkspaceError}
+				</div>
+			{/if}
 
 			<div class="space-y-2">
 				{#each availableWorkspaces as workspace}

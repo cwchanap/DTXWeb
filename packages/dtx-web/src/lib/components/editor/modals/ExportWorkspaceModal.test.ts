@@ -364,7 +364,11 @@ describe('ExportWorkspaceModal', () => {
 			expect(soundLibMock.getByHash).toHaveBeenCalledWith('hash-kick-a');
 			expect(soundLibMock.findByFileName).not.toHaveBeenCalled();
 			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', fileA);
-			expect(mockZipInstance.file).not.toHaveBeenCalledWith('kick.wav', fileB);
+			const kickEntry = mockZipInstance.file.mock.calls.find(
+				(call) => call[0] === 'kick.wav'
+			);
+			expect(kickEntry?.[1]).toBe(fileA);
+			expect(kickEntry?.[1]).not.toBe(fileB);
 		});
 
 		it('fails with the no-files error when the workspace has no files to export', async () => {

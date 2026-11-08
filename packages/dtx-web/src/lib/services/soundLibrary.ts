@@ -202,10 +202,12 @@ export class SoundLibrary {
 
 	/**
 	 * Convert library file back to File object.
-	 * Returns null for entries with no file data (e.g. large in-memory-only files).
+	 * Returns null for entries with missing non-empty data (e.g. large
+	 * in-memory-only files). Zero-byte files store empty fileData but are
+	 * still reconstructed as empty Files.
 	 */
 	static toFile(libraryFile: SoundLibraryFile): File | null {
-		if (!libraryFile.fileData) {
+		if (!libraryFile.fileData && libraryFile.size !== 0) {
 			return null;
 		}
 

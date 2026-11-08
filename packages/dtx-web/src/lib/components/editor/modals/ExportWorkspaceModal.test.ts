@@ -639,6 +639,31 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
+		it('fails and names the file when an audio entry cannot be read during generation', async () => {
+			const unreadableFile = new File(['bytes'], 'lost.wav', { type: 'audio/wav' });
+			unreadableFile.arrayBuffer = () => Promise.reject(new Error('NotReadableError'));
+			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(unreadableFile);
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Unreadable Workspace',
+					audioFiles: [{ name: 'lost.wav', path: '/workspace/lost.wav', isLarge: true }]
+				})
+			]);
+			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('read failure'));
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Unreadable Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert.textContent).toMatch(/lost\.wav/);
+			expect(alert.textContent).toMatch(/failed to read/i);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
 		it('fails and names the file when an audio entry cannot be added to the ZIP', async () => {
 			mockZipInstance.file.mockImplementation((name: string) => {
 				if (name === 'kick.wav') {

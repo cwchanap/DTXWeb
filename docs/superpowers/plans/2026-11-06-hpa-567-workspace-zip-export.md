@@ -94,13 +94,19 @@ Include `soundLibrary.test.ts` in changed-file lint/format commands if that file
 ### Actual results (2026-11-07, on this branch)
 
 - `bun install --frozen-lockfile --ignore-scripts`: exit 0, 1448 packages checked, no changes (`--ignore-scripts` prevents the root `prepare`/husky hook from mutating git config).
-- `bun run --filter=dtx-web test -- src/lib/components/editor/modals/ExportWorkspaceModal.test.ts`: **31/31 pass** (final-review fix wave added one collision-recovery test; 30/30 before it).
-- `bun run --filter=dtx-web test -- src/lib/services/workspaceService.test.ts`: **47/47 pass**.
-- `bun run --filter=dtx-web test -- src/lib/services/soundLibrary.test.ts`: **44/44 pass** (file was modified, so it is also in the lint/format commands below).
-- `bun run --filter=dtx-web test`: **64 files, 917/917 tests pass** (was 916/916 before the final-review fix wave).
+- `bun run --filter=dtx-web test -- src/lib/components/editor/modals/ExportWorkspaceModal.test.ts`: **32/32 pass** (final-review fix wave added one collision-recovery test; 2026-11-08 review wave added a named read-error test).
+- `bun run --filter=dtx-web test -- src/lib/services/workspaceService.test.ts`: **48/48 pass** (added hash-failure import resilience test).
+- `bun run --filter=dtx-web test -- src/lib/services/soundLibrary.test.ts`: **45/45 pass** (added zero-byte `toFile` reconstruction test).
+- `bun run --filter=dtx-web test`: **64 files, 920/920 tests pass** (was 916/916 before the final-review fix wave).
 - `bunx eslint …` (all seven changed source/test files, incl. `soundLibrary.test.ts`): exit 0, clean.
 - `bunx prettier --check …`: initially failed **only** on this plan doc and the design doc (pre-existing formatting drift: table alignment, `~~~` fences, emphasis markers). Fixed with `prettier --write`; all listed files now pass.
 - `bun run --filter=dtx-web check` (**typecheck limitation — pre-existing repo-wide debt**): exits 1 with `svelte-check found 420 errors and 4 warnings in 56 files`. An identical run against the PR starting commit (`84100c7`, archived worktree, same installed dependencies) reported the same `420 errors and 4 warnings in 56 files` with an identical per-file diagnostic distribution, so this PR introduces **zero net new typecheck errors**. During implementation the new modal tests added 22 diagnostics (untyped jest-dom matchers: 3 `toBeInTheDocument`, 1 `toHaveClass`, 18 `toHaveTextContent`); they were resolved by switching the new assertions to native Vitest equivalents (`textContent` + `toContain`/`toMatch`, `toBeNull()` on `queryByRole`, `classList.contains`). The 8 diagnostics remaining in `ExportWorkspaceModal.test.ts` (7 `toBeInTheDocument`, 1 `Object.assign` overload) are pre-existing baseline errors, not new.
+
+### 2026-11-08 review follow-up (on this branch)
+
+- `SoundLibrary.toFile` now reconstructs zero-byte records (`size === 0`, empty `fileData`) as empty `File`s instead of returning `null`; only records with missing non-empty data still fail.
+- `importFolder` keeps the audio record without a hash when `generateFileHash` throws, so one unreadable file no longer aborts the whole import; audio-inclusive export remains blocked via the existing missing-hash path.
+- `generateAsync` failures now probe the added audio `File`s and name the unreadable ones, since JSZip reads file contents during generation rather than at `zip.file` time.
 
 ## Acceptance and review checklist
 

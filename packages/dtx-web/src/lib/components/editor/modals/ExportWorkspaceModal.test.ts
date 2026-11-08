@@ -21,13 +21,9 @@ const mockWorkspaceServiceClass = vi.hoisted(() => ({
 }));
 
 const soundLibMock = vi.hoisted(() => ({
+	getByHash: vi.fn<(hash: string) => SoundLibraryFile | null>(() => null),
 	findByFileName: vi.fn<(fileName: string) => SoundLibraryFile[]>(() => []),
-	toFile: vi.fn<(libraryFile: SoundLibraryFile) => File>(
-		(libraryFile) =>
-			new File([], libraryFile.fileName, {
-				type: libraryFile.fileType
-			})
-	)
+	toFile: vi.fn<(libraryFile: SoundLibraryFile) => File | null>(() => null)
 }));
 
 const toastMock = vi.hoisted(() => ({
@@ -62,9 +58,43 @@ vi.mock('jszip', () => ({ default: mockJSZipConstructor }));
 
 import ExportWorkspaceModal from './ExportWorkspaceModal.svelte';
 
+const libraryRecord = (hash: string, fileName: string): SoundLibraryFile => ({
+	hash,
+	fileName,
+	fileType: 'audio/wav',
+	fileData: 'bW9jay1hdWRpby1ieXRlcw==',
+	size: 16,
+	dateAdded: 0
+});
+
+const smallAudioFile = (name: string, hash?: string) => ({
+	name,
+	path: `/workspace/test/${name}`,
+	isLarge: false,
+	hash
+});
+
+const kickLibraryRecord = libraryRecord('mock-hash-kick', 'kick.wav');
+const kickFile = new File(['kick audio bytes'], 'kick.wav', { type: 'audio/wav' });
+
 const defaultProps = {
 	show: true,
 	onClose: vi.fn()
+};
+
+const clickExport = async (workspaceName: string) => {
+	// Spy on appendChild AFTER rendering so it does not interfere with test setup
+	const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((el) => el);
+	const removeChild = vi.spyOn(document.body, 'removeChild').mockImplementation((el) => el);
+	const workspaceButton = screen
+		.getAllByRole('button')
+		.find(
+			(btn) =>
+				btn.textContent?.includes(workspaceName) && !btn.textContent?.includes('Cancel')
+		);
+	expect(workspaceButton).toBeDefined();
+	await fireEvent.click(workspaceButton!);
+	return { appendChild, removeChild };
 };
 
 describe('ExportWorkspaceModal', () => {
@@ -72,20 +102,42 @@ describe('ExportWorkspaceModal', () => {
 		vi.clearAllMocks();
 		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
 		global.URL.revokeObjectURL = vi.fn();
+
+		mockService.getWorkspaces.mockReset();
 		mockService.getWorkspaces.mockReturnValue([
 			makeWorkspace({ name: 'Workspace A' }),
 			makeWorkspace({ name: 'Workspace B' })
 		]);
+		mockService.getCurrentWorkspace.mockReset();
+		mockService.getCurrentWorkspace.mockReturnValue(makeWorkspace({ name: 'Workspace A' }));
+
+		mockWorkspaceServiceClass.getLargeFile.mockReset();
+		mockWorkspaceServiceClass.getLargeFile.mockReturnValue(undefined);
+
+		soundLibMock.getByHash.mockReset();
+		soundLibMock.getByHash.mockImplementation((hash) =>
+			hash === 'mock-hash-kick' ? kickLibraryRecord : null
+		);
+		soundLibMock.findByFileName.mockReset();
+		soundLibMock.findByFileName.mockReturnValue([]);
+		soundLibMock.toFile.mockReset();
+		soundLibMock.toFile.mockImplementation((libraryFile) =>
+			libraryFile.hash === 'mock-hash-kick' ? kickFile : null
+		);
+
+		mockZipInstance.file.mockReset();
 		mockZipInstance.file.mockImplementation(() => undefined);
+		mockZipInstance.generateAsync.mockReset();
 		mockZipInstance.generateAsync.mockResolvedValue(new Blob(['zip content']));
+		mockJSZipConstructor.mockReset();
 		mockJSZipConstructor.mockImplementation(function () {
 			// ponytail: vitest 4+ constructable-mock rule - new JSZip()
 			return mockZipInstance;
 		});
-		(global.URL.createObjectURL as ReturnType<typeof vi.fn>).mockReturnValue('blob:mock-url');
 	});
 
 	afterEach(() => {
+		vi.restoreAllMocks();
 		global.URL.createObjectURL = originalCreateObjectURL;
 		global.URL.revokeObjectURL = originalRevokeObjectURL;
 	});
@@ -152,157 +204,88 @@ describe('ExportWorkspaceModal', () => {
 	});
 
 	describe('Export flow', () => {
-		it('triggers export when workspace button is clicked', async () => {
+		it('triggers export when a workspace button is clicked', async () => {
 			render(ExportWorkspaceModal, { props: defaultProps });
 
-			// Spy on appendChild AFTER rendering so it does not interfere with test setup
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
+			await clickExport('Workspace A');
 
-			const workspaceButtons = screen.getAllByRole('button');
-			const workspaceAButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
-			);
-			expect(workspaceAButton).toBeDefined();
-			await fireEvent.click(workspaceAButton!);
-
-			expect(mockZipInstance.generateAsync).toHaveBeenCalled();
-
-			appendChild.mockRestore();
-			removeChild.mockRestore();
+			await vi.waitFor(() => {
+				expect(mockZipInstance.generateAsync).toHaveBeenCalled();
+			});
 		});
 
-		it('calls toastStore.success after successful export', async () => {
-			render(ExportWorkspaceModal, { props: defaultProps });
+		it('adds unique entries, downloads once, reports actual counts, and closes on success', async () => {
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-			// Spy on appendChild AFTER rendering so it does not interfere with test setup
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
+			await clickExport('Workspace A');
 
-			const workspaceButtons = screen.getAllByRole('button');
-			const workspaceAButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
-			);
-			await fireEvent.click(workspaceAButton!);
-
-			// Wait for async export to complete
 			await vi.waitFor(() => {
 				expect(toastMock.success).toHaveBeenCalled();
 			});
 
-			appendChild.mockRestore();
-			removeChild.mockRestore();
-		});
-
-		it('calls toastStore.error when export fails', async () => {
-			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
-
-			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const workspaceButtons = screen.getAllByRole('button');
-			const workspaceAButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
-			);
-			await fireEvent.click(workspaceAButton!);
-
-			await vi.waitFor(() => {
-				expect(toastMock.error).toHaveBeenCalled();
+			const entryNames = mockZipInstance.file.mock.calls.map((call) => call[0]);
+			expect(entryNames).toEqual(['basic.dtx', 'advanced.dtx', 'kick.wav']);
+			expect(new Set(entryNames).size).toBe(entryNames.length);
+			expect(soundLibMock.getByHash).toHaveBeenCalledWith('mock-hash-kick');
+			expect(soundLibMock.findByFileName).not.toHaveBeenCalled();
+			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', kickFile);
+			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
+			expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
+			expect(toastMock.success).toHaveBeenCalledWith({
+				title: 'Workspace "Workspace A" exported successfully! (2 DTX files, 1 audio files)'
 			});
+			expect(onClose).toHaveBeenCalledTimes(1);
 		});
 
-		it('calls toastStore.error when workspace has no exportable files', async () => {
+		it('includes a zero-byte DTX file in the export', async () => {
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
-					name: 'Empty Workspace',
+					name: 'Empty DTX Workspace',
 					dtxFiles: [
-						{ name: 'empty.dtx', content: '', path: '/workspace/empty/empty.dtx' }
+						{ name: 'empty.dtx', content: '', path: '/workspace/test/empty.dtx' }
 					],
 					audioFiles: []
 				})
 			]);
 
 			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const workspaceButtons = screen.getAllByRole('button');
-			const emptyWorkspaceButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Empty Workspace') &&
-					!btn.textContent?.includes('Cancel')
-			);
-			expect(emptyWorkspaceButton).toBeDefined();
-			await fireEvent.click(emptyWorkspaceButton!);
+			await clickExport('Empty DTX Workspace');
 
 			await vi.waitFor(() => {
-				expect(toastMock.error).toHaveBeenCalled();
+				expect(toastMock.success).toHaveBeenCalled();
 			});
+			expect(mockZipInstance.file).toHaveBeenCalledWith('empty.dtx', '');
 		});
 
-		it('exports audio files found in sound library', async () => {
-			const mockFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
-			const expectedEntry = {
-				hash: 'abc',
-				fileName: 'kick.wav',
-				fileType: 'audio/wav',
-				fileData: 'base64',
-				size: 1024,
-				dateAdded: expect.any(Number)
-			};
-			soundLibMock.findByFileName.mockReturnValue([
-				{
-					hash: 'abc',
-					fileName: 'kick.wav',
-					fileType: 'audio/wav',
-					fileData: 'base64',
-					size: 1024,
-					dateAdded: Date.now()
-				}
+		it('exports DTX files only when audio is unchecked and audio is unavailable', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Missing Audio Workspace',
+					audioFiles: [smallAudioFile('missing.wav', 'hash-not-stored')]
+				})
 			]);
-			soundLibMock.toFile.mockImplementation((arg) => {
-				expect(arg).toEqual(expectedEntry);
-				return mockFile;
-			});
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
-
-			const workspaceButtons = screen.getAllByRole('button');
-			const workspaceAButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
-			);
-			await fireEvent.click(workspaceAButton!);
+			await fireEvent.click(screen.getByRole('checkbox'));
+			await clickExport('Missing Audio Workspace');
 
 			await vi.waitFor(() => {
-				expect(soundLibMock.findByFileName).toHaveBeenCalled();
-				expect(soundLibMock.toFile).toHaveBeenCalled();
-				expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', mockFile);
+				expect(toastMock.success).toHaveBeenCalled();
 			});
-
-			appendChild.mockRestore();
-			removeChild.mockRestore();
+			expect(soundLibMock.getByHash).not.toHaveBeenCalled();
+			expect(mockWorkspaceServiceClass.getLargeFile).not.toHaveBeenCalled();
+			expect(mockZipInstance.file).toHaveBeenCalledTimes(2);
+			expect(toastMock.success).toHaveBeenCalledWith({
+				title: 'Workspace "Missing Audio Workspace" exported successfully! (2 DTX files only)'
+			});
+			expect(onClose).toHaveBeenCalled();
 		});
 
-		it('handles large audio files from session storage', async () => {
+		it('resolves large audio files from the session cache', async () => {
 			const largeFile = new File(['large audio'], 'large.wav', { type: 'audio/wav' });
 			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(largeFile);
-
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
 					name: 'Large Workspace',
@@ -311,187 +294,375 @@ describe('ExportWorkspaceModal', () => {
 			]);
 
 			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
-
-			const workspaceButtons = screen.getAllByRole('button');
-			const largeWorkspaceButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Large Workspace') &&
-					!btn.textContent?.includes('Cancel')
-			);
-			await fireEvent.click(largeWorkspaceButton!);
+			await clickExport('Large Workspace');
 
 			await vi.waitFor(() => {
-				expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
-					'Large Workspace',
-					'large.wav'
-				);
-				expect(mockZipInstance.file).toHaveBeenCalledWith('large.wav', largeFile);
+				expect(toastMock.success).toHaveBeenCalled();
 			});
-
-			appendChild.mockRestore();
-			removeChild.mockRestore();
+			expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
+				'Large Workspace',
+				'large.wav'
+			);
+			expect(mockZipInstance.file).toHaveBeenCalledWith('large.wav', largeFile);
 		});
 
-		it('skips large audio file when getLargeFile returns undefined', async () => {
-			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(undefined);
-
+		it('exports the selected workspace audio when another workspace reuses the file name', async () => {
+			const recordA = libraryRecord('hash-kick-a', 'kick.wav');
+			const fileA = new File(['workspace A kick bytes'], 'kick.wav');
+			const recordB = libraryRecord('hash-kick-b', 'kick.wav');
+			const fileB = new File(['workspace B kick bytes'], 'kick.wav');
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
-					name: 'Large Workspace',
-					audioFiles: [{ name: 'large.wav', path: '/workspace/large.wav', isLarge: true }]
+					name: 'Workspace A',
+					audioFiles: [smallAudioFile('kick.wav', 'hash-kick-a')]
+				}),
+				makeWorkspace({
+					name: 'Workspace B',
+					audioFiles: [smallAudioFile('kick.wav', 'hash-kick-b')]
 				})
 			]);
-
-			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
-
-			const workspaceButtons = screen.getAllByRole('button');
-			const largeWorkspaceButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Large Workspace') &&
-					!btn.textContent?.includes('Cancel')
+			soundLibMock.getByHash.mockImplementation((hash) =>
+				hash === 'hash-kick-a' ? recordA : hash === 'hash-kick-b' ? recordB : null
 			);
-			await fireEvent.click(largeWorkspaceButton!);
-
-			await vi.waitFor(() => {
-				expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
-					'Large Workspace',
-					'large.wav'
-				);
-				// zip.file should not have been called for the skipped large file
-				expect(mockZipInstance.file).not.toHaveBeenCalledWith(
-					'large.wav',
-					expect.anything()
-				);
-			});
-
-			appendChild.mockRestore();
-			removeChild.mockRestore();
-		});
-
-		it('catches DTX file errors and continues export', async () => {
-			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-			// First zip.file call throws (for basic.dtx); second call (advanced.dtx) uses default → succeeds
-			mockZipInstance.file.mockImplementationOnce(() => {
-				throw new Error('failed to add dtx');
-			});
+			soundLibMock.toFile.mockImplementation((libraryFile) =>
+				libraryFile === recordA ? fileA : libraryFile === recordB ? fileB : null
+			);
+			soundLibMock.findByFileName.mockReturnValue([recordB]);
 
 			render(ExportWorkspaceModal, { props: defaultProps });
-
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
-
-			const workspaceAButton = screen
-				.getAllByRole('button')
-				.find(
-					(btn) =>
-						btn.textContent?.includes('Workspace A') &&
-						!btn.textContent?.includes('Cancel')
-				)!;
-			await fireEvent.click(workspaceAButton);
+			await clickExport('Workspace A');
 
 			await vi.waitFor(() => {
-				expect(warnSpy).toHaveBeenCalledWith(
-					expect.stringContaining('Failed to add DTX file basic.dtx'),
-					expect.any(Error)
-				);
+				expect(toastMock.success).toHaveBeenCalled();
 			});
-
-			warnSpy.mockRestore();
-			appendChild.mockRestore();
-			removeChild.mockRestore();
+			expect(soundLibMock.getByHash).toHaveBeenCalledWith('hash-kick-a');
+			expect(soundLibMock.findByFileName).not.toHaveBeenCalled();
+			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', fileA);
+			expect(mockZipInstance.file).not.toHaveBeenCalledWith('kick.wav', fileB);
 		});
 
-		it('clears exportWorkspaceError after 10 seconds via setTimeout', async () => {
-			vi.useFakeTimers();
-			try {
-				mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
-				render(ExportWorkspaceModal, { props: defaultProps });
+		it('fails with the no-files error when the workspace has no files to export', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({ name: 'Empty Workspace', dtxFiles: [], audioFiles: [] })
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-				const workspaceAButton = screen
-					.getAllByRole('button')
-					.find(
-						(btn) =>
-							btn.textContent?.includes('Workspace A') &&
-							!btn.textContent?.includes('Cancel')
-					)!;
+			await clickExport('Empty Workspace');
 
-				await fireEvent.click(workspaceAButton);
-				// Flush all promises and timers (including the 10s setTimeout)
-				await vi.runAllTimersAsync();
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent('No files found in workspace to export');
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
 
+		it('calls toastStore.error when ZIP generation fails', async () => {
+			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+			await clickExport('Workspace A');
+
+			await vi.waitFor(() => {
 				expect(toastMock.error).toHaveBeenCalled();
-			} finally {
-				vi.useRealTimers();
-			}
+			});
+		});
+	});
+
+	describe('Export integrity failures', () => {
+		it('fails when a small audio record has no content hash', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Legacy Workspace',
+					audioFiles: [
+						{ name: 'kick.wav', path: '/workspace/test/kick.wav', isLarge: false }
+					]
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Legacy Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/kick\.wav/);
+			expect(alert).toHaveTextContent(/re-import/i);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('catches audio file errors and continues export', async () => {
-			// Workspace A has 2 DTX files (basic.dtx, advanced.dtx) and 1 audio file (kick.wav)
-			// mock zip.file to succeed for both DTX files and then throw for the audio file
-			mockZipInstance.file
-				.mockImplementationOnce(() => undefined) // basic.dtx succeeds
-				.mockImplementationOnce(() => undefined) // advanced.dtx succeeds
-				.mockImplementationOnce(() => {
-					throw new Error('failed to add audio');
-				}); // kick.wav audio fails
-
-			soundLibMock.findByFileName.mockReturnValue([
-				{
-					hash: 'abc',
-					fileName: 'kick.wav',
-					fileType: 'audio/wav',
-					fileData: 'base64',
-					size: 1024,
-					dateAdded: Date.now()
-				}
+		it('fails when the audio hash matches no stored library record', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Missing Audio Workspace',
+					audioFiles: [smallAudioFile('snare.wav', 'hash-not-stored')]
+				})
 			]);
-			soundLibMock.toFile.mockReturnValue(new File(['audio'], 'kick.wav'));
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			await clickExport('Missing Audio Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/snare\.wav/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails when stored audio bytes cannot be converted back to a file', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Undecodable Workspace',
+					audioFiles: [smallAudioFile('hat.wav', 'hash-hat')]
+				})
+			]);
+			soundLibMock.getByHash.mockImplementation((hash) =>
+				hash === 'hash-hat' ? libraryRecord('hash-hat', 'hat.wav') : null
+			);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Undecodable Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/hat\.wav/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails with recovery guidance when a large audio file is no longer cached', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Reloaded Workspace',
+					audioFiles: [{ name: 'bgm.ogg', path: '/workspace/bgm.ogg', isLarge: true }]
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Reloaded Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/bgm\.ogg/);
+			expect(alert).toHaveTextContent(/uncheck/i);
+			expect(alert).toHaveTextContent(/newly imported copy/i);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails when two DTX files share the same flat ZIP name', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Duplicate DTX Workspace',
+					dtxFiles: [
+						{ name: 'chart.dtx', content: 'first', path: '/workspace/a/chart.dtx' },
+						{ name: 'chart.dtx', content: 'second', path: '/workspace/b/chart.dtx' }
+					],
+					audioFiles: []
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Duplicate DTX Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/chart\.dtx/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails when two audio files share a case-insensitive ZIP name', async () => {
+			const upperRecord = libraryRecord('hash-bgm-upper', 'BGM.ogg');
+			const lowerRecord = libraryRecord('hash-bgm-lower', 'bgm.ogg');
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Case Collision Workspace',
+					audioFiles: [
+						smallAudioFile('BGM.ogg', 'hash-bgm-upper'),
+						smallAudioFile('bgm.ogg', 'hash-bgm-lower')
+					]
+				})
+			]);
+			soundLibMock.getByHash.mockImplementation((hash) =>
+				hash === 'hash-bgm-upper'
+					? upperRecord
+					: hash === 'hash-bgm-lower'
+						? lowerRecord
+						: null
+			);
+			soundLibMock.toFile.mockImplementation((libraryFile) =>
+				libraryFile === upperRecord
+					? new File(['upper'], 'BGM.ogg')
+					: libraryFile === lowerRecord
+						? new File(['lower'], 'bgm.ogg')
+						: null
+			);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Case Collision Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/bgm\.ogg/i);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails when a DTX file and an audio file share the same ZIP name', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Cross Collision Workspace',
+					dtxFiles: [{ name: 'chart.dtx', content: 'dtx', path: '/workspace/chart.dtx' }],
+					audioFiles: [smallAudioFile('chart.dtx', 'hash-chart-audio')]
+				})
+			]);
+			soundLibMock.getByHash.mockImplementation((hash) =>
+				hash === 'hash-chart-audio' ? libraryRecord('hash-chart-audio', 'chart.dtx') : null
+			);
+			soundLibMock.toFile.mockImplementation((libraryFile) =>
+				libraryFile.hash === 'hash-chart-audio' ? new File(['audio'], 'chart.dtx') : null
+			);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Cross Collision Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/chart\.dtx/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails and names the file when a DTX entry cannot be added to the ZIP', async () => {
+			mockZipInstance.file.mockImplementation((name: string) => {
+				if (name === 'basic.dtx') {
+					throw new Error('add failed');
+				}
+			});
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Workspace A');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/basic\.dtx/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails and names the file when an audio entry cannot be added to the ZIP', async () => {
+			mockZipInstance.file.mockImplementation((name: string) => {
+				if (name === 'kick.wav') {
+					throw new Error('add failed');
+				}
+			});
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Workspace A');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/kick\.wav/);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('Export error display', () => {
+		it('keeps the inline error visible until the next export attempt', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Retry Workspace',
+					audioFiles: [smallAudioFile('lost.wav', 'hash-lost')]
+				})
+			]);
 			render(ExportWorkspaceModal, { props: defaultProps });
 
-			const appendChild = vi
-				.spyOn(document.body, 'appendChild')
-				.mockImplementation((el) => el);
-			const removeChild = vi
-				.spyOn(document.body, 'removeChild')
-				.mockImplementation((el) => el);
+			await clickExport('Retry Workspace');
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveTextContent(/lost\.wav/);
+			expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
 
-			const workspaceButtons = screen.getAllByRole('button');
-			const workspaceAButton = workspaceButtons.find(
-				(btn) =>
-					btn.textContent?.includes('Workspace A') && !btn.textContent?.includes('Cancel')
+			soundLibMock.getByHash.mockImplementation((hash) =>
+				hash === 'hash-lost' ? libraryRecord('hash-lost', 'lost.wav') : null
 			);
-			await fireEvent.click(workspaceAButton!);
+			soundLibMock.toFile.mockImplementation((libraryFile) =>
+				libraryFile.hash === 'hash-lost' ? new File(['lost bytes'], 'lost.wav') : null
+			);
 
+			await clickExport('Retry Workspace');
 			await vi.waitFor(() => {
-				expect(warnSpy).toHaveBeenCalledWith(
-					expect.stringContaining('Failed to add audio file kick.wav'),
-					expect.any(Error)
-				);
+				expect(toastMock.success).toHaveBeenCalled();
 			});
+			expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		});
 
-			warnSpy.mockRestore();
-			appendChild.mockRestore();
-			removeChild.mockRestore();
+		it('clears the inline error when the modal is closed and reopened', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Retry Workspace',
+					audioFiles: [smallAudioFile('lost.wav', 'hash-lost')]
+				})
+			]);
+			const { rerender } = render(ExportWorkspaceModal, { props: defaultProps });
+
+			await clickExport('Retry Workspace');
+			await screen.findByRole('alert');
+
+			await rerender({ show: false, onClose: defaultProps.onClose });
+			await rerender({ show: true, onClose: defaultProps.onClose });
+
+			expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+		});
+
+		it('renders multi-item errors inside a whitespace-pre-line alert', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Missing Audio Workspace',
+					audioFiles: [
+						smallAudioFile('a.wav', 'hash-a'),
+						smallAudioFile('b.wav', 'hash-b')
+					]
+				})
+			]);
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			await clickExport('Missing Audio Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert).toHaveClass('whitespace-pre-line');
+			expect(alert).toHaveTextContent(/a\.wav/);
+			expect(alert).toHaveTextContent(/b\.wav/);
 		});
 	});
 });

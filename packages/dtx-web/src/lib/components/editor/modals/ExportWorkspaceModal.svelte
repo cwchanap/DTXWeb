@@ -131,7 +131,9 @@
 					problems.push(
 						`Duplicate file names would overwrite each other in the ZIP:\n${duplicates
 							.map((name) => `- ${name}`)
-							.join('\n')}\nRename the files or import the songs separately.`
+							.join(
+								'\n'
+							)}\nRename the conflicting files, re-import the folder, and export the newly imported copy, or import the songs separately.`
 					);
 				}
 				if (missingAudio.length > 0) {

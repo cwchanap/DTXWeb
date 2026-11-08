@@ -607,6 +607,23 @@ describe('SoundLibrary', () => {
 			expect(result).toBeNull();
 		});
 
+		it('should reconstruct an empty File for zero-byte records', () => {
+			const libraryFile: SoundLibraryFile = {
+				hash: 'hash1',
+				fileName: 'empty.wav',
+				fileType: 'audio/wav',
+				fileData: '', // Zero-byte files store empty data
+				size: 0,
+				dateAdded: Date.now()
+			};
+
+			const result = SoundLibrary.toFile(libraryFile);
+
+			expect(result).not.toBeNull();
+			expect(result!.name).toBe('empty.wav');
+			expect(result!.size).toBe(0);
+		});
+
 		it('should return null for entries with invalid base64 data', () => {
 			const libraryFile: SoundLibraryFile = {
 				hash: 'hash1',

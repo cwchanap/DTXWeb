@@ -44,6 +44,7 @@
 			const seenNames = new Set<string>();
 			const missingAudio: string[] = [];
 			const duplicates: string[] = [];
+			const addedAudioFiles: { name: string; file: File }[] = [];
 			let addedDtxCount = 0;
 			let addedAudioCount = 0;
 
@@ -93,7 +94,7 @@
 						// Get small file from sound library by its stored content hash
 						if (!audioFile.hash) {
 							missingAudio.push(
-								`${audioFile.name}: no stored content hash (imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+								`${audioFile.name}: no stored content hash (hashing failed or imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
 							);
 							continue;
 						}
@@ -116,6 +117,7 @@
 
 					try {
 						zip.file(audioFile.name, file);
+						addedAudioFiles.push({ name: audioFile.name, file });
 						addedAudioCount++;
 					} catch (error) {
 						throw new Error(
@@ -153,7 +155,31 @@
 			}
 
 			// Generate and download zip
-			const zipBlob = await zip.generateAsync({ type: 'blob' });
+			let zipBlob: Blob;
+			try {
+				zipBlob = await zip.generateAsync({ type: 'blob' });
+			} catch (error) {
+				// JSZip reads File contents during generateAsync, so a read
+				// failure surfaces here without identifying which file failed.
+				const unreadable: string[] = [];
+				for (const added of addedAudioFiles) {
+					try {
+						await added.file.arrayBuffer();
+					} catch {
+						unreadable.push(added.name);
+					}
+				}
+				if (unreadable.length > 0) {
+					throw new Error(
+						`Failed to read audio file${unreadable.length > 1 ? 's' : ''}:\n${unreadable
+							.map((name) => `- ${name}`)
+							.join(
+								'\n'
+							)}\nRe-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+					);
+				}
+				throw error;
+			}
 			const zipFileName = `${workspace.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.zip`;
 
 			// Create download link

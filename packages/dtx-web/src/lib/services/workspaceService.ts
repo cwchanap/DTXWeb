@@ -91,7 +91,13 @@ export class WorkspaceService {
 				};
 
 				if (!isLarge) {
-					workspaceFile.hash = await SoundLibrary.generateFileHash(file);
+					try {
+						workspaceFile.hash = await SoundLibrary.generateFileHash(file);
+					} catch (error) {
+						// Keep the record without a hash so one unreadable file does
+						// not abort the import; audio-inclusive export stays blocked.
+						console.error(`Failed to hash audio file ${file.name}:`, error);
+					}
 				}
 
 				audioFiles.push(workspaceFile);

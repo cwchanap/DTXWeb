@@ -83,9 +83,12 @@ const defaultProps = {
 };
 
 const clickExport = async (workspaceName: string) => {
-	// Spy on appendChild AFTER rendering so it does not interfere with test setup
+	// Spy on download hooks AFTER rendering so they do not interfere with test setup
 	const appendChild = vi.spyOn(document.body, 'appendChild').mockImplementation((el) => el);
 	const removeChild = vi.spyOn(document.body, 'removeChild').mockImplementation((el) => el);
+	const anchorClick = vi
+		.spyOn(HTMLAnchorElement.prototype, 'click')
+		.mockImplementation(() => undefined);
 	const workspaceButton = screen
 		.getAllByRole('button')
 		.find(
@@ -94,7 +97,7 @@ const clickExport = async (workspaceName: string) => {
 		);
 	expect(workspaceButton).toBeDefined();
 	await fireEvent.click(workspaceButton!);
-	return { appendChild, removeChild };
+	return { appendChild, removeChild, anchorClick };
 };
 
 describe('ExportWorkspaceModal', () => {
@@ -218,7 +221,7 @@ describe('ExportWorkspaceModal', () => {
 			const onClose = vi.fn();
 			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
-			await clickExport('Workspace A');
+			const { anchorClick } = await clickExport('Workspace A');
 
 			await vi.waitFor(() => {
 				expect(toastMock.success).toHaveBeenCalled();
@@ -232,6 +235,8 @@ describe('ExportWorkspaceModal', () => {
 			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', kickFile);
 			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
 			expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
+			expect(anchorClick).toHaveBeenCalledTimes(1);
+			expect(toastMock.success).toHaveBeenCalledTimes(1);
 			expect(toastMock.success).toHaveBeenCalledWith({
 				title: 'Workspace "Workspace A" exported successfully! (2 DTX files, 1 audio files)'
 			});
@@ -524,6 +529,28 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
+		it('advises re-importing the renamed files for name collisions', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Collision Recovery Workspace',
+					dtxFiles: [
+						{ name: 'Chart.dtx', content: 'first', path: '/workspace/a/Chart.dtx' },
+						{ name: 'chart.DTX', content: 'second', path: '/workspace/b/chart.DTX' }
+					],
+					audioFiles: []
+				})
+			]);
+			render(ExportWorkspaceModal, { props: defaultProps });
+
+			await clickExport('Collision Recovery Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert.textContent).toMatch(/chart\.dtx/i);
+			expect(alert.textContent).toMatch(/rename/i);
+			expect(alert.textContent).toMatch(/re-import/i);
+			expect(alert.textContent).toMatch(/newly imported copy/i);
+		});
+
 		it('fails when two audio files share a case-insensitive ZIP name', async () => {
 			const upperRecord = libraryRecord('hash-bgm-upper', 'BGM.ogg');
 			const lowerRecord = libraryRecord('hash-bgm-lower', 'bgm.ogg');
@@ -714,6 +741,13 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.classList.contains('whitespace-pre-line')).toBe(true);
 			expect(alert.textContent).toMatch(/a\.wav/);
 			expect(alert.textContent).toMatch(/b\.wav/);
+			expect(alert.textContent).toContain('\n');
+			const workspaceButton = screen.getByRole('button', {
+				name: /Missing Audio Workspace/
+			});
+			expect(alert.compareDocumentPosition(workspaceButton)).toBe(
+				Node.DOCUMENT_POSITION_FOLLOWING
+			);
 		});
 	});
 });

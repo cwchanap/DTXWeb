@@ -1,9 +1,9 @@
 # HPA-567 — Prevent incomplete or incorrect workspace ZIP exports
 
-**Status:** Design updated after PR #340 review (implementation remains pending)  
+**Status:** Implemented and verified on PR #340 (see plan doc for verification results)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-567/dtxwebbug-prevent-incomplete-workspace-zip-exports  
 **Reviews addressed:** [first pass](https://github.com/cwchanap/DTXWeb/pull/340#issuecomment-6703010130), [second pass](https://github.com/cwchanap/DTXWeb/pull/340#pullrequestreview-5810706437)  
-**Delivery:** Continue implementing on the *same* draft PR #340.
+**Delivery:** Continue implementing on the _same_ draft PR #340.
 
 ## Problem and code evidence
 
@@ -15,14 +15,14 @@ The browser workspace stores DTX as decoded text; audio files at or under 2 MiB 
 
 An export is **all-or-nothing for the selected entries**:
 
-| Option | Required entries | Failure |
-| --- | --- | --- |
-| **Include audio files** selected (default) | Every DTX record, **including a valid zero-byte DTX**, and every listed audio record | Abort without generating or downloading the ZIP |
-| **Include audio files** unchecked | Every DTX record, including zero-byte files | Unavailable audio is irrelevant; DTX-only ZIP works |
+| Option                                     | Required entries                                                                     | Failure                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------- |
+| **Include audio files** selected (default) | Every DTX record, **including a valid zero-byte DTX**, and every listed audio record | Abort without generating or downloading the ZIP     |
+| **Include audio files** unchecked          | Every DTX record, including zero-byte files                                          | Unavailable audio is irrelevant; DTX-only ZIP works |
 
 - A zero-byte DTX is valid input for a faithful backup; never skip it based on empty content. If no files of any selected kind exist, show the existing no-files error.
 - Every selected filename must map to **one unique flat ZIP entry**, including on case-insensitive extraction filesystems. Normalize selected names with `name.toLowerCase()` for collision checks across DTX/audio, while preserving original casing in `zip.file`. Fail for names that differ only by case (e.g. `BGM.ogg` and `bgm.ogg`) or match exactly (e.g. “Two files named bgm.ogg; import songs separately”). No ZIP layout change or silent overwrite.
-- Every selected **small audio** record must have a content hash that identifies *that workspace's audio bytes*. Missing hash, missing hash match, or failed `toFile` conversion means the requested file is unavailable. Never substitute the oldest library file sharing the same name.
+- Every selected **small audio** record must have a content hash that identifies _that workspace's audio bytes_. Missing hash, missing hash match, or failed `toFile` conversion means the requested file is unavailable. Never substitute the oldest library file sharing the same name.
 - For **large audio**, keep the current session-only lookup. If the file is gone after reload, say so: “bgm.ogg is only available until the page reloads. Uncheck Include audio files, or re-import the folder and **export the newly imported copy**.” Re-import creates a distinct workspace name (e.g. `Name (1)`), not a repair of the previous workspace.
 - Failed `zip.file` additions are errors with the affected filename. No `generateAsync`, object URL, success toast, or modal close on a failure.
 - Keep the modal open and show the error **inline above the workspace list** (`role="alert"` and `whitespace-pre-line` to preserve newlines in multi-item messages), as well as in the existing error toast. Preserve it until the next export attempt **or the modal is closed and reopened**; clear `exportWorkspaceError` in the existing `show`-true `$effect` when opening. Remove the unused 10-second clear timer.
@@ -48,9 +48,9 @@ Update only the existing `exportWorkspace(workspace)` flow:
 1. Use a single `Set<string>` of **lowercased** selected/added flat names (including across DTX and audio) to detect duplicates, including case variants. Use `name.toLowerCase()` only as the comparison key, not for the file added with `zip.file(name, ...)`. Track duplicate names independently of missing audio. A duplicate is a failure, not an overwrite.
 2. Always call `zip.file(dtxFile.name, dtxFile.content)` for each nonduplicated DTX record, even if content is `''`; increment `addedDtxCount` after a successful call. A thrown add error is reported with the DTX filename via the existing outer catch.
 3. When audio is selected, for each nonduplicated audio record:
-   - Large: resolve `WorkspaceService.getLargeFile(workspace.name, audioFile.name)`.
-   - Small: require `audioFile.hash` and resolve `SoundLibrary.getByHash(audioFile.hash)` → `SoundLibrary.toFile`.
-   - Collect unavailable audio names and their useful recovery hints. Only call `zip.file` after resolution and increment `addedAudioCount` after successful addition. A thrown add error is reported with the audio filename.
+    - Large: resolve `WorkspaceService.getLargeFile(workspace.name, audioFile.name)`.
+    - Small: require `audioFile.hash` and resolve `SoundLibrary.getByHash(audioFile.hash)` → `SoundLibrary.toFile`.
+    - Collect unavailable audio names and their useful recovery hints. Only call `zip.file` after resolution and increment `addedAudioCount` after successful addition. A thrown add error is reported with the audio filename.
 4. If any missing-audio or duplicate-name errors were collected, throw **one** informative error through the existing outer `catch` before `generateAsync`. Keep the error categories separate so the recovery text is accurate.
 5. If no entries were added, use the existing “No files found in workspace to export” failure. Otherwise generate and download one ZIP. The success toast reports `addedDtxCount` and `addedAudioCount`.
 
@@ -62,9 +62,9 @@ Modify the **existing** suites rather than create another test framework.
 
 **`ExportWorkspaceModal.test.ts`**
 
-- Add a default `hash: 'mock-hash-kick'` for the small `kick.wav` in the shared `packages/dtx-web/src/tests/mocks/services.ts` `makeWorkspace` fixture; it is used by the modal's hoisted workspace mocks. Add a `getByHash` mock to the modal test's `soundLibMock`, and ensure the default hash resolves the matching file through `getByHash`/`toFile`. Explicitly reset `getByHash`, `toFile`, `getLargeFile` and `zip.file` implementations in `beforeEach`; `vi.clearAllMocks()` alone does *not* reset them.
+- Add a default `hash: 'mock-hash-kick'` for the small `kick.wav` in the shared `packages/dtx-web/src/tests/mocks/services.ts` `makeWorkspace` fixture; it is used by the modal's hoisted workspace mocks. Add a `getByHash` mock to the modal test's `soundLibMock`, and ensure the default hash resolves the matching file through `getByHash`/`toFile`. Explicitly reset `getByHash`, `toFile`, `getLargeFile` and `zip.file` implementations in `beforeEach`; `vi.clearAllMocks()` alone does _not_ reset them.
 - Add a tiny local helper for the repeated render → find-workspace-button → click sequence.
-- In failure tests, **wait until the error toast or inline alert appears** before asserting that `generateAsync`, `URL.createObjectURL`, `onClose` and the success toast have *not* been called.
+- In failure tests, **wait until the error toast or inline alert appears** before asserting that `generateAsync`, `URL.createObjectURL`, `onClose` and the success toast have _not_ been called.
 - Test missing hashed small audio, old small audio with no hash, same-named audio across workspaces (the correct workspace hash must win), missing large session audio with “newly imported copy” guidance, exact-name and **case-only** ZIP collisions (DTX/DTX, audio/audio and DTX/audio where useful), and `zip.file` errors.
 - Zero-byte DTX is exported faithfully. Change the old “no exportable files” fixture to have `dtxFiles: []` and `audioFiles: []`, not an empty DTX content string.
 - Verify DTX-only export ignores missing audio, and a fully available export adds the correct unique entries, reports actual counts, creates one download, closes, and clears any previously displayed error on a new attempt **and when reopened**. Exercise an alert containing newlines and verify it has `whitespace-pre-line` for readable multi-item errors.

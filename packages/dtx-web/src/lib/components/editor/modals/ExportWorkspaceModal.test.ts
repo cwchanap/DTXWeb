@@ -381,7 +381,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Empty Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent('No files found in workspace to export');
+			expect(alert.textContent).toContain('No files found in workspace to export');
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -397,7 +397,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Workspace A');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent('zip failed');
+			expect(alert.textContent).toContain('zip failed');
 			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -422,8 +422,8 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Legacy Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/kick\.wav/);
-			expect(alert).toHaveTextContent(/re-import/i);
+			expect(alert.textContent).toMatch(/kick\.wav/);
+			expect(alert.textContent).toMatch(/re-import/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -444,7 +444,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Missing Audio Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/snare\.wav/);
+			expect(alert.textContent).toMatch(/snare\.wav/);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -468,7 +468,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Undecodable Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/hat\.wav/);
+			expect(alert.textContent).toMatch(/hat\.wav/);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -489,9 +489,9 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Reloaded Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/bgm\.ogg/);
-			expect(alert).toHaveTextContent(/uncheck/i);
-			expect(alert).toHaveTextContent(/newly imported copy/i);
+			expect(alert.textContent).toMatch(/bgm\.ogg/);
+			expect(alert.textContent).toMatch(/uncheck/i);
+			expect(alert.textContent).toMatch(/newly imported copy/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -516,7 +516,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Duplicate DTX Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/chart\.dtx/i);
+			expect(alert.textContent).toMatch(/chart\.dtx/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -556,7 +556,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Case Collision Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/bgm\.ogg/i);
+			expect(alert.textContent).toMatch(/bgm\.ogg/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -584,7 +584,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Cross Collision Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/chart\.dtx/i);
+			expect(alert.textContent).toMatch(/chart\.dtx/i);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -604,7 +604,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Workspace A');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/basic\.dtx/);
+			expect(alert.textContent).toMatch(/basic\.dtx/);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -624,7 +624,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Workspace A');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveTextContent(/kick\.wav/);
+			expect(alert.textContent).toMatch(/kick\.wav/);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
@@ -647,11 +647,11 @@ describe('ExportWorkspaceModal', () => {
 			try {
 				await clickExport('Retry Workspace');
 				await vi.waitFor(() => {
-					expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
+					expect(screen.getByRole('alert').textContent).toMatch(/lost\.wav/);
 				});
 
 				await vi.advanceTimersByTimeAsync(11_000);
-				expect(screen.getByRole('alert')).toHaveTextContent(/lost\.wav/);
+				expect(screen.getByRole('alert').textContent).toMatch(/lost\.wav/);
 
 				soundLibMock.getByHash.mockImplementation((hash) =>
 					hash === 'hash-lost' ? libraryRecord('hash-lost', 'lost.wav') : null
@@ -666,13 +666,13 @@ describe('ExportWorkspaceModal', () => {
 				mockZipInstance.generateAsync.mockImplementation(() => pendingZip);
 
 				await clickExport('Retry Workspace');
-				expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+				expect(screen.queryByRole('alert')).toBeNull();
 				expect(toastMock.success).not.toHaveBeenCalled();
 
 				resolveZip(new Blob(['zip content']));
 				await vi.advanceTimersByTimeAsync(0);
 				expect(toastMock.success).toHaveBeenCalled();
-				expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+				expect(screen.queryByRole('alert')).toBeNull();
 			} finally {
 				vi.useRealTimers();
 			}
@@ -693,7 +693,7 @@ describe('ExportWorkspaceModal', () => {
 			await rerender({ show: false, onClose: defaultProps.onClose });
 			await rerender({ show: true, onClose: defaultProps.onClose });
 
-			expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+			expect(screen.queryByRole('alert')).toBeNull();
 		});
 
 		it('renders multi-item errors inside a whitespace-pre-line alert', async () => {
@@ -711,9 +711,9 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Missing Audio Workspace');
 
 			const alert = await screen.findByRole('alert');
-			expect(alert).toHaveClass('whitespace-pre-line');
-			expect(alert).toHaveTextContent(/a\.wav/);
-			expect(alert).toHaveTextContent(/b\.wav/);
+			expect(alert.classList.contains('whitespace-pre-line')).toBe(true);
+			expect(alert.textContent).toMatch(/a\.wav/);
+			expect(alert.textContent).toMatch(/b\.wav/);
 		});
 	});
 });

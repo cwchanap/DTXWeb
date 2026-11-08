@@ -254,7 +254,7 @@ export class SoundLibrary {
 	/**
 	 * Generate SHA-256 hash of file content
 	 */
-	private static async generateFileHash(file: File): Promise<string> {
+	static async generateFileHash(file: File): Promise<string> {
 		const arrayBuffer = await file.arrayBuffer();
 		const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
 		const hashArray = Array.from(new Uint8Array(hashBuffer));

@@ -33,7 +33,8 @@ vi.mock('./soundLibrary', () => ({
 	SoundLibrary: {
 		addFiles: vi.fn().mockResolvedValue({ added: 1, skipped: 0, errors: [] }),
 		getAll: vi.fn().mockReturnValue([]),
-		toFile: vi.fn().mockImplementation((sf) => new File(['mock'], sf.fileName))
+		toFile: vi.fn().mockImplementation((sf) => new File(['mock'], sf.fileName)),
+		generateFileHash: vi.fn().mockResolvedValue('mock-file-hash')
 	}
 }));
 
@@ -77,6 +78,7 @@ describe('WorkspaceService', () => {
 			content: 'mocked dtx content',
 			encoding: 'utf-8'
 		});
+		vi.mocked(SoundLibrary.generateFileHash).mockResolvedValue('mock-file-hash');
 	});
 
 	afterEach(() => {
@@ -126,6 +128,91 @@ describe('WorkspaceService', () => {
 			const result = await workspaceService.importFolder(fileList);
 
 			expect(result.audioFiles[0].isLarge).toBe(true);
+		});
+
+		it('should compute and store a hash for small audio files', async () => {
+			const audioFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
+
+			Object.defineProperty(audioFile, 'webkitRelativePath', {
+				value: 'MyFolder/kick.wav',
+				writable: false
+			});
+
+			vi.mocked(SoundLibrary.generateFileHash).mockResolvedValue('hash-kick-abc');
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([audioFile] as unknown as FileList);
+
+			expect(SoundLibrary.generateFileHash).toHaveBeenCalledWith(audioFile);
+			expect(result.audioFiles[0].hash).toBe('hash-kick-abc');
+			expect(SoundLibrary.addFiles).toHaveBeenCalledWith([audioFile]);
+		});
+
+		it('should persist the small audio hash in the stored workspace', async () => {
+			const audioFile = new File(['audio data'], 'snare.wav', { type: 'audio/wav' });
+
+			Object.defineProperty(audioFile, 'webkitRelativePath', {
+				value: 'MyFolder/snare.wav',
+				writable: false
+			});
+
+			vi.mocked(SoundLibrary.generateFileHash).mockResolvedValue('hash-snare-1');
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			await workspaceService.importFolder([audioFile] as unknown as FileList);
+
+			const savedPayload = mockLocalStorage.setItem.mock.calls.find(
+				(call) => call[0] === 'dtx_workspaces'
+			)?.[1] as string;
+			const savedWorkspaces = JSON.parse(savedPayload) as Workspace[];
+			expect(savedWorkspaces[0].audioFiles[0].hash).toBe('hash-snare-1');
+		});
+
+		it('should hash an audio file whose size equals the large-file threshold', async () => {
+			const boundaryFile = new File(['audio data'], 'edge.wav', { type: 'audio/wav' });
+			Object.defineProperty(boundaryFile, 'size', { value: 2 * 1024 * 1024 });
+
+			Object.defineProperty(boundaryFile, 'webkitRelativePath', {
+				value: 'MyFolder/edge.wav',
+				writable: false
+			});
+
+			vi.mocked(SoundLibrary.generateFileHash).mockResolvedValue('hash-edge');
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([
+				boundaryFile
+			] as unknown as FileList);
+
+			expect(result.audioFiles[0].isLarge).toBe(false);
+			expect(SoundLibrary.generateFileHash).toHaveBeenCalledWith(boundaryFile);
+			expect(result.audioFiles[0].hash).toBe('hash-edge');
+		});
+
+		it('should not hash large audio files kept in session memory', async () => {
+			const largeFile = new File(['audio data'], 'large.wav', { type: 'audio/wav' });
+			Object.defineProperty(largeFile, 'size', { value: 2 * 1024 * 1024 + 1 });
+
+			Object.defineProperty(largeFile, 'webkitRelativePath', {
+				value: 'MyFolder/large.wav',
+				writable: false
+			});
+
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([largeFile] as unknown as FileList);
+
+			expect(result.audioFiles[0].isLarge).toBe(true);
+			expect(result.audioFiles[0].hash).toBeUndefined();
+			expect(SoundLibrary.generateFileHash).not.toHaveBeenCalled();
+			expect(WorkspaceService.getLargeFile('MyFolder', 'large.wav')).toBe(largeFile);
+			expect(SoundLibrary.addFiles).toHaveBeenCalledWith([largeFile]);
+
+			const savedPayload = mockLocalStorage.setItem.mock.calls.find(
+				(call) => call[0] === 'dtx_workspaces'
+			)?.[1] as string;
+			const savedWorkspaces = JSON.parse(savedPayload) as Workspace[];
+			expect(savedWorkspaces[0].audioFiles[0].hash).toBeUndefined();
 		});
 
 		it('should sort DTX files: file with difficulty before file without', async () => {
@@ -597,6 +684,32 @@ describe('WorkspaceService', () => {
 			const savedPayload = mockLocalStorage.setItem.mock.calls[0][1] as string;
 			expect(savedPayload).toContain('Serializable Workspace');
 			expect(savedPayload).not.toContain('"file"');
+		});
+
+		it('should persist audio file hashes when saving', () => {
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Hashed Workspace',
+				path: 'hashed-path',
+				dtxFiles: [],
+				audioFiles: [
+					{
+						name: 'kick.wav',
+						path: 'kick.wav',
+						isLarge: false,
+						hash: 'saved-hash-1'
+					}
+				],
+				currentDTX: null,
+				lastModified: Date.now()
+			};
+
+			workspaceService.saveWorkspace(workspace);
+
+			const savedPayload = mockLocalStorage.setItem.mock.calls[0][1] as string;
+			const parsed = JSON.parse(savedPayload) as Workspace[];
+			expect(parsed[0].audioFiles[0].hash).toBe('saved-hash-1');
 		});
 
 		it('should handle localStorage errors', () => {

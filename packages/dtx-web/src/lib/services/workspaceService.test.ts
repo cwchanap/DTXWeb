@@ -34,7 +34,8 @@ vi.mock('./soundLibrary', () => ({
 		addFiles: vi.fn().mockResolvedValue({ added: 1, skipped: 0, errors: [] }),
 		getAll: vi.fn().mockReturnValue([]),
 		toFile: vi.fn().mockImplementation((sf) => new File(['mock'], sf.fileName)),
-		generateFileHash: vi.fn().mockResolvedValue('mock-file-hash')
+		generateFileHash: vi.fn().mockResolvedValue('mock-file-hash'),
+		isLargeFile: vi.fn((size: number) => size > 2 * 1024 * 1024)
 	}
 }));
 
@@ -79,6 +80,8 @@ describe('WorkspaceService', () => {
 			encoding: 'utf-8'
 		});
 		vi.mocked(SoundLibrary.generateFileHash).mockResolvedValue('mock-file-hash');
+		vi.mocked(SoundLibrary.isLargeFile).mockImplementation((size) => size > 2 * 1024 * 1024);
+		vi.mocked(SoundLibrary.addFiles).mockResolvedValue({ added: 1, skipped: 0, errors: [] });
 	});
 
 	afterEach(() => {
@@ -216,6 +219,48 @@ describe('WorkspaceService', () => {
 			)?.[1] as string;
 			const savedWorkspaces = JSON.parse(savedPayload) as Workspace[];
 			expect(savedWorkspaces[0].audioFiles[0].hash).toBeUndefined();
+		});
+
+		it('should decode a DTX file with a UTF-8 BOM as UTF-8 without trying Shift-JIS first', async () => {
+			const { decodeFileWithEncodingDetection } = await import('@dtx/common');
+			const bomFile = new File([new Uint8Array([0xef, 0xbb, 0xbf, 0x23, 0x54])], 'song.dtx');
+			const sjisFile = new File([new Uint8Array([0x23, 0x54])], 'plain.dtx');
+			[bomFile, sjisFile].forEach((file) => {
+				Object.defineProperty(file, 'webkitRelativePath', {
+					value: `MyFolder/${file.name}`,
+					writable: false
+				});
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			await workspaceService.importFolder([bomFile, sjisFile] as unknown as FileList);
+
+			const calls = vi.mocked(decodeFileWithEncodingDetection).mock.calls;
+			expect(calls[0][0]).toBe(bomFile);
+			expect(calls[0][2]).toEqual(['utf-8']);
+			expect(calls[0][3]).toBe('utf-8');
+			expect(calls[1][0]).toBe(sjisFile);
+			expect(calls[1][2]?.[0]).toBe('shift-jis');
+			expect(calls[1][3]).toBe('shift-jis');
+		});
+
+		it('should not record a hash when the sound library rejects the audio file', async () => {
+			const audioFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
+			Object.defineProperty(audioFile, 'webkitRelativePath', {
+				value: 'MyFolder/kick.wav',
+				writable: false
+			});
+			vi.mocked(SoundLibrary.addFiles).mockResolvedValue({
+				added: 0,
+				skipped: 0,
+				errors: ['kick.wav: Would exceed storage limit (50MB)']
+			});
+			vi.spyOn(console, 'error').mockImplementation(() => undefined);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([audioFile] as unknown as FileList);
+
+			expect(result.audioFiles[0].hash).toBeUndefined();
 		});
 
 		it('should not hash large audio files kept in session memory', async () => {
@@ -509,6 +554,56 @@ describe('WorkspaceService', () => {
 			expect(setFile).toHaveBeenCalledWith('local:kick.wav', kickFile);
 			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
 			expect(setFile).toHaveBeenCalledTimes(2);
+		});
+
+		it('should resolve small audio by stored hash and expose it under the workspace file name', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const soundChips: { fileName: string; file?: File }[] = [{ fileName: 'kick.wav' }];
+			vi.mocked(DTXFile).mockImplementation(function () {
+				return {
+					parseFromText: vi.fn().mockResolvedValue(undefined),
+					parseSoundChips: vi.fn().mockReturnValue(soundChips),
+					title: 'Pinned'
+				} as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+			// Another workspace's same-named file with different bytes, plus the pinned record
+			// stored under a different name (content-deduplicated).
+			const otherRecord = {
+				hash: 'hash-other',
+				fileName: 'kick.wav',
+				fileData: 'other'
+			} as any;
+			const pinnedRecord = {
+				hash: 'hash-pinned',
+				fileName: 'Kick.WAV',
+				fileData: 'pinned'
+			} as any;
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([otherRecord, pinnedRecord]);
+			vi.mocked(SoundLibrary.toFile).mockImplementation(
+				(record) => new File([record.fileData], record.fileName, { type: 'audio/wav' })
+			);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Pinned Workspace',
+				path: 'p',
+				dtxFiles: [{ name: 'test.dtx', content: '#TITLE: x', path: 'test.dtx' }],
+				audioFiles: [
+					{ name: 'kick.wav', path: 'kick.wav', isLarge: false, hash: 'hash-pinned' }
+				],
+				currentDTX: 'test.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
+
+			expect(result!.simFile.files).toHaveLength(1);
+			expect(result!.simFile.files[0].name).toBe('kick.wav');
+			expect(await result!.simFile.files[0].text()).toBe('pinned');
+			expect(soundChips[0].file).toBe(result!.simFile.files[0]);
 		});
 
 		it('should return null when parsing throws an error', async () => {
@@ -1006,6 +1101,37 @@ describe('WorkspaceService', () => {
 			expect(formatFileSize(2097152)).toBe('2.0 MB');
 			expect(formatFileSize(1073741824)).toBe('1.0 GB');
 			expect(formatFileSize(0)).toBe('0.0 B');
+		});
+	});
+	describe('toExportContent', () => {
+		const decodeSjis = (value: string | Uint8Array) =>
+			new TextDecoder('shift-jis').decode(value as Uint8Array);
+
+		it('encodes Japanese text as Shift-JIS bytes that round-trip through the decoder', () => {
+			const text = '#TITLE: 太鼓の達人 ｶﾀｶﾅ ①\\path\r\n#ARTIST: テスト';
+			const encoded = WorkspaceService.toExportContent(text);
+
+			expect(encoded).toBeInstanceOf(Uint8Array);
+			expect(decodeSjis(encoded)).toBe(text);
+		});
+
+		it('produces the exact CP932 bytes for kanji', () => {
+			expect(Array.from(WorkspaceService.toExportContent('太鼓') as Uint8Array)).toEqual([
+				0x91, 0xbe, 0x8c, 0xdb
+			]);
+		});
+
+		it('ignores a leading BOM character when encoding', () => {
+			const encoded = WorkspaceService.toExportContent('\uFEFF#TITLE: x');
+			expect(decodeSjis(encoded)).toBe('#TITLE: x');
+		});
+
+		it('falls back to UTF-8 with a BOM when a character is not representable', () => {
+			expect(WorkspaceService.toExportContent('#TITLE: 🥁')).toBe('\uFEFF#TITLE: 🥁');
+		});
+
+		it('keeps an empty chart zero-byte', () => {
+			expect(WorkspaceService.toExportContent('')).toBe('');
 		});
 	});
 });

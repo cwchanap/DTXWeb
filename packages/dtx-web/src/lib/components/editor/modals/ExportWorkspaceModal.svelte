@@ -41,40 +41,36 @@
 
 		try {
 			const zip = new JSZip();
-			const seenNames = new Set<string>();
+			// NFC-normalized + lowercased so names that extract onto the same file on
+			// case-insensitive / normalizing filesystems (macOS, Windows) are caught.
+			const toCollisionKey = (name: string) => name.normalize('NFC').toLowerCase();
+			const seenPaths = new Map<string, string>();
 			const missingAudio: string[] = [];
 			const duplicates: string[] = [];
-			const addedAudioFiles: { name: string; file: File }[] = [];
-			let addedDtxCount = 0;
-			let addedAudioCount = 0;
+			const pendingDtx: { name: string; content: string }[] = [];
+			const pendingAudio: { name: string; file: File }[] = [];
 
-			// Add DTX files to zip (from stored content)
+			const claimName = (name: string, path: string): boolean => {
+				const key = toCollisionKey(name);
+				const firstPath = seenPaths.get(key);
+				if (firstPath !== undefined) {
+					duplicates.push(`${name} (${path}) conflicts with ${firstPath}`);
+					return false;
+				}
+				seenPaths.set(key, path);
+				return true;
+			};
+
+			// Collect DTX files (from stored content)
 			for (const dtxFile of workspace.dtxFiles) {
-				const key = dtxFile.name.toLowerCase();
-				if (seenNames.has(key)) {
-					duplicates.push(dtxFile.name);
-					continue;
-				}
-				seenNames.add(key);
-				try {
-					zip.file(dtxFile.name, dtxFile.content);
-					addedDtxCount++;
-				} catch (error) {
-					throw new Error(
-						`Failed to add DTX file ${dtxFile.name}: ${error instanceof Error ? error.message : String(error)}`
-					);
-				}
+				if (!claimName(dtxFile.name, dtxFile.path)) continue;
+				pendingDtx.push({ name: dtxFile.name, content: dtxFile.content });
 			}
 
-			// Add audio files to zip (from sound library and session storage) if enabled
+			// Collect audio files (from sound library and session storage) if enabled
 			if (includeAudioInExport) {
 				for (const audioFile of workspace.audioFiles) {
-					const key = audioFile.name.toLowerCase();
-					if (seenNames.has(key)) {
-						duplicates.push(audioFile.name);
-						continue;
-					}
-					seenNames.add(key);
+					if (!claimName(audioFile.name, audioFile.path)) continue;
 
 					let file: File;
 					if (audioFile.isLarge) {
@@ -94,14 +90,14 @@
 						// Get small file from sound library by its stored content hash
 						if (!audioFile.hash) {
 							missingAudio.push(
-								`${audioFile.name}: no stored content hash (hashing failed or imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+								`${audioFile.name}: no stored content hash (hashing or sound library storage failed during import, or the folder was imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
 							);
 							continue;
 						}
 						const libraryFile = SoundLibrary.getByHash(audioFile.hash);
 						if (!libraryFile) {
 							missingAudio.push(
-								`${audioFile.name}: no matching audio in the sound library. Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+								`${audioFile.name}: no matching audio in the sound library. Re-import the folder and export the newly imported copy (if the sound library is full, free up browser storage first), or uncheck "Include audio files".`
 							);
 							continue;
 						}
@@ -115,15 +111,7 @@
 						file = convertedFile;
 					}
 
-					try {
-						zip.file(audioFile.name, file);
-						addedAudioFiles.push({ name: audioFile.name, file });
-						addedAudioCount++;
-					} catch (error) {
-						throw new Error(
-							`Failed to add audio file ${audioFile.name}: ${error instanceof Error ? error.message : String(error)}`
-						);
-					}
+					pendingAudio.push({ name: audioFile.name, file });
 				}
 			}
 
@@ -132,7 +120,7 @@
 				if (duplicates.length > 0) {
 					problems.push(
 						`Duplicate file names would overwrite each other in the ZIP:\n${duplicates
-							.map((name) => `- ${name}`)
+							.map((entry) => `- ${entry}`)
 							.join(
 								'\n'
 							)}\nRename the conflicting files, re-import the folder, and export the newly imported copy, or import the songs separately.`
@@ -150,9 +138,18 @@
 				);
 			}
 
-			if (addedDtxCount + addedAudioCount === 0) {
+			if (pendingDtx.length + pendingAudio.length === 0) {
 				throw new Error('No files found in workspace to export');
 			}
+
+			// Only add to the ZIP once the export is known to proceed: JSZip starts
+			// reading each File as soon as it is added. file() defers content errors
+			// to generateAsync, so there is nothing to catch here.
+			for (const { name, content } of pendingDtx)
+				zip.file(name, WorkspaceService.toExportContent(content));
+			for (const { name, file } of pendingAudio) zip.file(name, file);
+			const addedDtxCount = pendingDtx.length;
+			const addedAudioCount = pendingAudio.length;
 
 			// Generate and download zip
 			let zipBlob: Blob;
@@ -161,14 +158,13 @@
 			} catch (error) {
 				// JSZip reads File contents during generateAsync, so a read
 				// failure surfaces here without identifying which file failed.
-				const unreadable: string[] = [];
-				for (const added of addedAudioFiles) {
-					try {
-						await added.file.arrayBuffer();
-					} catch {
-						unreadable.push(added.name);
-					}
-				}
+				// Probe one byte of each file concurrently to name the culprits.
+				const probes = await Promise.allSettled(
+					pendingAudio.map(({ file }) => file.slice(0, 1).arrayBuffer())
+				);
+				const unreadable = pendingAudio
+					.filter((_, index) => probes[index].status === 'rejected')
+					.map(({ name }) => name);
 				if (unreadable.length > 0) {
 					throw new Error(
 						`Failed to read audio file${unreadable.length > 1 ? 's' : ''}:\n${unreadable
@@ -190,8 +186,10 @@
 			downloadLink.click();
 			document.body.removeChild(downloadLink);
 
-			// Clean up the object URL
-			URL.revokeObjectURL(downloadLink.href);
+			// Revoke later: some browsers cancel the download if the URL is revoked
+			// immediately after click().
+			const objectUrl = downloadLink.href;
+			setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 
 			onClose();
 

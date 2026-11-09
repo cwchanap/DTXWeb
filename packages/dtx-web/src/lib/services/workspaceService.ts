@@ -28,7 +28,6 @@ export interface Workspace {
 
 export class WorkspaceService {
 	private static readonly STORAGE_KEY = 'dtx_workspaces';
-	private static readonly LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2MB threshold
 	private static sessionLargeFiles: Map<string, File> = new Map(); // Store large files in memory
 
 	/**
@@ -62,11 +61,15 @@ export class WorkspaceService {
 					);
 				};
 
+				// A UTF-8 BOM is an explicit declaration (written by workspace export).
+				// Honor it before detection, since Shift-JIS decoding accepts any bytes
+				// and would otherwise garble UTF-8 Japanese text.
+				const hasUtf8Bom = await WorkspaceService.hasUtf8Bom(file);
 				const result = await decodeFileWithEncodingDetection(
 					file,
 					validateDtxContent,
-					['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
-					'shift-jis' // DTX fallback is shift-jis
+					hasUtf8Bom ? ['utf-8'] : ['shift-jis', 'utf-8', 'utf-16le', 'utf-16be'], // DTX files typically use shift-jis first
+					hasUtf8Bom ? 'utf-8' : 'shift-jis' // DTX fallback is shift-jis
 				);
 
 				dtxFiles.push({
@@ -76,7 +79,7 @@ export class WorkspaceService {
 				});
 			} else if (this.isAudioFile(file)) {
 				// Handle audio files - check if large before storing
-				const isLarge = file.size > WorkspaceService.LARGE_FILE_THRESHOLD;
+				const isLarge = SoundLibrary.isLargeFile(file.size);
 
 				// Store large files in session memory with unique key
 				if (isLarge) {
@@ -90,7 +93,14 @@ export class WorkspaceService {
 					isLarge
 				};
 
-				if (!isLarge) {
+				audioFiles.push(workspaceFile);
+
+				// Auto-import audio files to sound library
+				const addResult = await SoundLibrary.addFiles([file]);
+
+				// Pin the content hash only when the bytes are actually stored, so a
+				// workspace that cannot be exported is not reported as fully imported.
+				if (!isLarge && addResult.errors.length === 0) {
 					try {
 						workspaceFile.hash = await SoundLibrary.generateFileHash(file);
 					} catch (error) {
@@ -98,12 +108,12 @@ export class WorkspaceService {
 						// not abort the import; audio-inclusive export stays blocked.
 						console.error(`Failed to hash audio file ${file.name}:`, error);
 					}
+				} else if (addResult.errors.length > 0) {
+					console.error(
+						`Failed to store audio file ${file.name} in the sound library:`,
+						addResult.errors
+					);
 				}
-
-				audioFiles.push(workspaceFile);
-
-				// Auto-import audio files to sound library
-				await SoundLibrary.addFiles([file]);
 			}
 		}
 
@@ -182,24 +192,31 @@ export class WorkspaceService {
 			// Combine files from sound library (small files) and workspace (large files)
 			const allFiles: File[] = [];
 
-			// Get small files from sound library
+			// Small files: pinned to the stored content hash so the editor plays the
+			// same bytes the export contains; legacy records without a hash fall back
+			// to matching by name.
 			const soundLibraryFiles = SoundLibrary.getAll();
-			const workspaceFileNames = workspace.audioFiles.map((af) => af.name);
-
-			// Add small files from sound library (exclude large files which have empty fileData)
-			const largeFileNames = workspace.audioFiles
-				.filter((af) => af.isLarge)
-				.map((af) => af.name);
-			const libraryFiles = soundLibraryFiles
-				.filter(
-					(sf) =>
-						workspaceFileNames.includes(sf.fileName) &&
-						sf.fileData &&
-						sf.fileData.length > 0 &&
-						!largeFileNames.includes(sf.fileName)
-				) // Exclude large files completely
-				.map((sf) => SoundLibrary.toFile(sf))
-				.filter((file): file is File => file !== null);
+			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
+			const hashlessNames = new Set<string>();
+			const libraryFiles: File[] = [];
+			for (const af of workspace.audioFiles) {
+				if (af.isLarge) continue;
+				const record = af.hash ? libraryByHash.get(af.hash) : undefined;
+				if (!af.hash) {
+					hashlessNames.add(af.name);
+					continue;
+				}
+				const converted = record ? SoundLibrary.toFile(record) : null;
+				if (!converted) continue;
+				// Content-deduplicated records may carry another workspace's file name
+				libraryFiles.push(new File([converted], af.name, { type: converted.type }));
+			}
+			libraryFiles.push(
+				...soundLibraryFiles
+					.filter((sf) => hashlessNames.has(sf.fileName) && sf.fileData)
+					.map((sf) => SoundLibrary.toFile(sf))
+					.filter((file): file is File => file !== null)
+			);
 			allFiles.push(...libraryFiles);
 
 			// Add large files from session memory
@@ -405,6 +422,75 @@ export class WorkspaceService {
 		}
 
 		return uniqueName;
+	}
+
+	/**
+	 * Whether the file starts with a UTF-8 byte order mark (EF BB BF)
+	 */
+	private static async hasUtf8Bom(file: File): Promise<boolean> {
+		const head = new Uint8Array(await file.slice(0, 3).arrayBuffer());
+		return head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf;
+	}
+
+	/**
+	 * Shift-JIS byte sequences keyed by character, built once by decoding every
+	 * valid byte sequence with the platform's own Shift-JIS decoder. Browsers can
+	 * decode Shift-JIS but not encode it, and this avoids a dependency. Where a
+	 * character has several byte sequences the first (lowest) one wins.
+	 */
+	private static shiftJisEncodeMap: Map<string, number[]> | null = null;
+
+	private static getShiftJisEncodeMap(): Map<string, number[]> {
+		if (WorkspaceService.shiftJisEncodeMap) {
+			return WorkspaceService.shiftJisEncodeMap;
+		}
+
+		const decoder = new TextDecoder('shift-jis');
+		const map = new Map<string, number[]>();
+		const add = (bytes: number[]) => {
+			const chars = Array.from(decoder.decode(new Uint8Array(bytes)));
+			if (chars.length !== 1 || chars[0] === '\uFFFD' || map.has(chars[0])) {
+				return;
+			}
+			map.set(chars[0], bytes);
+		};
+
+		for (let byte = 0x00; byte <= 0x7f; byte++) add([byte]);
+		for (let byte = 0xa1; byte <= 0xdf; byte++) add([byte]);
+		for (let lead = 0x81; lead <= 0xfc; lead++) {
+			if (lead > 0x9f && lead < 0xe0) continue;
+			for (let trail = 0x40; trail <= 0xfc; trail++) {
+				if (trail === 0x7f) continue;
+				add([lead, trail]);
+			}
+		}
+
+		WorkspaceService.shiftJisEncodeMap = map;
+		return map;
+	}
+
+	/**
+	 * Encode stored DTX text for a ZIP entry. DTXmania reads charts as Shift-JIS,
+	 * so text is written as Shift-JIS bytes. Text containing characters Shift-JIS
+	 * cannot represent falls back to UTF-8 with a BOM, which import detects, rather
+	 * than silently replacing characters. Empty charts stay zero-byte.
+	 */
+	static toExportContent(content: string): string | Uint8Array {
+		if (content.length === 0) {
+			return content;
+		}
+
+		const text = content.startsWith('\uFEFF') ? content.slice(1) : content;
+		const encodeMap = WorkspaceService.getShiftJisEncodeMap();
+		const bytes: number[] = [];
+		for (const char of text) {
+			const encoded = encodeMap.get(char);
+			if (!encoded) {
+				return `\uFEFF${text}`;
+			}
+			bytes.push(...encoded);
+		}
+		return new Uint8Array(bytes);
 	}
 
 	/**

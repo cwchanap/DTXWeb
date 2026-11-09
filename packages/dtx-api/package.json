@@ -52,7 +52,7 @@
 		"drizzle-kit": "^0.31.11",
 		"jszip": "^3.10.2",
 		"miniflare": "^4.20260730.0",
-		"typescript": "^5.8.3",
+		"typescript": "^7.0.2",
 		"vitest": "^5.1.0",
 		"wrangler": "^4.156.2"
 	}

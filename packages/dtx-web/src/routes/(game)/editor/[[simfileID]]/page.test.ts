@@ -719,7 +719,7 @@ describe('Editor Page Component Logic', () => {
 			}
 			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
 			const libraryFile = libraryFiles.length > 0 ? libraryFiles[0] : null;
-			if (libraryFile && libraryFile.fileData) {
+			if (libraryFile) {
 				const file = SoundLibrary.toFile(libraryFile);
 				if (file) {
 					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
@@ -782,7 +782,7 @@ describe('Editor Page Component Logic', () => {
 			if (chipData.fileHash) {
 				libraryFile = SoundLibrary.getByHash(chipData.fileHash);
 			}
-			if (libraryFile && libraryFile.fileData) {
+			if (libraryFile) {
 				const file = SoundLibrary.toFile(libraryFile);
 				if (file) {
 					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
@@ -795,7 +795,7 @@ describe('Editor Page Component Logic', () => {
 			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/snare.wav', mockFile);
 		});
 
-		it('should skip library entries with empty fileData during rehydration', async () => {
+		it('should skip library entries that toFile cannot restore during rehydration', async () => {
 			const { SoundLibrary } = await import('$lib/services/soundLibrary');
 			const FileManager = await import('@dtx/common/services/fileManager');
 
@@ -822,8 +822,9 @@ describe('Editor Page Component Logic', () => {
 					dateAdded: Date.now()
 				}
 			]);
+			vi.mocked(SoundLibrary.toFile).mockReturnValue(null);
 
-			// Simulate rehydration: remote fails → library found but fileData is empty
+			// Simulate rehydration: remote fails → library found but unrecoverable
 			try {
 				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
 			} catch {
@@ -832,8 +833,60 @@ describe('Editor Page Component Logic', () => {
 
 			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
 			const libraryFile = libraryFiles.length > 0 ? libraryFiles[0] : null;
-			if (libraryFile && libraryFile.fileData) {
-				// This block should NOT execute
+			if (libraryFile) {
+				const file = SoundLibrary.toFile(libraryFile);
+				if (file) {
+					// This block should NOT execute
+					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
+					FileManager.setFile(fileKey, file);
+				}
+			}
+
+			// toFile decides recoverability — it is consulted but returns null, so
+			// setFile should NOT have been called
+			expect(SoundLibrary.toFile).toHaveBeenCalled();
+			expect(FileManager.setFile).not.toHaveBeenCalled();
+		});
+
+		it('should restore zero-byte library entries during rehydration', async () => {
+			const { SoundLibrary } = await import('$lib/services/soundLibrary');
+			const FileManager = await import('@dtx/common/services/fileManager');
+
+			const mockFile = new File([], 'empty.wav', { type: 'audio/wav' });
+			const fetchRemoteMock = vi.fn().mockRejectedValue(new Error('Network error'));
+
+			const mockChip = {
+				label: 'Click',
+				id: 3,
+				volume: 90,
+				position: 2,
+				fileName: 'empty.wav',
+				file: undefined as File | undefined,
+				fetchRemote: fetchRemoteMock
+			};
+
+			// Zero-byte audio stores empty fileData with size 0 — toFile restores it
+			vi.mocked(SoundLibrary.findByFileName).mockReturnValue([
+				{
+					hash: 'empty-hash',
+					fileName: 'empty.wav',
+					fileType: 'audio/wav',
+					fileData: '',
+					size: 0,
+					dateAdded: Date.now()
+				}
+			]);
+			vi.mocked(SoundLibrary.toFile).mockReturnValue(mockFile);
+
+			try {
+				await mockChip.fetchRemote('test-simfile', 'https://bucket.url');
+			} catch {
+				// Expected to fail
+			}
+
+			const libraryFiles = SoundLibrary.findByFileName(mockChip.fileName);
+			const libraryFile = libraryFiles.length > 0 ? libraryFiles[0] : null;
+			if (libraryFile) {
 				const file = SoundLibrary.toFile(libraryFile);
 				if (file) {
 					const fileKey = FileManager.generateKey('test-simfile', mockChip.fileName);
@@ -841,9 +894,8 @@ describe('Editor Page Component Logic', () => {
 				}
 			}
 
-			// toFile and setFile should NOT have been called
-			expect(SoundLibrary.toFile).not.toHaveBeenCalled();
-			expect(FileManager.setFile).not.toHaveBeenCalled();
+			expect(SoundLibrary.toFile).toHaveBeenCalled();
+			expect(FileManager.setFile).toHaveBeenCalledWith('test-simfile/empty.wav', mockFile);
 		});
 
 		it('should clear all editor stores before showing recovery modal on remote load failure', async () => {

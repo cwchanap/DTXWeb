@@ -239,7 +239,12 @@ describe('ExportWorkspaceModal', () => {
 			expect(new Set(entryNames).size).toBe(entryNames.length);
 			expect(soundLibMock.getByHash).toHaveBeenCalledWith('mock-hash-kick');
 			expect(soundLibMock.findByFileName).not.toHaveBeenCalled();
-			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', kickFile);
+			const kickEntry = mockZipInstance.file.mock.calls.find(
+				(call) => call[0] === 'kick.wav'
+			);
+			expect(new Uint8Array(kickEntry?.[1] as ArrayBuffer)).toEqual(
+				new Uint8Array(await kickFile.arrayBuffer())
+			);
 			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
 			expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
 			expect(anchorClick).toHaveBeenCalledTimes(1);
@@ -369,7 +374,12 @@ describe('ExportWorkspaceModal', () => {
 				'Large Workspace',
 				'large.wav'
 			);
-			expect(mockZipInstance.file).toHaveBeenCalledWith('large.wav', largeFile);
+			const largeEntry = mockZipInstance.file.mock.calls.find(
+				(call) => call[0] === 'large.wav'
+			);
+			expect(new Uint8Array(largeEntry?.[1] as ArrayBuffer)).toEqual(
+				new Uint8Array(await largeFile.arrayBuffer())
+			);
 		});
 
 		it('exports the selected workspace audio when another workspace reuses the file name', async () => {
@@ -403,12 +413,15 @@ describe('ExportWorkspaceModal', () => {
 			});
 			expect(soundLibMock.getByHash).toHaveBeenCalledWith('hash-kick-a');
 			expect(soundLibMock.findByFileName).not.toHaveBeenCalled();
-			expect(mockZipInstance.file).toHaveBeenCalledWith('kick.wav', fileA);
 			const kickEntry = mockZipInstance.file.mock.calls.find(
 				(call) => call[0] === 'kick.wav'
 			);
-			expect(kickEntry?.[1]).toBe(fileA);
-			expect(kickEntry?.[1]).not.toBe(fileB);
+			expect(new Uint8Array(kickEntry?.[1] as ArrayBuffer)).toEqual(
+				new Uint8Array(await fileA.arrayBuffer())
+			);
+			expect(new Uint8Array(kickEntry?.[1] as ArrayBuffer)).not.toEqual(
+				new Uint8Array(await fileB.arrayBuffer())
+			);
 		});
 
 		it('fails with the no-files error when the workspace has no files to export', async () => {
@@ -654,10 +667,39 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('fails and names the file when an audio entry cannot be read during generation', async () => {
+		it('fails when two names differ only by leading or trailing space/dot padding', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Padded Name Workspace',
+					dtxFiles: [
+						{ name: 'chart.dtx', content: 'first', path: '/workspace/a/chart.dtx' },
+						{ name: ' chart.dtx', content: 'second', path: '/workspace/b/ chart.dtx' },
+						{ name: 'other.dtx ', content: 'third', path: '/workspace/c/other.dtx ' },
+						{ name: 'other.dtx', content: 'fourth', path: '/workspace/d/other.dtx' }
+					],
+					audioFiles: []
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Padded Name Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert.textContent).toMatch(/chart\.dtx/i);
+			expect(alert.textContent).toMatch(/other\.dtx/i);
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails and names the file when an audio entry cannot be read', async () => {
 			const unreadableFile = new File(['bytes'], 'lost.wav', { type: 'audio/wav' });
-			unreadableFile.slice = () =>
-				({ arrayBuffer: () => Promise.reject(new Error('NotReadableError')) }) as Blob;
+			vi.spyOn(unreadableFile, 'arrayBuffer').mockRejectedValue(
+				new Error('NotReadableError')
+			);
 			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(unreadableFile);
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
@@ -665,7 +707,6 @@ describe('ExportWorkspaceModal', () => {
 					audioFiles: [{ name: 'lost.wav', path: '/workspace/lost.wav', isLarge: true }]
 				})
 			]);
-			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('read failure'));
 			const onClose = vi.fn();
 			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
@@ -675,6 +716,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/lost\.wav/);
 			expect(alert.textContent).toMatch(/failed to read/i);
 			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();

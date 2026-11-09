@@ -43,7 +43,14 @@
 			const zip = new JSZip();
 			// NFC-normalized + lowercased so names that extract onto the same file on
 			// case-insensitive / normalizing filesystems (macOS, Windows) are caught.
-			const toCollisionKey = (name: string) => name.normalize('NFC').toLowerCase();
+			// Leading spaces and trailing spaces/dots are also folded because Windows
+			// extraction strips them (' kick.wav' and 'kick.wav' land on one file).
+			const toCollisionKey = (name: string) =>
+				name
+					.normalize('NFC')
+					.toLowerCase()
+					.replace(/^ +/, '')
+					.replace(/[ .]+$/, '');
 			const seenPaths = new Map<string, string>();
 			const missingAudio: string[] = [];
 			const duplicates: string[] = [];
@@ -142,40 +149,36 @@
 				throw new Error('No files found in workspace to export');
 			}
 
-			// Only add to the ZIP once the export is known to proceed: JSZip starts
-			// reading each File as soon as it is added. file() defers content errors
-			// to generateAsync, so there is nothing to catch here.
+			// Only add to the ZIP once the export is known to proceed. Audio bytes
+			// are read now rather than letting JSZip defer each File read to
+			// generateAsync, which cannot name the file that failed.
 			for (const { name, content } of pendingDtx)
 				zip.file(name, WorkspaceService.toExportContent(content));
-			for (const { name, file } of pendingAudio) zip.file(name, file);
+
+			const audioData: { name: string; data: ArrayBuffer }[] = [];
+			const unreadableAudio: string[] = [];
+			for (const { name, file } of pendingAudio) {
+				try {
+					audioData.push({ name, data: await file.arrayBuffer() });
+				} catch {
+					unreadableAudio.push(name);
+				}
+			}
+			if (unreadableAudio.length > 0) {
+				throw new Error(
+					`Failed to read audio file${unreadableAudio.length > 1 ? 's' : ''}:\n${unreadableAudio
+						.map((name) => `- ${name}`)
+						.join(
+							'\n'
+						)}\nRe-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+				);
+			}
+			for (const { name, data } of audioData) zip.file(name, data);
 			const addedDtxCount = pendingDtx.length;
 			const addedAudioCount = pendingAudio.length;
 
 			// Generate and download zip
-			let zipBlob: Blob;
-			try {
-				zipBlob = await zip.generateAsync({ type: 'blob' });
-			} catch (error) {
-				// JSZip reads File contents during generateAsync, so a read
-				// failure surfaces here without identifying which file failed.
-				// Probe one byte of each file concurrently to name the culprits.
-				const probes = await Promise.allSettled(
-					pendingAudio.map(({ file }) => file.slice(0, 1).arrayBuffer())
-				);
-				const unreadable = pendingAudio
-					.filter((_, index) => probes[index].status === 'rejected')
-					.map(({ name }) => name);
-				if (unreadable.length > 0) {
-					throw new Error(
-						`Failed to read audio file${unreadable.length > 1 ? 's' : ''}:\n${unreadable
-							.map((name) => `- ${name}`)
-							.join(
-								'\n'
-							)}\nRe-import the folder and export the newly imported copy, or uncheck "Include audio files".`
-					);
-				}
-				throw error;
-			}
+			const zipBlob = await zip.generateAsync({ type: 'blob' });
 			const zipFileName = `${workspace.name.replace(/[^a-zA-Z0-9-_]/g, '_')}.zip`;
 
 			// Create download link

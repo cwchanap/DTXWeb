@@ -7,6 +7,7 @@ export interface WorkspaceFile {
 	file?: File; // Store large files directly here
 	isLarge?: boolean; // Flag to indicate if file is too large for localStorage
 	hash?: string;
+	libraryStorageFailed?: boolean; // Sound library storage or hashing failed during import — unlike legacy hashless records, this file must not fall back to name matching
 }
 
 export interface WorkspaceDTX {
@@ -107,12 +108,14 @@ export class WorkspaceService {
 						// Keep the record without a hash so one unreadable file does
 						// not abort the import; audio-inclusive export stays blocked.
 						console.error(`Failed to hash audio file ${file.name}:`, error);
+						workspaceFile.libraryStorageFailed = true;
 					}
 				} else if (addResult.errors.length > 0) {
 					console.error(
 						`Failed to store audio file ${file.name} in the sound library:`,
 						addResult.errors
 					);
+					workspaceFile.libraryStorageFailed = true;
 				}
 			}
 		}
@@ -194,18 +197,20 @@ export class WorkspaceService {
 
 			// Small files: pinned to the stored content hash so the editor plays the
 			// same bytes the export contains; legacy records without a hash fall back
-			// to matching by name.
+			// to matching by name. Records whose import storage failed are excluded
+			// from name fallback so a different workspace's same-named file is not
+			// loaded in their place.
 			const soundLibraryFiles = SoundLibrary.getAll();
 			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
 			const hashlessNames = new Set<string>();
 			const libraryFiles: File[] = [];
 			for (const af of workspace.audioFiles) {
 				if (af.isLarge) continue;
-				const record = af.hash ? libraryByHash.get(af.hash) : undefined;
 				if (!af.hash) {
-					hashlessNames.add(af.name);
+					if (!af.libraryStorageFailed) hashlessNames.add(af.name.toLowerCase());
 					continue;
 				}
+				const record = libraryByHash.get(af.hash);
 				const converted = record ? SoundLibrary.toFile(record) : null;
 				if (!converted) continue;
 				// Content-deduplicated records may carry another workspace's file name
@@ -213,7 +218,7 @@ export class WorkspaceService {
 			}
 			libraryFiles.push(
 				...soundLibraryFiles
-					.filter((sf) => hashlessNames.has(sf.fileName) && sf.fileData)
+					.filter((sf) => hashlessNames.has(sf.fileName.toLowerCase()))
 					.map((sf) => SoundLibrary.toFile(sf))
 					.filter((file): file is File => file !== null)
 			);
@@ -247,9 +252,20 @@ export class WorkspaceService {
 
 			// Store all files in FileManager for the FileProvider
 			// Use null as simfileId for local workspace files
-			const { setFile: setFileInManager } = await import('@dtx/common/services/fileManager');
+			const {
+				setFile: setFileInManager,
+				getKeys: getManagerKeys,
+				removeFile: removeFileInManager
+			} = await import('@dtx/common/services/fileManager');
+			// Drop entries left by a previous parse so a file missing from this
+			// workspace cannot resolve through a stale local:<filename> entry.
+			// Keys are lowercased to match SoundChip.fileName, which the parser
+			// lowercases.
+			for (const key of getManagerKeys()) {
+				if (key.startsWith('local:')) removeFileInManager(key);
+			}
 			for (const file of allFiles) {
-				const key = `local:${file.name}`;
+				const key = `local:${file.name.toLowerCase()}`;
 				setFileInManager(key, file);
 			}
 
@@ -313,7 +329,8 @@ export class WorkspaceService {
 					name: af.name,
 					path: af.path,
 					isLarge: af.isLarge,
-					hash: af.hash
+					hash: af.hash,
+					libraryStorageFailed: af.libraryStorageFailed
 					// Don't store the File object
 				}))
 			};

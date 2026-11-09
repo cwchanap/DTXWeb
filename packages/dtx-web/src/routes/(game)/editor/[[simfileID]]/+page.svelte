@@ -429,7 +429,8 @@
 	 * Rehydrate sound chip files after draft restore.
 	 * Tries remote fetch first (server may be back), then falls back to local sound library.
 	 * Uses fileHash from persisted chip data for precise library lookup when available.
-	 * Skips library entries with no file data (large in-memory files cannot be restored this way).
+	 * SoundLibrary.toFile decides recoverability: zero-byte records restore as empty
+	 * files, while entries with missing data (large in-memory files) are skipped.
 	 * Populates FileManager so Preview.setupSoundsAsync() can find the files.
 	 */
 	async function rehydrateSoundFiles(soundChips: SoundChip[], chipData: SoundChipData[]) {
@@ -471,7 +472,7 @@
 					libraryFile = byName.length > 0 ? byName[0] : null;
 				}
 
-				if (libraryFile && libraryFile.fileData) {
+				if (libraryFile) {
 					const file = SoundLibrary.toFile(libraryFile);
 					if (file) {
 						const fileKey = FileManager.generateKey(simfileID, soundChip.fileName);

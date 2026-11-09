@@ -212,6 +212,7 @@ describe('WorkspaceService', () => {
 			expect(result.dtxFiles).toHaveLength(1);
 			expect(result.audioFiles).toHaveLength(1);
 			expect(result.audioFiles[0].hash).toBeUndefined();
+			expect(result.audioFiles[0].libraryStorageFailed).toBe(true);
 			expect(SoundLibrary.addFiles).toHaveBeenCalledWith([audioFile]);
 
 			const savedPayload = mockLocalStorage.setItem.mock.calls.find(
@@ -219,6 +220,7 @@ describe('WorkspaceService', () => {
 			)?.[1] as string;
 			const savedWorkspaces = JSON.parse(savedPayload) as Workspace[];
 			expect(savedWorkspaces[0].audioFiles[0].hash).toBeUndefined();
+			expect(savedWorkspaces[0].audioFiles[0].libraryStorageFailed).toBe(true);
 		});
 
 		it('should decode a DTX file with a UTF-8 BOM as UTF-8 without trying Shift-JIS first', async () => {
@@ -261,6 +263,7 @@ describe('WorkspaceService', () => {
 			const result = await workspaceService.importFolder([audioFile] as unknown as FileList);
 
 			expect(result.audioFiles[0].hash).toBeUndefined();
+			expect(result.audioFiles[0].libraryStorageFailed).toBe(true);
 		});
 
 		it('should not hash large audio files kept in session memory', async () => {
@@ -604,6 +607,95 @@ describe('WorkspaceService', () => {
 			expect(result!.simFile.files[0].name).toBe('kick.wav');
 			expect(await result!.simFile.files[0].text()).toBe('pinned');
 			expect(soundChips[0].file).toBe(result!.simFile.files[0]);
+		});
+
+		it('should not fall back to a same-named library file for a failed import', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			vi.mocked(DTXFile).mockImplementation(function () {
+				return {
+					parseFromText: vi.fn().mockResolvedValue(undefined),
+					parseSoundChips: vi.fn().mockReturnValue([]),
+					title: 'x'
+				} as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+			// Another workspace's same-named file sits in the library; this record
+			// has no hash because storing it failed, so it must not name-match.
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([
+				{ fileName: 'kick.wav', fileData: 'other-workspace-bytes' } as any
+			]);
+			vi.mocked(SoundLibrary.toFile).mockImplementation(
+				(record) => new File([record.fileData], record.fileName)
+			);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Failed Import Workspace',
+				path: 'p',
+				dtxFiles: [{ name: 'test.dtx', content: '#TITLE: x', path: 'test.dtx' }],
+				audioFiles: [
+					{
+						name: 'kick.wav',
+						path: 'kick.wav',
+						isLarge: false,
+						libraryStorageFailed: true
+					}
+				],
+				currentDTX: 'test.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
+
+			expect(result).not.toBeNull();
+			expect(result!.simFile.files).toHaveLength(0);
+		});
+
+		it('should drop stale local file entries and register files under lowercased keys', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { getKeys, removeFile, setFile } =
+				await import('@dtx/common/services/fileManager');
+			vi.mocked(DTXFile).mockImplementation(function () {
+				return {
+					parseFromText: vi.fn().mockResolvedValue(undefined),
+					parseSoundChips: vi.fn().mockReturnValue([]),
+					title: 'x'
+				} as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+			vi.mocked(getKeys).mockReturnValueOnce(['local:stale.wav', 'simfile-9:remote.wav']);
+			const pinnedRecord = {
+				hash: 'hash-pinned',
+				fileName: 'KICK.WAV',
+				fileData: 'bytes'
+			} as any;
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([pinnedRecord]);
+			vi.mocked(SoundLibrary.toFile).mockImplementation(
+				(record) => new File([record.fileData], record.fileName)
+			);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Stale Entry Workspace',
+				path: 'p',
+				dtxFiles: [{ name: 'test.dtx', content: '#TITLE: x', path: 'test.dtx' }],
+				audioFiles: [
+					{ name: 'KICK.WAV', path: 'KICK.WAV', isLarge: false, hash: 'hash-pinned' }
+				],
+				currentDTX: 'test.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
+
+			expect(result).not.toBeNull();
+			expect(removeFile).toHaveBeenCalledWith('local:stale.wav');
+			expect(removeFile).not.toHaveBeenCalledWith('simfile-9:remote.wav');
+			expect(setFile).toHaveBeenCalledWith('local:kick.wav', expect.any(File));
 		});
 
 		it('should return null when parsing throws an error', async () => {

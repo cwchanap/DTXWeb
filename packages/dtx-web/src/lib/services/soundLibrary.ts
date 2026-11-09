@@ -17,14 +17,36 @@ export class SoundLibrary {
 	private static readonly MAX_STORAGE_SIZE = 50 * 1024 * 1024; // 50MB limit
 	private static readonly LARGE_FILE_THRESHOLD = 2 * 1024 * 1024; // 2MB threshold for large files
 	private static memoryFiles: Map<string, SoundLibraryFile> = new Map(); // In-memory storage for large files
+	// Parsed copy of the localStorage payload, reused while the raw string is unchanged
+	private static parsedStorageCache: { raw: string; files: SoundLibraryFile[] } | null = null;
+
+	/**
+	 * Whether a file of this size is kept in memory instead of localStorage
+	 */
+	static isLargeFile(size: number): boolean {
+		return size > SoundLibrary.LARGE_FILE_THRESHOLD;
+	}
+
+	private static readStoredFiles(): SoundLibraryFile[] {
+		const data = localStorage.getItem(SoundLibrary.STORAGE_KEY);
+		if (!data) {
+			return [];
+		}
+		const cached = SoundLibrary.parsedStorageCache;
+		if (cached && cached.raw === data) {
+			return cached.files;
+		}
+		const files: SoundLibraryFile[] = JSON.parse(data);
+		SoundLibrary.parsedStorageCache = { raw: data, files };
+		return files;
+	}
 
 	/**
 	 * Get all files in the sound library (both localStorage and memory)
 	 */
 	static getAll(): SoundLibraryFile[] {
 		try {
-			const data = localStorage.getItem(SoundLibrary.STORAGE_KEY);
-			const storedFiles: SoundLibraryFile[] = data ? JSON.parse(data) : [];
+			const storedFiles = SoundLibrary.readStoredFiles();
 			const memoryFiles = Array.from(SoundLibrary.memoryFiles.values());
 			const allFiles = [...storedFiles, ...memoryFiles];
 			return allFiles;
@@ -72,7 +94,7 @@ export class SoundLibrary {
 				}
 
 				// Determine if file is large and should be stored in memory
-				const isLargeFile = file.size > SoundLibrary.LARGE_FILE_THRESHOLD;
+				const isLargeFile = SoundLibrary.isLargeFile(file.size);
 
 				if (isLargeFile) {
 					// Store large files only in memory (no base64 conversion needed for memory storage)
@@ -213,7 +235,7 @@ export class SoundLibrary {
 
 		try {
 			// Convert base64 back to binary
-			const binaryString = atob(libraryFile.fileData);
+			const binaryString = atob(libraryFile.fileData ?? '');
 			const bytes = new Uint8Array(binaryString.length);
 			for (let i = 0; i < binaryString.length; i++) {
 				bytes[i] = binaryString.charCodeAt(i);
@@ -298,7 +320,8 @@ export class SoundLibrary {
 				const result = reader.result as string;
 				// Remove the data URL prefix (data:type;base64,)
 				const base64 = result.split(',')[1];
-				resolve(base64);
+				// An empty file yields no payload after the comma
+				resolve(base64 ?? '');
 			};
 			reader.onerror = reject;
 			reader.readAsDataURL(file);

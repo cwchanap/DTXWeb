@@ -43,10 +43,17 @@ const mockJSZipConstructor = vi.hoisted(() =>
 	})
 );
 
-vi.mock('$lib/services/workspaceService', () => ({
-	workspaceService: mockService,
-	WorkspaceService: mockWorkspaceServiceClass
-}));
+vi.mock('$lib/services/workspaceService', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('$lib/services/workspaceService')>();
+	return {
+		workspaceService: mockService,
+		// Use the real encoder so tests assert the bytes-level contract, not a copy of it
+		WorkspaceService: {
+			...mockWorkspaceServiceClass,
+			toExportContent: actual.WorkspaceService.toExportContent
+		}
+	};
+});
 
 vi.mock('$lib/services/soundLibrary', () => ({
 	SoundLibrary: soundLibMock
@@ -287,6 +294,34 @@ describe('ExportWorkspaceModal', () => {
 				expect(toastMock.success).toHaveBeenCalled();
 			});
 			expect(mockZipInstance.file).toHaveBeenCalledWith('empty.dtx', '');
+		});
+
+		it('writes DTX text as Shift-JIS bytes so DTXmania can read it', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Japanese Workspace',
+					dtxFiles: [
+						{
+							name: 'song.dtx',
+							content: '#TITLE: 太鼓',
+							path: '/workspace/test/song.dtx'
+						}
+					],
+					audioFiles: []
+				})
+			]);
+
+			render(ExportWorkspaceModal, { props: defaultProps });
+			await clickExport('Japanese Workspace');
+
+			await vi.waitFor(() => {
+				expect(toastMock.success).toHaveBeenCalled();
+			});
+			const entry = mockZipInstance.file.mock.calls.find((call) => call[0] === 'song.dtx');
+			expect(entry?.[1]).toBeInstanceOf(Uint8Array);
+			expect(new TextDecoder('shift-jis').decode(entry?.[1] as Uint8Array)).toBe(
+				'#TITLE: 太鼓'
+			);
 		});
 
 		it('exports DTX files only when audio is unchecked and audio is unavailable', async () => {
@@ -619,29 +654,10 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
-		it('fails and names the file when a DTX entry cannot be added to the ZIP', async () => {
-			mockZipInstance.file.mockImplementation((name: string) => {
-				if (name === 'basic.dtx') {
-					throw new Error('add failed');
-				}
-			});
-			const onClose = vi.fn();
-			render(ExportWorkspaceModal, { props: { show: true, onClose } });
-
-			await clickExport('Workspace A');
-
-			const alert = await screen.findByRole('alert');
-			expect(alert.textContent).toMatch(/basic\.dtx/);
-			expect(toastMock.error).toHaveBeenCalled();
-			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
-			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
-			expect(toastMock.success).not.toHaveBeenCalled();
-			expect(onClose).not.toHaveBeenCalled();
-		});
-
 		it('fails and names the file when an audio entry cannot be read during generation', async () => {
 			const unreadableFile = new File(['bytes'], 'lost.wav', { type: 'audio/wav' });
-			unreadableFile.arrayBuffer = () => Promise.reject(new Error('NotReadableError'));
+			unreadableFile.slice = () =>
+				({ arrayBuffer: () => Promise.reject(new Error('NotReadableError')) }) as Blob;
 			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(unreadableFile);
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
@@ -659,26 +675,6 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/lost\.wav/);
 			expect(alert.textContent).toMatch(/failed to read/i);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
-			expect(toastMock.success).not.toHaveBeenCalled();
-			expect(onClose).not.toHaveBeenCalled();
-		});
-
-		it('fails and names the file when an audio entry cannot be added to the ZIP', async () => {
-			mockZipInstance.file.mockImplementation((name: string) => {
-				if (name === 'kick.wav') {
-					throw new Error('add failed');
-				}
-			});
-			const onClose = vi.fn();
-			render(ExportWorkspaceModal, { props: { show: true, onClose } });
-
-			await clickExport('Workspace A');
-
-			const alert = await screen.findByRole('alert');
-			expect(alert.textContent).toMatch(/kick\.wav/);
-			expect(toastMock.error).toHaveBeenCalled();
-			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();

@@ -1,86 +1,104 @@
-# HPA-834 — Preserve song-pack paths in web workspaces
+# HPA-834 — Preserve song-pack paths in browser workspaces
 
-**Status:** Proposed design for implementation on this same draft PR  
+**Status:** Design revised following [PR #348 review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-834/dtxwebbug-workspace-zip-exporteditor-cannot-handle-same-named-files-in  
-**Related completed fix:** HPA-567 / DTXWeb PR #340  
-**Scope:** Browser workspace import, DTX selection, sample playback, and ZIP export. One issue, one PR.
+**Related completed fix:** HPA-567 / PR #340  
+**Delivery:** The design, implementation, tests and final review all belong on draft PR #348 (one ticket, one PR).
 
-## Problem and verified code paths
+## Problem: flattened identity affects more than ZIP export
 
-HPA-567 made ZIP export fail closed, but the workspace still identifies files by their basename. The normal pack layout contains multiple song folders, each with mas.dtx and commonly named samples such as kick.wav or bgm.ogg.
+HPA-567 correctly refuses a ZIP when flat filenames collide. But folder imports are modeled with file.name as the identity despite already recording webkitRelativePath:
 
-- **workspaceService.ts / importFolder:** Each file's path is recorded from webkitRelativePath (including the selected root directory), but large session audio is keyed by workspace name plus file.name; same-name files in different song folders overwrite one another.
-- **workspaceService.ts / parseDTXFile:** Finds the DTX by file.name; builds an unordered pool of every audio file; resolves sound chips by basename; registers all files as local:basename, overwriting duplicate keys. Small-file hashes now protect byte identity, but not which folder a chip belongs to.
-- **DTXSwitcherModal.svelte:** Calls parseDTXFile with a basename, then independently re-matches each chip to SimFile.files by basename and writes it to FileManager; this would undo a fix limited to workspaceService.
-- **Preview.ts / soundChipPreparation.ts:** Preview uses the file provider and caches sound by the chip reference filename. Switching charts with the same chip filename must not replay a cached audio buffer from the previous song.
-- **ExportWorkspaceModal.svelte:** Uses file.name as ZIP entry and collision key; the pack currently fails even when paths differ.
+- **workspaceService.ts:** Large audio lives under a session cache key of workspace name plus basename; parseDTXFile picks a DTX by basename, pools all audio by basename, and registers local:basename in FileManager. A pack containing multiple mas.dtx and kick.wav files cannot be selected or played reliably.
+- **DTXSwitcherModal.svelte:** Uses the chart basename as the selection key, then rematches sound chips against SimFile.files by basename, overwriting correct FileManager entries even if workspaceService is fixed.
+- **SoundTab.svelte:** When a local FileManager key is absent, falls back to searching SimFile.files by filename. This can turn an unresolved reference into the wrong song's sample. Leave SoundTab unchanged for desktop; avoid populating that fallback array for browser workspaces.
+- **Preview.ts / soundChipPreparation.ts:** Phaser sound keys and the static XA processed-blob cache are based on sound-chip filename, not File identity. setupSoundsAsync skips an already-loaded key **before checking the current File**; changing songs can play a previous sample, or a missing reference can leave old audio playable.
+- **ExportWorkspaceModal.svelte:** Writes file.name, not file.path, as the ZIP entry and collision key.
 
-No API, Cloudflare infrastructure, desktop Rust, library schema or new dependency is needed.
+This is a browser workspace issue, with one **shared** audio-path rule extracted to common and a necessary common Preview cache fix. No desktop Rust, Cloudflare, D1, API, or dependency changes.
 
-## Product contract
-
-Example folder selected through the browser:
+## Product contract and fixture
 
 ~~~text
 Pack/
-  Song A/mas.dtx             #WAV01: kick.wav
-  Song A/kick.wav            (audio A)
-  Song B/mas.dtx             #WAV01: kick.wav
-  Song B/kick.wav            (audio B)
-  Shared/cymbal.wav
+  Song A/mas.dtx              #WAV01: kick.wav; #WAV02: drums\cymbal.wav
+  Song A/kick.wav             (audio A)
+  Song A/drums/cymbal.wav
+  Song B/mas.dtx              #WAV01: kick.wav
+  Song B/kick.wav             (audio B)
 ~~~
 
-Import creates one workspace with two selectable DTX entries identified as **Song A/mas.dtx** and **Song B/mas.dtx**. Previewing Song A uses its kick.wav bytes; switching to Song B uses Song B's bytes, including when a previous preview was already loaded. Export produces the same five *relative* paths inside the ZIP, without a top-level Pack/ directory. DTX-only export preserves both DTX paths.
+Import creates one workspace. The two DTX entries are identified by **Song A/mas.dtx** and **Song B/mas.dtx**, not the shared basename. Playing A uses audio A; switching A→B→A uses the corresponding bytes, including when Phaser already has an audio entry for kick.wav. Missing references must stay silent, not play stale audio.
 
-A newly imported flat folder continues to export files at the ZIP root. The existing HPA-567 all-or-nothing contract remains: missing selected audio, unreadable files, or colliding full paths abort the download with actionable, path-specific errors. Existing persistence is disposable; re-import old workspaces to adopt path-based identity instead of adding a compatibility migration.
+Export writes these five paths **relative to the selected Pack/ root** into one ZIP. Flat-folder workspaces keep root-level entries. Preserve HPA-567's all-or-nothing export behavior: if any selected audio is missing/unreadable or selected entries have colliding normalized *full paths*, refuse to download and show the offending paths. DTX-only export can succeed despite unavailable audio.
 
-## Design decisions
+Previously imported root-prefixed workspace records are **not migrated**; re-import to use the new identity. Keep the session-only large-file policy.
 
-### 1. One canonical workspace-relative identity
+## Design
 
-At import, strip the selected browser folder's first path segment from webkitRelativePath, standardize separators to '/', and persist **WorkspaceDTX.path** and **WorkspaceFile.path** as paths *relative to that root*. If webkitRelativePath is absent, use file.name. Do not derive the source root from workspace.name: generateUniqueWorkspaceName can suffix it.
+### 1. Persist one workspace-relative file identity
 
-Keep file.name as a display label and as the File object's native basename; path becomes the stable identity across all workspace operations. Store **Workspace.currentDTX** as that DTX relative path, not its basename. **parseDTXFile** and **switchDTXFile** accept the relative DTX path. DTXSwitcherModal selects/compares by path, displays the parent folder to distinguish identical names, and passes the path to its callback. Update the editor route's first-chart fallback to use path.
+Create a small, pure, browser-safe helper in packages/dtx-web/src/lib/services/workspacePaths.ts for:
 
-Use a small pure workspace-path helper alongside the existing browser workspace service for import normalization, case-insensitive path comparison, and ZIP collision keys. No general virtual filesystem or new persistent index.
+- toWorkspacePath: strip the first segment of webkitRelativePath at import; fall back to file.name when no relative path exists; preserve the subfolders and original casing. Do not use workspace.name as the source root because a duplicate import may receive a suffixed workspace display name.
+- normalized lookup key: NFC-normalize and lowercase a workspace-relative path for exact matching, preserving the original stored path.
+- resolveChipPath: combine dirname(dtx.path) with a **valid normalized chip reference**, look it up by the full normalized path in an audio-file map, and return one matching WorkspaceFile or unresolved. Do not select a record when multiple stored paths collapse to the same key.
+- zipCollisionKey: adapt the modal's existing per-name NFC/lowercase/Windows-space-and-dot collision key **per path segment** and join with '/'. It is a collision comparison only, not an archive path rewrite.
 
-### 2. Resolve chart audio by the referenced path
+Store WorkspaceFile.path and WorkspaceDTX.path as those relative paths. Store Workspace.currentDTX as the selected DTX **path**. Parse and switch DTX files by path. Key sessionLargeFiles and getLargeFile by workspace name plus *relative audio path*; clearSessionFiles retains its existing workspace prefix rule.
 
-For each parsed DTX sound-chip reference:
+The DTX switcher already renders dtxFile.path below dtxFile.name: simply change its action and active comparison to use path. No extra UI element needed.
 
-1. Convert Windows backslashes in the reference to '/', resolve '.' and parent segments relative to the selected DTX's directory, and require the result to stay inside the workspace.
-2. Look up that normalized relative path case-insensitively (NFC) in workspace.audioFiles. This gives the chart's own folder first, including references into nested Samples/ or a sibling Shared/ folder.
-3. If absent, try the same reference relative to workspace root, then a **unique** workspace-wide basename match as a compatibility-free convenience for older chart conventions. Never silently choose one of several same-name candidates.
-4. Resolve the chosen **WorkspaceFile record** to bytes: pinned SoundLibrary.getByHash for small files, WorkspaceService.getLargeFile(workspace.name, audioFile.path) for session-only large files. A missing hash, failed library lookup, or missing session file stays unresolved; never substitute another file from the global library.
+### 2. Reuse the remote engine's one chart-relative #WAV rule
 
-Only selected, resolved audio belongs in the current chart's SimFile.files. Register it in FileManager under the key based on the chip's **reference filename** (the key WebFileProvider/Preview will request), not every workspace file's basename. Remove stale local keys on reparse, preserving remote keys. DTXSwitcherModal should trust this mapping and stop its separate basename rematch. Avoid putting File objects in Svelte sound-chip stores.
+The existing packages/common/src/lib/audio/previewAudioEngine.ts already resolves #WAV against the selected chart directory with a strict rule:
 
-Ambiguous or missing audio does not play: log a path-qualified warning; do not add a new blocking modal. Duplicate *referenced* names within a DTX still map to the same resolved audio file.
+- Convert backslashes to '/'; reject empty, '.' and '..' segments and absolute paths.
+- Encode segments for remote URLs (already done by the engine); the browser workspace instead compares normalized relative **path keys**.
 
-### 3. Session cache and playback cache identity
+Extract the current **reference normalization/rejection** into one small exported pure helper in @dtx/common, and use it from both previewAudioEngine and the browser workspace path resolver. Keep the current remote URL behavior and tests unchanged; extend tests for the shared helper. Do not build a second, more permissive rule for local workspaces.
 
-Change the large-file session key and getLargeFile call sites to workspace name plus **relative path**. Keep the current session-only retention behavior; no IndexedDB or persistent large-file migration.
+Browser resolution: normalizedKey = NFC-lowercase(dirname(selected DTX relative path) + '/' + normalized sample ref). Select the **exact** audio record at that path. **No workspace-root fallback, global basename fallback, or parent-segment traversal**. The map lookup itself limits matches to imported workspace files; a separate containment check is unnecessary. A reference not under that DTX's own directory does not get another song's sample merely because the basename matches. If real packs require '..', handle it in the shared rule for both preview engines in a separately justified change.
 
-A chart switch must not reuse Phaser sound or decoded XA data for a same-named chip with different bytes. Validate the existing Preview lifecycle and implement the smallest **local-workspace-only** invalidation when the selected chart's audio mapping changes. The chosen implementation must clear the appropriate Phaser sound/audio and processed-blob cache entries before loading the new local sample; remote preview caching behavior stays unchanged. Include an explicit A-to-B-to-A playback regression.
+After identifying the right WorkspaceFile:
+- Small audio: resolve its pinned SoundLibrary hash; missing hash, failed conversion, or unavailable stored content means unresolved. Never use SoundLibrary's global filename fallback.
+- Large audio: resolve with getLargeFile(workspace.name, audioFile.path) from session memory; absent after reload means unresolved.
+- Clear old local: FileManager keys on parse while preserving remote keys. Register the resolved File under local:<chip-reference-string> because WebFileProvider, Preview and SoundTab request that key; do **not** register every available audio file by its basename.
+- Leave new SimFile([]).files **empty** for these browser workspaces. SoundTab's legacy local fallback against SimFile.files then cannot select a wrong file; desktop keeps its current behavior. Delete parseDTXFile's redundant soundChip.file assignment, which is discarded by the switcher's second parseSoundChips call.
+- Delete DTXSwitcherModal's independent SimFile.files rematch and FileManager overwrite. Set the store's sound chips from the parsed DTX, with File objects held only in FileManager. Unresolved references remain silent and may log a path-qualified warning.
 
-### 4. ZIP entry paths and collisions
+### 3. Revalidate loaded audio against File identity in Preview
 
-Use the persisted relative path, including directory segments, as the ZIP entry name for both DTX and audio. Preserve original spelling and case in the archive. Normalize *each path segment* to NFC and lowercase for collision detection and retain the existing Windows leading-space / trailing-space-or-dot handling per segment. Disallow empty, absolute, current-directory, or escaping parent paths rather than writing surprising ZIP entries. Check DTX/DTX, audio/audio, and DTX/audio collisions among the selected entries. Entries in different folders may share the same basename.
+This is a **required** fix. The existing setupSoundsAsync filters by cacheKey before fetching and static soundCacheMap is not invalidated, so A→B with kick.wav can reuse A's audio.
 
-Keep HPA-567 behavior otherwise: preflight all selected entries; for audio export, read every file before writing it; retain Shift-JIS-or-UTF-8-BOM DTX encoding via WorkspaceService.toExportContent; preserve zero-byte DTX, the download path, and counts of actual entries. Include both conflicting relative paths in a collision error. DTX-only export is allowed even when audio is missing.
+Change **Preview.ts setupSoundsAsync** for all providers, without a local/remote branch:
 
-## Tests and acceptance
+1. Obtain fileProvider.getFile(currentSimfileID, soundChip.fileName) **before** deciding whether a cached key can be reused.
+2. Track the File object whose bytes populated each cacheKey (a simple Map aligned with Phaser's audio-cache lifetime). Reuse the loaded Phaser sound and XA blob only when the current File object is the same and both Phaser audio and sound entries are valid.
+3. When the File object changes **or is now missing**, stop/destroy the old sound, remove the Phaser audio cache entry, delete the static processed-XA blob cache entry, and update/clear the File identity mapping before the next load. An unresolved chip must not cause an old sample to play.
+4. Load from the newly resolved File; only record it as cached when the load is usable. Keep no additional source-hashing or specialized local-only invalidation branch.
 
-- Import a two-song fixture with repeated mas.dtx and kick.wav in separate folders: both charts have distinct path IDs; each resolves the correct pinned audio (including same-name large files); switching A→B→A preserves audio identity and preview output.
-- Cover chart-relative nested paths, Windows backslashes, root-relative Shared/ fallback, ambiguous workspace-wide basename fallback (no arbitrary audio), hashless/failed small-audio lookup (no global substitution), and stale FileManager cleanup.
-- Export ZIP entries under Song A/ and Song B/ rather than flat names; assert bytes by hash/session source, count correctness, DTX-only behavior, and no download on missing/unreadable audio.
-- Permit duplicate basenames under distinct directories; reject identical full paths and NFC/case-insensitive equivalents, including DTX/audio cross-type conflicts; report both full paths.
-- Flat-folder import, selection, preview and ZIP remain unchanged. Preserve zero-byte and Japanese text encoding regressions from HPA-567.
+Web FileManager returns stable File objects within a parse, and DesktopFileProvider caches Files; remote/desktop retain cache reuse for identical objects. A local reparse recreates a File and rightly reloads it. Cover same-File, changed-File, missing-File, and A→B→A reuse, including XA processed-blob invalidation.
 
-## Explicit non-goals
+### 4. Use path identities for ZIP entries; retain HPA-567 guarantees
 
-No migration of previously serialized root-prefixed paths, audio persistence overhaul, server-side ZIP APIs, native desktop workspace behavior, full draft-storage redesign, general path abstraction, or new UI flow. If unrelated draft persistence collisions are observed, track them separately instead of expanding HPA-834.
+In ExportWorkspaceModal, pass each DTX/audio record's **relative path** to JSZip instead of its basename. Compare collisions using zipCollisionKey on each full path (NFC and case-insensitive; preserve the existing leading-space/trailing-space-and-dot rules for each segment). This permits Song A/kick.wav and Song B/kick.wav and still rejects case/NFC-equivalent full paths, including cross DTX/audio collisions; name both paths in errors.
 
-## Delivery
+Use relative path when requesting session large audio. Keep hash-based small audio, preflight/read-then-zip, single download, actual entry counts, zero-byte DTX, text encoding via toExportContent, and the audio checkbox. **Do not add a second export-side path validator**: the path already came from browser webkitRelativePath and was normalized on import. The existing selection/collision checks are sufficient for this app.
 
-The design and implementation plan start this draft PR. Implement code, update tests, and obtain final review **on this same PR**; do not open a second implementation PR for HPA-834.
+## Test and acceptance matrix
+
+- **Pure helpers:** root stripping, flat-folder fallback, case/NFC keys, backslash reference normalization, strict empty/dot/dotdot/absolute rejection, chart-relative nested path, no root/basename fallback, ambiguous normalized full path, and per-segment collision equivalence.
+- **One workspace integration fixture:** Two mas.dtx and two kick.wav records with distinct content (small hashes and path-keyed large files); switching A/B picks the right file, stale local: keys are cleared, missing hashes/files never substitute another sample, and SimFile.files remains empty.
+- **Switcher:** Distinct actions/active states for Song A/mas.dtx and Song B/mas.dtx. Existing path label suffices; no second audio rematch.
+- **Preview:** Same File skips reload; changed File replaces Phaser sound/audio and old XA cache; a missing File evicts a previously loaded sample and stays silent; A→B→A loads each sample's bytes.
+- **Real JSZip byte test:** Export nested entries and verify each entry's contents; accept duplicate basenames in different directories; fail on identical and NFC/case-equivalent full paths, missing/unreadable audio, and preserve DTX-only / zero-byte / Shift-JIS-or-BOM behavior.
+- **Flat workspace:** import, switch, preview and export remain the same for newly imported flat folders.
+
+## Scope and review disposition
+
+Adopted from [latest review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886): shared remote/local sample rule; required provider-agnostic Preview invalidation; SoundTab fallback addressed without modifying SoundTab; pure table-tested helpers; switcher change coupled to identifier change; no export-side path revalidation or redundant UI work. Remove the route's redundant targetDTX/if block, whose body only repeats currentWorkspace assignment. The optional sort-by-song-directory change is **deferred**: it does not affect identity or correctness and can be separately considered after the bug is fixed.
+
+No new dependencies, persistent audio architecture, new UI flow, root/basename fallback ladders, full draft-storage redesign, cloud API work, desktop Rust work, or compatibility migration.
+
+**One PR only:** Keep PR #348 draft while implementing and testing; do not create a second HPA-834 PR.

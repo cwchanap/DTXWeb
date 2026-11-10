@@ -1,6 +1,6 @@
 # HPA-834 — Preserve song-pack paths in browser workspaces
 
-**Status:** Design revised following [PR #348 review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886)  
+**Status:** Design revised following [initial review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886) and [second review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5837284291)  
 **Linear:** https://linear.app/cwchanap/issue/HPA-834/dtxwebbug-workspace-zip-exporteditor-cannot-handle-same-named-files-in  
 **Related completed fix:** HPA-567 / PR #340  
 **Delivery:** The design, implementation, tests and final review all belong on draft PR #348 (one ticket, one PR).
@@ -56,7 +56,7 @@ The existing packages/common/src/lib/audio/previewAudioEngine.ts already resolve
 - Convert backslashes to '/'; reject empty, '.' and '..' segments and absolute paths.
 - Encode segments for remote URLs (already done by the engine); the browser workspace instead compares normalized relative **path keys**.
 
-Extract the current **reference normalization/rejection** into one small exported pure helper in @dtx/common, and use it from both previewAudioEngine and the browser workspace path resolver. Keep the current remote URL behavior and tests unchanged; extend tests for the shared helper. Do not build a second, more permissive rule for local workspaces.
+Extract the current **reference normalization/rejection** into a dedicated pure file, e.g. `packages/common/src/lib/audio/reference.ts`, and re-export it from `packages/common/src/lib/index.ts` as part of the **main `@dtx/common` entry point**. Import it from that entry point in `workspacePaths.ts` and directly within `previewAudioEngine.ts`. **Do not export/import it through `@dtx/common/audio`**: that barrel imports `previewAudioEngine`, which imports `browser/audioDecoder`, whose top-level `XAaudioContext` constructs an AudioContext at module evaluation. Keep the new helper/browser workspace utility SSR-safe, with a focused import/evaluation regression, and retain the current remote URL behavior and existing tests. Do not build a second, more permissive local rule.
 
 Browser resolution: normalizedKey = NFC-lowercase(dirname(selected DTX relative path) + '/' + normalized sample ref). Select the **exact** audio record at that path. **No workspace-root fallback, global basename fallback, or parent-segment traversal**. The map lookup itself limits matches to imported workspace files; a separate containment check is unnecessary. A reference not under that DTX's own directory does not get another song's sample merely because the basename matches. If real packs require '..', handle it in the shared rule for both preview engines in a separately justified change.
 
@@ -73,12 +73,12 @@ This is a **required** fix. The existing setupSoundsAsync filters by cacheKey be
 
 Change **Preview.ts setupSoundsAsync** for all providers, without a local/remote branch:
 
-1. Obtain fileProvider.getFile(currentSimfileID, soundChip.fileName) **before** deciding whether a cached key can be reused.
-2. Track the File object whose bytes populated each cacheKey (a simple Map aligned with Phaser's audio-cache lifetime). Reuse the loaded Phaser sound and XA blob only when the current File object is the same and both Phaser audio and sound entries are valid.
-3. When the File object changes **or is now missing**, stop/destroy the old sound, remove the Phaser audio cache entry, delete the static processed-XA blob cache entry, and update/clear the File identity mapping before the next load. An unresolved chip must not cause an old sample to play.
-4. Load from the newly resolved File; only record it as cached when the load is usable. Keep no additional source-hashing or specialized local-only invalidation branch.
+1. **Deduplicate** the current sound chips by `getCacheKey(soundChip)` before any asynchronous provider lookup or `load.audio` call. Two chip IDs referring to `kick.wav` must trigger one load for that key per setup pass, while retaining both chip IDs and their independent volume/position semantics for playback. The existing `create()` currently calls `setupSoundsAsync()` and then `startPreview()` (which also calls it); remove this redundant initial invocation so the same chart does not start two overlapping setup passes.
+2. Obtain `fileProvider.getFile(currentSimfileID, soundChip.fileName)` **before** deciding whether a cached key can be reused. Keep **`private static loadedFiles: Map<string, File>`** next to the existing static processed-XA `soundCacheMap`, and reuse the loaded Phaser sound/XA blob only when the current File is the same object and both Phaser audio and sound entries are valid.
+3. When the File object changes **or is now missing**, stop/destroy the old sound, remove the Phaser audio cache entry, delete the static processed-XA blob entry and update/clear `loadedFiles` before any reload. An unresolved chip must not play a stale sample. On a changed File, load the new bytes; only mark `loadedFiles` after a confirmed usable load, not after the existing load-error/timeout fallback merely resolves the promise.
+4. Account for cache lifetime carefully: static `loadedFiles` and `soundCacheMap` survive scene restarts, while Phaser audio cache is **game-scoped**, not global. Treat missing Phaser cache entries or invalid static mappings as cache misses and verify behavior after scene restart/game recreation. No separate cache service, audio hashing, local/remote branch or general new concurrency subsystem.
 
-Web FileManager returns stable File objects within a parse, and DesktopFileProvider caches Files; remote/desktop retain cache reuse for identical objects. A local reparse recreates a File and rightly reloads it. Cover same-File, changed-File, missing-File, and A→B→A reuse, including XA processed-blob invalidation.
+Web FileManager returns stable File objects within a parse, and DesktopFileProvider caches Files; remote/desktop retain cache reuse for identical objects. A local reparse recreates a File and rightly reloads it. Cover same-File, changed-File, missing-File, and A→B→A reuse, XA processed-blob invalidation, two chip IDs sharing one sample, and source tracking across scene restarts. Keep the change small: per-pass deduplication plus elimination of the duplicate initial setup, not a new loading queue.
 
 ### 4. Use path identities for ZIP entries; retain HPA-567 guarantees
 
@@ -91,13 +91,13 @@ Use relative path when requesting session large audio. Keep hash-based small aud
 - **Pure helpers:** root stripping, flat-folder fallback, case/NFC keys, backslash reference normalization, strict empty/dot/dotdot/absolute rejection, chart-relative nested path, no root/basename fallback, ambiguous normalized full path, and per-segment collision equivalence.
 - **One workspace integration fixture:** Two mas.dtx and two kick.wav records with distinct content (small hashes and path-keyed large files); switching A/B picks the right file, stale local: keys are cleared, missing hashes/files never substitute another sample, and SimFile.files remains empty.
 - **Switcher:** Distinct actions/active states for Song A/mas.dtx and Song B/mas.dtx. Existing path label suffices; no second audio rematch.
-- **Preview:** Same File skips reload; changed File replaces Phaser sound/audio and old XA cache; a missing File evicts a previously loaded sample and stays silent; A→B→A loads each sample's bytes.
+- **Preview:** Same File skips reload; changed File replaces Phaser sound/audio and old XA cache; a missing File evicts a previously loaded sample and stays silent; A→B→A loads each sample's bytes; two chip IDs referencing one sample issue one load per setup; scene restart/game recreation validates static identity against real Phaser cache; failed loads do not populate `loadedFiles`.
 - **Real JSZip byte test:** Export nested entries and verify each entry's contents; accept duplicate basenames in different directories; fail on identical and NFC/case-equivalent full paths, missing/unreadable audio, and preserve DTX-only / zero-byte / Shift-JIS-or-BOM behavior.
 - **Flat workspace:** import, switch, preview and export remain the same for newly imported flat folders.
 
 ## Scope and review disposition
 
-Adopted from [latest review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886): shared remote/local sample rule; required provider-agnostic Preview invalidation; SoundTab fallback addressed without modifying SoundTab; pure table-tested helpers; switcher change coupled to identifier change; no export-side path revalidation or redundant UI work. Remove the route's redundant targetDTX/if block, whose body only repeats currentWorkspace assignment. The optional sort-by-song-directory change is **deferred**: it does not affect identity or correctness and can be separately considered after the bug is fixed.
+Adopted from [initial review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5836425886): shared remote/local sample rule; required provider-agnostic Preview invalidation; SoundTab fallback addressed without modifying SoundTab; pure table-tested helpers; switcher change coupled to identifier change; no export-side path revalidation or redundant UI work. Remove the route's redundant targetDTX/if block, whose body only repeats currentWorkspace assignment. The optional sort-by-song-directory change is **deferred**: it does not affect identity or correctness and can be separately considered after the bug is fixed. From the [second review](https://github.com/cwchanap/DTXWeb/pull/348#pullrequestreview-5837284291), explicitly use the root `@dtx/common` pure export rather than the audio barrel; deduplicate same-key chip loads and remove the redundant setup call; and use static File identity tracking while validating Phaser's game-scoped cache on scene/game changes.
 
 No new dependencies, persistent audio architecture, new UI flow, root/basename fallback ladders, full draft-storage redesign, cloud API work, desktop Rust work, or compatibility migration.
 

@@ -72,6 +72,7 @@ export class DTXFile {
 	bpm!: number;
 	preview!: string;
 	soundPreview!: string;
+	pathWav?: string;
 	comment!: string;
 	soundChips!: SoundChip[];
 	lines!: string[];
@@ -162,6 +163,13 @@ export class DTXFile {
 		this.bpm = parseInt(remove_prefix('#BPM')) || 0;
 		this.preview = remove_prefix('#PREIMAGE');
 		this.soundPreview = remove_prefix('#PREVIEW');
+
+		// #PATH_WAV accepts both `#PATH_WAV: dir` and `#PATH_WAV dir`.
+		const pathWavLine = lines.find((line) => line.startsWith('#PATH_WAV'));
+		this.pathWav = pathWavLine
+			?.slice('#PATH_WAV'.length)
+			.replace(/^[:\s]+/, '')
+			.trim();
 
 		this.lines = lines;
 	}

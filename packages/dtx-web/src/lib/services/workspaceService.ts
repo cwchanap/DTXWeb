@@ -203,6 +203,48 @@ export class WorkspaceService {
 			const soundLibraryFiles = SoundLibrary.getAll();
 			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
 
+			// Resolve each audio file once per parse: chips that share a sample
+			// (or content-deduplicated hashes) reuse the same decoded File.
+			const convertedByHash = new Map<string, File | null>();
+			const resolvedByPath = new Map<string, File | null>();
+			const resolveAudioFile = (audioFile: WorkspaceFile): File | null => {
+				if (resolvedByPath.has(audioFile.path)) {
+					return resolvedByPath.get(audioFile.path)!;
+				}
+
+				let file: File | null = null;
+				if (audioFile.isLarge) {
+					file = WorkspaceService.getLargeFile(workspace.name, audioFile.path) ?? null;
+				} else {
+					let converted: File | null = null;
+					if (audioFile.hash) {
+						if (!convertedByHash.has(audioFile.hash)) {
+							const record = libraryByHash.get(audioFile.hash);
+							convertedByHash.set(
+								audioFile.hash,
+								record ? SoundLibrary.toFile(record) : null
+							);
+						}
+						converted = convertedByHash.get(audioFile.hash) ?? null;
+					} else if (!audioFile.libraryStorageFailed) {
+						// Legacy records imported before content hashing have no
+						// pinned bytes; keep the old same-named fallback.
+						const record = SoundLibrary.findByFileName(audioFile.name)[0];
+						converted = record ? SoundLibrary.toFile(record) : null;
+					}
+					if (converted) {
+						// Content-deduplicated records may carry another workspace's file name
+						file =
+							converted.name === audioFile.name
+								? converted
+								: new File([converted], audioFile.name, { type: converted.type });
+					}
+				}
+
+				resolvedByPath.set(audioFile.path, file);
+				return file;
+			};
+
 			// Store all files in FileManager for the FileProvider
 			// Use null as simfileId for local workspace files
 			const {
@@ -220,23 +262,13 @@ export class WorkspaceService {
 
 			for (const soundChip of soundChips) {
 				if (!soundChip.fileName) continue;
-				const audioFile = resolveChipPath(dtxEntry.path, soundChip.fileName, audioByKey);
-				let file: File | null = null;
-				if (audioFile) {
-					if (audioFile.isLarge) {
-						file =
-							WorkspaceService.getLargeFile(workspace.name, audioFile.path) ?? null;
-					} else if (audioFile.hash) {
-						const record = libraryByHash.get(audioFile.hash);
-						const converted = record ? SoundLibrary.toFile(record) : null;
-						if (converted) {
-							// Content-deduplicated records may carry another workspace's file name
-							file = new File([converted], audioFile.name, {
-								type: converted.type
-							});
-						}
-					}
-				}
+				const audioFile = resolveChipPath(
+					dtxEntry.path,
+					soundChip.fileName,
+					audioByKey,
+					dtxFile.pathWav
+				);
+				const file = audioFile ? resolveAudioFile(audioFile) : null;
 				if (!file) {
 					console.warn(
 						`Unresolved sound chip "${soundChip.fileName}" in ${dtxEntry.path}: no workspace audio file resolved; the chip stays silent.`

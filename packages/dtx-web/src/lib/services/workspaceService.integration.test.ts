@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { WorkspaceService, type Workspace } from './workspaceService';
 import { WebFileProvider } from './webFileProvider';
+import { SoundLibrary } from './soundLibrary';
 import * as FileManager from '@dtx/common/services/fileManager';
 
 vi.mock('@dtx/common', async () => await vi.importActual('@dtx/common'));
@@ -133,5 +134,150 @@ describe('WorkspaceService.parseDTXFile song-pack integration', () => {
 		expect(await (await provider.getFile(null, 'bgm.wav'))!.text()).toBe('A-bgm-bytes');
 		expect(await provider.getFile(null, 'missing.wav')).toBeUndefined();
 		expect(FileManager.getFile('simfile-42:remote.wav')).toBe(remoteFile);
+	});
+});
+
+describe('WorkspaceService.importFolder song-pack integration', () => {
+	const service = new WorkspaceService();
+	const provider = new WebFileProvider();
+
+	const browserFile = (relativePath: string, bytes: string, size?: number): File => {
+		const name = relativePath.split('/').pop()!;
+		const file = new File([bytes], name, {
+			type: name.endsWith('.dtx') ? 'text/plain' : 'audio/wav'
+		});
+		Object.defineProperty(file, 'webkitRelativePath', { value: relativePath });
+		if (size !== undefined) Object.defineProperty(file, 'size', { value: size });
+		return file;
+	};
+
+	const packFileList = (): FileList =>
+		[
+			browserFile(
+				'Pack/Song A/mas.dtx',
+				'#TITLE: A\r\n#WAV01: kick.wav\r\n#WAV02: drums\\cymbal.wav\r\n#WAV03: bgm.wav'
+			),
+			browserFile('Pack/Song A/kick.wav', 'A-audio-bytes'),
+			browserFile('Pack/Song A/drums/cymbal.wav', 'cymbal-bytes'),
+			browserFile('Pack/Song A/bgm.wav', 'A-bgm-bytes', 2 * 1024 * 1024 + 1),
+			browserFile(
+				'Pack/Song B/mas.dtx',
+				'#TITLE: B\r\n#WAV01: kick.wav\r\n#WAV02: bgm.wav\r\n#WAV03: missing.wav'
+			),
+			browserFile('Pack/Song B/kick.wav', 'B-audio-bytes'),
+			browserFile('Pack/Song B/bgm.wav', 'B-bgm-bytes', 2 * 1024 * 1024 + 1)
+		] as unknown as FileList;
+
+	beforeEach(() => {
+		localStorage.clear();
+		FileManager.clear();
+		WorkspaceService.clearSessionFiles();
+		SoundLibrary.clearMemoryFiles();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('imports a browser FileList, strips the selected root, and pins audio by content hash', async () => {
+		const workspace = await service.importFolder(packFileList());
+
+		expect(workspace.name).toBe('Pack');
+		expect(workspace.dtxFiles.map((f) => f.path)).toEqual(['Song A/mas.dtx', 'Song B/mas.dtx']);
+		expect(workspace.audioFiles.map((f) => f.path)).toEqual([
+			'Song A/kick.wav',
+			'Song A/drums/cymbal.wav',
+			'Song A/bgm.wav',
+			'Song B/kick.wav',
+			'Song B/bgm.wav'
+		]);
+		expect(workspace.currentDTX).toBe('Song A/mas.dtx');
+
+		const kickA = workspace.audioFiles.find((f) => f.path === 'Song A/kick.wav')!;
+		const cymbal = workspace.audioFiles.find((f) => f.path === 'Song A/drums/cymbal.wav')!;
+		const kickB = workspace.audioFiles.find((f) => f.path === 'Song B/kick.wav')!;
+		expect([kickA, cymbal, kickB].map((f) => f.isLarge)).toEqual([false, false, false]);
+		expect(kickA.hash).toBeTruthy();
+		expect(kickB.hash).toBeTruthy();
+		expect(kickA.hash).not.toBe(kickB.hash);
+
+		const byHash = (record: { hash?: string }) => SoundLibrary.getByHash(record.hash!);
+		expect(await SoundLibrary.toFile(byHash(kickA)!)!.text()).toBe('A-audio-bytes');
+		expect(await SoundLibrary.toFile(byHash(cymbal)!)!.text()).toBe('cymbal-bytes');
+		expect(await SoundLibrary.toFile(byHash(kickB)!)!.text()).toBe('B-audio-bytes');
+
+		const bgmA = workspace.audioFiles.find((f) => f.path === 'Song A/bgm.wav')!;
+		const bgmB = workspace.audioFiles.find((f) => f.path === 'Song B/bgm.wav')!;
+		expect([bgmA.isLarge, bgmA.hash, bgmB.isLarge, bgmB.hash]).toEqual([
+			true,
+			undefined,
+			true,
+			undefined
+		]);
+		expect(await WorkspaceService.getLargeFile('Pack', 'Song A/bgm.wav')!.text()).toBe(
+			'A-bgm-bytes'
+		);
+		expect(await WorkspaceService.getLargeFile('Pack', 'Song B/bgm.wav')!.text()).toBe(
+			'B-bgm-bytes'
+		);
+		expect(WorkspaceService.getLargeFile('Pack', 'bgm.wav')).toBeUndefined();
+
+		const stored = JSON.parse(localStorage.getItem('dtx_workspaces')!) as Workspace[];
+		expect(stored[0].audioFiles.map((f) => f.path)).toEqual(
+			workspace.audioFiles.map((f) => f.path)
+		);
+		expect(stored[0].audioFiles.find((f) => f.path === 'Song A/kick.wav')!.hash).toBe(
+			kickA.hash
+		);
+	});
+
+	it('serves each chart its own imported audio bytes across A-B-A switches', async () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const workspace = await service.importFolder(packFileList());
+
+		const resultA = await service.parseDTXFile(workspace, 'Song A/mas.dtx');
+		expect(resultA).not.toBeNull();
+		expect(resultA!.simFile.title).toBe('A');
+		expect(await (await provider.getFile(null, 'kick.wav'))!.text()).toBe('A-audio-bytes');
+		expect(await (await provider.getFile(null, 'drums\\cymbal.wav'))!.text()).toBe(
+			'cymbal-bytes'
+		);
+		expect(await (await provider.getFile(null, 'bgm.wav'))!.text()).toBe('A-bgm-bytes');
+		expect(await provider.getFile(null, 'missing.wav')).toBeUndefined();
+
+		warnSpy.mockClear();
+		const resultB = await service.parseDTXFile(workspace, 'Song B/mas.dtx');
+		expect(resultB).not.toBeNull();
+		expect(resultB!.simFile.title).toBe('B');
+		expect(await (await provider.getFile(null, 'kick.wav'))!.text()).toBe('B-audio-bytes');
+		expect(await (await provider.getFile(null, 'bgm.wav'))!.text()).toBe('B-bgm-bytes');
+		expect(await provider.getFile(null, 'drums\\cymbal.wav')).toBeUndefined();
+		expect(await provider.getFile(null, 'missing.wav')).toBeUndefined();
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing.wav'));
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Song B/mas.dtx'));
+
+		const resultA2 = await service.parseDTXFile(workspace, 'Song A/mas.dtx');
+		expect(resultA2).not.toBeNull();
+		expect(await (await provider.getFile(null, 'kick.wav'))!.text()).toBe('A-audio-bytes');
+		expect(await (await provider.getFile(null, 'drums\\cymbal.wav'))!.text()).toBe(
+			'cymbal-bytes'
+		);
+		expect(await provider.getFile(null, 'missing.wav')).toBeUndefined();
+	});
+
+	it('keeps a flat folder import flat and resolves root-level audio by name', async () => {
+		const files = [
+			browserFile('Flat/mas.dtx', '#TITLE: Flat\r\n#WAV01: kick.wav'),
+			browserFile('Flat/kick.wav', 'flat-audio-bytes')
+		] as unknown as FileList;
+
+		const workspace = await service.importFolder(files);
+		expect(workspace.name).toBe('Flat');
+		expect(workspace.dtxFiles[0].path).toBe('mas.dtx');
+		expect(workspace.audioFiles[0].path).toBe('kick.wav');
+
+		const result = await service.parseDTXFile(workspace, 'mas.dtx');
+		expect(result).not.toBeNull();
+		expect(await (await provider.getFile(null, 'kick.wav'))!.text()).toBe('flat-audio-bytes');
 	});
 });

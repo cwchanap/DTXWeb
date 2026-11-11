@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import JSZip from 'jszip';
 import type { SoundLibraryFile } from '$lib/services/soundLibrary';
@@ -31,6 +31,31 @@ const toastMock = vi.hoisted(() => ({
 	success: vi.fn(),
 	error: vi.fn()
 }));
+
+const mockZipInstance = vi.hoisted(() => ({
+	file: vi.fn(),
+	generateAsync: vi.fn(),
+	real: null as unknown as JSZip
+}));
+
+const mockJSZipConstructor = vi.hoisted(() =>
+	// ponytail: vitest 4+ constructable-mock rule — `new JSZip()`
+	vi.fn(function (this: unknown) {
+		Object.assign(this, mockZipInstance);
+	})
+);
+
+const realZip = vi.hoisted(() => ({ ctor: null as unknown as typeof JSZip }));
+
+vi.mock('jszip', async (importOriginal) => {
+	const actual = await importOriginal<{ default: typeof JSZip }>();
+	realZip.ctor = actual.default;
+	return {
+		default: Object.assign(mockJSZipConstructor, {
+			loadAsync: actual.default.loadAsync.bind(actual.default)
+		})
+	};
+});
 
 vi.mock('$lib/services/workspaceService', async (importOriginal) => {
 	const actual = await importOriginal<typeof import('$lib/services/workspaceService')>();
@@ -122,9 +147,6 @@ const NFC_CAFE = 'Café';
 const NFD_CAFE = 'Cafe\u0301';
 
 describe('ExportWorkspaceModal', () => {
-	let zipFileSpy: MockInstance<typeof JSZip.prototype.file>;
-	let zipGenerateSpy: MockInstance<typeof JSZip.prototype.generateAsync>;
-
 	beforeEach(() => {
 		vi.clearAllMocks();
 		global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
@@ -152,8 +174,20 @@ describe('ExportWorkspaceModal', () => {
 			libraryFile.hash === 'mock-hash-kick' ? kickFile : null
 		);
 
-		zipFileSpy = vi.spyOn(JSZip.prototype, 'file');
-		zipGenerateSpy = vi.spyOn(JSZip.prototype, 'generateAsync');
+		mockZipInstance.file.mockReset();
+		mockZipInstance.file.mockImplementation((name, data, options) =>
+			mockZipInstance.real.file(name, data, options)
+		);
+		mockZipInstance.generateAsync.mockReset();
+		mockZipInstance.generateAsync.mockImplementation((options, onUpdate) =>
+			mockZipInstance.real.generateAsync(options, onUpdate)
+		);
+		mockJSZipConstructor.mockReset();
+		mockJSZipConstructor.mockImplementation(function () {
+			// ponytail: vitest 4+ constructable-mock rule - new JSZip()
+			mockZipInstance.real = new realZip.ctor();
+			return mockZipInstance;
+		});
 	});
 
 	afterEach(() => {
@@ -230,7 +264,7 @@ describe('ExportWorkspaceModal', () => {
 			await clickExport('Workspace A');
 
 			await vi.waitFor(() => {
-				expect(zipGenerateSpy).toHaveBeenCalled();
+				expect(mockZipInstance.generateAsync).toHaveBeenCalled();
 				expect(toastMock.success).toHaveBeenCalled();
 			});
 		});
@@ -254,7 +288,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(await zipEntryBytes(zip, 'kick.wav')).toEqual(
 				new Uint8Array(await kickFile.arrayBuffer())
 			);
-			expect(zipGenerateSpy).toHaveBeenCalledTimes(1);
+			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
 			expect(global.URL.createObjectURL).toHaveBeenCalledTimes(1);
 			expect(anchorClick).toHaveBeenCalledTimes(1);
 			expect(toastMock.success).toHaveBeenCalledTimes(1);
@@ -335,9 +369,9 @@ describe('ExportWorkspaceModal', () => {
 			await vi.waitFor(() => {
 				expect(toastMock.success).toHaveBeenCalled();
 			});
-			const entry = zipFileSpy.mock.calls.find((call) => call[0] === 'song.dtx');
+			const entry = mockZipInstance.file.mock.calls.find((call) => call[0] === 'song.dtx');
 			expect(entry?.[1]).toBeInstanceOf(Uint8Array);
-			expect(new TextDecoder('shift-jis').decode(entry?.[1] as unknown as Uint8Array)).toBe(
+			expect(new TextDecoder('shift-jis').decode(entry?.[1] as Uint8Array)).toBe(
 				'#TITLE: 太鼓'
 			);
 			const zip = await exportedZip();
@@ -393,7 +427,7 @@ describe('ExportWorkspaceModal', () => {
 			});
 			expect(soundLibMock.getByHash).not.toHaveBeenCalled();
 			expect(mockWorkspaceServiceClass.getLargeFile).not.toHaveBeenCalled();
-			expect(zipFileSpy).toHaveBeenCalledTimes(2);
+			expect(mockZipInstance.file).toHaveBeenCalledTimes(2);
 			const zip = await exportedZip();
 			expect(zipEntryNames(zip)).toEqual(['basic.dtx', 'advanced.dtx']);
 			expect(toastMock.success).toHaveBeenCalledWith({
@@ -477,14 +511,14 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toContain('No files found in workspace to export');
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
 		it('surfaces a ZIP generation failure without downloading', async () => {
-			zipGenerateSpy.mockRejectedValueOnce(new Error('zip failed'));
+			mockZipInstance.generateAsync.mockRejectedValueOnce(new Error('zip failed'));
 			const onClose = vi.fn();
 			render(ExportWorkspaceModal, { props: { show: true, onClose } });
 
@@ -492,7 +526,7 @@ describe('ExportWorkspaceModal', () => {
 
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toContain('zip failed');
-			expect(zipGenerateSpy).toHaveBeenCalledTimes(1);
+			expect(mockZipInstance.generateAsync).toHaveBeenCalledTimes(1);
 			expect(toastMock.error).toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
@@ -662,7 +696,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/Song A\/kick\.wav/);
 			expect(alert.textContent).toMatch(/re-import/i);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -683,7 +717,7 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toMatch(/Song A\/snare\.wav/);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -707,7 +741,7 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toMatch(/Song A\/hat\.wav/);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -730,7 +764,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/uncheck/i);
 			expect(alert.textContent).toMatch(/newly imported copy/i);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -757,7 +791,7 @@ describe('ExportWorkspaceModal', () => {
 				'songs/A/chart.DTX conflicts with Songs/a/Chart.dtx'
 			);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -782,7 +816,7 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toContain('Song A/mas.dtx conflicts with Song A/mas.dtx');
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -809,7 +843,7 @@ describe('ExportWorkspaceModal', () => {
 				`${NFD_CAFE}/CHART.DTX conflicts with ${NFC_CAFE}/chart.dtx`
 			);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -871,7 +905,7 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toContain('DIR/bgm.ogg conflicts with dir/BGM.ogg');
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -899,7 +933,7 @@ describe('ExportWorkspaceModal', () => {
 			const alert = await screen.findByRole('alert');
 			expect(alert.textContent).toContain('A/CHART.DTX conflicts with a/chart.dtx');
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -927,7 +961,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/chart\.dtx/i);
 			expect(alert.textContent).toMatch(/other\.dtx/i);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -954,7 +988,7 @@ describe('ExportWorkspaceModal', () => {
 			expect(alert.textContent).toMatch(/Song A\/lost\.wav/);
 			expect(alert.textContent).toMatch(/failed to read/i);
 			expect(toastMock.error).toHaveBeenCalled();
-			expect(zipGenerateSpy).not.toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
 			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
 			expect(toastMock.success).not.toHaveBeenCalled();
 			expect(onClose).not.toHaveBeenCalled();
@@ -991,7 +1025,7 @@ describe('ExportWorkspaceModal', () => {
 				const pendingZip = new Promise<Blob>((resolve) => {
 					resolveZip = resolve;
 				});
-				zipGenerateSpy.mockImplementation(() => pendingZip as Promise<never>);
+				mockZipInstance.generateAsync.mockImplementation(() => pendingZip);
 
 				await clickExport('Retry Workspace');
 				expect(screen.queryByRole('alert')).toBeNull();

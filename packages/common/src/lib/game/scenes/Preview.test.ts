@@ -278,6 +278,13 @@ describe('Preview Scene', () => {
 			emit('loaderror', file);
 		};
 
+		const processFailFile = (file: MockLoaderFile) => {
+			inflight.delete(file);
+			queue.delete(file);
+			file.state = 'errored';
+			emit('complete', load, 0, 1);
+		};
+
 		const shutdownLoader = () => {
 			listeners.clear();
 			list.clear();
@@ -307,6 +314,7 @@ describe('Preview Scene', () => {
 			pendingFileFor,
 			completeFile,
 			failFile,
+			processFailFile,
 			shutdownLoader,
 			restartLoader,
 			emit
@@ -3991,6 +3999,41 @@ describe('Preview Scene', () => {
 			expect(fixture.soundApi.get(cacheKey)).toBeNull();
 			expect(fixture.audioCache.has(cacheKey)).toBe(false);
 			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
+
+			warnSpy.mockRestore();
+		});
+
+		it('should clean up and allow retry when audio decoding fails', async () => {
+			const mockSoundChip = { fileName: 'bad.wav' } as any;
+			const mockFile = new File(['audio'], 'bad.wav', { type: 'audio/wav' });
+			const cacheKey = 'soundchip_bad.wav';
+			const fixture = createAudioHarness(previewScene);
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+			const pending = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
+
+			// Phaser marks decode failures FILE_ERRORED: no keyed filecomplete
+			// and no loaderror are emitted, only the loader 'complete' event.
+			fixture.processFailFile(fixture.pendingFileFor(cacheKey)!);
+			await pending;
+
+			expect(fixture.soundApi.add).not.toHaveBeenCalled();
+			expect(fixture.audioCache.has(cacheKey)).toBe(false);
+			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
+			expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
+			expect(fixture.load.off).toHaveBeenCalledWith('complete', expect.any(Function));
+			expect(previewScene['inflightLoads'].has(cacheKey)).toBe(false);
+
+			// The failed entry must not block a later retry.
+			const retry = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(2));
+			const retried = fixture.pendingFileFor(cacheKey)!;
+			fixture.completeFile(Object.assign(retried, { data: { bytes: 'retry' } }));
+			await retry;
+
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
+			expect(fixture.soundApi.get(cacheKey)?.source).toBe(retried.data);
 
 			warnSpy.mockRestore();
 		});

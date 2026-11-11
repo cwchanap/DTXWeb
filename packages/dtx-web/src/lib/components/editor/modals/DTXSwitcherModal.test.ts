@@ -123,8 +123,8 @@ describe('DTXSwitcherModal', () => {
 
 		const songABtn = screen.getByText('Song A/mas.dtx').closest('button')!;
 		const songBBtn = screen.getByText('Song B/mas.dtx').closest('button')!;
-		expect(within(songABtn).queryByText('Currently active')).not.toBeInTheDocument();
-		expect(within(songBBtn).getByText('Currently active')).toBeInTheDocument();
+		expect(within(songABtn).queryByText('Currently active')).toBeNull();
+		expect(within(songBBtn).queryByText('Currently active')).not.toBeNull();
 	});
 
 	it('calls onSwitchDTX with no arguments after a successful switch', async () => {

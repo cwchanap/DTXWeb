@@ -133,6 +133,7 @@ describe('Preview Scene', () => {
 		const list = makeLoaderSet();
 		const inflight = makeLoaderSet();
 		const queue = makeLoaderSet();
+		let loaderState = 'idle';
 		const listeners = new Map<
 			string,
 			{ fn: (...args: unknown[]) => void; onceOnly: boolean }[]
@@ -199,6 +200,9 @@ describe('Preview Scene', () => {
 				return load;
 			}),
 			start: vi.fn(() => {
+				if (loaderState === 'shutdown') {
+					return load;
+				}
 				for (const file of [...list]) {
 					list.delete(file);
 					file.state = 'loading';
@@ -272,6 +276,15 @@ describe('Preview Scene', () => {
 			list.clear();
 			inflight.clear();
 			queue.clear();
+			loaderState = 'shutdown';
+		};
+
+		const restartLoader = () => {
+			listeners.clear();
+			list.clear();
+			inflight.clear();
+			queue.clear();
+			loaderState = 'idle';
 		};
 
 		return {
@@ -288,6 +301,7 @@ describe('Preview Scene', () => {
 			completeFile,
 			failFile,
 			shutdownLoader,
+			restartLoader,
 			emit
 		};
 	};
@@ -2033,6 +2047,213 @@ describe('Preview Scene', () => {
 			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
 			expect(fixture.soundApi.get(cacheKey)?.source).toEqual({ bytes: 'kick' });
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
+			vi.useRealTimers();
+		});
+
+		it('should ignore a provider lookup that resolves after shutdown displaced it', async () => {
+			vi.useFakeTimers();
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const cacheKey = 'soundchip_kick.wav';
+			const fileA = new File(['audio-a'], 'kick.wav', { type: 'audio/wav' });
+			const fileB = new File(['audio-b'], 'kick.wav', { type: 'audio/wav' });
+			let resolveGetFile: (file: File) => void = () => {};
+			const mockGetFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveGetFile = resolve))
+				)
+				.mockResolvedValue(fileB);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockGetFile).toHaveBeenCalledTimes(1);
+			expect(fixture.load.audio).not.toHaveBeenCalled();
+
+			fixture.shutdownLoader();
+			previewScene.shutdown();
+			fixture.restartLoader();
+
+			const secondPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
+			const pendingFile = fixture.pendingFileFor(cacheKey)!;
+			pendingFile.data = { bytes: 'b' };
+			fixture.completeFile(pendingFile);
+			await secondPass;
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileB);
+
+			resolveGetFile(fileA);
+			await vi.advanceTimersByTimeAsync(11000);
+			await firstPass;
+
+			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
+			expect(fixture.audioCache.get(cacheKey)).toBe(pendingFile.data);
+			expect(fixture.soundApi.get(cacheKey)?.source).toBe(pendingFile.data);
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileB);
+			vi.useRealTimers();
+		});
+
+		it('should not recreate ownership when a same-File lookup resolves during shutdown', async () => {
+			vi.useFakeTimers();
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const cacheKey = 'soundchip_kick.wav';
+			const fileA = new File(['audio-a'], 'kick.wav', { type: 'audio/wav' });
+			let resolveGetFile: (file: File) => void = () => {};
+			const mockGetFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveGetFile = resolve))
+				)
+				.mockResolvedValue(fileA);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockGetFile).toHaveBeenCalledTimes(1);
+
+			fixture.shutdownLoader();
+			previewScene.shutdown();
+
+			resolveGetFile(fileA);
+			await vi.advanceTimersByTimeAsync(0);
+			fixture.restartLoader();
+
+			const secondPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			const pendingFile = fixture.pendingFileFor(cacheKey);
+			if (pendingFile) {
+				pendingFile.data = { bytes: 'a' };
+				fixture.completeFile(pendingFile);
+			}
+			await vi.advanceTimersByTimeAsync(11000);
+			await Promise.all([firstPass, secondPass]);
+
+			expect(pendingFile).toBeDefined();
+			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
+			expect(fixture.soundApi.get(cacheKey)?.source).toEqual({ bytes: 'a' });
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileA);
+			vi.useRealTimers();
+		});
+
+		it('should not let an older in-lifecycle lookup replace a newer load', async () => {
+			vi.useFakeTimers();
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const cacheKey = 'soundchip_kick.wav';
+			const fileA = new File(['audio-a'], 'kick.wav', { type: 'audio/wav' });
+			const fileB = new File(['audio-b'], 'kick.wav', { type: 'audio/wav' });
+			let resolveGetFile: (file: File) => void = () => {};
+			const mockGetFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveGetFile = resolve))
+				)
+				.mockResolvedValue(fileB);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockGetFile).toHaveBeenCalledTimes(1);
+
+			const secondPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
+			const pendingFile = fixture.pendingFileFor(cacheKey)!;
+			pendingFile.data = { bytes: 'b' };
+			fixture.completeFile(pendingFile);
+			await secondPass;
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileB);
+
+			resolveGetFile(fileA);
+			await vi.advanceTimersByTimeAsync(11000);
+			await firstPass;
+
+			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
+			expect(fixture.audioCache.get(cacheKey)).toBe(pendingFile.data);
+			expect(fixture.soundApi.get(cacheKey)?.source).toBe(pendingFile.data);
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileB);
+			vi.useRealTimers();
+		});
+
+		it('should stay silent when an older lookup resolves after a newer missing result', async () => {
+			vi.useFakeTimers();
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const cacheKey = 'soundchip_kick.wav';
+			const fileA = new File(['audio-a'], 'kick.wav', { type: 'audio/wav' });
+			const fileB = new File(['audio-b'], 'kick.wav', { type: 'audio/wav' });
+			const loadedData = { bytes: 'b' };
+			let resolveGetFile: (file: File) => void = () => {};
+			const mockGetFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveGetFile = resolve))
+				)
+				.mockResolvedValue(null);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			Preview['loadedFiles'].set(cacheKey, fileB);
+			fixture.cacheApi.add(cacheKey, loadedData);
+			fixture.soundApi.add(cacheKey);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(mockGetFile).toHaveBeenCalledTimes(1);
+
+			const secondPass = previewScene['setupSoundsAsync']();
+			await secondPass;
+			expect(fixture.soundApi.get(cacheKey)).toBeNull();
+			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
+
+			resolveGetFile(fileA);
+			await vi.advanceTimersByTimeAsync(0);
+			const revivedFile = fixture.pendingFileFor(cacheKey);
+			if (revivedFile) {
+				revivedFile.data = { bytes: 'a' };
+				fixture.completeFile(revivedFile);
+			}
+			await vi.advanceTimersByTimeAsync(11000);
+			await firstPass;
+
+			expect(fixture.load.audio).not.toHaveBeenCalled();
+			expect(fixture.audioCache.has(cacheKey)).toBe(false);
+			expect(fixture.soundApi.get(cacheKey)).toBeNull();
+			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
 			vi.useRealTimers();
 		});
 

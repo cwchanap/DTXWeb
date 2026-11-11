@@ -239,6 +239,24 @@ describe('PreviewAudioEngine', () => {
 		expect(fetchFn).not.toHaveBeenCalled();
 	});
 
+	it('rejects subdirectory paths with empty segments', async () => {
+		const kick = new LaneMeasureNote(0, '12', [{ noteID: '02', position: 0 }]);
+		const engine = new PreviewAudioEngine();
+		const res = await engine.load({
+			simfileID: '42',
+			bucketUrl: 'https://b.test',
+			chartFileUrl: 'https://b.test/42/song/master.dtx',
+			soundChips: [makeChip(2, 'drums//kick.wav')],
+			notesByLane: { '12': [kick] },
+			timing,
+			fetchFn: fetchFn as unknown as typeof fetch,
+			context: ctx as unknown as never
+		});
+		expect(res.failedFiles).toEqual(['drums//kick.wav']);
+		expect(res.loaded).toBe(0);
+		expect(fetchFn).not.toHaveBeenCalled();
+	});
+
 	it('falls back to ${bucketUrl}/${simfileID} when chartFileUrl is omitted', async () => {
 		// Backward compat: callers that do not supply chartFileUrl keep the
 		// legacy sample path resolution.

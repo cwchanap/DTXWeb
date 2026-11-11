@@ -1,6 +1,6 @@
 import { DTXFile, SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import { SoundLibrary } from './soundLibrary';
-import { toWorkspacePath } from './workspacePaths';
+import { resolveChipPath, toWorkspacePath, workspacePathKey } from './workspacePaths';
 
 export interface WorkspaceFile {
 	name: string;
@@ -189,66 +189,30 @@ export class WorkspaceService {
 			// Parse sound chips from DTX
 			const soundChips = dtxFile.parseSoundChips();
 
-			// Create SimFile with audio files from both sound library and workspace
-			// Initialize with empty array, will be populated below
 			const simFile = new SimFile([]);
-
-			// Combine files from sound library (small files) and workspace (large files)
-			const allFiles: File[] = [];
-
-			// Small files: pinned to the stored content hash so the editor plays the
-			// same bytes the export contains; legacy records without a hash fall back
-			// to matching by name. Records whose import storage failed are excluded
-			// from name fallback so a different workspace's same-named file is not
-			// loaded in their place.
-			const soundLibraryFiles = SoundLibrary.getAll();
-			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
-			const hashlessNames = new Set<string>();
-			const libraryFiles: File[] = [];
-			for (const af of workspace.audioFiles) {
-				if (af.isLarge) continue;
-				if (!af.hash) {
-					if (!af.libraryStorageFailed) hashlessNames.add(af.name.toLowerCase());
-					continue;
-				}
-				const record = libraryByHash.get(af.hash);
-				const converted = record ? SoundLibrary.toFile(record) : null;
-				if (!converted) continue;
-				// Content-deduplicated records may carry another workspace's file name
-				libraryFiles.push(new File([converted], af.name, { type: converted.type }));
-			}
-			libraryFiles.push(
-				...soundLibraryFiles
-					.filter((sf) => hashlessNames.has(sf.fileName.toLowerCase()))
-					.map((sf) => SoundLibrary.toFile(sf))
-					.filter((file): file is File => file !== null)
-			);
-			allFiles.push(...libraryFiles);
-
-			// Add large files from session memory
-
-			const largeFiles = workspace.audioFiles
-				.filter((af) => af.isLarge)
-				.map((af) => {
-					const fileKey = `${workspace.name}/${af.path}`;
-					const file = WorkspaceService.sessionLargeFiles.get(fileKey);
-					return file;
-				})
-				.filter((file): file is File => file !== undefined);
-			allFiles.push(...largeFiles);
-
-			simFile.files = allFiles;
 			simFile.title = dtxFile.title;
 
-			// Match sound chips with their corresponding files
-			// This ensures soundChip.file is properly assigned for audio loading
-			for (const soundChip of soundChips) {
-				const matchingFile = allFiles.find(
-					(file) => file.name.toLowerCase() === soundChip.fileName.toLowerCase()
-				);
-				if (matchingFile) {
-					soundChip.file = matchingFile;
-				}
+			const audioByKey = new Map<string, WorkspaceFile[]>();
+			for (const af of workspace.audioFiles) {
+				const key = workspacePathKey(af.path);
+				const bucket = audioByKey.get(key) ?? [];
+				bucket.push(af);
+				audioByKey.set(key, bucket);
+			}
+
+			// Small files are pinned to the stored content hash so the editor
+			// plays the same bytes the export contains; legacy records without
+			// a hash fall back to matching by name. Records whose import storage
+			// failed are excluded from name fallback so a different workspace's
+			// same-named file is not loaded in their place.
+			const soundLibraryFiles = SoundLibrary.getAll();
+			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
+			const libraryByName = new Map<string, typeof soundLibraryFiles>();
+			for (const sf of soundLibraryFiles) {
+				const name = sf.fileName.toLowerCase();
+				const bucket = libraryByName.get(name) ?? [];
+				bucket.push(sf);
+				libraryByName.set(name, bucket);
 			}
 
 			// Store all files in FileManager for the FileProvider
@@ -265,9 +229,38 @@ export class WorkspaceService {
 			for (const key of getManagerKeys()) {
 				if (key.startsWith('local:')) removeFileInManager(key);
 			}
-			for (const file of allFiles) {
-				const key = `local:${file.name.toLowerCase()}`;
-				setFileInManager(key, file);
+
+			for (const soundChip of soundChips) {
+				if (!soundChip.fileName) continue;
+				const audioFile = resolveChipPath(dtxEntry.path, soundChip.fileName, audioByKey);
+				let file: File | null = null;
+				if (audioFile) {
+					if (audioFile.isLarge) {
+						file =
+							WorkspaceService.sessionLargeFiles.get(
+								`${workspace.name}/${audioFile.path}`
+							) ?? null;
+					} else if (audioFile.hash) {
+						const record = libraryByHash.get(audioFile.hash);
+						const converted = record ? SoundLibrary.toFile(record) : null;
+						if (converted) {
+							// Content-deduplicated records may carry another workspace's file name
+							file = new File([converted], audioFile.name, {
+								type: converted.type
+							});
+						}
+					} else if (!audioFile.libraryStorageFailed) {
+						const record = libraryByName.get(audioFile.name.toLowerCase())?.[0];
+						file = record ? SoundLibrary.toFile(record) : null;
+					}
+				}
+				if (!file) {
+					console.warn(
+						`Unresolved sound chip "${soundChip.fileName}" in ${dtxEntry.path}: no workspace audio file resolved; the chip stays silent.`
+					);
+					continue;
+				}
+				setFileInManager(`local:${soundChip.fileName.toLowerCase()}`, file);
 			}
 
 			// Update the workspace entry

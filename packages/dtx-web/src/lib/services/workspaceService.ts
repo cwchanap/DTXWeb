@@ -1,6 +1,6 @@
 import { DTXFile, SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import { SoundLibrary } from './soundLibrary';
-import { toWorkspacePath, workspacePathKey } from './workspacePaths';
+import { toWorkspacePath } from './workspacePaths';
 
 export interface WorkspaceFile {
 	name: string;
@@ -177,9 +177,7 @@ export class WorkspaceService {
 		workspace: Workspace,
 		dtxPath: string
 	): Promise<{ dtxFile: DTXFile; simFile: SimFile } | null> {
-		const dtxEntry = workspace.dtxFiles.find(
-			(f) => workspacePathKey(f.path) === workspacePathKey(dtxPath)
-		);
+		const dtxEntry = workspace.dtxFiles.find((f) => f.path === dtxPath);
 		if (!dtxEntry) return null;
 
 		try {
@@ -289,9 +287,7 @@ export class WorkspaceService {
 	 * Switch to a different DTX file in the workspace
 	 */
 	switchDTXFile(workspace: Workspace, dtxPath: string): void {
-		const dtxEntry = workspace.dtxFiles.find(
-			(f) => workspacePathKey(f.path) === workspacePathKey(dtxPath)
-		);
+		const dtxEntry = workspace.dtxFiles.find((f) => f.path === dtxPath);
 		if (dtxEntry) {
 			workspace.currentDTX = dtxEntry.path;
 			workspace.lastModified = Date.now();

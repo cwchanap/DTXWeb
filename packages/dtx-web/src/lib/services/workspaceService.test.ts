@@ -500,8 +500,6 @@ describe('WorkspaceService', () => {
 			expect(result.audioFiles.map((f) => f.isLarge)).toEqual([true, true]);
 			expect(WorkspaceService.getLargeFile('Pack', 'Song A/kick.wav')).toBe(fileA);
 			expect(WorkspaceService.getLargeFile('Pack', 'Song B/kick.wav')).toBe(fileB);
-			// A bare basename must not resolve a cached sample from another folder,
-			// and an unresolvable path must not play a previously cached sample.
 			expect(WorkspaceService.getLargeFile('Pack', 'kick.wav')).toBeUndefined();
 			expect(WorkspaceService.getLargeFile('Pack', 'Song C/kick.wav')).toBeUndefined();
 		});
@@ -833,11 +831,9 @@ describe('WorkspaceService', () => {
 				title: 'Song B'
 			};
 			vi.mocked(DTXFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
 				return mockDTXFile as any;
 			});
 			vi.mocked(SimFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
 				return { files: [], title: '' } as any;
 			});
 			mockLocalStorage.getItem.mockReturnValue('[]');
@@ -858,6 +854,74 @@ describe('WorkspaceService', () => {
 
 			expect(result).not.toBeNull();
 			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith('#TITLE: Song B');
+		});
+
+		it('should select the exact stored path when chart paths differ only by case', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockResolvedValue(undefined),
+				parseSoundChips: vi.fn().mockReturnValue([]),
+				title: 'x'
+			};
+			vi.mocked(DTXFile).mockImplementation(function () {
+				return mockDTXFile as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: lower', path: 'Song/mas.dtx' },
+					{ name: 'MAS.dtx', content: '#TITLE: upper', path: 'Song/MAS.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'Song/MAS.dtx');
+
+			expect(result).not.toBeNull();
+			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith('#TITLE: upper');
+		});
+
+		it('should select the exact stored path when chart paths differ only by normalization', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockResolvedValue(undefined),
+				parseSoundChips: vi.fn().mockReturnValue([]),
+				title: 'x'
+			};
+			vi.mocked(DTXFile).mockImplementation(function () {
+				return mockDTXFile as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const nfcPath = 'Café/mas.dtx';
+			const nfdPath = 'Café/mas.dtx';
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: nfc', path: nfcPath },
+					{ name: 'mas.dtx', content: '#TITLE: nfd', path: nfdPath }
+				],
+				audioFiles: [],
+				currentDTX: nfcPath,
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, nfdPath);
+
+			expect(result).not.toBeNull();
+			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith('#TITLE: nfd');
 		});
 
 		it('should not resolve a bare basename against nested DTX paths', async () => {
@@ -881,7 +945,6 @@ describe('WorkspaceService', () => {
 		it('should resolve same-named large audio files from different folders by path', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			vi.mocked(DTXFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
 					parseSoundChips: vi.fn().mockReturnValue([]),
@@ -889,7 +952,6 @@ describe('WorkspaceService', () => {
 				} as any;
 			});
 			vi.mocked(SimFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
 				return { files: [], title: '' } as any;
 			});
 			const fileA = new File(['A-audio-bytes'], 'kick.wav');
@@ -919,7 +981,6 @@ describe('WorkspaceService', () => {
 		it('should not play a cached same-named sample for an unresolvable path', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			vi.mocked(DTXFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
 					parseSoundChips: vi.fn().mockReturnValue([]),
@@ -927,11 +988,8 @@ describe('WorkspaceService', () => {
 				} as any;
 			});
 			vi.mocked(SimFile).mockImplementation(function () {
-				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
 				return { files: [], title: '' } as any;
 			});
-			// Only Song A's file is cached; the workspace references Song C, which
-			// must not fall back to the same-named cached sample.
 			(WorkspaceService as any).sessionLargeFiles.set(
 				'Pack/Song A/kick.wav',
 				new File(['A-audio-bytes'], 'kick.wav')
@@ -1028,6 +1086,44 @@ describe('WorkspaceService', () => {
 			workspaceService.switchDTXFile(workspace, 'Song B/mas.dtx');
 
 			expect(workspace.currentDTX).toBe('Song B/mas.dtx');
+		});
+
+		it('should activate the exact stored path when chart paths differ only by case', () => {
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: lower', path: 'Song/mas.dtx' },
+					{ name: 'MAS.dtx', content: '#TITLE: upper', path: 'Song/MAS.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			workspaceService.switchDTXFile(workspace, 'Song/MAS.dtx');
+
+			expect(workspace.currentDTX).toBe('Song/MAS.dtx');
+		});
+
+		it('should activate the exact stored path when chart paths differ only by normalization', () => {
+			const nfcPath = 'Café/mas.dtx';
+			const nfdPath = 'Café/mas.dtx';
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: nfc', path: nfcPath },
+					{ name: 'mas.dtx', content: '#TITLE: nfd', path: nfdPath }
+				],
+				audioFiles: [],
+				currentDTX: nfcPath,
+				lastModified: Date.now()
+			};
+
+			workspaceService.switchDTXFile(workspace, nfdPath);
+
+			expect(workspace.currentDTX).toBe(nfdPath);
 		});
 
 		it('should not switch on a bare basename that matches no stored path', () => {

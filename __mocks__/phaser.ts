@@ -239,7 +239,10 @@ const Scene = class MockScene {
 		audio: vi.fn(),
 		spritesheet: vi.fn(),
 		image: vi.fn(),
+		on: vi.fn(),
 		once: vi.fn(),
+		off: vi.fn(),
+		emit: vi.fn(),
 		start: vi.fn()
 	};
 
@@ -278,6 +281,7 @@ const Scene = class MockScene {
 	sound = {
 		add: vi.fn().mockReturnValue(new Sound.WebAudioSound()),
 		get: vi.fn(),
+		remove: vi.fn(),
 		removeAll: vi.fn()
 	};
 

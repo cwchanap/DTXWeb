@@ -302,10 +302,13 @@ export class Preview extends BaseGame {
 		}
 
 		// Only the current chart's sources need to be tracked across scene
-		// restarts; dropping the rest releases their File/Blob bytes.
-		for (const cacheKey of Preview.loadedFiles.keys()) {
+		// restarts; evicting the rest releases their File, decoded blob, and
+		// Phaser audio/sound entries. soundCacheMap keys are included so a
+		// processed blob whose File tracking is already gone still evicts.
+		const staleKeys = new Set([...Preview.loadedFiles.keys(), ...Preview.soundCacheMap.keys()]);
+		for (const cacheKey of staleKeys) {
 			if (!uniqueSoundChips.has(cacheKey)) {
-				Preview.loadedFiles.delete(cacheKey);
+				this.evictSoundChip(cacheKey);
 			}
 		}
 

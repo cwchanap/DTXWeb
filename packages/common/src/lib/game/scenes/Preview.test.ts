@@ -1923,6 +1923,89 @@ describe('Preview Scene', () => {
 			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
 		});
 
+		it('should evict all cached audio state when a chip is removed from the chart', async () => {
+			const kickKey = 'soundchip_kick.wav';
+			const snareKey = 'soundchip_snare.wav';
+			const kickFile = new File(['audio-a'], 'kick.wav', { type: 'audio/wav' });
+			const snareFile = new File(['audio-b'], 'snare.wav', { type: 'audio/wav' });
+			let chips: { fileName: string; id: number }[] = [{ fileName: 'kick.wav', id: 1 }];
+			const mockGetFile = vi.fn((_id: unknown, name: string) =>
+				Promise.resolve(name === 'kick.wav' ? kickFile : snareFile)
+			);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof chips) => void) => {
+					callback(chips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(kickKey)!, { data: { bytes: 'a' } })
+			);
+			await firstPass;
+			// Simulate a decoded XA blob retained for the loaded key
+			Preview['soundCacheMap'].set(kickKey, {
+				blob: new Blob(['wav'], { type: 'audio/wav' }),
+				processed: true
+			});
+			const staleSound = fixture.soundApi.get(kickKey)!;
+
+			chips = [{ fileName: 'snare.wav', id: 1 }];
+			const secondPass = previewScene['setupSoundsAsync']();
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(2));
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(snareKey)!, { data: { bytes: 'b' } })
+			);
+			await secondPass;
+
+			expect(staleSound.stop).toHaveBeenCalled();
+			expect(fixture.soundApi.remove).toHaveBeenCalledWith(staleSound);
+			expect(fixture.soundApi.get(kickKey)).toBeNull();
+			expect(fixture.audioCache.has(kickKey)).toBe(false);
+			expect(Preview['soundCacheMap'].has(kickKey)).toBe(false);
+			expect(Preview['loadedFiles'].has(kickKey)).toBe(false);
+			expect(fixture.audioCache.get(snareKey)).toEqual({ bytes: 'b' });
+		});
+
+		it('should evict a processed blob whose File tracking is already gone', async () => {
+			const cacheKey = 'soundchip_orphan.xa';
+			const snareKey = 'soundchip_snare.wav';
+			const fixture = createAudioHarness(previewScene);
+			Preview['soundCacheMap'].set(cacheKey, {
+				blob: new Blob(['wav'], { type: 'audio/wav' }),
+				processed: true
+			});
+			fixture.cacheApi.add(cacheKey, { decoded: 'orphan' });
+			const orphanSound = fixture.soundApi.add(cacheKey);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: { fileName: string; id: number }[]) => void) => {
+					callback([{ fileName: 'snare.wav', id: 1 }]);
+					return vi.fn();
+				}
+			);
+			const mockGetFile = vi.fn().mockResolvedValue(new File(['b'], 'snare.wav'));
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const pending = previewScene['setupSoundsAsync']();
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(snareKey)!, { data: { bytes: 'b' } })
+			);
+			await pending;
+
+			expect(orphanSound.stop).toHaveBeenCalled();
+			expect(fixture.soundApi.get(cacheKey)).toBeNull();
+			expect(fixture.audioCache.has(cacheKey)).toBe(false);
+			expect(Preview['soundCacheMap'].has(cacheKey)).toBe(false);
+		});
+
 		it('should reload the resolved File on each change across A→B→A', async () => {
 			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
 			const cacheKey = 'soundchip_kick.wav';

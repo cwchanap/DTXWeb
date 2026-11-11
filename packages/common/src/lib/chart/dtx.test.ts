@@ -213,6 +213,21 @@ describe('DTXFile', () => {
 
 			expect(dtxFile.pathWav).toBe(expected);
 		});
+
+		it.each(['#PATH_WAV_EXTRA: other', '#PATH_WAV2: other'])(
+			'ignores the longer directive "%s"',
+			async (line) => {
+				await dtxFile.parseFromText(line);
+
+				expect(dtxFile.pathWav).toBeUndefined();
+			}
+		);
+
+		it('prefers the real #PATH_WAV line over an earlier longer directive', async () => {
+			await dtxFile.parseFromText('#PATH_WAV_EXTRA: other\r\n#PATH_WAV: drums');
+
+			expect(dtxFile.pathWav).toBe('drums');
+		});
 	});
 
 	describe('parseSoundChips', () => {

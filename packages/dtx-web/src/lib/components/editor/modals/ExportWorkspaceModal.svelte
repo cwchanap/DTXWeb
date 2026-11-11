@@ -52,11 +52,11 @@
 			const pendingDtx: { name: string; content: string }[] = [];
 			const pendingAudio: { name: string; file: File }[] = [];
 
-			const claimName = (name: string, path: string): boolean => {
-				const key = zipCollisionKey(name);
+			const claimName = (path: string): boolean => {
+				const key = zipCollisionKey(path);
 				const firstPath = seenPaths.get(key);
 				if (firstPath !== undefined) {
-					duplicates.push(`${name} (${path}) conflicts with ${firstPath}`);
+					duplicates.push(`${path} conflicts with ${firstPath}`);
 					return false;
 				}
 				seenPaths.set(key, path);
@@ -65,14 +65,14 @@
 
 			// Collect DTX files (from stored content)
 			for (const dtxFile of workspace.dtxFiles) {
-				if (!claimName(dtxFile.name, dtxFile.path)) continue;
-				pendingDtx.push({ name: dtxFile.name, content: dtxFile.content });
+				if (!claimName(dtxFile.path)) continue;
+				pendingDtx.push({ name: dtxFile.path, content: dtxFile.content });
 			}
 
 			// Collect audio files (from sound library and session storage) if enabled
 			if (includeAudioInExport) {
 				for (const audioFile of workspace.audioFiles) {
-					if (!claimName(audioFile.name, audioFile.path)) continue;
+					if (!claimName(audioFile.path)) continue;
 
 					let file: File;
 					if (audioFile.isLarge) {
@@ -83,7 +83,7 @@
 						);
 						if (!largeFile) {
 							missingAudio.push(
-								`${audioFile.name}: only available until the page reloads. Uncheck "Include audio files", or re-import the folder and export the newly imported copy.`
+								`${audioFile.path}: only available until the page reloads. Uncheck "Include audio files", or re-import the folder and export the newly imported copy.`
 							);
 							continue;
 						}
@@ -92,28 +92,28 @@
 						// Get small file from sound library by its stored content hash
 						if (!audioFile.hash) {
 							missingAudio.push(
-								`${audioFile.name}: no stored content hash (hashing or sound library storage failed during import, or the folder was imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+								`${audioFile.path}: no stored content hash (hashing or sound library storage failed during import, or the folder was imported before hashing was added). Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
 							);
 							continue;
 						}
 						const libraryFile = SoundLibrary.getByHash(audioFile.hash);
 						if (!libraryFile) {
 							missingAudio.push(
-								`${audioFile.name}: no matching audio in the sound library. Re-import the folder and export the newly imported copy (if the sound library is full, free up browser storage first), or uncheck "Include audio files".`
+								`${audioFile.path}: no matching audio in the sound library. Re-import the folder and export the newly imported copy (if the sound library is full, free up browser storage first), or uncheck "Include audio files".`
 							);
 							continue;
 						}
 						const convertedFile = SoundLibrary.toFile(libraryFile);
 						if (!convertedFile) {
 							missingAudio.push(
-								`${audioFile.name}: stored audio could not be converted back to a file. Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
+								`${audioFile.path}: stored audio could not be converted back to a file. Re-import the folder and export the newly imported copy, or uncheck "Include audio files".`
 							);
 							continue;
 						}
 						file = convertedFile;
 					}
 
-					pendingAudio.push({ name: audioFile.name, file });
+					pendingAudio.push({ name: audioFile.path, file });
 				}
 			}
 

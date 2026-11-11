@@ -55,6 +55,12 @@ export class Preview extends BaseGame {
 	// Global animation cache to avoid recreating animations every time
 	private static animationsCreated = false;
 	private static soundCacheMap = new Map<string, { blob: Blob; processed: boolean }>();
+	private static loadedFiles = new Map<string, File>();
+
+	private inflightLoads = new Map<
+		string,
+		{ file: File; promise: Promise<void>; cancel: () => void }
+	>();
 
 	// Phaser-free timing/measure-offset calculations, kept in sync with this
 	// scene's chart data at the same points it was previously updated directly
@@ -144,9 +150,6 @@ export class Preview extends BaseGame {
 		// Draw panel and notes
 		this.drawPanel();
 		this.drawNotes();
-
-		// Load sounds in background, but don't restart preview multiple times
-		this.setupSoundsAsync();
 
 		// Start preview only once after everything is set up
 		this.startPreview();
@@ -263,37 +266,67 @@ export class Preview extends BaseGame {
 		if (!soundChips) return;
 
 		// Filter out sound chips that are already loaded to avoid redundant file operations
-		const unloadedSoundChips = soundChips.filter((soundChip) => {
-			if (!soundChip.fileName) return false;
-
+		const uniqueSoundChips = new Map<string, SoundChip>();
+		for (const soundChip of soundChips) {
+			if (!soundChip.fileName) continue;
 			const cacheKey = this.getCacheKey(soundChip);
-
-			// Check if already in Phaser cache and sound manager
-			const alreadyLoaded =
-				this.cache &&
-				this.cache.audio &&
-				this.cache.audio.exists(cacheKey) &&
-				this.sound.get(cacheKey);
-
-			return !alreadyLoaded;
-		});
+			if (!uniqueSoundChips.has(cacheKey)) {
+				uniqueSoundChips.set(cacheKey, soundChip);
+			}
+		}
 
 		// If no sounds need loading, return early
-		if (unloadedSoundChips.length === 0) {
+		if (uniqueSoundChips.size === 0) {
 			return;
 		}
 
 		// Create promises for unloaded sound chips only
-		const loadPromises = unloadedSoundChips.map(async (soundChip) => {
+		const loadPromises = [...uniqueSoundChips].map(async ([cacheKey, soundChip]) => {
 			try {
 				// Get file from FileProvider for both local and remote files
 				const actualFile = await fileProvider.getFile(currentSimfileID, soundChip.fileName);
+				const previousFile = Preview.loadedFiles.get(cacheKey);
+				const inflight = this.inflightLoads.get(cacheKey);
 
-				if (!soundChip.fileName || !actualFile) {
+				if (!actualFile) {
+					this.evictSoundChip(cacheKey);
 					return;
 				}
 
-				const cacheKey = this.getCacheKey(soundChip);
+				if (inflight && inflight.file === actualFile) {
+					return await inflight.promise;
+				}
+
+				// Check if already in Phaser cache and sound manager
+				const alreadyLoaded =
+					previousFile === actualFile &&
+					this.cache &&
+					this.cache.audio &&
+					this.cache.audio.exists(cacheKey) &&
+					this.sound.get(cacheKey);
+
+				if (alreadyLoaded) {
+					inflight?.cancel();
+					return;
+				}
+
+				if (previousFile !== actualFile) {
+					this.evictSoundChip(cacheKey);
+				} else {
+					inflight?.cancel();
+				}
+
+				const staleSound = this.sound && this.sound.get(cacheKey);
+				if (staleSound) {
+					staleSound.stop();
+					this.sound.remove(staleSound);
+					this.playingAudio = this.playingAudio.filter((audio) => audio !== staleSound);
+				}
+
+				// Remove existing cache entry if it exists
+				if (this.cache && this.cache.audio) {
+					this.cache.audio.remove(cacheKey);
+				}
 
 				// Check global sound cache for processed files
 				const globalCacheEntry = Preview.soundCacheMap.get(cacheKey);
@@ -308,11 +341,6 @@ export class Preview extends BaseGame {
 					return result;
 				}
 
-				// Remove existing cache entry if it exists
-				if (this.cache && this.cache.audio) {
-					this.cache.audio.remove(cacheKey);
-				}
-
 				// Create a promise that resolves when this audio is loaded
 				const result = await this.loadSoundChipAsync(actualFile, soundChip, cacheKey);
 				return result;
@@ -323,6 +351,48 @@ export class Preview extends BaseGame {
 
 		// Wait for all audio files to be loaded, filtering out undefined values
 		await Promise.all(loadPromises.filter(Boolean));
+	}
+
+	private evictSoundChip(cacheKey: string): void {
+		this.inflightLoads.get(cacheKey)?.cancel();
+		const staleSound = this.sound && this.sound.get(cacheKey);
+		if (staleSound) {
+			staleSound.stop();
+			this.sound.remove(staleSound);
+			this.playingAudio = this.playingAudio.filter((audio) => audio !== staleSound);
+		}
+		if (this.cache && this.cache.audio) {
+			this.cache.audio.remove(cacheKey);
+		}
+		Preview.soundCacheMap.delete(cacheKey);
+		Preview.loadedFiles.delete(cacheKey);
+	}
+
+	private discardPendingAudioFile(cacheKey: string): void {
+		const loader = this.load;
+		if (!loader) {
+			return;
+		}
+		for (const set of [loader.list, loader.inflight, loader.queue]) {
+			if (!set || typeof set.each !== 'function') {
+				continue;
+			}
+			const pending: Phaser.Loader.File[] = [];
+			set.each((file: Phaser.Loader.File) => {
+				if (file && file.type === 'audio' && file.key === cacheKey) {
+					pending.push(file);
+				}
+				return true;
+			});
+			for (const file of pending) {
+				if (file.xhrLoader && typeof file.xhrLoader.abort === 'function') {
+					file.xhrLoader.abort();
+				}
+				file.resetXHR();
+				(file as { cache: unknown }).cache = null;
+				set.delete(file);
+			}
+		}
 	}
 
 	private async loadSoundChipAsync(
@@ -338,60 +408,113 @@ export class Preview extends BaseGame {
 		}
 
 		// Create a Promise to handle the loading
-		return new Promise<void>((resolve) => {
-			const setupListenersAndLoad = async () => {
-				try {
-					const { objectUrl, wavBlob } = await prepareSoundChipAudioSource(
-						actualFile,
-						soundChip,
-						cachedBlob
-					);
-
-					// A freshly-decoded XA file produces a wavBlob; cache it for reuse
-					if (wavBlob) {
-						Preview.soundCacheMap.set(cacheKey, { blob: wavBlob, processed: true });
-					}
-
-					// Add listeners and load
-					this.setupAudioListeners(cacheKey, resolve);
-					this.load.audio(cacheKey, objectUrl);
-					this.load.start();
-				} catch (error) {
-					console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
-					resolve();
-				}
-			};
-
-			setupListenersAndLoad();
+		let resolvePromise!: () => void;
+		const loadPromise = new Promise<void>((resolve) => {
+			resolvePromise = resolve;
 		});
-	}
 
-	private setupAudioListeners(cacheKey: string, resolve: () => void): void {
-		// Add a completion listener for this specific audio BEFORE loading
-		this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-			// Add to sound manager once loaded
-			if (!this.sound.get(cacheKey)) {
-				this.sound.add(cacheKey);
+		let settled = false;
+		let timeoutId: ReturnType<typeof setTimeout> | undefined;
+		let onFileComplete: (() => void) | undefined;
+		let onLoadError: ((file: { key?: string }) => void) | undefined;
+		let entry: { file: File; promise: Promise<void>; cancel: () => void } | undefined;
+
+		const teardown = () => {
+			// Clear timeout on successful load
+			if (timeoutId !== undefined) {
+				clearTimeout(timeoutId);
 			}
-			resolve();
-		});
+			if (onFileComplete) {
+				this.load.off(`filecomplete-audio-${cacheKey}`, onFileComplete);
+			}
+			if (onLoadError) {
+				this.load.off('loaderror', onLoadError);
+			}
+			this.discardPendingAudioFile(cacheKey);
+			if (this.inflightLoads.get(cacheKey) === entry) {
+				this.inflightLoads.delete(cacheKey);
+			}
+		};
 
-		// Add error listener to catch load failures
-		this.load.once(`loaderror-audio-${cacheKey}`, (file: unknown) => {
-			console.warn(`Failed to load audio file: ${cacheKey}`, file);
-			resolve(); // Still resolve to prevent hanging
-		});
+		const finish = (usable: boolean) => {
+			if (settled) return;
+			settled = true;
+			teardown();
+			if (usable) {
+				// Add to sound manager once loaded
+				if (!this.sound.get(cacheKey)) {
+					this.sound.add(cacheKey);
+				}
+				Preview.loadedFiles.set(cacheKey, actualFile);
+			}
+			resolvePromise();
+		};
 
-		// Add a timeout fallback in case neither event fires
-		const timeoutId = setTimeout(() => {
-			console.warn(`Timeout loading audio file: ${cacheKey}`);
-			resolve();
-		}, 10000); // 10 second timeout
+		entry = {
+			file: actualFile,
+			promise: loadPromise,
+			cancel: () => {
+				if (settled) return;
+				settled = true;
+				teardown();
+				resolvePromise();
+			}
+		};
+		this.inflightLoads.set(cacheKey, entry);
 
-		// Clear timeout on successful load
-		this.load.once(`filecomplete-audio-${cacheKey}`, () => {
-			clearTimeout(timeoutId);
-		});
+		const setupListenersAndLoad = async () => {
+			try {
+				const { objectUrl, wavBlob } = await prepareSoundChipAudioSource(
+					actualFile,
+					soundChip,
+					cachedBlob
+				);
+
+				if (settled) {
+					return;
+				}
+
+				// A freshly-decoded XA file produces a wavBlob; cache it for reuse
+				if (wavBlob) {
+					Preview.soundCacheMap.set(cacheKey, { blob: wavBlob, processed: true });
+				}
+
+				// Add listeners and load
+				// Add a completion listener for this specific audio BEFORE loading
+				onFileComplete = () => {
+					if (!this.cache || !this.cache.audio || !this.cache.audio.exists(cacheKey)) {
+						return;
+					}
+					finish(true);
+				};
+				this.load.on(`filecomplete-audio-${cacheKey}`, onFileComplete);
+
+				// Add error listener to catch load failures
+				onLoadError = (file: { key?: string }) => {
+					if (!file || file.key !== cacheKey) {
+						return;
+					}
+					console.warn(`Failed to load audio file: ${cacheKey}`, file);
+					finish(false); // Still resolve to prevent hanging
+				};
+				this.load.on('loaderror', onLoadError);
+
+				// Add a timeout fallback in case neither event fires
+				timeoutId = setTimeout(() => {
+					console.warn(`Timeout loading audio file: ${cacheKey}`);
+					finish(false);
+				}, 10000); // 10 second timeout
+
+				this.load.audio(cacheKey, objectUrl);
+				this.load.start();
+			} catch (error) {
+				console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
+				finish(false);
+			}
+		};
+
+		setupListenersAndLoad();
+		return loadPromise;
 	}
 
 	override drawPanel() {

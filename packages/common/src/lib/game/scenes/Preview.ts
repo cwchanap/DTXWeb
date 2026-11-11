@@ -368,7 +368,20 @@ export class Preview extends BaseGame {
 		Preview.loadedFiles.delete(cacheKey);
 	}
 
-	private discardPendingAudioFile(cacheKey: string): void {
+	private discardPendingAudioFile(cacheKey: string, retainedFile?: Phaser.Loader.File): void {
+		const discarded = new Set<Phaser.Loader.File>();
+		const discard = (file: Phaser.Loader.File | undefined) => {
+			if (!file || file.type !== 'audio' || file.key !== cacheKey || discarded.has(file)) {
+				return;
+			}
+			discarded.add(file);
+			if (file.xhrLoader && typeof file.xhrLoader.abort === 'function') {
+				file.xhrLoader.abort();
+			}
+			file.resetXHR();
+			(file as { cache: unknown }).cache = null;
+		};
+		discard(retainedFile);
 		const loader = this.load;
 		if (!loader) {
 			return;
@@ -385,11 +398,7 @@ export class Preview extends BaseGame {
 				return true;
 			});
 			for (const file of pending) {
-				if (file.xhrLoader && typeof file.xhrLoader.abort === 'function') {
-					file.xhrLoader.abort();
-				}
-				file.resetXHR();
-				(file as { cache: unknown }).cache = null;
+				discard(file);
 				set.delete(file);
 			}
 		}
@@ -417,6 +426,7 @@ export class Preview extends BaseGame {
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		let onFileComplete: (() => void) | undefined;
 		let onLoadError: ((file: { key?: string }) => void) | undefined;
+		let loaderFile: Phaser.Loader.File | undefined;
 		let entry: { file: File; promise: Promise<void>; cancel: () => void } | undefined;
 
 		const teardown = () => {
@@ -430,7 +440,7 @@ export class Preview extends BaseGame {
 			if (onLoadError) {
 				this.load.off('loaderror', onLoadError);
 			}
-			this.discardPendingAudioFile(cacheKey);
+			this.discardPendingAudioFile(cacheKey, loaderFile);
 			if (this.inflightLoads.get(cacheKey) === entry) {
 				this.inflightLoads.delete(cacheKey);
 			}
@@ -505,7 +515,22 @@ export class Preview extends BaseGame {
 					finish(false);
 				}, 10000); // 10 second timeout
 
-				this.load.audio(cacheKey, objectUrl);
+				const onAddFile = (
+					key: string,
+					type: string,
+					_loader: unknown,
+					file: Phaser.Loader.File
+				) => {
+					if (type === 'audio' && key === cacheKey) {
+						loaderFile = file;
+					}
+				};
+				this.load.on('addfile', onAddFile);
+				try {
+					this.load.audio(cacheKey, objectUrl);
+				} finally {
+					this.load.off('addfile', onAddFile);
+				}
 				this.load.start();
 			} catch (error) {
 				console.warn(`Failed to decode XA file ${soundChip.fileName}:`, error);
@@ -1041,6 +1066,10 @@ export class Preview extends BaseGame {
 	}
 
 	shutdown() {
+		for (const inflightLoad of [...this.inflightLoads.values()]) {
+			inflightLoad.cancel();
+		}
+
 		// This is called when the scene is actually stopped/destroyed
 		if (this.previewTween) {
 			this.previewTween.stop();

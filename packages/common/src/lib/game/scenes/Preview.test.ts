@@ -557,7 +557,7 @@ describe('Preview Scene', () => {
 			expect(sound?.play).toHaveBeenCalledTimes(1);
 		});
 
-		it('does not revive a pending start after an empty subscriber transition', async () => {
+		it('starts silently when the pending chart loses all file-backed chips', async () => {
 			const fixture = createPlaybackHarness();
 			const file = new File(['kick'], 'kick.wav');
 			let resolveFirst!: (value: File) => void;
@@ -581,7 +581,7 @@ describe('Preview Scene', () => {
 
 			expect(fixture.audio.load.audio).not.toHaveBeenCalled();
 			expect(marked).toBe(false);
-			expect(tweenCount).toBe(0);
+			expect(tweenCount).toBe(1);
 		});
 
 		it('preserves a new empty-chart start across a repeated empty subscriber update', async () => {
@@ -768,6 +768,23 @@ describe('Preview Scene', () => {
 			expect(() => fixture.fireEvents()).not.toThrow();
 			expect(fixture.audio.soundApi.get).not.toHaveBeenCalled();
 			previewScene.shutdown();
+		});
+
+		it('starts the preview when sound setup rejects', async () => {
+			createPlaybackHarness();
+			vi.spyOn(previewScene as any, 'setupSoundsAsync').mockRejectedValue(new Error('boom'));
+			const startSpy = vi
+				.spyOn(previewScene as any, 'startPreviewWithoutSoundReload')
+				.mockImplementation(() => {});
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			previewScene['pendingPreviewStart'] = 'with-sounds';
+
+			await previewScene['setupSoundsForPreview']();
+
+			expect(startSpy).toHaveBeenCalledTimes(1);
+			expect(previewScene['previewSoundSetup']).toBeNull();
+			expect(previewScene['pendingPreviewStart']).toBeNull();
+			warnSpy.mockRestore();
 		});
 	});
 
@@ -3878,6 +3895,47 @@ describe('Preview Scene', () => {
 			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
 
 			warnSpy.mockRestore();
+		});
+
+		it('keeps a slow load alive after the timeout and adds it on completion', async () => {
+			vi.useFakeTimers();
+			const mockSoundChip = { fileName: 'kick.wav' } as any;
+			const mockFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			const cacheKey = 'soundchip_kick.wav';
+			const fixture = createAudioHarness(previewScene);
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+			const pending = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+			await vi.advanceTimersByTimeAsync(0);
+			await vi.advanceTimersByTimeAsync(11000);
+			await pending;
+
+			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
+
+			const loaded = fixture.pendingFileFor(cacheKey)!;
+			fixture.completeFile(Object.assign(loaded, { data: { bytes: 'late' } }));
+
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
+			expect(fixture.soundApi.get(cacheKey)?.source).toBe(loaded.data);
+
+			warnSpy.mockRestore();
+			vi.useRealTimers();
+		});
+
+		it('revokes the source object URL after a successful load', async () => {
+			const mockSoundChip = { fileName: 'kick.wav' } as any;
+			const mockFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			const cacheKey = 'soundchip_kick.wav';
+			const fixture = createAudioHarness(previewScene);
+
+			const pending = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
+			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'kick' } })
+			);
+			await pending;
+
+			expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:mock-url');
 		});
 	});
 });

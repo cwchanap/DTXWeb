@@ -175,7 +175,7 @@ export class Preview extends BaseGame {
 				!soundChips?.some((chip) => chip.fileName) &&
 				this.pendingPreviewStart === 'with-sounds'
 			) {
-				this.pendingPreviewStart = null;
+				this.pendingPreviewStart = 'without-sounds';
 			}
 			await this.setupSoundsForPreview();
 		});
@@ -301,6 +301,14 @@ export class Preview extends BaseGame {
 			}
 		}
 
+		// Only the current chart's sources need to be tracked across scene
+		// restarts; dropping the rest releases their File/Blob bytes.
+		for (const cacheKey of Preview.loadedFiles.keys()) {
+			if (!uniqueSoundChips.has(cacheKey)) {
+				Preview.loadedFiles.delete(cacheKey);
+			}
+		}
+
 		// If no sounds need loading, return early
 		if (uniqueSoundChips.size === 0) {
 			return;
@@ -345,18 +353,13 @@ export class Preview extends BaseGame {
 					this.evictSoundChip(cacheKey);
 				} else {
 					inflight?.cancel();
-				}
+					this.removeStaleSound(cacheKey);
 
-				const staleSound = this.sound && this.sound.get(cacheKey);
-				if (staleSound) {
-					staleSound.stop();
-					this.sound.remove(staleSound);
-					this.playingAudio = this.playingAudio.filter((audio) => audio !== staleSound);
-				}
-
-				// Remove existing cache entry if it exists
-				if (this.cache && this.cache.audio) {
-					this.cache.audio.remove(cacheKey);
+					// The provider still returns the same File, so keep the
+					// decoded blob and only drop the unusable cache entry.
+					if (this.cache && this.cache.audio) {
+						this.cache.audio.remove(cacheKey);
+					}
 				}
 
 				// Check global sound cache for processed files
@@ -384,14 +387,18 @@ export class Preview extends BaseGame {
 		await Promise.all(loadPromises.filter(Boolean));
 	}
 
-	private evictSoundChip(cacheKey: string): void {
-		this.inflightLoads.get(cacheKey)?.cancel();
+	private removeStaleSound(cacheKey: string): void {
 		const staleSound = this.sound && this.sound.get(cacheKey);
 		if (staleSound) {
 			staleSound.stop();
 			this.sound.remove(staleSound);
 			this.playingAudio = this.playingAudio.filter((audio) => audio !== staleSound);
 		}
+	}
+
+	private evictSoundChip(cacheKey: string): void {
+		this.inflightLoads.get(cacheKey)?.cancel();
+		this.removeStaleSound(cacheKey);
 		if (this.cache && this.cache.audio) {
 			this.cache.audio.remove(cacheKey);
 		}
@@ -458,10 +465,10 @@ export class Preview extends BaseGame {
 		let onFileComplete: (() => void) | undefined;
 		let onLoadError: ((file: { key?: string }) => void) | undefined;
 		let loaderFile: Phaser.Loader.File | undefined;
+		let objectUrl: string | undefined;
 		let entry: { file: File; promise: Promise<void>; cancel: () => void } | undefined;
 
-		const teardown = () => {
-			// Clear timeout on successful load
+		const teardown = (discardPending: boolean) => {
 			if (timeoutId !== undefined) {
 				clearTimeout(timeoutId);
 			}
@@ -471,7 +478,13 @@ export class Preview extends BaseGame {
 			if (onLoadError) {
 				this.load.off('loaderror', onLoadError);
 			}
-			this.discardPendingAudioFile(cacheKey, loaderFile);
+			if (discardPending) {
+				this.discardPendingAudioFile(cacheKey, loaderFile);
+			}
+			if (objectUrl) {
+				URL.revokeObjectURL(objectUrl);
+				objectUrl = undefined;
+			}
 			if (this.inflightLoads.get(cacheKey) === entry) {
 				this.inflightLoads.delete(cacheKey);
 			}
@@ -480,7 +493,9 @@ export class Preview extends BaseGame {
 		const finish = (usable: boolean) => {
 			if (settled) return;
 			settled = true;
-			teardown();
+			// A completed file has already left the loader queues, so the full
+			// queue scan is only needed when abandoning the load.
+			teardown(!usable);
 			if (usable) {
 				// Add to sound manager once loaded
 				if (!this.sound.get(cacheKey)) {
@@ -497,7 +512,7 @@ export class Preview extends BaseGame {
 			cancel: () => {
 				if (settled) return;
 				settled = true;
-				teardown();
+				teardown(true);
 				resolvePromise();
 			}
 		};
@@ -505,16 +520,20 @@ export class Preview extends BaseGame {
 
 		const setupListenersAndLoad = async () => {
 			try {
-				const { objectUrl, wavBlob } = await prepareSoundChipAudioSource(
+				const prepared = await prepareSoundChipAudioSource(
 					actualFile,
 					soundChip,
 					cachedBlob
 				);
 
 				if (settled) {
-					URL.revokeObjectURL(objectUrl);
+					URL.revokeObjectURL(prepared.objectUrl);
 					return;
 				}
+
+				const sourceUrl = prepared.objectUrl;
+				objectUrl = sourceUrl;
+				const { wavBlob } = prepared;
 
 				// A freshly-decoded XA file produces a wavBlob; cache it for reuse
 				if (wavBlob) {
@@ -541,10 +560,12 @@ export class Preview extends BaseGame {
 				};
 				this.load.on('loaderror', onLoadError);
 
-				// Add a timeout fallback in case neither event fires
+				// Add a timeout fallback in case neither event fires. Resolve the
+				// setup pass so the preview can start, but leave the load running:
+				// a slow source may still complete and must not be aborted.
 				timeoutId = setTimeout(() => {
 					console.warn(`Timeout loading audio file: ${cacheKey}`);
-					finish(false);
+					resolvePromise();
 				}, 10000); // 10 second timeout
 
 				const onAddFile = (
@@ -559,7 +580,7 @@ export class Preview extends BaseGame {
 				};
 				this.load.on('addfile', onAddFile);
 				try {
-					this.load.audio(cacheKey, objectUrl);
+					this.load.audio(cacheKey, sourceUrl);
 				} finally {
 					this.load.off('addfile', onAddFile);
 				}
@@ -671,18 +692,22 @@ export class Preview extends BaseGame {
 		const generation = this.lifecycleGeneration;
 		const setup = this.setupSoundsAsync();
 		this.previewSoundSetup = setup;
-		return setup.then(() => {
-			if (generation !== this.lifecycleGeneration || this.previewSoundSetup !== setup) {
-				return;
-			}
-			this.previewSoundSetup = null;
-			if (this.pendingPreviewStart === null) {
-				return;
-			}
-			this.pendingPreviewStart = null;
-			// Then start preview
-			this.startPreviewWithoutSoundReload();
-		});
+		return setup
+			.catch((error) => {
+				console.warn('Failed to set up preview sounds:', error);
+			})
+			.then(() => {
+				if (generation !== this.lifecycleGeneration || this.previewSoundSetup !== setup) {
+					return;
+				}
+				this.previewSoundSetup = null;
+				if (this.pendingPreviewStart === null) {
+					return;
+				}
+				this.pendingPreviewStart = null;
+				// Then start preview
+				this.startPreviewWithoutSoundReload();
+			});
 	}
 
 	/**

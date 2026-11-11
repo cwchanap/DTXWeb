@@ -44,12 +44,15 @@
 			const bpmNotes = dtxFile.parseBPMChanges();
 			const soundChips = dtxFile.parseSoundChips();
 
-			// Update stores
+			// Update stores. Clear the remote id before publishing the new chips so
+			// Preview does not resolve them against the previous remote simfile.
 			store.currentDtxFile.set(dtxFile);
-			store.currentSoundChip.set(soundChips);
 			store.currentSimfile.set(simFile);
 			store.currentSimfileID.set(null); // Local workspace
-			store.currentDifficulty.set(dtxPath.replace('.dtx', ''));
+			store.currentSoundChip.set(soundChips);
+			const dtxName =
+				currentWorkspace.dtxFiles.find((file) => file.path === dtxPath)?.name ?? dtxPath;
+			store.currentDifficulty.set(dtxName.replace(/\.dtx$/i, ''));
 
 			// Switch workspace current DTX
 			workspaceService.switchDTXFile(currentWorkspace, dtxPath);

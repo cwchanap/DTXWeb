@@ -59,6 +59,7 @@ vi.mock('$lib/store', () => {
 });
 
 import DTXSwitcherModal from './DTXSwitcherModal.svelte';
+import store from '$lib/store';
 
 describe('DTXSwitcherModal', () => {
 	const ws = makeWorkspace();
@@ -107,6 +108,7 @@ describe('DTXSwitcherModal', () => {
 
 		expect(mockService.parseDTXFile).toHaveBeenCalledWith(pack, 'Song B/mas.dtx');
 		expect(mockService.switchDTXFile).toHaveBeenCalledWith(pack, 'Song B/mas.dtx');
+		expect(vi.mocked(store.currentDifficulty.set)).toHaveBeenCalledWith('mas');
 	});
 
 	it('marks the active chart by path for same-named DTX files', () => {

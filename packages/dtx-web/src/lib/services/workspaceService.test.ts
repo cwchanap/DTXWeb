@@ -8,7 +8,8 @@ import {
 import { SoundLibrary } from './soundLibrary';
 
 // Mock dependencies
-vi.mock('@dtx/common', () => ({
+vi.mock('@dtx/common', async () => ({
+	...(await vi.importActual<object>('@dtx/common/audio/reference')),
 	DTXFile: vi.fn().mockImplementation(function (this: any) {
 		// ponytail: vitest 4+ constructable-mock rule â `new DTXFile()`
 		Object.assign(this, {
@@ -646,13 +647,14 @@ describe('WorkspaceService', () => {
 			};
 
 			mockLocalStorage.getItem.mockReturnValue('[]');
+			vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
 			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
 
 			expect(result).not.toBeNull();
-			expect(result!.simFile.files).toEqual([kickFile, largeFile]);
-			expect(soundChips[0].file).toBe(kickFile);
-			expect(soundChips[1].file).toBe(largeFile);
+			expect(result!.simFile.files).toEqual([]);
+			expect(soundChips[0].file).toBeUndefined();
+			expect(soundChips[1].file).toBeUndefined();
 			expect(soundChips[2].file).toBeUndefined();
 			expect(setFile).toHaveBeenCalledWith('local:kick.wav', kickFile);
 			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
@@ -661,6 +663,7 @@ describe('WorkspaceService', () => {
 
 		it('should resolve small audio by stored hash and expose it under the workspace file name', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile } = await import('@dtx/common/services/fileManager');
 			const soundChips: { fileName: string; file?: File }[] = [{ fileName: 'kick.wav' }];
 			vi.mocked(DTXFile).mockImplementation(function () {
 				return {
@@ -703,18 +706,24 @@ describe('WorkspaceService', () => {
 
 			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
 
-			expect(result!.simFile.files).toHaveLength(1);
-			expect(result!.simFile.files[0].name).toBe('kick.wav');
-			expect(await result!.simFile.files[0].text()).toBe('pinned');
-			expect(soundChips[0].file).toBe(result!.simFile.files[0]);
+			expect(result).not.toBeNull();
+			expect(result!.simFile.files).toEqual([]);
+			const registered = vi
+				.mocked(setFile)
+				.mock.calls.find(([key]) => key === 'local:kick.wav')?.[1];
+			expect(registered).toBeDefined();
+			expect(registered!.name).toBe('kick.wav');
+			expect(await registered!.text()).toBe('pinned');
+			expect(soundChips[0].file).toBeUndefined();
 		});
 
 		it('should not fall back to a same-named library file for a failed import', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile } = await import('@dtx/common/services/fileManager');
 			vi.mocked(DTXFile).mockImplementation(function () {
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
-					parseSoundChips: vi.fn().mockReturnValue([]),
+					parseSoundChips: vi.fn().mockReturnValue([{ fileName: 'kick.wav' }]),
 					title: 'x'
 				} as any;
 			});
@@ -747,10 +756,14 @@ describe('WorkspaceService', () => {
 				lastModified: Date.now()
 			};
 
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
 			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
 
 			expect(result).not.toBeNull();
-			expect(result!.simFile.files).toHaveLength(0);
+			expect(result!.simFile.files).toEqual([]);
+			expect(setFile).not.toHaveBeenCalled();
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
 		});
 
 		it('should drop stale local file entries and register files under lowercased keys', async () => {
@@ -760,7 +773,7 @@ describe('WorkspaceService', () => {
 			vi.mocked(DTXFile).mockImplementation(function () {
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
-					parseSoundChips: vi.fn().mockReturnValue([]),
+					parseSoundChips: vi.fn().mockReturnValue([{ fileName: 'kick.wav' }]),
 					title: 'x'
 				} as any;
 			});
@@ -795,7 +808,11 @@ describe('WorkspaceService', () => {
 			expect(result).not.toBeNull();
 			expect(removeFile).toHaveBeenCalledWith('local:stale.wav');
 			expect(removeFile).not.toHaveBeenCalledWith('simfile-9:remote.wav');
-			expect(setFile).toHaveBeenCalledWith('local:kick.wav', expect.any(File));
+			const registered = vi
+				.mocked(setFile)
+				.mock.calls.find(([key]) => key === 'local:kick.wav')?.[1];
+			expect(registered).toBeDefined();
+			expect(await registered!.text()).toBe('bytes');
 		});
 
 		it('should return null when parsing throws an error', async () => {
@@ -944,10 +961,11 @@ describe('WorkspaceService', () => {
 
 		it('should resolve same-named large audio files from different folders by path', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile } = await import('@dtx/common/services/fileManager');
 			vi.mocked(DTXFile).mockImplementation(function () {
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
-					parseSoundChips: vi.fn().mockReturnValue([]),
+					parseSoundChips: vi.fn().mockReturnValue([{ fileName: 'kick.wav' }]),
 					title: 'x'
 				} as any;
 			});
@@ -963,7 +981,10 @@ describe('WorkspaceService', () => {
 			const workspace: Workspace = {
 				name: 'Pack',
 				path: 'Pack',
-				dtxFiles: [{ name: 'mas.dtx', content: '#TITLE: x', path: 'Song A/mas.dtx' }],
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: A', path: 'Song A/mas.dtx' },
+					{ name: 'mas.dtx', content: '#TITLE: B', path: 'Song B/mas.dtx' }
+				],
 				audioFiles: [
 					{ name: 'kick.wav', path: 'Song A/kick.wav', isLarge: true },
 					{ name: 'kick.wav', path: 'Song B/kick.wav', isLarge: true }
@@ -972,18 +993,24 @@ describe('WorkspaceService', () => {
 				lastModified: Date.now()
 			};
 
-			const result = await workspaceService.parseDTXFile(workspace, 'Song A/mas.dtx');
+			const resultA = await workspaceService.parseDTXFile(workspace, 'Song A/mas.dtx');
+			expect(resultA).not.toBeNull();
+			expect(resultA!.simFile.files).toEqual([]);
+			expect(setFile).toHaveBeenLastCalledWith('local:kick.wav', fileA);
 
-			expect(result).not.toBeNull();
-			expect(result!.simFile.files).toEqual([fileA, fileB]);
+			const resultB = await workspaceService.parseDTXFile(workspace, 'Song B/mas.dtx');
+			expect(resultB).not.toBeNull();
+			expect(resultB!.simFile.files).toEqual([]);
+			expect(setFile).toHaveBeenLastCalledWith('local:kick.wav', fileB);
 		});
 
 		it('should not play a cached same-named sample for an unresolvable path', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile } = await import('@dtx/common/services/fileManager');
 			vi.mocked(DTXFile).mockImplementation(function () {
 				return {
 					parseFromText: vi.fn().mockResolvedValue(undefined),
-					parseSoundChips: vi.fn().mockReturnValue([]),
+					parseSoundChips: vi.fn().mockReturnValue([{ fileName: 'kick.wav' }]),
 					title: 'x'
 				} as any;
 			});
@@ -995,6 +1022,7 @@ describe('WorkspaceService', () => {
 				new File(['A-audio-bytes'], 'kick.wav')
 			);
 			mockLocalStorage.getItem.mockReturnValue('[]');
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
 			const workspace: Workspace = {
 				name: 'Pack',
@@ -1009,6 +1037,155 @@ describe('WorkspaceService', () => {
 
 			expect(result).not.toBeNull();
 			expect(result!.simFile.files).toEqual([]);
+			expect(setFile).not.toHaveBeenCalled();
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
+		});
+
+		it('should resolve each song-pack chart to only its own referenced audio', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const { setFile, getKeys, removeFile } =
+				await import('@dtx/common/services/fileManager');
+
+			const chipRefsFor = (content: string) =>
+				content
+					.split('\n')
+					.filter((line) => line.startsWith('#WAV'))
+					.map((line) => ({
+						fileName: line
+							.slice(line.indexOf(':') + 1)
+							.trim()
+							.toLowerCase()
+					}));
+
+			vi.mocked(DTXFile).mockImplementation(function (this: any) {
+				const self: any = {};
+				self.parseFromText = vi.fn(async (text: string) => {
+					self.content = text;
+				});
+				self.parseSoundChips = vi.fn(() => chipRefsFor(self.content ?? ''));
+				self.title = 'x';
+				return self;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				return { files: [], title: '' } as any;
+			});
+
+			vi.mocked(SoundLibrary.getAll).mockReturnValue([
+				{ hash: 'hash-a-kick', fileName: 'dedup-a.wav', fileData: 'A-audio-bytes' },
+				{ hash: 'hash-a-cymbal', fileName: 'dedup-cymbal.wav', fileData: 'cymbal-bytes' },
+				{ hash: 'hash-b-kick', fileName: 'dedup-b.wav', fileData: 'B-audio-bytes' },
+				{ hash: 'hash-b-snare', fileName: 'dedup-snare.wav', fileData: 'snare-bytes' }
+			] as any);
+			vi.mocked(SoundLibrary.toFile).mockImplementation(
+				(record) => new File([record.fileData], record.fileName)
+			);
+			const bgmB = new File(['B-bgm-bytes'], 'bgm.wav');
+			(WorkspaceService as any).sessionLargeFiles.set('Pack/Song B/bgm.wav', bgmB);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{
+						name: 'mas.dtx',
+						content:
+							'#TITLE: A\n#WAV01: kick.wav\n#WAV02: drums\\cymbal.wav\n#WAV03: snare.wav\n#WAV04: ride.wav\n#WAV05: bgm.wav',
+						path: 'Song A/mas.dtx'
+					},
+					{
+						name: 'mas.dtx',
+						content: '#TITLE: B\n#WAV01: kick.wav\n#WAV02: bgm.wav',
+						path: 'Song B/mas.dtx'
+					}
+				],
+				audioFiles: [
+					{
+						name: 'kick.wav',
+						path: 'Song A/kick.wav',
+						isLarge: false,
+						hash: 'hash-a-kick'
+					},
+					{
+						name: 'cymbal.wav',
+						path: 'Song A/drums/cymbal.wav',
+						isLarge: false,
+						hash: 'hash-a-cymbal'
+					},
+					{
+						name: 'ride.wav',
+						path: 'Song A/ride.wav',
+						isLarge: false,
+						hash: 'hash-missing'
+					},
+					{ name: 'bgm.wav', path: 'Song A/bgm.wav', isLarge: true },
+					{
+						name: 'kick.wav',
+						path: 'Song B/kick.wav',
+						isLarge: false,
+						hash: 'hash-b-kick'
+					},
+					{
+						name: 'snare.wav',
+						path: 'Song B/snare.wav',
+						isLarge: false,
+						hash: 'hash-b-snare'
+					},
+					{ name: 'bgm.wav', path: 'Song B/bgm.wav', isLarge: true }
+				],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const resultA = await workspaceService.parseDTXFile(workspace, 'Song A/mas.dtx');
+
+			expect(resultA).not.toBeNull();
+			expect(resultA!.simFile.files).toEqual([]);
+			const callsA = vi.mocked(setFile).mock.calls;
+			expect(callsA).toHaveLength(2);
+			const kickA = callsA.find(([key]) => key === 'local:kick.wav')?.[1];
+			expect(await kickA!.text()).toBe('A-audio-bytes');
+			expect(kickA!.name).toBe('kick.wav');
+			const cymbalA = callsA.find(([key]) => key === 'local:drums\\cymbal.wav')?.[1];
+			expect(await cymbalA!.text()).toBe('cymbal-bytes');
+			expect(cymbalA!.name).toBe('cymbal.wav');
+			expect(callsA.some(([key]) => key === 'local:snare.wav')).toBe(false);
+			expect(callsA.some(([key]) => key === 'local:ride.wav')).toBe(false);
+			expect(callsA.some(([key]) => key === 'local:bgm.wav')).toBe(false);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('snare.wav'));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ride.wav'));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('bgm.wav'));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Song A/mas.dtx'));
+
+			vi.mocked(getKeys).mockReturnValueOnce([
+				'local:kick.wav',
+				'local:stale.wav',
+				'simfile-9:remote.wav'
+			]);
+			const resultB = await workspaceService.parseDTXFile(workspace, 'Song B/mas.dtx');
+
+			expect(resultB).not.toBeNull();
+			expect(resultB!.simFile.files).toEqual([]);
+			expect(removeFile).toHaveBeenCalledWith('local:kick.wav');
+			expect(removeFile).toHaveBeenCalledWith('local:stale.wav');
+			expect(removeFile).not.toHaveBeenCalledWith('simfile-9:remote.wav');
+			const callsB = vi.mocked(setFile).mock.calls.slice(2);
+			expect(callsB).toHaveLength(2);
+			const kickB = callsB.find(([key]) => key === 'local:kick.wav')?.[1];
+			expect(await kickB!.text()).toBe('B-audio-bytes');
+			expect(kickB!.name).toBe('kick.wav');
+			const bgmCall = callsB.find(([key]) => key === 'local:bgm.wav')?.[1];
+			expect(bgmCall).toBe(bgmB);
+			const staleRemoveOrder =
+				vi.mocked(removeFile).mock.invocationCallOrder[
+					vi.mocked(removeFile).mock.calls.findIndex(([key]) => key === 'local:kick.wav')
+				];
+			const lastSetOrder =
+				vi.mocked(setFile).mock.invocationCallOrder[
+					vi.mocked(setFile).mock.calls.length - 1
+				];
+			expect(staleRemoveOrder).toBeLessThan(lastSetOrder);
 		});
 	});
 

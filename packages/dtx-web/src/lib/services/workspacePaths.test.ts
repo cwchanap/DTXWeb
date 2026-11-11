@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { toWorkspacePath, workspacePathKey, zipCollisionKey } from './workspacePaths';
+import {
+	resolveChipPath,
+	toWorkspacePath,
+	workspacePathKey,
+	zipCollisionKey
+} from './workspacePaths';
 
 const NFC_CAFE = 'Café';
 const NFD_CAFE = 'Café';
@@ -61,5 +66,71 @@ describe('zipCollisionKey', () => {
 
 	it('does not collide the same file name in different directories', () => {
 		expect(zipCollisionKey('Song A/kick.wav')).not.toBe(zipCollisionKey('Song B/kick.wav'));
+	});
+});
+
+describe('resolveChipPath', () => {
+	const recordsFor = (...paths: string[]) => {
+		const map = new Map<string, { path: string }[]>();
+		for (const path of paths) {
+			const key = workspacePathKey(path);
+			const bucket = map.get(key) ?? [];
+			bucket.push({ path });
+			map.set(key, bucket);
+		}
+		return map;
+	};
+
+	it.each<[string, string, string]>([
+		['Song A/mas.dtx', 'kick.wav', 'Song A/kick.wav'],
+		['Song A/mas.dtx', 'drums\\cymbal.wav', 'Song A/drums/cymbal.wav'],
+		['Song A/mas.dtx', 'drums/cymbal.wav', 'Song A/drums/cymbal.wav'],
+		['Song A/mas.dtx', 'a/b/c.wav', 'Song A/a/b/c.wav'],
+		['dir/sub/mas.dtx', 'kick.wav', 'dir/sub/kick.wav'],
+		['mas.dtx', 'kick.wav', 'kick.wav'],
+		['mas.dtx', 'sub/kick.wav', 'sub/kick.wav']
+	])('joins %s with %s into %s', (dtxPath, ref, expectedPath) => {
+		const audioKeys = recordsFor(expectedPath);
+		expect(resolveChipPath(dtxPath, ref, audioKeys)?.path).toBe(expectedPath);
+	});
+
+	it.each([
+		'',
+		'.',
+		'..',
+		'./kick.wav',
+		'../kick.wav',
+		'..\\kick.wav',
+		'/kick.wav',
+		'//share/kick.wav',
+		'a//b.wav',
+		'a/./b.wav',
+		'a/../b.wav'
+	])('rejects chip ref %s', (ref) => {
+		const audioKeys = recordsFor('Song A/kick.wav', 'kick.wav');
+		expect(resolveChipPath('Song A/mas.dtx', ref, audioKeys)).toBeNull();
+	});
+
+	it('equates NFD/NFC and case between chart dir and stored path', () => {
+		const audioKeys = recordsFor(`${NFC_CAFE}/KICK.WAV`);
+		expect(resolveChipPath(`${NFD_CAFE}/mas.dtx`, 'kick.wav', audioKeys)?.path).toBe(
+			`${NFC_CAFE}/KICK.WAV`
+		);
+	});
+
+	it('does not fall back to a same-named file in another folder', () => {
+		const audioKeys = recordsFor('Song B/kick.wav', 'Song B/snare.wav');
+		expect(resolveChipPath('Song A/mas.dtx', 'kick.wav', audioKeys)).toBeNull();
+		expect(resolveChipPath('Song A/mas.dtx', 'snare.wav', audioKeys)).toBeNull();
+	});
+
+	it('does not fall back to the workspace root for nested charts', () => {
+		const audioKeys = recordsFor('kick.wav');
+		expect(resolveChipPath('Song A/mas.dtx', 'kick.wav', audioKeys)).toBeNull();
+	});
+
+	it('returns null when several files collapse to the resolved key', () => {
+		const audioKeys = recordsFor('Song A/kick.wav', 'song a/KICK.WAV');
+		expect(resolveChipPath('Song A/mas.dtx', 'kick.wav', audioKeys)).toBeNull();
 	});
 });

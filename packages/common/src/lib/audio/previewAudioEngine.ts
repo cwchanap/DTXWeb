@@ -3,6 +3,7 @@ import { SoundChip } from '../chart/dtx';
 import type { LaneMeasureNote } from '../chart/note';
 import type { ChartTiming } from '../notation/timing';
 import { XAAudioContext } from '../browser/audioDecoder';
+import { normalizeAudioReference } from './reference';
 
 // DTX audio lanes scheduled by the preview: BGM (01) plus the playable
 // drum lanes (11-1C). Non-audio lanes — BGA (04-07), BPM (08), legacy
@@ -181,28 +182,10 @@ export class PreviewAudioEngine {
 
 		const fetchOne = async (fileName: string): Promise<void> => {
 			try {
-				// Normalize Windows-style backslashes to forward slashes for the
-				// fetch URL. R2 stores sample paths with forward slashes (the
-				// upload sanitizer at dtx-api/sanitizeFilename.ts and the set.def
-				// normalizer both replace `\` with `/`), so a #WAV reference like
-				// `sound\kick.wav` must be fetched as `sound/kick.wav`. Without
-				// this, the backslash survives segment splitting and is
-				// percent-encoded to %5C, producing a URL R2 does not have. The
-				// buffer stays keyed by the original `fileName` so playback
+				// The buffer stays keyed by the original `fileName` so playback
 				// lookups (this.buffers.get(event.fileName)) still match.
-				const normalized = fileName.replaceAll('\\', '/');
-				// Reject path-traversal segments before building the URL. The
-				// fileName originates from untrusted DTX `#WAV` lines, and
-				// encodeURIComponent does NOT encode `.` — so `../foo.wav`
-				// would survive encoding and let the browser normalize the URL
-				// out of the chart directory. Block `.`, `..`, empty segments,
-				// and absolute paths (leading `/`) to confine fetches to the
-				// intended bucket subdirectory.
-				const segments = normalized.split('/');
-				if (
-					segments.some((s) => s === '..' || s === '.' || s === '') ||
-					normalized.startsWith('/')
-				) {
+				const normalized = normalizeAudioReference(fileName);
+				if (normalized === null) {
 					failedFiles.push(fileName);
 					return;
 				}
@@ -212,7 +195,7 @@ export class PreviewAudioEngine {
 				// `snare#1.wav`) builds an unescaped URL — the browser treats `#1.wav`
 				// as a fragment and never sends it to R2, so the sample is reported
 				// missing even though the object exists.
-				const encodedFileName = segments.map(encodeURIComponent).join('/');
+				const encodedFileName = normalized.split('/').map(encodeURIComponent).join('/');
 				const url = `${sampleBaseUrl}/${encodedFileName}`;
 				const res = await doFetch(url);
 				if (!res.ok) throw new Error(`HTTP ${res.status}`);

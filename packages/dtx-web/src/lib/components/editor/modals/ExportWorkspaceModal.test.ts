@@ -175,18 +175,19 @@ describe('ExportWorkspaceModal', () => {
 		);
 
 		mockZipInstance.file.mockReset();
-		mockZipInstance.file.mockImplementation((name, data, options) =>
-			mockZipInstance.real.file(name, data, options)
-		);
+		mockZipInstance.file.mockImplementation(function (this: any, name, data, options) {
+			return this.real.file(name, data, options);
+		});
 		mockZipInstance.generateAsync.mockReset();
-		mockZipInstance.generateAsync.mockImplementation((options, onUpdate) =>
-			mockZipInstance.real.generateAsync(options, onUpdate)
-		);
+		mockZipInstance.generateAsync.mockImplementation(function (this: any, options, onUpdate) {
+			return this.real.generateAsync(options, onUpdate);
+		});
 		mockJSZipConstructor.mockReset();
 		mockJSZipConstructor.mockImplementation(function () {
 			// ponytail: vitest 4+ constructable-mock rule - new JSZip()
-			mockZipInstance.real = new realZip.ctor();
-			return mockZipInstance;
+			const wrapper = Object.create(mockZipInstance);
+			wrapper.real = new realZip.ctor();
+			return wrapper;
 		});
 	});
 
@@ -1079,6 +1080,29 @@ describe('ExportWorkspaceModal', () => {
 			});
 			expect(alert.compareDocumentPosition(workspaceButton)).toBe(
 				Node.DOCUMENT_POSITION_FOLLOWING
+			);
+		});
+	});
+
+	describe('JSZip archive isolation', () => {
+		it('keeps archives independent across two constructed wrappers', async () => {
+			const zipA = new JSZip();
+			const zipB = new JSZip();
+			expect(zipA).not.toBe(zipB);
+
+			zipA.file('kick.wav', 'A-audio-bytes');
+			zipB.file('kick.wav', 'B-audio-bytes');
+
+			const blobA = (await zipA.generateAsync({ type: 'blob' })) as Blob;
+			const blobB = (await zipB.generateAsync({ type: 'blob' })) as Blob;
+			const archiveA = await JSZip.loadAsync(await blobA.arrayBuffer());
+			const archiveB = await JSZip.loadAsync(await blobB.arrayBuffer());
+
+			expect(new TextDecoder().decode(await zipEntryBytes(archiveA, 'kick.wav'))).toBe(
+				'A-audio-bytes'
+			);
+			expect(new TextDecoder().decode(await zipEntryBytes(archiveB, 'kick.wav'))).toBe(
+				'B-audio-bytes'
 			);
 		});
 	});

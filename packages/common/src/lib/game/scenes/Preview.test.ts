@@ -2821,6 +2821,8 @@ describe('Preview Scene', () => {
 
 		it('should handle fileProvider.getFile throwing an error', async () => {
 			const mockSoundChips = [{ fileName: 'error.wav', id: 3 }];
+			const cacheKey = 'soundchip_error.wav';
+			const staleFile = new File(['stale'], 'error.wav', { type: 'audio/wav' });
 			const mockGetFile = vi.fn().mockRejectedValue(new Error('file not found'));
 
 			mockStore.currentSoundChip.subscribe.mockImplementationOnce(
@@ -2830,7 +2832,15 @@ describe('Preview Scene', () => {
 				}
 			);
 
-			createAudioHarness(previewScene);
+			const fixture = createAudioHarness(previewScene);
+
+			// Seed a previous chart's decoded sound under this key: a rejected
+			// lookup must evict it so the new chart can't play stale bytes.
+			fixture.audioCache.set(cacheKey, { bytes: 'stale' });
+			const staleSound = fixture.soundApi.add(cacheKey);
+			Preview['loadedFiles'].set(cacheKey, staleFile);
+			Preview['soundCacheMap'].set(cacheKey, { blob: new Blob(['stale']), processed: true });
+
 			vi.mocked(getFileProvider).mockReturnValueOnce({ getFile: mockGetFile } as any);
 
 			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -2841,6 +2851,11 @@ describe('Preview Scene', () => {
 				expect.stringContaining('Failed to setup sound chip'),
 				expect.any(Error)
 			);
+			expect(staleSound.stop).toHaveBeenCalledTimes(1);
+			expect(fixture.soundApi.get(cacheKey)).toBeNull();
+			expect(fixture.audioCache.has(cacheKey)).toBe(false);
+			expect(Preview['loadedFiles'].has(cacheKey)).toBe(false);
+			expect(Preview['soundCacheMap'].has(cacheKey)).toBe(false);
 			warnSpy.mockRestore();
 		});
 	});

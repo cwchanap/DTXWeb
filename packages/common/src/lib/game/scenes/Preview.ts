@@ -380,6 +380,9 @@ export class Preview extends BaseGame {
 				return result;
 			} catch (error) {
 				console.warn(`🔊 Failed to setup sound chip ${soundChip.fileName}:`, error);
+				if (generation === this.lifecycleGeneration && setupSeq === this.setupSoundsSeq) {
+					this.evictSoundChip(cacheKey);
+				}
 			}
 		});
 

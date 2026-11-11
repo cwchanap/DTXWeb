@@ -135,6 +135,32 @@ describe('WorkspaceService.parseDTXFile song-pack integration', () => {
 		expect(await provider.getFile(null, 'missing.wav')).toBeUndefined();
 		expect(FileManager.getFile('simfile-42:remote.wav')).toBe(remoteFile);
 	});
+
+	it('decodes a shared sample once per parse', async () => {
+		const workspace = buildWorkspace();
+		workspace.dtxFiles[0].content = ['#TITLE: A', '#WAV01: kick.wav', '#WAV02: kick.wav'].join(
+			'\r\n'
+		);
+		const toFile = vi.spyOn(SoundLibrary, 'toFile');
+
+		await service.parseDTXFile(workspace, 'Song A/mas.dtx');
+
+		const kickDecodes = toFile.mock.calls.filter(([record]) => record.hash === 'hash-a-kick');
+		expect(kickDecodes).toHaveLength(1);
+	});
+
+	it('resolves chip references through #PATH_WAV', async () => {
+		const workspace = buildWorkspace();
+		workspace.dtxFiles[0].content = [
+			'#TITLE: A',
+			'#PATH_WAV: drums',
+			'#WAV01: cymbal.wav'
+		].join('\r\n');
+
+		await service.parseDTXFile(workspace, 'Song A/mas.dtx');
+
+		expect(await (await provider.getFile(null, 'cymbal.wav'))!.text()).toBe('cymbal-bytes');
+	});
 });
 
 describe('WorkspaceService.importFolder song-pack integration', () => {

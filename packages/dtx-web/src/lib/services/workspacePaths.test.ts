@@ -133,4 +133,20 @@ describe('resolveChipPath', () => {
 		const audioKeys = recordsFor('Song A/kick.wav', 'song a/KICK.WAV');
 		expect(resolveChipPath('Song A/mas.dtx', 'kick.wav', audioKeys)).toBeNull();
 	});
+
+	it.each<[string, string, string, string]>([
+		['Song A/mas.dtx', 'kick.wav', 'wav', 'Song A/wav/kick.wav'],
+		['Song A/mas.dtx', 'kick.wav', '.\\wav\\', 'Song A/wav/kick.wav'],
+		['Song A/mas.dtx', 'sub/kick.wav', 'wav', 'Song A/wav/sub/kick.wav'],
+		['Song A/mas.dtx', 'kick.wav', '..\\wav\\', 'wav/kick.wav'],
+		['mas.dtx', 'kick.wav', 'wav', 'wav/kick.wav']
+	])('resolves %s + %s under #PATH_WAV %s', (dtxPath, ref, wavPath, expectedPath) => {
+		const audioKeys = recordsFor(expectedPath);
+		expect(resolveChipPath(dtxPath, ref, audioKeys, wavPath)?.path).toBe(expectedPath);
+	});
+
+	it('rejects a #PATH_WAV that escapes the workspace root', () => {
+		const audioKeys = recordsFor('wav/kick.wav');
+		expect(resolveChipPath('mas.dtx', 'kick.wav', audioKeys, '..\\wav')).toBeNull();
+	});
 });

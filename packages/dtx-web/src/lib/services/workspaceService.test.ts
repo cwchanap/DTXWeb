@@ -30,15 +30,24 @@ vi.mock('@dtx/common', async () => ({
 	})
 }));
 
-vi.mock('./soundLibrary', () => ({
-	SoundLibrary: {
-		addFiles: vi.fn().mockResolvedValue({ added: 1, skipped: 0, errors: [] }),
-		getAll: vi.fn().mockReturnValue([]),
-		toFile: vi.fn().mockImplementation((sf) => new File(['mock'], sf.fileName)),
-		generateFileHash: vi.fn().mockResolvedValue('mock-file-hash'),
-		isLargeFile: vi.fn((size: number) => size > 2 * 1024 * 1024)
-	}
-}));
+vi.mock('./soundLibrary', () => {
+	const getAll = vi.fn().mockReturnValue([]);
+	return {
+		SoundLibrary: {
+			addFiles: vi.fn().mockResolvedValue({ added: 1, skipped: 0, errors: [] }),
+			getAll,
+			findByFileName: vi.fn((name: string) =>
+				getAll().filter(
+					(record: { fileName: string }) =>
+						record.fileName.toLowerCase() === name.toLowerCase()
+				)
+			),
+			toFile: vi.fn().mockImplementation((sf) => new File(['mock'], sf.fileName)),
+			generateFileHash: vi.fn().mockResolvedValue('mock-file-hash'),
+			isLargeFile: vi.fn((size: number) => size > 2 * 1024 * 1024)
+		}
+	};
+});
 
 vi.mock('@dtx/common/services/fileManager');
 
@@ -598,7 +607,7 @@ describe('WorkspaceService', () => {
 			expect(result).toBeNull();
 		});
 
-		it('should map session files and keep hashless small audio unresolved', async () => {
+		it('maps session files and hashless legacy audio by name', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			const { setFile } = await import('@dtx/common/services/fileManager');
 
@@ -656,11 +665,11 @@ describe('WorkspaceService', () => {
 			expect(soundChips[0].file).toBeUndefined();
 			expect(soundChips[1].file).toBeUndefined();
 			expect(soundChips[2].file).toBeUndefined();
-			expect(setFile).toHaveBeenCalledTimes(1);
+			expect(setFile).toHaveBeenCalledTimes(2);
 			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
-			expect(setFile).not.toHaveBeenCalledWith('local:kick.wav', expect.anything());
-			expect(warnSpy).toHaveBeenCalledTimes(2);
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
+			expect(setFile).toHaveBeenCalledWith('local:kick.wav', expect.any(File));
+			expect(warnSpy).toHaveBeenCalledTimes(1);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing.wav'));
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test.dtx'));
 		});
 

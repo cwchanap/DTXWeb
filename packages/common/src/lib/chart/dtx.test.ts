@@ -203,6 +203,16 @@ describe('DTXFile', () => {
 
 			expect(dtxFile.lines).toEqual(['#TITLE: Test', '#ARTIST: Artist']);
 		});
+
+		it.each([
+			['#PATH_WAV: .\\wav\\', '.\\wav\\'],
+			['#PATH_WAV .\\wav\\', '.\\wav\\'],
+			['#PATH_WAV:', '']
+		])('parses "%s" as the WAV directory', async (line, expected) => {
+			await dtxFile.parseFromText(line);
+
+			expect(dtxFile.pathWav).toBe(expected);
+		});
 	});
 
 	describe('parseSoundChips', () => {

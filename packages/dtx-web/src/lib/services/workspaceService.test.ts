@@ -598,7 +598,7 @@ describe('WorkspaceService', () => {
 			expect(result).toBeNull();
 		});
 
-		it('should map library and session files and register them in file manager', async () => {
+		it('should map session files and keep hashless small audio unresolved', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			const { setFile } = await import('@dtx/common/services/fileManager');
 
@@ -647,7 +647,7 @@ describe('WorkspaceService', () => {
 			};
 
 			mockLocalStorage.getItem.mockReturnValue('[]');
-			vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+			const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
 			const result = await workspaceService.parseDTXFile(workspace, 'test.dtx');
 
@@ -656,9 +656,12 @@ describe('WorkspaceService', () => {
 			expect(soundChips[0].file).toBeUndefined();
 			expect(soundChips[1].file).toBeUndefined();
 			expect(soundChips[2].file).toBeUndefined();
-			expect(setFile).toHaveBeenCalledWith('local:kick.wav', kickFile);
+			expect(setFile).toHaveBeenCalledTimes(1);
 			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
-			expect(setFile).toHaveBeenCalledTimes(2);
+			expect(setFile).not.toHaveBeenCalledWith('local:kick.wav', expect.anything());
+			expect(warnSpy).toHaveBeenCalledTimes(2);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test.dtx'));
 		});
 
 		it('should resolve small audio by stored hash and expose it under the workspace file name', async () => {

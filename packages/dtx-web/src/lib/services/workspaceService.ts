@@ -200,20 +200,8 @@ export class WorkspaceService {
 				audioByKey.set(key, bucket);
 			}
 
-			// Small files are pinned to the stored content hash so the editor
-			// plays the same bytes the export contains; legacy records without
-			// a hash fall back to matching by name. Records whose import storage
-			// failed are excluded from name fallback so a different workspace's
-			// same-named file is not loaded in their place.
 			const soundLibraryFiles = SoundLibrary.getAll();
 			const libraryByHash = new Map(soundLibraryFiles.map((sf) => [sf.hash, sf]));
-			const libraryByName = new Map<string, typeof soundLibraryFiles>();
-			for (const sf of soundLibraryFiles) {
-				const name = sf.fileName.toLowerCase();
-				const bucket = libraryByName.get(name) ?? [];
-				bucket.push(sf);
-				libraryByName.set(name, bucket);
-			}
 
 			// Store all files in FileManager for the FileProvider
 			// Use null as simfileId for local workspace files
@@ -237,9 +225,7 @@ export class WorkspaceService {
 				if (audioFile) {
 					if (audioFile.isLarge) {
 						file =
-							WorkspaceService.sessionLargeFiles.get(
-								`${workspace.name}/${audioFile.path}`
-							) ?? null;
+							WorkspaceService.getLargeFile(workspace.name, audioFile.path) ?? null;
 					} else if (audioFile.hash) {
 						const record = libraryByHash.get(audioFile.hash);
 						const converted = record ? SoundLibrary.toFile(record) : null;
@@ -249,9 +235,6 @@ export class WorkspaceService {
 								type: converted.type
 							});
 						}
-					} else if (!audioFile.libraryStorageFailed) {
-						const record = libraryByName.get(audioFile.name.toLowerCase())?.[0];
-						file = record ? SoundLibrary.toFile(record) : null;
 					}
 				}
 				if (!file) {

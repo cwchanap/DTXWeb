@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/svelte';
+import { render, screen, fireEvent, within } from '@testing-library/svelte';
 import ModalStub from '../../../../tests/stubs/ModalStub.svelte';
 import { makeWorkspace } from '../../../../tests/mocks/services';
 
@@ -39,11 +39,6 @@ vi.mock('$lib/services/tempChartStorage', () => ({
 	TempChartStorage: { remove: vi.fn() }
 }));
 
-vi.mock('@dtx/common/services/fileManager', () => ({
-	generateKey: vi.fn(() => 'key'),
-	setFile: vi.fn()
-}));
-
 vi.mock('$lib/store', () => {
 	const makeStore = (value: unknown) => ({
 		subscribe: (cb: (v: unknown) => void) => {
@@ -77,8 +72,8 @@ describe('DTXSwitcherModal', () => {
 
 	it('lists DTX files from the current workspace', () => {
 		render(DTXSwitcherModal, { props: defaultProps });
-		expect(screen.getByText('basic.dtx')).toBeInTheDocument();
-		expect(screen.getByText('advanced.dtx')).toBeInTheDocument();
+		expect(screen.getAllByText('basic.dtx').length).toBeGreaterThan(0);
+		expect(screen.getAllByText('advanced.dtx').length).toBeGreaterThan(0);
 	});
 
 	it('marks the active DTX file with "Currently active"', () => {
@@ -88,14 +83,63 @@ describe('DTXSwitcherModal', () => {
 
 	it('calls workspaceService.parseDTXFile when a non-active DTX file is clicked', async () => {
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		await fireEvent.click(advancedBtn);
 		expect(mockService.parseDTXFile).toHaveBeenCalledWith(ws, 'advanced.dtx');
 	});
 
+	it('lets two same-named DTX files be switched independently by path', async () => {
+		const pack = makeWorkspace({
+			name: 'Pack',
+			currentDTX: 'Song A/mas.dtx',
+			dtxFiles: [
+				{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+				{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+			]
+		});
+		mockService.getCurrentWorkspace.mockReturnValue(pack);
+		render(DTXSwitcherModal, { props: defaultProps });
+
+		expect(screen.getAllByText('mas.dtx')).toHaveLength(2);
+
+		const songBBtn = screen.getByText('Song B/mas.dtx').closest('button')!;
+		await fireEvent.click(songBBtn);
+
+		expect(mockService.parseDTXFile).toHaveBeenCalledWith(pack, 'Song B/mas.dtx');
+		expect(mockService.switchDTXFile).toHaveBeenCalledWith(pack, 'Song B/mas.dtx');
+	});
+
+	it('marks the active chart by path for same-named DTX files', () => {
+		const pack = makeWorkspace({
+			name: 'Pack',
+			currentDTX: 'Song B/mas.dtx',
+			dtxFiles: [
+				{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+				{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+			]
+		});
+		mockService.getCurrentWorkspace.mockReturnValue(pack);
+		render(DTXSwitcherModal, { props: defaultProps });
+
+		const songABtn = screen.getByText('Song A/mas.dtx').closest('button')!;
+		const songBBtn = screen.getByText('Song B/mas.dtx').closest('button')!;
+		expect(within(songABtn).queryByText('Currently active')).not.toBeInTheDocument();
+		expect(within(songBBtn).getByText('Currently active')).toBeInTheDocument();
+	});
+
+	it('calls onSwitchDTX with no arguments after a successful switch', async () => {
+		const onSwitchDTX = vi.fn().mockResolvedValue(undefined);
+		render(DTXSwitcherModal, { props: { show: true, onSwitchDTX } });
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
+		await fireEvent.click(advancedBtn);
+		await vi.waitFor(() => {
+			expect(onSwitchDTX).toHaveBeenCalledWith();
+		});
+	});
+
 	it('emits STOP_PREVIEW before switching DTX', async () => {
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		await fireEvent.click(advancedBtn);
 		expect(mockEmit).toHaveBeenCalledWith('STOP_PREVIEW');
 	});
@@ -103,34 +147,34 @@ describe('DTXSwitcherModal', () => {
 	it('handles parseDTXFile returning null gracefully without crashing', async () => {
 		mockService.parseDTXFile.mockResolvedValueOnce(null);
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		await fireEvent.click(advancedBtn);
 		expect(mockService.parseDTXFile).toHaveBeenCalledOnce();
 	});
 
 	it('does not render content when show is false', () => {
 		render(DTXSwitcherModal, { props: { ...defaultProps, show: false } });
-		expect(screen.queryByText('basic.dtx')).not.toBeInTheDocument();
+		expect(screen.queryAllByText('basic.dtx')).toHaveLength(0);
 	});
 
-	it('maps sound chips to files from simFile using case-insensitive match', async () => {
-		const kickFile = new File(['audio'], 'KICK.WAV');
+	it('stores the parsed sound chips on the sound chip store', async () => {
+		const soundChips = [mockSoundChip('kick.wav')];
 		mockService.parseDTXFile.mockResolvedValueOnce({
 			dtxFile: {
 				parseNotes: vi.fn(() => []),
 				parseBPMChanges: vi.fn(() => ({})),
-				parseSoundChips: vi.fn(() => [mockSoundChip('kick.wav')])
+				parseSoundChips: vi.fn(() => soundChips)
 			},
-			simFile: { files: [kickFile] }
+			simFile: { files: [] }
 		});
 
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		await fireEvent.click(advancedBtn);
 
-		const { setFile } = await import('@dtx/common/services/fileManager');
+		const store = (await import('$lib/store')).default;
 		await vi.waitFor(() => {
-			expect(setFile).toHaveBeenCalledWith('key', kickFile);
+			expect(store.currentSoundChip.set).toHaveBeenCalledWith(soundChips);
 		});
 	});
 
@@ -145,7 +189,7 @@ describe('DTXSwitcherModal', () => {
 		});
 
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		await fireEvent.click(advancedBtn);
 		// Should not throw even when file is not found
 		expect(mockService.parseDTXFile).toHaveBeenCalled();
@@ -165,7 +209,7 @@ describe('DTXSwitcherModal', () => {
 		});
 
 		render(DTXSwitcherModal, { props: defaultProps });
-		const advancedBtn = screen.getByText('advanced.dtx').closest('button')!;
+		const advancedBtn = screen.getAllByText('advanced.dtx')[0].closest('button')!;
 		try {
 			await fireEvent.click(advancedBtn);
 			expect(consoleSpy).toHaveBeenCalledWith('Error switching DTX file:', expect.any(Error));

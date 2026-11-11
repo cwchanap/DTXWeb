@@ -202,14 +202,6 @@
 			currentWorkspace = workspace;
 			workspaceService.setCurrentWorkspace(workspace);
 
-			// Switch to the first or current DTX file in the workspace
-			const targetDTX = workspace.currentDTX || workspace.dtxFiles[0]?.name;
-			if (targetDTX) {
-				// Note: The actual DTX switching logic is now in DTXSwitcherModal
-				// For workspace switching, we'll keep the simplified version
-				currentWorkspace = workspace;
-			}
-
 			showWorkspaceSwitchModal = false;
 		} catch (error) {
 			console.error('Error switching workspace:', error);

@@ -6,11 +6,10 @@
 	import { EventType } from '@dtx/common/game';
 	import store from '$lib/store';
 	import { get } from 'svelte/store';
-	import * as FileManager from '@dtx/common/services/fileManager';
 
 	interface Props {
 		show: boolean;
-		onSwitchDTX?: (dtxFileName: string) => Promise<void>;
+		onSwitchDTX?: () => Promise<void>;
 	}
 
 	let { show = $bindable(), onSwitchDTX }: Props = $props();
@@ -25,16 +24,16 @@
 		}
 	});
 
-	async function switchWorkspaceDTX(dtxFileName: string) {
+	async function switchWorkspaceDTX(dtxPath: string) {
 		if (!currentWorkspace) return;
 
 		try {
 			// Stop any existing preview to ensure clean re-draw when switching DTX files
 			EventBus.emit(EventType.STOP_PREVIEW);
 
-			const result = await workspaceService.parseDTXFile(currentWorkspace, dtxFileName);
+			const result = await workspaceService.parseDTXFile(currentWorkspace, dtxPath);
 			if (!result) {
-				console.error('Failed to parse DTX file:', dtxFileName);
+				console.error('Failed to parse DTX file:', dtxPath);
 				return;
 			}
 
@@ -45,46 +44,15 @@
 			const bpmNotes = dtxFile.parseBPMChanges();
 			const soundChips = dtxFile.parseSoundChips();
 
-			// Map sound chips to files from the SimFile
-			const mappedSoundChips = soundChips.map((chip) => {
-				if (chip.fileName) {
-					const matchingFile = simFile.files.find(
-						(f) => f.name.toLowerCase() === chip.fileName.toLowerCase()
-					);
-					if (matchingFile) {
-						// Store file only in FileManager to avoid store corruption
-						const currentSimfileID = get(store.currentSimfileID);
-						const fileKey = FileManager.generateKey(currentSimfileID, chip.fileName);
-						FileManager.setFile(fileKey, matchingFile);
-
-						// Don't store File object in chip to avoid store corruption
-						chip.file = undefined;
-					} else {
-						// Try exact match without case conversion
-						const exactMatch = simFile.files.find((f) => f.name === chip.fileName);
-						if (exactMatch) {
-							const currentSimfileID = get(store.currentSimfileID);
-							const fileKey = FileManager.generateKey(
-								currentSimfileID,
-								chip.fileName
-							);
-							FileManager.setFile(fileKey, exactMatch);
-							chip.file = undefined;
-						}
-					}
-				}
-				return chip;
-			});
-
 			// Update stores
 			store.currentDtxFile.set(dtxFile);
-			store.currentSoundChip.set(mappedSoundChips);
+			store.currentSoundChip.set(soundChips);
 			store.currentSimfile.set(simFile);
 			store.currentSimfileID.set(null); // Local workspace
-			store.currentDifficulty.set(dtxFileName.replace('.dtx', ''));
+			store.currentDifficulty.set(dtxPath.replace('.dtx', ''));
 
 			// Switch workspace current DTX
-			workspaceService.switchDTXFile(currentWorkspace, dtxFileName);
+			workspaceService.switchDTXFile(currentWorkspace, dtxPath);
 
 			// Clear any existing temp data
 			TempChartStorage.remove(null, get(store.currentDifficulty));
@@ -94,7 +62,7 @@
 
 			// Call parent callback if provided and wait for completion
 			if (onSwitchDTX) {
-				await onSwitchDTX(dtxFileName);
+				await onSwitchDTX();
 			}
 
 			// Close modal
@@ -114,14 +82,14 @@
 					{#each currentWorkspace.dtxFiles as dtxFile}
 						<button
 							class="w-full rounded-lg border p-3 text-left transition-colors {currentWorkspace.currentDTX ===
-							dtxFile.name
+							dtxFile.path
 								? 'border-blue-500 bg-blue-50'
 								: 'border-gray-200 hover:bg-gray-50'}"
-							onclick={() => switchWorkspaceDTX(dtxFile.name)}
+							onclick={() => switchWorkspaceDTX(dtxFile.path)}
 						>
 							<div class="font-medium text-gray-900">{dtxFile.name}</div>
 							<div class="text-sm text-gray-500">{dtxFile.path}</div>
-							{#if currentWorkspace.currentDTX === dtxFile.name}
+							{#if currentWorkspace.currentDTX === dtxFile.path}
 								<div class="mt-1 text-xs font-medium text-blue-600">
 									Currently active
 								</div>

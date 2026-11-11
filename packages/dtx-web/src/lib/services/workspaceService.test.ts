@@ -89,6 +89,37 @@ describe('WorkspaceService', () => {
 	});
 
 	describe('importFolder', () => {
+		const buildPackFileList = (): FileList => {
+			const entries: [string, string][] = [
+				['Pack/Song A/mas.dtx', '#WAV01: kick.wav'],
+				['Pack/Song A/kick.wav', 'A-audio-bytes'],
+				['Pack/Song A/drums/cymbal.wav', 'cymbal-bytes'],
+				['Pack/Song B/mas.dtx', '#WAV01: kick.wav'],
+				['Pack/Song B/kick.wav', 'B-audio-bytes']
+			];
+			const files = entries.map(([relativePath, data]) => {
+				const file = new File([data], relativePath.split('/').pop()!);
+				Object.defineProperty(file, 'webkitRelativePath', {
+					value: relativePath,
+					writable: false
+				});
+				return file;
+			});
+			return files as unknown as FileList;
+		};
+
+		const oversizedAudioFile = (relativePath: string, data: string): File => {
+			const file = new File([data], relativePath.split('/').pop()!, {
+				type: 'audio/wav'
+			});
+			Object.defineProperty(file, 'size', { value: 2 * 1024 * 1024 + 1 });
+			Object.defineProperty(file, 'webkitRelativePath', {
+				value: relativePath,
+				writable: false
+			});
+			return file;
+		};
+
 		it('should import folder with DTX and audio files', async () => {
 			const dtxFile = new File(['dtx content'], 'song.dtx', { type: 'text/plain' });
 			const audioFile = new File(['audio data'], 'kick.wav', { type: 'audio/wav' });
@@ -415,6 +446,77 @@ describe('WorkspaceService', () => {
 			expect(result.name).toBe('Imported Folder');
 			expect(result.path).toBe('Imported Folder');
 		});
+
+		it('should persist file paths relative to the first browser path segment', async () => {
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder(buildPackFileList());
+
+			expect(result.name).toBe('Pack');
+			expect(result.dtxFiles.map((f) => f.path)).toEqual([
+				'Song A/mas.dtx',
+				'Song B/mas.dtx'
+			]);
+			expect(result.dtxFiles.map((f) => f.name)).toEqual(['mas.dtx', 'mas.dtx']);
+			expect(result.audioFiles.map((f) => f.path)).toEqual([
+				'Song A/kick.wav',
+				'Song A/drums/cymbal.wav',
+				'Song B/kick.wav'
+			]);
+			expect(result.currentDTX).toBe('Song A/mas.dtx');
+		});
+
+		it('should keep flat imports flat so path === name', async () => {
+			const dtxFile = new File(['dtx'], 'song.dtx', { type: 'text/plain' });
+			const audioFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			[dtxFile, audioFile].forEach((file) => {
+				Object.defineProperty(file, 'webkitRelativePath', {
+					value: `MyFolder/${file.name}`,
+					writable: false
+				});
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([
+				dtxFile,
+				audioFile
+			] as unknown as FileList);
+
+			expect(result.dtxFiles[0].path).toBe('song.dtx');
+			expect(result.audioFiles[0].path).toBe('kick.wav');
+			expect(result.currentDTX).toBe('song.dtx');
+		});
+
+		it('should key large session files by workspace name and relative path', async () => {
+			const fileA = oversizedAudioFile('Pack/Song A/kick.wav', 'A-audio-bytes');
+			const fileB = oversizedAudioFile('Pack/Song B/kick.wav', 'B-audio-bytes');
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const result = await workspaceService.importFolder([
+				fileA,
+				fileB
+			] as unknown as FileList);
+
+			expect(result.audioFiles.map((f) => f.isLarge)).toEqual([true, true]);
+			expect(WorkspaceService.getLargeFile('Pack', 'Song A/kick.wav')).toBe(fileA);
+			expect(WorkspaceService.getLargeFile('Pack', 'Song B/kick.wav')).toBe(fileB);
+			// A bare basename must not resolve a cached sample from another folder,
+			// and an unresolvable path must not play a previously cached sample.
+			expect(WorkspaceService.getLargeFile('Pack', 'kick.wav')).toBeUndefined();
+			expect(WorkspaceService.getLargeFile('Pack', 'Song C/kick.wav')).toBeUndefined();
+		});
+
+		it('should key large session files under the suffixed workspace name', async () => {
+			mockLocalStorage.getItem.mockReturnValue(JSON.stringify([{ name: 'Pack' }]));
+			const fileA = oversizedAudioFile('Pack/Song A/kick.wav', 'A-audio-bytes');
+
+			const result = await workspaceService.importFolder([fileA] as unknown as FileList);
+
+			expect(result.name).toBe('Pack (1)');
+			expect(result.audioFiles[0].path).toBe('Song A/kick.wav');
+			expect(WorkspaceService.getLargeFile('Pack (1)', 'Song A/kick.wav')).toBe(fileA);
+			expect(WorkspaceService.getLargeFile('Pack', 'Song A/kick.wav')).toBeUndefined();
+		});
 	});
 
 	describe('parseDTXFile', () => {
@@ -722,6 +824,134 @@ describe('WorkspaceService', () => {
 
 			expect(result).toBeNull();
 		});
+
+		it('should identify same-named DTX files by workspace-relative path', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			const mockDTXFile = {
+				parseFromText: vi.fn().mockResolvedValue(undefined),
+				parseSoundChips: vi.fn().mockReturnValue([]),
+				title: 'Song B'
+			};
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return mockDTXFile as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
+				return { files: [], title: '' } as any;
+			});
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+					{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'Song B/mas.dtx');
+
+			expect(result).not.toBeNull();
+			expect(mockDTXFile.parseFromText).toHaveBeenCalledWith('#TITLE: Song B');
+		});
+
+		it('should not resolve a bare basename against nested DTX paths', async () => {
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+					{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'mas.dtx');
+
+			expect(result).toBeNull();
+		});
+
+		it('should resolve same-named large audio files from different folders by path', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return {
+					parseFromText: vi.fn().mockResolvedValue(undefined),
+					parseSoundChips: vi.fn().mockReturnValue([]),
+					title: 'x'
+				} as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
+				return { files: [], title: '' } as any;
+			});
+			const fileA = new File(['A-audio-bytes'], 'kick.wav');
+			const fileB = new File(['B-audio-bytes'], 'kick.wav');
+			(WorkspaceService as any).sessionLargeFiles.set('Pack/Song A/kick.wav', fileA);
+			(WorkspaceService as any).sessionLargeFiles.set('Pack/Song B/kick.wav', fileB);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [{ name: 'mas.dtx', content: '#TITLE: x', path: 'Song A/mas.dtx' }],
+				audioFiles: [
+					{ name: 'kick.wav', path: 'Song A/kick.wav', isLarge: true },
+					{ name: 'kick.wav', path: 'Song B/kick.wav', isLarge: true }
+				],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'Song A/mas.dtx');
+
+			expect(result).not.toBeNull();
+			expect(result!.simFile.files).toEqual([fileA, fileB]);
+		});
+
+		it('should not play a cached same-named sample for an unresolvable path', async () => {
+			const { DTXFile, SimFile } = await import('@dtx/common');
+			vi.mocked(DTXFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new DTXFile()
+				return {
+					parseFromText: vi.fn().mockResolvedValue(undefined),
+					parseSoundChips: vi.fn().mockReturnValue([]),
+					title: 'x'
+				} as any;
+			});
+			vi.mocked(SimFile).mockImplementation(function () {
+				// ponytail: vitest 4+ constructable-mock rule - new SimFile()
+				return { files: [], title: '' } as any;
+			});
+			// Only Song A's file is cached; the workspace references Song C, which
+			// must not fall back to the same-named cached sample.
+			(WorkspaceService as any).sessionLargeFiles.set(
+				'Pack/Song A/kick.wav',
+				new File(['A-audio-bytes'], 'kick.wav')
+			);
+			mockLocalStorage.getItem.mockReturnValue('[]');
+
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [{ name: 'mas.dtx', content: '#TITLE: x', path: 'Song C/mas.dtx' }],
+				audioFiles: [{ name: 'kick.wav', path: 'Song C/kick.wav', isLarge: true }],
+				currentDTX: 'Song C/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			const result = await workspaceService.parseDTXFile(workspace, 'Song C/mas.dtx');
+
+			expect(result).not.toBeNull();
+			expect(result!.simFile.files).toEqual([]);
+		});
 	});
 
 	describe('switchDTXFile', () => {
@@ -780,6 +1010,42 @@ describe('WorkspaceService', () => {
 			expect(workspace.lastModified).toBe(123456);
 			expect(mockLocalStorage.setItem).toHaveBeenCalled();
 			nowSpy.mockRestore();
+		});
+
+		it('should switch between same-named DTX files by path', () => {
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+					{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			workspaceService.switchDTXFile(workspace, 'Song B/mas.dtx');
+
+			expect(workspace.currentDTX).toBe('Song B/mas.dtx');
+		});
+
+		it('should not switch on a bare basename that matches no stored path', () => {
+			const workspace: Workspace = {
+				name: 'Pack',
+				path: 'Pack',
+				dtxFiles: [
+					{ name: 'mas.dtx', content: '#TITLE: Song A', path: 'Song A/mas.dtx' },
+					{ name: 'mas.dtx', content: '#TITLE: Song B', path: 'Song B/mas.dtx' }
+				],
+				audioFiles: [],
+				currentDTX: 'Song A/mas.dtx',
+				lastModified: Date.now()
+			};
+
+			workspaceService.switchDTXFile(workspace, 'mas.dtx');
+
+			expect(workspace.currentDTX).toBe('Song A/mas.dtx');
 		});
 	});
 

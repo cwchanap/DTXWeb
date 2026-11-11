@@ -968,6 +968,56 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).not.toHaveBeenCalled();
 		});
 
+		it('fails when a file claims a path already used as a directory prefix', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'Dir Prefix Workspace',
+					dtxFiles: [
+						{ name: 'kick.wav', content: 'nested', path: 'samples.wav/kick.wav' },
+						{ name: 'Samples.wav', content: 'flat', path: 'Samples.wav' }
+					],
+					audioFiles: []
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('Dir Prefix Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert.textContent).toContain('Samples.wav conflicts with samples.wav/kick.wav');
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
+		it('fails when a nested path claims a prefix already used by a file', async () => {
+			mockService.getWorkspaces.mockReturnValue([
+				makeWorkspace({
+					name: 'File Prefix Workspace',
+					dtxFiles: [
+						{ name: 'Samples.wav', content: 'flat', path: 'Samples.wav' },
+						{ name: 'kick.wav', content: 'nested', path: 'samples.wav/kick.wav' }
+					],
+					audioFiles: []
+				})
+			]);
+			const onClose = vi.fn();
+			render(ExportWorkspaceModal, { props: { show: true, onClose } });
+
+			await clickExport('File Prefix Workspace');
+
+			const alert = await screen.findByRole('alert');
+			expect(alert.textContent).toContain('samples.wav/kick.wav conflicts with Samples.wav');
+			expect(toastMock.error).toHaveBeenCalled();
+			expect(mockZipInstance.generateAsync).not.toHaveBeenCalled();
+			expect(global.URL.createObjectURL).not.toHaveBeenCalled();
+			expect(toastMock.success).not.toHaveBeenCalled();
+			expect(onClose).not.toHaveBeenCalled();
+		});
+
 		it('fails and names the file when an audio entry cannot be read', async () => {
 			const unreadableFile = new File(['bytes'], 'lost.wav', { type: 'audio/wav' });
 			vi.spyOn(unreadableFile, 'arrayBuffer').mockRejectedValue(

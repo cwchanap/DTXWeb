@@ -512,6 +512,7 @@ export class Preview extends BaseGame {
 				);
 
 				if (settled) {
+					URL.revokeObjectURL(objectUrl);
 					return;
 				}
 

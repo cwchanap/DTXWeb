@@ -149,6 +149,29 @@ describe('WorkspaceService.parseDTXFile song-pack integration', () => {
 		expect(kickDecodes).toHaveLength(1);
 	});
 
+	it('leaves same-named hashless records unresolved instead of borrowing global library audio', async () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const findByFileName = vi.spyOn(SoundLibrary, 'findByFileName');
+		const workspace = buildWorkspace();
+		// Persisted pre-hash records: path-identified but carrying no pinned bytes.
+		for (const af of workspace.audioFiles) {
+			if (af.path === 'Song A/kick.wav' || af.path === 'Song B/kick.wav') {
+				delete af.hash;
+			}
+		}
+
+		await service.parseDTXFile(workspace, 'Song A/mas.dtx');
+		expect(await provider.getFile(null, 'kick.wav')).toBeUndefined();
+		expect(await (await provider.getFile(null, 'drums\\cymbal.wav'))!.text()).toBe(
+			'cymbal-bytes'
+		);
+		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
+
+		await service.parseDTXFile(workspace, 'Song B/mas.dtx');
+		expect(await provider.getFile(null, 'kick.wav')).toBeUndefined();
+		expect(findByFileName).not.toHaveBeenCalled();
+	});
+
 	it('resolves chip references through #PATH_WAV', async () => {
 		const workspace = buildWorkspace();
 		workspace.dtxFiles[0].content = [

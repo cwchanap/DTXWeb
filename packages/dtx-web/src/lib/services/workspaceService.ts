@@ -8,7 +8,7 @@ export interface WorkspaceFile {
 	file?: File; // Store large files directly here
 	isLarge?: boolean; // Flag to indicate if file is too large for localStorage
 	hash?: string;
-	libraryStorageFailed?: boolean; // Sound library storage or hashing failed during import — unlike legacy hashless records, this file must not fall back to name matching
+	libraryStorageFailed?: boolean; // Sound library storage or hashing failed during import — this record has no pinned bytes and stays unresolved
 }
 
 export interface WorkspaceDTX {
@@ -226,12 +226,10 @@ export class WorkspaceService {
 							);
 						}
 						converted = convertedByHash.get(audioFile.hash) ?? null;
-					} else if (!audioFile.libraryStorageFailed) {
-						// Legacy records imported before content hashing have no
-						// pinned bytes; keep the old same-named fallback.
-						const record = SoundLibrary.findByFileName(audioFile.name)[0];
-						converted = record ? SoundLibrary.toFile(record) : null;
 					}
+					// Records without a pinned hash (failed or pre-hash imports)
+					// stay unresolved: a global name match could borrow another
+					// song's same-named bytes. Re-import pins the hash.
 					if (converted) {
 						// Content-deduplicated records may carry another workspace's file name
 						file =

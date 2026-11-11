@@ -607,7 +607,7 @@ describe('WorkspaceService', () => {
 			expect(result).toBeNull();
 		});
 
-		it('maps session files and hashless legacy audio by name', async () => {
+		it('maps session files but leaves hashless legacy audio unresolved', async () => {
 			const { DTXFile, SimFile } = await import('@dtx/common');
 			const { setFile } = await import('@dtx/common/services/fileManager');
 
@@ -665,10 +665,10 @@ describe('WorkspaceService', () => {
 			expect(soundChips[0].file).toBeUndefined();
 			expect(soundChips[1].file).toBeUndefined();
 			expect(soundChips[2].file).toBeUndefined();
-			expect(setFile).toHaveBeenCalledTimes(2);
+			expect(setFile).toHaveBeenCalledTimes(1);
 			expect(setFile).toHaveBeenCalledWith('local:large.wav', largeFile);
-			expect(setFile).toHaveBeenCalledWith('local:kick.wav', expect.any(File));
-			expect(warnSpy).toHaveBeenCalledTimes(1);
+			expect(warnSpy).toHaveBeenCalledTimes(2);
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('kick.wav'));
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('missing.wav'));
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('test.dtx'));
 		});

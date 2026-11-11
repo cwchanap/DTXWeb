@@ -164,8 +164,10 @@ export class DTXFile {
 		this.preview = remove_prefix('#PREIMAGE');
 		this.soundPreview = remove_prefix('#PREVIEW');
 
-		// #PATH_WAV accepts both `#PATH_WAV: dir` and `#PATH_WAV dir`.
-		const pathWavLine = lines.find((line) => line.startsWith('#PATH_WAV'));
+		// #PATH_WAV accepts both `#PATH_WAV: dir` and `#PATH_WAV dir`. The
+		// delimiter check keeps longer directives like #PATH_WAV_EXTRA or
+		// #PATH_WAV2 from prefix-matching and shadowing the real line.
+		const pathWavLine = lines.find((line) => /^#PATH_WAV(?:[:\s]|$)/.test(line));
 		this.pathWav = pathWavLine
 			?.slice('#PATH_WAV'.length)
 			.replace(/^[:\s]+/, '')

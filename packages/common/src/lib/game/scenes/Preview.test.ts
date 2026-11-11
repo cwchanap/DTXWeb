@@ -97,6 +97,7 @@ describe('Preview Scene', () => {
 		type: string;
 		url: string;
 		state: string;
+		data: unknown;
 		cache: {
 			exists: (key: string) => boolean;
 			add: (key: string, data: unknown) => void;
@@ -109,7 +110,12 @@ describe('Preview Scene', () => {
 		const audioCache = new Map<string, unknown>();
 		const sounds = new Map<
 			string,
-			{ key: string; stop: ReturnType<typeof vi.fn>; play: ReturnType<typeof vi.fn> }
+			{
+				key: string;
+				source: unknown;
+				stop: ReturnType<typeof vi.fn>;
+				play: ReturnType<typeof vi.fn>;
+			}
 		>();
 		const createdFiles: MockLoaderFile[] = [];
 		const makeLoaderSet = () => {
@@ -178,6 +184,7 @@ describe('Preview Scene', () => {
 					type: 'audio',
 					url,
 					state: 'pending',
+					data: undefined,
 					cache: cacheApi,
 					xhrLoader: { abort: vi.fn() },
 					resetXHR: vi.fn(() => {
@@ -187,6 +194,7 @@ describe('Preview Scene', () => {
 				createdFiles.push(file);
 				if (!keyExists(file)) {
 					list.add(file);
+					emit('addfile', file.key, file.type, load, file);
 				}
 				return load;
 			}),
@@ -219,7 +227,7 @@ describe('Preview Scene', () => {
 
 		const soundApi = {
 			add: vi.fn((key: string) => {
-				const sound = { key, stop: vi.fn(), play: vi.fn() };
+				const sound = { key, source: cacheApi.get(key), stop: vi.fn(), play: vi.fn() };
 				sounds.set(key, sound);
 				return sound;
 			}),
@@ -241,20 +249,29 @@ describe('Preview Scene', () => {
 		const pendingFileFor = (key: string) =>
 			[...list, ...inflight, ...queue].find((file) => file.key === key);
 
-		const completeFile = (file: MockLoaderFile, data: unknown = { decoded: file.url }) => {
+		const completeFile = (file: MockLoaderFile) => {
 			inflight.delete(file);
 			queue.add(file);
 			file.state = 'complete';
-			file.cache?.add(file.key, data);
+			if (file.cache && file.data !== undefined) {
+				file.cache.add(file.key, file.data);
+			}
+			emit('filecomplete', file.key, 'audio', file.data);
+			emit(`filecomplete-audio-${file.key}`, file.key, 'audio', file.data);
 			queue.delete(file);
-			emit('filecomplete', file.key, 'audio', data);
-			emit(`filecomplete-audio-${file.key}`, file.key, 'audio', data);
 		};
 
 		const failFile = (file: MockLoaderFile) => {
 			inflight.delete(file);
 			file.state = 'errored';
 			emit('loaderror', file);
+		};
+
+		const shutdownLoader = () => {
+			listeners.clear();
+			list.clear();
+			inflight.clear();
+			queue.clear();
 		};
 
 		return {
@@ -270,6 +287,7 @@ describe('Preview Scene', () => {
 			pendingFileFor,
 			completeFile,
 			failFile,
+			shutdownLoader,
 			emit
 		};
 	};
@@ -1315,7 +1333,7 @@ describe('Preview Scene', () => {
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
 			const pendingFile = fixture.pendingFileFor(cacheKey);
 			expect(pendingFile).toBeDefined();
-			fixture.completeFile(pendingFile!, { bytes: 'kick-a' });
+			fixture.completeFile(Object.assign(pendingFile!, { data: { bytes: 'kick-a' } }));
 			await pending;
 
 			expect(mockGetFile).toHaveBeenCalledTimes(1);
@@ -1345,7 +1363,9 @@ describe('Preview Scene', () => {
 
 			const firstPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'a' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'a' } })
+			);
 			await firstPass;
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(fileA);
 			const staleSound = fixture.soundApi.get(cacheKey)!;
@@ -1353,7 +1373,9 @@ describe('Preview Scene', () => {
 			resolvedFile = fileB;
 			const secondPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(2));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'b' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'b' } })
+			);
 			await secondPass;
 
 			expect(staleSound.stop).toHaveBeenCalled();
@@ -1387,7 +1409,9 @@ describe('Preview Scene', () => {
 
 			const firstPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'a' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'a' } })
+			);
 			await firstPass;
 			const staleSound = fixture.soundApi.get(cacheKey)!;
 
@@ -1424,7 +1448,9 @@ describe('Preview Scene', () => {
 			const runPass = async (callCount: number, bytes: string) => {
 				const pass = previewScene['setupSoundsAsync']();
 				await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(callCount));
-				fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes });
+				fixture.completeFile(
+					Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes } })
+				);
 				await pass;
 				expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes });
 			};
@@ -1475,7 +1501,9 @@ describe('Preview Scene', () => {
 
 			const firstPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'a' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'a' } })
+			);
 			await firstPass;
 			const firstBlob = Preview['soundCacheMap'].get(cacheKey)?.blob;
 			expect(firstBlob).toBeDefined();
@@ -1483,7 +1511,9 @@ describe('Preview Scene', () => {
 			resolvedFile = fileB;
 			const secondPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(2));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'b' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'b' } })
+			);
 			await secondPass;
 
 			expect((XAaudioContext as any).decodeAudioData).toHaveBeenCalledTimes(2);
@@ -1514,7 +1544,9 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'xa' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'xa' } })
+			);
 			await pending;
 
 			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);
@@ -1541,7 +1573,9 @@ describe('Preview Scene', () => {
 
 			const firstPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'a' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'a' } })
+			);
 			await firstPass;
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
 			const liveSound = fixture.soundApi.get(cacheKey)!;
@@ -1576,7 +1610,9 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'fresh' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'fresh' } })
+			);
 			await pending;
 
 			expect(fixture.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
@@ -1608,7 +1644,7 @@ describe('Preview Scene', () => {
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
 			const pendingFile = fixture.pendingFileFor(cacheKey);
 			expect(pendingFile).toBeDefined();
-			fixture.completeFile(pendingFile!, { bytes: 'fresh' });
+			fixture.completeFile(Object.assign(pendingFile!, { data: { bytes: 'fresh' } }));
 			await pending;
 
 			expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes: 'fresh' });
@@ -1641,7 +1677,7 @@ describe('Preview Scene', () => {
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
 			const pendingFile = fixture.pendingFileFor(cacheKey);
 			expect(pendingFile).toBeDefined();
-			fixture.completeFile(pendingFile!, { bytes: 'xa-fresh' });
+			fixture.completeFile(Object.assign(pendingFile!, { data: { bytes: 'xa-fresh' } }));
 			await pending;
 
 			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);
@@ -1667,7 +1703,9 @@ describe('Preview Scene', () => {
 
 			const firstPass = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'a' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'a' } })
+			);
 			await firstPass;
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
 
@@ -1676,9 +1714,13 @@ describe('Preview Scene', () => {
 
 			const secondPass = recreatedScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(recreatedFixture.load.audio).toHaveBeenCalledTimes(1));
-			recreatedFixture.completeFile(recreatedFixture.pendingFileFor(cacheKey)!, {
-				bytes: 'a'
-			});
+			recreatedFixture.completeFile(
+				Object.assign(recreatedFixture.pendingFileFor(cacheKey)!, {
+					data: {
+						bytes: 'a'
+					}
+				})
+			);
 			await secondPass;
 
 			expect(recreatedFixture.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
@@ -1716,7 +1758,9 @@ describe('Preview Scene', () => {
 
 			const retry = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(2));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'kick' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'kick' } })
+			);
 			await retry;
 
 			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
@@ -1744,7 +1788,9 @@ describe('Preview Scene', () => {
 			const pending = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
 			fixture.emit('loaderror', { key: 'soundchip_other.wav', type: 'audio' });
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'kick' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'kick' } })
+			);
 			await pending;
 
 			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
@@ -1815,11 +1861,11 @@ describe('Preview Scene', () => {
 			expect(freshFile).not.toBe(staleFile);
 			expect(staleFile.resetXHR).toHaveBeenCalled();
 
-			fixture.completeFile(staleFile, { bytes: 'a' });
+			fixture.completeFile(Object.assign(staleFile, { data: { bytes: 'a' } }));
 			expect(fixture.audioCache.has(cacheKey)).toBe(false);
 			expect(fixture.soundApi.get(cacheKey)).toBeNull();
 
-			fixture.completeFile(freshFile, { bytes: 'b' });
+			fixture.completeFile(Object.assign(freshFile, { data: { bytes: 'b' } }));
 			await Promise.all([firstPass, secondPass]);
 
 			expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes: 'b' });
@@ -1852,7 +1898,7 @@ describe('Preview Scene', () => {
 			resolvedFile = undefined;
 			await previewScene['setupSoundsAsync']();
 
-			fixture.completeFile(staleFile, { bytes: 'a' });
+			fixture.completeFile(Object.assign(staleFile, { data: { bytes: 'a' } }));
 			await firstPass;
 
 			expect(fixture.audioCache.has(cacheKey)).toBe(false);
@@ -1933,12 +1979,61 @@ describe('Preview Scene', () => {
 			await vi.waitFor(() => expect(mockGetFile).toHaveBeenCalledTimes(2));
 			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
 
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'kick' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'kick' } })
+			);
 			await Promise.all([firstPass, secondPass]);
 
 			expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes: 'kick' });
 			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
+		});
+
+		it('should reload and mark the same File after a shutdown interrupts its outstanding load', async () => {
+			vi.useFakeTimers();
+			const mockSoundChips = [{ fileName: 'kick.wav', id: 1 }];
+			const cacheKey = 'soundchip_kick.wav';
+			const mockFile = new File(['audio'], 'kick.wav', { type: 'audio/wav' });
+			const mockGetFile = vi.fn().mockResolvedValue(mockFile);
+			const fixture = createAudioHarness(previewScene);
+
+			mockStore.currentSoundChip.subscribe.mockImplementation(
+				(callback: (v: typeof mockSoundChips) => void) => {
+					callback(mockSoundChips);
+					return vi.fn();
+				}
+			);
+
+			vi.mocked(getFileProvider).mockReturnValue({ getFile: mockGetFile } as any);
+
+			const firstPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fixture.load.audio).toHaveBeenCalledTimes(1);
+			const orphanedFile = fixture.pendingFileFor(cacheKey)!;
+			expect(orphanedFile).toBeDefined();
+			const orphanAbort = orphanedFile.xhrLoader?.abort;
+
+			fixture.shutdownLoader();
+			previewScene.shutdown();
+
+			const secondPass = previewScene['setupSoundsAsync']();
+			await vi.advanceTimersByTimeAsync(0);
+			const pendingFile = fixture.pendingFileFor(cacheKey);
+			if (pendingFile) {
+				pendingFile.data = { bytes: 'kick' };
+				fixture.completeFile(pendingFile);
+			}
+			await vi.advanceTimersByTimeAsync(11000);
+			await Promise.all([firstPass, secondPass]);
+
+			expect(fixture.load.audio).toHaveBeenCalledTimes(2);
+			expect(orphanAbort).toHaveBeenCalled();
+			expect(orphanedFile.resetXHR).toHaveBeenCalled();
+			expect(orphanedFile.cache).toBeNull();
+			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
+			expect(fixture.soundApi.get(cacheKey)?.source).toEqual({ bytes: 'kick' });
+			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
+			vi.useRealTimers();
 		});
 
 		it('should load unloaded sound chips via fileProvider', async () => {
@@ -1961,7 +2056,9 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'kick' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'kick' } })
+			);
 			await pending;
 
 			expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes: 'kick' });
@@ -1991,7 +2088,9 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['setupSoundsAsync']();
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'xa' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'xa' } })
+			);
 			await pending;
 
 			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);
@@ -2940,13 +3039,19 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'kick' });
+			// Make load.once call the callback immediately (simulating filecomplete)
+			const pendingFile = Object.assign(fixture.pendingFileFor(cacheKey)!, {
+				data: { bytes: 'kick' }
+			});
+			fixture.completeFile(pendingFile);
 			await pending;
 
 			expect(fixture.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
 			expect(fixture.load.start).toHaveBeenCalled();
 			expect(fixture.soundApi.add).toHaveBeenCalledWith(cacheKey);
 			expect(fixture.audioCache.get(cacheKey)).toEqual({ bytes: 'kick' });
+			expect(fixture.queue.has(pendingFile)).toBe(false);
+			expect(fixture.soundApi.get(cacheKey)!.source).toBe(pendingFile.data);
 			expect(fixture.soundApi.get(cacheKey)).not.toBeNull();
 			expect(Preview['loadedFiles'].get(cacheKey)).toBe(mockFile);
 		});
@@ -2970,7 +3075,9 @@ describe('Preview Scene', () => {
 
 			const pending = previewScene['loadSoundChipAsync'](mockFile, mockSoundChip, cacheKey);
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'xa' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'xa' } })
+			);
 			await pending;
 
 			expect(fixture.load.audio).toHaveBeenCalledWith(cacheKey, 'blob:mock-url');
@@ -2991,7 +3098,9 @@ describe('Preview Scene', () => {
 				cachedBlob
 			);
 			await vi.waitFor(() => expect(fixture.load.audio).toHaveBeenCalledTimes(1));
-			fixture.completeFile(fixture.pendingFileFor(cacheKey)!, { bytes: 'snare' });
+			fixture.completeFile(
+				Object.assign(fixture.pendingFileFor(cacheKey)!, { data: { bytes: 'snare' } })
+			);
 			await pending;
 
 			expect(URL.createObjectURL).toHaveBeenCalledWith(cachedBlob);

@@ -4,6 +4,7 @@
 		type Workspace,
 		WorkspaceService
 	} from '$lib/services/workspaceService';
+	import { zipCollisionKey } from '$lib/services/workspacePaths';
 	import { SoundLibrary } from '$lib/services/soundLibrary';
 	import toastStore from '$lib/toaster';
 	import JSZip from 'jszip';
@@ -45,12 +46,6 @@
 			// case-insensitive / normalizing filesystems (macOS, Windows) are caught.
 			// Leading spaces and trailing spaces/dots are also folded because Windows
 			// extraction strips them (' kick.wav' and 'kick.wav' land on one file).
-			const toCollisionKey = (name: string) =>
-				name
-					.normalize('NFC')
-					.toLowerCase()
-					.replace(/^ +/, '')
-					.replace(/[ .]+$/, '');
 			const seenPaths = new Map<string, string>();
 			const missingAudio: string[] = [];
 			const duplicates: string[] = [];
@@ -58,7 +53,7 @@
 			const pendingAudio: { name: string; file: File }[] = [];
 
 			const claimName = (name: string, path: string): boolean => {
-				const key = toCollisionKey(name);
+				const key = zipCollisionKey(name);
 				const firstPath = seenPaths.get(key);
 				if (firstPath !== undefined) {
 					duplicates.push(`${name} (${path}) conflicts with ${firstPath}`);
@@ -84,7 +79,7 @@
 						// Get large file from session storage
 						const largeFile = WorkspaceService.getLargeFile(
 							workspace.name,
-							audioFile.name
+							audioFile.path
 						);
 						if (!largeFile) {
 							missingAudio.push(

@@ -354,13 +354,13 @@ describe('ExportWorkspaceModal', () => {
 			expect(onClose).toHaveBeenCalled();
 		});
 
-		it('resolves large audio files from the session cache', async () => {
+		it('resolves large audio files from the session cache by relative path', async () => {
 			const largeFile = new File(['large audio'], 'large.wav', { type: 'audio/wav' });
 			mockWorkspaceServiceClass.getLargeFile.mockReturnValue(largeFile);
 			mockService.getWorkspaces.mockReturnValue([
 				makeWorkspace({
 					name: 'Large Workspace',
-					audioFiles: [{ name: 'large.wav', path: '/workspace/large.wav', isLarge: true }]
+					audioFiles: [{ name: 'large.wav', path: 'Song A/large.wav', isLarge: true }]
 				})
 			]);
 
@@ -372,7 +372,7 @@ describe('ExportWorkspaceModal', () => {
 			});
 			expect(mockWorkspaceServiceClass.getLargeFile).toHaveBeenCalledWith(
 				'Large Workspace',
-				'large.wav'
+				'Song A/large.wav'
 			);
 			const largeEntry = mockZipInstance.file.mock.calls.find(
 				(call) => call[0] === 'large.wav'

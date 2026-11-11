@@ -1,5 +1,6 @@
 import { DTXFile, SimFile, decodeFileWithEncodingDetection } from '@dtx/common';
 import { SoundLibrary } from './soundLibrary';
+import { toWorkspacePath, workspacePathKey } from './workspacePaths';
 
 export interface WorkspaceFile {
 	name: string;
@@ -48,7 +49,7 @@ export class WorkspaceService {
 
 		for (const file of Array.from(files)) {
 			const fileName = file.name.toLowerCase();
-			const relativePath = file.webkitRelativePath || file.name;
+			const relativePath = toWorkspacePath(file.webkitRelativePath, file.name);
 
 			if (fileName.endsWith('.dtx')) {
 				// Handle DTX files with proper encoding detection
@@ -84,7 +85,7 @@ export class WorkspaceService {
 
 				// Store large files in session memory with unique key
 				if (isLarge) {
-					const fileKey = `${folderName}/${file.name}`;
+					const fileKey = `${folderName}/${relativePath}`;
 					WorkspaceService.sessionLargeFiles.set(fileKey, file);
 				}
 
@@ -159,7 +160,7 @@ export class WorkspaceService {
 			path: folderName,
 			dtxFiles: sortedDtxFiles,
 			audioFiles,
-			currentDTX: sortedDtxFiles.length > 0 ? sortedDtxFiles[0].name : null,
+			currentDTX: sortedDtxFiles.length > 0 ? sortedDtxFiles[0].path : null,
 			lastModified: Date.now()
 		};
 
@@ -174,9 +175,11 @@ export class WorkspaceService {
 	 */
 	async parseDTXFile(
 		workspace: Workspace,
-		dtxFileName: string
+		dtxPath: string
 	): Promise<{ dtxFile: DTXFile; simFile: SimFile } | null> {
-		const dtxEntry = workspace.dtxFiles.find((f) => f.name === dtxFileName);
+		const dtxEntry = workspace.dtxFiles.find(
+			(f) => workspacePathKey(f.path) === workspacePathKey(dtxPath)
+		);
 		if (!dtxEntry) return null;
 
 		try {
@@ -229,7 +232,7 @@ export class WorkspaceService {
 			const largeFiles = workspace.audioFiles
 				.filter((af) => af.isLarge)
 				.map((af) => {
-					const fileKey = `${workspace.name}/${af.name}`;
+					const fileKey = `${workspace.name}/${af.path}`;
 					const file = WorkspaceService.sessionLargeFiles.get(fileKey);
 					return file;
 				})
@@ -285,9 +288,12 @@ export class WorkspaceService {
 	/**
 	 * Switch to a different DTX file in the workspace
 	 */
-	switchDTXFile(workspace: Workspace, dtxFileName: string): void {
-		if (workspace.dtxFiles.some((f) => f.name === dtxFileName)) {
-			workspace.currentDTX = dtxFileName;
+	switchDTXFile(workspace: Workspace, dtxPath: string): void {
+		const dtxEntry = workspace.dtxFiles.find(
+			(f) => workspacePathKey(f.path) === workspacePathKey(dtxPath)
+		);
+		if (dtxEntry) {
+			workspace.currentDTX = dtxEntry.path;
 			workspace.lastModified = Date.now();
 			this.saveWorkspace(workspace);
 		}
@@ -513,8 +519,8 @@ export class WorkspaceService {
 	/**
 	 * Get a large file from session memory
 	 */
-	static getLargeFile(workspaceName: string, fileName: string): File | undefined {
-		const fileKey = `${workspaceName}/${fileName}`;
+	static getLargeFile(workspaceName: string, filePath: string): File | undefined {
+		const fileKey = `${workspaceName}/${filePath}`;
 		return WorkspaceService.sessionLargeFiles.get(fileKey);
 	}
 

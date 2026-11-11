@@ -31,7 +31,9 @@
       "name": "@dtx/common",
       "version": "0.0.1",
       "dependencies": {
+        "@dtx/ui-components": "*",
         "jszip": "^3.10.2",
+        "xa_decoder": "^0.1.2",
       },
       "devDependencies": {
         "@sveltejs/adapter-auto": "^7.0.1",
@@ -133,6 +135,7 @@
       "dependencies": {
         "@dtx/common": "*",
         "@dtx/ui-components": "*",
+        "better-auth": "1.7.15",
         "dayjs": "^1.11.23",
         "graphql": "^17.0.2",
         "graphql-request": "^7.1.2",

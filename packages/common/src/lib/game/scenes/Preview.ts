@@ -62,6 +62,10 @@ export class Preview extends BaseGame {
 		{ file: File; promise: Promise<void>; cancel: () => void }
 	>();
 
+	private lifecycleGeneration = 0;
+
+	private setupSoundsSeq = 0;
+
 	// Phaser-free timing/measure-offset calculations, kept in sync with this
 	// scene's chart data at the same points it was previously updated directly
 	// (init() and updateData()).
@@ -280,11 +284,17 @@ export class Preview extends BaseGame {
 			return;
 		}
 
+		const generation = this.lifecycleGeneration;
+		const setupSeq = ++this.setupSoundsSeq;
+
 		// Create promises for unloaded sound chips only
 		const loadPromises = [...uniqueSoundChips].map(async ([cacheKey, soundChip]) => {
 			try {
 				// Get file from FileProvider for both local and remote files
 				const actualFile = await fileProvider.getFile(currentSimfileID, soundChip.fileName);
+				if (generation !== this.lifecycleGeneration || setupSeq !== this.setupSoundsSeq) {
+					return;
+				}
 				const previousFile = Preview.loadedFiles.get(cacheKey);
 				const inflight = this.inflightLoads.get(cacheKey);
 
@@ -1066,6 +1076,7 @@ export class Preview extends BaseGame {
 	}
 
 	shutdown() {
+		this.lifecycleGeneration++;
 		for (const inflightLoad of [...this.inflightLoads.values()]) {
 			inflightLoad.cancel();
 		}

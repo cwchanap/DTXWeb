@@ -9,19 +9,20 @@
 
 Use a deterministic browser FileList with webkitRelativePath:
 
-~~~text
+```text
 Pack/Song A/mas.dtx            #WAV01: kick.wav; #WAV02: drums\cymbal.wav
 Pack/Song A/kick.wav           A-audio-bytes
 Pack/Song A/drums/cymbal.wav   cymbal-bytes
 Pack/Song B/mas.dtx            #WAV01: kick.wav
 Pack/Song B/kick.wav           B-audio-bytes
-~~~
+```
 
 Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental basename selection. Simulate large files by overriding File.size above the existing threshold, avoiding large allocations. A missing/unresolvable file must not play a previously cached sample. Export tests should inspect actual JSZip bytes.
 
 ## Step 1 — Import identity, large files, and DTX switcher together
 
 **Files**
+
 - packages/dtx-web/src/lib/services/workspacePaths.ts (new small pure helper; used by service and export)
 - packages/dtx-web/src/lib/services/workspacePaths.test.ts
 - packages/dtx-web/src/lib/services/workspaceService.ts and .test.ts
@@ -30,7 +31,8 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 - Affected route/mock fixtures only
 
 **Work**
-1. Add toWorkspacePath(webkitRelativePath, file.name), a normalized NFC/lowercase path key, and per-segment zipCollisionKey to the pure workspacePaths helper. The selected root directory is the *first browser path segment*, not the possibly suffixed workspace.name.
+
+1. Add toWorkspacePath(webkitRelativePath, file.name), a normalized NFC/lowercase path key, and per-segment zipCollisionKey to the pure workspacePaths helper. The selected root directory is the _first browser path segment_, not the possibly suffixed workspace.name.
 2. Persist WorkspaceDTX.path and WorkspaceFile.path relative to that root. Set Workspace.currentDTX to the DTX **path** and update parseDTXFile / switchDTXFile to identify the chart by path. Existing flat imports have path === name.
 3. Change large-file session cache writes, getLargeFile reads and export call sites to workspace name + **relative path**; preserve clearSessionFiles prefix behavior and session-only retention.
 4. Change the switcher buttons/active comparison to DTX path **in the same step** as the identity change. Keep the already-rendered dtxFile.path; remove its independent SimFile.files basename lookup and FileManager overwrite, while keeping store/event behavior.
@@ -43,6 +45,7 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 ## Step 2 — Share the existing remote sample-path rule and map web audio once
 
 **Files**
+
 - packages/common/src/lib/audio/previewAudioEngine.ts
 - packages/common/src/lib/audio/previewAudioEngine.test.ts
 - packages/common/src/lib/audio/reference.ts (new **pure** file for audio-reference normalization) and its tests
@@ -51,6 +54,7 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 - packages/dtx-web/src/lib/services/workspaceService.ts and .test.ts
 
 **Work**
+
 1. Extract the current backslash-to-slash normalization and reject-empty/dot/dotdot/absolute-segment check from `previewAudioEngine.ts` into pure `audio/reference.ts`. Re-export only the pure helper from the main `@dtx/common` barrel (`src/lib/index.ts`), and import that from browser `workspacePaths.ts`. **Never import it via `@dtx/common/audio`**: that loads `previewAudioEngine` → `browser/audioDecoder` → top-level `new XAAudioContext()`. Reuse the helper in `previewAudioEngine` without changing existing URL encoding or fetch behavior; add an SSR-safe import/evaluation regression.
 2. Implement pure resolveChipPath(dtxRelativePath, chipRef, audioKeys): normalize the chip ref via the shared helper, join it to dirname(dtxRelativePath), NFC/lowercase the full relative path, and match that exact key in the workspace audio map. If absent or multiple files collapse to that normalized full path, return unresolved. **No root fallback, basename fallback, parent traversal, or extra containment algorithm.**
 3. In parseDTXFile, resolve each chip to its **WorkspaceFile**, then resolve audio bytes by that record's stored hash (small audio) or path-keyed session file (large audio). Failed hash/library/session lookups must never substitute another file by filename.
@@ -64,10 +68,12 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 ## Step 3 — Required Preview cache invalidation by File identity
 
 **Files**
+
 - packages/common/src/lib/game/scenes/Preview.ts
 - packages/common/src/lib/game/scenes/Preview.test.ts
 
 **Work**
+
 1. Deduplicate the current `soundChips` by `getCacheKey(soundChip)` **before any async provider lookup or loading**. Two chips referring to `kick.wav` are still separate playback events but must resolve/load their shared source only once per setup pass. Also remove the duplicate initial `setupSoundsAsync()` call in `create()`: its following `startPreview()` already invokes setup. Keep this a small local fix, not a new concurrency framework.
 2. Obtain `fileProvider.getFile` before the “already loaded” check. Declare **`private static loadedFiles: Map<string, File>`** next to the existing static `Preview.soundCacheMap`. The source-map tracks what File populated each sound key across scene restarts; Phaser audio remains game-scoped, so a missing Phaser cache entry must still force a reload instead of trusting the static map.
 3. Reuse a cached sound only if the currently resolved File is the **same object** and both Phaser cache and sound-manager entries are valid. On a changed File, stop/remove stale sound/audio/processed XA blob, clear the previous source map entry, and load the new File.
@@ -81,10 +87,12 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 ## Step 4 — Preserve relative paths in ZIP without weakening HPA-567
 
 **Files**
+
 - packages/dtx-web/src/lib/components/editor/modals/ExportWorkspaceModal.svelte and .test.ts
 - packages/dtx-web/src/lib/services/workspacePaths.ts and .test.ts (reuse helpers from step 1)
 
 **Work**
+
 1. Write each selected DTX/audio using its persisted **relative path** as JSZip entry name.
 2. Use the per-segment zipCollisionKey for a whole-path collision map. Preserve original case/path in entries while rejecting identical and NFC/case-equivalent selected full paths, including cross-type collisions. Allow duplicate basenames in different directories. **Do not add a second archive-path validation pass**; browser-derived paths were normalized at import.
 3. Resolve large audio through getLargeFile(workspace.name, audioFile.path), and small audio by stored hash. Name full relative paths in missing/unreadable/collision errors.
@@ -98,7 +106,7 @@ Use distinct audio bytes and pinned SoundLibrary hashes to detect accidental bas
 
 After **every implementation step**, run the affected focused tests plus the full dtx-web and @dtx/common suites and the common build, not merely the initial workspace-service tests:
 
-~~~bash
+```bash
 bun run --filter=dtx-web test
 bun run --filter=@dtx/common test
 bun run --filter=@dtx/common build
@@ -110,9 +118,10 @@ bun run --filter=dtx-web test -- ExportWorkspaceModal.test.ts
 bun run --filter=@dtx/common test -- Preview.test.ts
 bun run --filter=@dtx/common test -- previewAudioEngine.test.ts
 # Apply repository formatting/lint to changed files.
-~~~
+```
 
 Manual browser smoke checks:
+
 1. Import the two-song pack once, select both mas.dtx paths, and preview A→B→A.
 2. Check an invalid/missing same-named sample stays silent instead of playing prior audio.
 3. Export ZIP with audio, inspect the hierarchy and exact audio bytes; repeat DTX-only.

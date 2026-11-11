@@ -19,18 +19,18 @@ This is a browser workspace issue, with one **shared** audio-path rule extracted
 
 ## Product contract and fixture
 
-~~~text
+```text
 Pack/
   Song A/mas.dtx              #WAV01: kick.wav; #WAV02: drums\cymbal.wav
   Song A/kick.wav             (audio A)
   Song A/drums/cymbal.wav
   Song B/mas.dtx              #WAV01: kick.wav
   Song B/kick.wav             (audio B)
-~~~
+```
 
 Import creates one workspace. The two DTX entries are identified by **Song A/mas.dtx** and **Song B/mas.dtx**, not the shared basename. Playing A uses audio A; switching A→B→A uses the corresponding bytes, including when Phaser already has an audio entry for kick.wav. Missing references must stay silent, not play stale audio.
 
-Export writes these five paths **relative to the selected Pack/ root** into one ZIP. Flat-folder workspaces keep root-level entries. Preserve HPA-567's all-or-nothing export behavior: if any selected audio is missing/unreadable or selected entries have colliding normalized *full paths*, refuse to download and show the offending paths. DTX-only export can succeed despite unavailable audio.
+Export writes these five paths **relative to the selected Pack/ root** into one ZIP. Flat-folder workspaces keep root-level entries. Preserve HPA-567's all-or-nothing export behavior: if any selected audio is missing/unreadable or selected entries have colliding normalized _full paths_, refuse to download and show the offending paths. DTX-only export can succeed despite unavailable audio.
 
 Previously imported root-prefixed workspace records are **not migrated**; re-import to use the new identity. Keep the session-only large-file policy.
 
@@ -45,7 +45,7 @@ Create a small, pure, browser-safe helper in packages/dtx-web/src/lib/services/w
 - resolveChipPath: combine dirname(dtx.path) with a **valid normalized chip reference**, look it up by the full normalized path in an audio-file map, and return one matching WorkspaceFile or unresolved. Do not select a record when multiple stored paths collapse to the same key.
 - zipCollisionKey: adapt the modal's existing per-name NFC/lowercase/Windows-space-and-dot collision key **per path segment** and join with '/'. It is a collision comparison only, not an archive path rewrite.
 
-Store WorkspaceFile.path and WorkspaceDTX.path as those relative paths. Store Workspace.currentDTX as the selected DTX **path**. Parse and switch DTX files by path. Key sessionLargeFiles and getLargeFile by workspace name plus *relative audio path*; clearSessionFiles retains its existing workspace prefix rule.
+Store WorkspaceFile.path and WorkspaceDTX.path as those relative paths. Store Workspace.currentDTX as the selected DTX **path**. Parse and switch DTX files by path. Key sessionLargeFiles and getLargeFile by workspace name plus _relative audio path_; clearSessionFiles retains its existing workspace prefix rule.
 
 The DTX switcher already renders dtxFile.path below dtxFile.name: simply change its action and active comparison to use path. No extra UI element needed.
 
@@ -61,6 +61,7 @@ Extract the current **reference normalization/rejection** into a dedicated pure 
 Browser resolution: normalizedKey = NFC-lowercase(dirname(selected DTX relative path) + '/' + normalized sample ref). Select the **exact** audio record at that path. **No workspace-root fallback, global basename fallback, or parent-segment traversal**. The map lookup itself limits matches to imported workspace files; a separate containment check is unnecessary. A reference not under that DTX's own directory does not get another song's sample merely because the basename matches. If real packs require '..', handle it in the shared rule for both preview engines in a separately justified change.
 
 After identifying the right WorkspaceFile:
+
 - Small audio: resolve its pinned SoundLibrary hash; missing hash, failed conversion, or unavailable stored content means unresolved. Never use SoundLibrary's global filename fallback.
 - Large audio: resolve with getLargeFile(workspace.name, audioFile.path) from session memory; absent after reload means unresolved.
 - Clear old local: FileManager keys on parse while preserving remote keys. Register the resolved File under local:<chip-reference-string> because WebFileProvider, Preview and SoundTab request that key; do **not** register every available audio file by its basename.

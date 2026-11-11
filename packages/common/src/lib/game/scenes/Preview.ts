@@ -470,6 +470,7 @@ export class Preview extends BaseGame {
 		let timeoutId: ReturnType<typeof setTimeout> | undefined;
 		let onFileComplete: (() => void) | undefined;
 		let onLoadError: ((file: { key?: string }) => void) | undefined;
+		let onLoadComplete: (() => void) | undefined;
 		let loaderFile: Phaser.Loader.File | undefined;
 		let objectUrl: string | undefined;
 		let entry: { file: File; promise: Promise<void>; cancel: () => void } | undefined;
@@ -483,6 +484,9 @@ export class Preview extends BaseGame {
 			}
 			if (onLoadError) {
 				this.load.off('loaderror', onLoadError);
+			}
+			if (onLoadComplete) {
+				this.load.off('complete', onLoadComplete);
 			}
 			if (discardPending) {
 				this.discardPendingAudioFile(cacheKey, loaderFile);
@@ -565,6 +569,20 @@ export class Preview extends BaseGame {
 					finish(false); // Still resolve to prevent hanging
 				};
 				this.load.on('loaderror', onLoadError);
+
+				// A file that fails to decode is marked FILE_ERRORED, which emits
+				// neither 'loaderror' nor the keyed 'filecomplete' event — the
+				// loader's 'complete' signal is the only way to observe it. Once
+				// the queue has drained, a successful file is already in the audio
+				// cache, so a missing entry means this load failed.
+				onLoadComplete = () => {
+					if (this.cache && this.cache.audio && this.cache.audio.exists(cacheKey)) {
+						return;
+					}
+					console.warn(`Failed to decode audio file: ${cacheKey}`);
+					finish(false);
+				};
+				this.load.on('complete', onLoadComplete);
 
 				// Add a timeout fallback in case neither event fires. Resolve the
 				// setup pass so the preview can start, but leave the load running:

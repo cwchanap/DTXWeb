@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventBus } from '../EventBus';
 import EventType from '../EventType';
-import { get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import { Preview } from './Preview';
 import { LaneMeasureNote } from '../../chart/note';
 import { XAaudioContext } from '$lib/browser/audioDecoder';
@@ -29,6 +29,12 @@ const mockStore = vi.hoisted(() => ({
 	currentSimfileID: {
 		subscribe: vi.fn((callback) => {
 			callback(null);
+			return vi.fn();
+		})
+	},
+	disableBgmPreview: {
+		subscribe: vi.fn((callback) => {
+			callback(false);
 			return vi.fn();
 		})
 	}
@@ -305,6 +311,464 @@ describe('Preview Scene', () => {
 			emit
 		};
 	};
+
+	const createPlaybackHarness = () => {
+		const chips = [{ fileName: 'kick.wav', id: 1, volume: 100 }];
+		const chipStore = writable<typeof chips | null>(chips);
+		mockStore.currentSoundChip.subscribe.mockImplementation(chipStore.subscribe as any);
+		const audio = createAudioHarness(previewScene);
+		const events: (() => void)[] = [];
+		const tweens: { stop: MockedFn; destroy: MockedFn; pause: MockedFn }[] = [];
+		(previewScene.time.delayedCall as MockedFn).mockImplementation(
+			(_delay: number, callback: () => void) => {
+				events.push(callback);
+			}
+		);
+		(previewScene.time.removeAllEvents as MockedFn).mockImplementation(() => {
+			events.length = 0;
+		});
+		(previewScene.tweens.add as MockedFn).mockImplementation(() => {
+			const tween = { stop: vi.fn(), destroy: vi.fn(), pause: vi.fn() };
+			tweens.push(tween);
+			return tween;
+		});
+		vi.spyOn(previewScene as any, 'drawPanel').mockImplementation(() => {
+			previewScene['panelContainer'] = {
+				setPosition: vi.fn(),
+				removeAll: vi.fn(),
+				add: vi.fn()
+			} as any;
+			(previewScene['gridContainer'] as any).removeAll = vi.fn();
+			(previewScene['notesContainer'] as any).removeAll = vi.fn();
+		});
+		vi.spyOn(previewScene as any, 'drawNotes').mockImplementation(() => {});
+		vi.spyOn(previewScene as any, 'drawGridLines').mockImplementation(() => {});
+		previewScene.init({
+			measureCount: 2,
+			notes: {
+				'1A': [
+					{
+						measure: 0,
+						measureLength: 1,
+						notes: [{ noteID: '01', position: 0 }]
+					} as any
+				]
+			},
+			bpm: 120,
+			bpmNotes: {},
+			startMeasure: 0
+		});
+		return {
+			chips,
+			chipStore,
+			audio,
+			tweens,
+			events,
+			fireEvents: () => events.splice(0).forEach((callback) => callback())
+		};
+	};
+
+	const flushMicrotasks = async () => {
+		for (let i = 0; i < 20; i++) {
+			await Promise.resolve();
+		}
+	};
+
+	describe('preview start ownership', () => {
+		it('waits for the subscriber same-File setup before playing a time-zero note', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			let resolveFirst!: (value: File) => void;
+			const getFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveFirst = resolve))
+				)
+				.mockResolvedValue(file);
+			vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+
+			await previewScene.create();
+			fixture.chipStore.set([...fixture.chips]);
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			resolveFirst(file);
+			await flushMicrotasks();
+			const tweensBeforeLoad = fixture.tweens.length;
+			const eventsBeforeLoad = fixture.events.length;
+			fixture.fireEvents();
+			const loaded = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.audio.completeFile(Object.assign(loaded, { data: { bytes: 'kick' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const tweenCount = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(tweensBeforeLoad).toBe(0);
+			expect(eventsBeforeLoad).toBe(0);
+			expect(tweenCount).toBe(1);
+			expect(sound?.source).toBe(loaded.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it.each([
+			['empty', []],
+			['null', null],
+			['blank filename', [{ fileName: '', id: 1, volume: 100 }]]
+		])(
+			'invalidates a deferred lookup on a %s transition without restarting the newer chart',
+			async (_name, nextChips) => {
+				const fixture = createPlaybackHarness();
+				const file = new File(['kick'], 'kick.wav');
+				let resolveFirst!: (value: File) => void;
+				const getFile = vi.fn(
+					() => new Promise<File>((resolve) => (resolveFirst = resolve))
+				);
+				vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+
+				await previewScene.create();
+				fixture.chipStore.set(nextChips);
+				previewScene.updateData({
+					measureCount: 2,
+					notes: {},
+					bpm: 120,
+					bpmNotes: {},
+					startMeasure: 0
+				});
+				await flushMicrotasks();
+				const firstTween = fixture.tweens[0];
+				resolveFirst(file);
+				await flushMicrotasks();
+				const staleFile = fixture.audio.pendingFileFor('soundchip_kick.wav');
+				if (staleFile) {
+					fixture.audio.completeFile(
+						Object.assign(staleFile, { data: { bytes: 'stale' } })
+					);
+				}
+				await flushMicrotasks();
+				const tweenCount = fixture.tweens.length;
+				const cached = fixture.audio.audioCache.has('soundchip_kick.wav');
+				const marked = Preview['loadedFiles'].has('soundchip_kick.wav');
+				const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+				const oldTweenStops = firstTween?.stop.mock.calls.length;
+				previewScene.shutdown();
+
+				expect(getFile).toHaveBeenCalledTimes(1);
+				expect(fixture.audio.load.audio).not.toHaveBeenCalled();
+				expect(cached).toBe(false);
+				expect(marked).toBe(false);
+				expect(sound).toBeNull();
+				expect(tweenCount).toBe(1);
+				expect(oldTweenStops).toBe(0);
+			}
+		);
+
+		it('cancels an in-flight load on an empty transition and does not restart the new tween', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn().mockResolvedValue(file)
+			} as any);
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			const staleFile = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.chipStore.set([]);
+			previewScene.updateData({
+				measureCount: 2,
+				notes: {},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+			await flushMicrotasks();
+			const firstTween = fixture.tweens[0];
+			fixture.audio.completeFile(Object.assign(staleFile, { data: { bytes: 'stale' } }));
+			await flushMicrotasks();
+			const tweenCount = fixture.tweens.length;
+			const cached = fixture.audio.audioCache.has('soundchip_kick.wav');
+			const marked = Preview['loadedFiles'].has('soundchip_kick.wav');
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const oldTweenStops = firstTween?.stop.mock.calls.length;
+			previewScene.shutdown();
+
+			expect(staleFile.resetXHR).toHaveBeenCalled();
+			expect(cached).toBe(false);
+			expect(marked).toBe(false);
+			expect(sound).toBeNull();
+			expect(tweenCount).toBe(1);
+			expect(oldTweenStops).toBe(0);
+		});
+
+		it('starts the latest setup even if an older provider lookup has not resolved', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			let resolveFirst!: (value: File) => void;
+			const getFile = vi
+				.fn()
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveFirst = resolve))
+				)
+				.mockResolvedValue(file);
+			vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+
+			await previewScene.create();
+			fixture.chipStore.set([...fixture.chips]);
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			const loaded = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.audio.completeFile(Object.assign(loaded, { data: { bytes: 'kick' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const tweensBeforeOldLookup = fixture.tweens.length;
+			resolveFirst(file);
+			await flushMicrotasks();
+			const tweensAfterOldLookup = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(tweensBeforeOldLookup).toBe(1);
+			expect(tweensAfterOldLookup).toBe(1);
+			expect(sound?.source).toBe(loaded.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it('coalesces a subscriber setup with an already-loading same File before playback', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			const getFile = vi.fn().mockResolvedValue(file);
+			vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			fixture.chipStore.set([...fixture.chips]);
+			await flushMicrotasks();
+			const tweensBeforeLoad = fixture.tweens.length;
+			const loaded = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.audio.completeFile(Object.assign(loaded, { data: { bytes: 'kick' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const tweenCount = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(getFile).toHaveBeenCalledTimes(2);
+			expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1);
+			expect(tweensBeforeLoad).toBe(0);
+			expect(tweenCount).toBe(1);
+			expect(sound?.source).toBe(loaded.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not revive a pending start after an empty subscriber transition', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			let resolveFirst!: (value: File) => void;
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn(() => new Promise<File>((resolve) => (resolveFirst = resolve)))
+			} as any);
+
+			await previewScene.create();
+			fixture.chipStore.set([]);
+			await flushMicrotasks();
+			resolveFirst(file);
+			await flushMicrotasks();
+			const staleFile = fixture.audio.pendingFileFor('soundchip_kick.wav');
+			if (staleFile) {
+				fixture.audio.completeFile(Object.assign(staleFile, { data: { bytes: 'stale' } }));
+			}
+			await flushMicrotasks();
+			const tweenCount = fixture.tweens.length;
+			const marked = Preview['loadedFiles'].has('soundchip_kick.wav');
+			previewScene.shutdown();
+
+			expect(fixture.audio.load.audio).not.toHaveBeenCalled();
+			expect(marked).toBe(false);
+			expect(tweenCount).toBe(0);
+		});
+
+		it('preserves a new empty-chart start across a repeated empty subscriber update', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			let resolveFirst!: (value: File) => void;
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn(() => new Promise<File>((resolve) => (resolveFirst = resolve)))
+			} as any);
+
+			await previewScene.create();
+			fixture.chipStore.set([]);
+			previewScene.updateData({
+				measureCount: 2,
+				notes: {},
+				bpm: 120,
+				bpmNotes: {},
+				startMeasure: 0
+			});
+			fixture.chipStore.set([]);
+			await flushMicrotasks();
+			const tweenCount = fixture.tweens.length;
+			resolveFirst(file);
+			await flushMicrotasks();
+			const staleFile = fixture.audio.pendingFileFor('soundchip_kick.wav');
+			if (staleFile) {
+				fixture.audio.completeFile(Object.assign(staleFile, { data: { bytes: 'stale' } }));
+			}
+			await flushMicrotasks();
+			const finalTweenCount = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(tweenCount).toBe(1);
+			expect(finalTweenCount).toBe(1);
+			expect(fixture.audio.load.audio).not.toHaveBeenCalled();
+		});
+
+		it('waits on current audio when resuming a stopped preview during loading', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn().mockResolvedValue(file)
+			} as any);
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			previewScene['boundStopPreview']();
+			previewScene['boundResumePreview']({ startMeasure: 0 });
+			await flushMicrotasks();
+			const tweensBeforeLoad = fixture.tweens.length;
+			fixture.fireEvents();
+			const loaded = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.audio.completeFile(Object.assign(loaded, { data: { bytes: 'kick' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const tweenCount = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(tweensBeforeLoad).toBe(0);
+			expect(tweenCount).toBe(1);
+			expect(sound?.source).toBe(loaded.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it('never restarts playback when a pending start resolves after shutdown', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			let resolveFirst!: (value: File) => void;
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn(() => new Promise<File>((resolve) => (resolveFirst = resolve)))
+			} as any);
+
+			await previewScene.create();
+			previewScene.shutdown();
+			resolveFirst(file);
+			await flushMicrotasks();
+
+			expect(fixture.tweens).toHaveLength(0);
+			expect(fixture.events).toHaveLength(0);
+			expect(fixture.audio.load.audio).not.toHaveBeenCalled();
+		});
+
+		it('plays only the latest File when a second start is waiting on its provider', async () => {
+			const fixture = createPlaybackHarness();
+			const fileA = new File(['a'], 'kick.wav');
+			const fileB = new File(['b'], 'kick.wav');
+			let resolveSecond!: (value: File) => void;
+			const getFile = vi
+				.fn()
+				.mockResolvedValueOnce(fileA)
+				.mockImplementationOnce(
+					() => new Promise<File>((resolve) => (resolveSecond = resolve))
+				);
+			vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			const pendingA = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			previewScene.startPreview();
+			fixture.audio.completeFile(Object.assign(pendingA, { data: { bytes: 'a' } }));
+			await flushMicrotasks();
+			const tweensBeforeB = fixture.tweens.length;
+			resolveSecond(fileB);
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(2));
+			const pendingB = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			const tweensDuringB = fixture.tweens.length;
+			fixture.audio.completeFile(Object.assign(pendingB, { data: { bytes: 'b' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			const tweenCount = fixture.tweens.length;
+			const marked = Preview['loadedFiles'].get('soundchip_kick.wav');
+			previewScene.shutdown();
+
+			expect(tweensBeforeB).toBe(0);
+			expect(tweensDuringB).toBe(0);
+			expect(tweenCount).toBe(1);
+			expect(marked).toBe(fileB);
+			expect(sound?.source).toBe(pendingB.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it('cancels an old key when a subscriber switches to another non-empty source', async () => {
+			const fixture = createPlaybackHarness();
+			const fileA = new File(['a'], 'kick.wav');
+			const fileB = new File(['b'], 'snare.wav');
+			const getFile = vi.fn((_id, name) =>
+				Promise.resolve(name === 'kick.wav' ? fileA : fileB)
+			);
+			vi.mocked(getFileProvider).mockReturnValue({ getFile } as any);
+
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			const pendingA = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.chipStore.set([{ fileName: 'snare.wav', id: 1, volume: 100 }]);
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(2));
+			const pendingB = fixture.audio.pendingFileFor('soundchip_snare.wav')!;
+			fixture.audio.completeFile(Object.assign(pendingA, { data: { bytes: 'a' } }));
+			const cachedA = fixture.audio.audioCache.has('soundchip_kick.wav');
+			fixture.audio.completeFile(Object.assign(pendingB, { data: { bytes: 'b' } }));
+			await flushMicrotasks();
+			fixture.fireEvents();
+			const sound = fixture.audio.soundApi.get('soundchip_snare.wav');
+			const tweenCount = fixture.tweens.length;
+			previewScene.shutdown();
+
+			expect(cachedA).toBe(false);
+			expect(Preview['loadedFiles'].has('soundchip_kick.wav')).toBe(false);
+			expect(tweenCount).toBe(1);
+			expect(sound?.source).toBe(pendingB.data);
+			expect(sound?.play).toHaveBeenCalledTimes(1);
+		});
+
+		it('keeps a paused preview stopped after the pending load completes', async () => {
+			const fixture = createPlaybackHarness();
+			const file = new File(['kick'], 'kick.wav');
+			vi.mocked(getFileProvider).mockReturnValue({
+				getFile: vi.fn().mockResolvedValue(file)
+			} as any);
+			await previewScene.create();
+			await vi.waitFor(() => expect(fixture.audio.load.audio).toHaveBeenCalledTimes(1));
+			previewScene['boundStopPreview']();
+			const loaded = fixture.audio.pendingFileFor('soundchip_kick.wav')!;
+			fixture.audio.completeFile(Object.assign(loaded, { data: { bytes: 'kick' } }));
+			await flushMicrotasks();
+			const tweenCount = fixture.tweens.length;
+			const eventCount = fixture.events.length;
+			const sound = fixture.audio.soundApi.get('soundchip_kick.wav');
+			previewScene.shutdown();
+
+			expect(tweenCount).toBe(0);
+			expect(eventCount).toBe(0);
+			expect(sound?.source).toBe(loaded.data);
+			expect(sound?.play).not.toHaveBeenCalled();
+		});
+
+		it('keeps time-zero events silent when a legitimate start has null chips', async () => {
+			const fixture = createPlaybackHarness();
+			fixture.chipStore.set(null);
+			await previewScene.create();
+			await flushMicrotasks();
+			expect(fixture.tweens).toHaveLength(1);
+			expect(fixture.events).toHaveLength(1);
+			expect(() => fixture.fireEvents()).not.toThrow();
+			expect(fixture.audio.soundApi.get).not.toHaveBeenCalled();
+			previewScene.shutdown();
+		});
+	});
 
 	it('should initialize with correct properties', () => {
 		expect(previewScene).toBeDefined();

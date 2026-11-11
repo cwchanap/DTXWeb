@@ -66,6 +66,9 @@ export class Preview extends BaseGame {
 
 	private setupSoundsSeq = 0;
 
+	private previewSoundSetup: Promise<void> | null = null;
+	private pendingPreviewStart: 'with-sounds' | 'without-sounds' | null = null;
+
 	// Phaser-free timing/measure-offset calculations, kept in sync with this
 	// scene's chart data at the same points it was previously updated directly
 	// (init() and updateData()).
@@ -163,12 +166,18 @@ export class Preview extends BaseGame {
 		// immediately with the current value on subscribe; skip that initial
 		// replay so we don't redundantly reload sounds we just set up above.
 		let skipInitialSoundChipReplay = true;
-		this.storeUnsubscribe = store.currentSoundChip.subscribe(async () => {
+		this.storeUnsubscribe = store.currentSoundChip.subscribe(async (soundChips) => {
 			if (skipInitialSoundChipReplay) {
 				skipInitialSoundChipReplay = false;
 				return;
 			}
-			await this.setupSoundsAsync();
+			if (
+				!soundChips?.some((chip) => chip.fileName) &&
+				this.pendingPreviewStart === 'with-sounds'
+			) {
+				this.pendingPreviewStart = null;
+			}
+			await this.setupSoundsForPreview();
 		});
 
 		this.isInitialized = true;
@@ -186,6 +195,8 @@ export class Preview extends BaseGame {
 	 * Pause the preview (stop audio and tweens but keep scene alive)
 	 */
 	private pausePreview(): void {
+		this.pendingPreviewStart = null;
+
 		// Stop preview tween
 		if (this.previewTween) {
 			this.previewTween.pause();
@@ -207,6 +218,12 @@ export class Preview extends BaseGame {
 	private resumePreview(): void {
 		// Always restart preview since startMeasure may have changed
 		// Skip sound loading if already done
+		if (this.previewSoundSetup) {
+			this.pendingPreviewStart = get(store.currentSoundChip)?.some((chip) => chip.fileName)
+				? 'with-sounds'
+				: 'without-sounds';
+			return;
+		}
 		this.startPreviewWithoutSoundReload();
 	}
 
@@ -263,19 +280,24 @@ export class Preview extends BaseGame {
 	}
 
 	private async setupSoundsAsync(): Promise<void> {
+		const generation = this.lifecycleGeneration;
+		const setupSeq = ++this.setupSoundsSeq;
 		const soundChips = get(store.currentSoundChip);
 		const currentSimfileID = get(store.currentSimfileID);
-		const fileProvider = getFileProvider();
-
-		if (!soundChips) return;
 
 		// Filter out sound chips that are already loaded to avoid redundant file operations
 		const uniqueSoundChips = new Map<string, SoundChip>();
-		for (const soundChip of soundChips) {
+		for (const soundChip of soundChips ?? []) {
 			if (!soundChip.fileName) continue;
 			const cacheKey = this.getCacheKey(soundChip);
 			if (!uniqueSoundChips.has(cacheKey)) {
 				uniqueSoundChips.set(cacheKey, soundChip);
+			}
+		}
+
+		for (const [cacheKey, inflight] of this.inflightLoads) {
+			if (!uniqueSoundChips.has(cacheKey)) {
+				inflight.cancel();
 			}
 		}
 
@@ -284,8 +306,7 @@ export class Preview extends BaseGame {
 			return;
 		}
 
-		const generation = this.lifecycleGeneration;
-		const setupSeq = ++this.setupSoundsSeq;
+		const fileProvider = getFileProvider();
 
 		// Create promises for unloaded sound chips only
 		const loadPromises = [...uniqueSoundChips].map(async ([cacheKey, soundChip]) => {
@@ -639,7 +660,25 @@ export class Preview extends BaseGame {
 
 	startPreview() {
 		// Load sounds first if needed
-		this.setupSoundsAsync().then(() => {
+		this.pendingPreviewStart = get(store.currentSoundChip)?.some((chip) => chip.fileName)
+			? 'with-sounds'
+			: 'without-sounds';
+		this.setupSoundsForPreview();
+	}
+
+	private setupSoundsForPreview(): Promise<void> {
+		const generation = this.lifecycleGeneration;
+		const setup = this.setupSoundsAsync();
+		this.previewSoundSetup = setup;
+		return setup.then(() => {
+			if (generation !== this.lifecycleGeneration || this.previewSoundSetup !== setup) {
+				return;
+			}
+			this.previewSoundSetup = null;
+			if (this.pendingPreviewStart === null) {
+				return;
+			}
+			this.pendingPreviewStart = null;
 			// Then start preview
 			this.startPreviewWithoutSoundReload();
 		});
@@ -745,7 +784,7 @@ export class Preview extends BaseGame {
 
 			// BGM notes need to play even if they're before the start point (with seek)
 			this.time.delayedCall(Math.max(0, delay) * 1000, () => {
-				const soundChip = get(store.currentSoundChip).find(
+				const soundChip = (get(store.currentSoundChip) ?? []).find(
 					(chip) => chip.id === parseInt(noteChip.noteID, 36)
 				);
 
@@ -826,7 +865,7 @@ export class Preview extends BaseGame {
 			// Only schedule notes that will play after the start time
 			if (delay >= 0) {
 				this.time.delayedCall(delay * 1000, () => {
-					const soundChip = get(store.currentSoundChip).find(
+					const soundChip = (get(store.currentSoundChip) ?? []).find(
 						(chip) => chip.id === parseInt(noteChip.noteID, 36)
 					);
 					if (soundChip) {
@@ -1077,6 +1116,8 @@ export class Preview extends BaseGame {
 
 	shutdown() {
 		this.lifecycleGeneration++;
+		this.previewSoundSetup = null;
+		this.pendingPreviewStart = null;
 		for (const inflightLoad of [...this.inflightLoads.values()]) {
 			inflightLoad.cancel();
 		}

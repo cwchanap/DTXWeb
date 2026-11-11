@@ -92,6 +92,7 @@ describe('Preview Scene', () => {
 
 		// Mock URL.createObjectURL
 		global.URL.createObjectURL = vi.fn().mockReturnValue('blob:mock-url');
+		global.URL.revokeObjectURL = vi.fn();
 	});
 
 	afterEach(() => {
@@ -2493,14 +2494,14 @@ describe('Preview Scene', () => {
 
 			fixture.shutdownLoader();
 			previewScene.shutdown();
+			fixture.restartLoader();
 
 			const secondPass = previewScene['setupSoundsAsync']();
 			await vi.advanceTimersByTimeAsync(0);
-			const pendingFile = fixture.pendingFileFor(cacheKey);
-			if (pendingFile) {
-				pendingFile.data = { bytes: 'kick' };
-				fixture.completeFile(pendingFile);
-			}
+			const pendingFile = fixture.pendingFileFor(cacheKey)!;
+			expect(pendingFile.state).toBe('loading');
+			pendingFile.data = { bytes: 'kick' };
+			fixture.completeFile(pendingFile);
 			await vi.advanceTimersByTimeAsync(11000);
 			await Promise.all([firstPass, secondPass]);
 

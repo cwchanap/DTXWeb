@@ -47,6 +47,9 @@
 			// Leading spaces and trailing spaces/dots are also folded because Windows
 			// extraction strips them (' kick.wav' and 'kick.wav' land on one file).
 			const seenPaths = new Map<string, string>();
+			// Directory prefixes claimed by earlier entries: 'a.wav' the file and
+			// 'a.wav/' the folder cannot coexist at extraction either.
+			const seenDirs = new Map<string, string>();
 			const missingAudio: string[] = [];
 			const duplicates: string[] = [];
 			const pendingDtx: { name: string; content: string }[] = [];
@@ -54,12 +57,24 @@
 
 			const claimName = (path: string): boolean => {
 				const key = zipCollisionKey(path);
-				const firstPath = seenPaths.get(key);
+				const segments = key.split('/');
+				const ancestors = segments
+					.slice(0, -1)
+					.map((_, i) => segments.slice(0, i + 1).join('/'));
+				let firstPath = seenPaths.get(key) ?? seenDirs.get(key);
+				for (const dir of ancestors) {
+					firstPath ??= seenPaths.get(dir);
+				}
 				if (firstPath !== undefined) {
 					duplicates.push(`${path} conflicts with ${firstPath}`);
 					return false;
 				}
 				seenPaths.set(key, path);
+				for (const dir of ancestors) {
+					if (!seenDirs.has(dir)) {
+						seenDirs.set(dir, path);
+					}
+				}
 				return true;
 			};
 

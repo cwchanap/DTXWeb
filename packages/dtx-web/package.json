@@ -21,20 +21,20 @@
 		"cf-typegen": "wrangler types --env-interface CloudflareBindings"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^5.20261103.1",
+		"@cloudflare/workers-types": "^5.20261109.1",
 		"@graphql-codegen/cli": "^7.4.6",
 		"@graphql-codegen/typed-document-node": "^7.2.0",
 		"@graphql-codegen/typescript": "^6.1.0",
 		"@graphql-codegen/typescript-operations": "^6.2.0",
 		"@graphql-typed-document-node/core": "^3.2.0",
 		"@iconify/svelte": "^5.2.4",
-		"@lucide/svelte": "^1.66.0",
+		"@lucide/svelte": "^1.70.0",
 		"@skeletonlabs/skeleton": "^3.1.2",
 		"@skeletonlabs/skeleton-svelte": "^1.2.3",
 		"@sveltejs/adapter-cloudflare": "^7.2.9",
 		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^5.0.3",
-		"@tailwindcss/vite": "^4.3.4",
+		"@tailwindcss/vite": "^4.3.5",
 		"@testing-library/dom": "^10.4.2",
 		"@testing-library/jest-dom": "^7.0.1",
 		"@testing-library/svelte": "^5.4.2",
@@ -54,9 +54,9 @@
 	"dependencies": {
 		"@dtx/common": "*",
 		"@dtx/ui-components": "*",
-		"better-auth": "1.7.15",
+		"better-auth": "1.7.18",
 		"dayjs": "^1.11.23",
-		"graphql": "^17.0.2",
+		"graphql": "^17.1.0",
 		"graphql-request": "^7.1.2",
 		"jszip": "^3.10.2",
 		"phaser": "^3.88.2",
@@ -67,7 +67,7 @@
 		"zod": "^4.6.7"
 	},
 	"optionalDependencies": {
-		"@rollup/rollup-linux-x64-gnu": "^4.67.4",
+		"@rollup/rollup-linux-x64-gnu": "^4.68.0",
 		"lightningcss-linux-x64-gnu": "^1.33.0"
 	}
 }

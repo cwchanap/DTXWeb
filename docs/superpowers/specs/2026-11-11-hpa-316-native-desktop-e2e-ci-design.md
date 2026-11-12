@@ -10,10 +10,11 @@ Execute the desktop app's **existing** full native WebdriverIO/Tauri E2E suite o
 
 ## Current repository evidence (main, reviewed 2026-11-11)
 
-- `.github/workflows/desktop-e2e-test.yml` has a single `ubuntu-latest` job. It installs Linux WebKit/GTK and uses `xvfb-run`, POSIX `source` and `tee`; these steps cannot be copied unchanged onto Windows.
+- `.github/workflows/desktop-e2e-test.yml` has a single `ubuntu-latest` job. Its Linux-specific steps install WebKit/GTK and wrap tests with `xvfb-run`; Git Bash, `source`, `tee`, and `set -o pipefail` are available on GitHub-hosted Windows runners and already used in `.github/workflows/desktop-build-deploy.yml`.
 - `packages/e2e-desktop/wdio.conf.ts` already selects `driverProvider: 'embedded'`, and computes `dtx-desktop.exe` for Windows versus `dtx-desktop` elsewhere, using `target-e2e/debug`.
 - `packages/dtx-desktop/src-tauri/src/lib.rs` registers `tauri-plugin-wdio` and `tauri-plugin-wdio-webdriver` only with the E2E feature in debug builds. The E2E Tauri configuration already grants `wdio:default` and `wdio-webdriver:default` and disables bundling.
 - `packages/e2e-desktop/package.json`: `e2e:build` builds the debug Tauri app with E2E features and its own target directory; `e2e:run` runs WDIO **plus** the relaunch and Google Drive crash-recovery scripts. Keep all three.
+- Five lightweight `bun:test` harness suites exist under `packages/e2e-desktop/{support,scripts}/*.test.mjs`, but the package has no `test` script and `.github/scripts/ci-affected-scope.sh` excludes it from the normal unit-test run. `relaunch-smoke.test.mjs` uses process-global `mock.module` for `standalone-session.ts`; running all harness suites together contaminates tests. Run **each file in a separate `bun test` invocation** before the costly native build.
 - Current E2E workflow also instruments Rust and uploads `desktop-e2e-rust` LCOV to Codecov; `codecov.yml` gives this flag carry-forward. Preserve it instead of deleting coverage casually.
 - `HPA-315` (native folder-dialog automation) is separate work and depends on target-OS CI. Its dialog-specific tests are **not** part of this ticket.
 
@@ -21,15 +22,23 @@ Execute the desktop app's **existing** full native WebdriverIO/Tauri E2E suite o
 
 ### 1. Two native matrix entries; no new harness
 
-Replace the Ubuntu desktop E2E runner with `macos-latest` and `windows-latest` (one job per OS). Keep the existing workflow triggers, draft-PR skip behavior, pinned toolchain, Bun version, shared-package builds, Rust cache, E2E fixture isolation, existing tests, and `@wdio/tauri-service`. No Linux E2E acceptance job, third-party hosted driver, new test framework, or package upgrades.
+Replace the Ubuntu desktop E2E runner with `macos-latest` and `windows-latest` (one job per OS). Set **`strategy.fail-fast: false`** so a failure on one platform never cancels the other platform's test result or macOS coverage upload. Keep the existing workflow triggers, draft-PR skip behavior, pinned toolchain, Bun version, shared-package builds, Rust cache, E2E fixture isolation, existing tests, and `@wdio/tauri-service`. No Linux E2E acceptance job, third-party hosted driver, new test framework, or package upgrades.
 
 The existing `embedded` provider is supported on both platforms and does **not** need `tauri-driver` or a separate Edge driver installation. See [Tauri WebDriver documentation](https://tauri.app/develop/tests/webdriver/) and [WebdriverIO platform support](https://webdriver.io/docs/desktop-testing/tauri/platform-support). Validate this against the actual pinned versions and hosted runners; documentation is not proof of a passing CI session.
 
 ### 2. Use platform-neutral build/test commands
 
-Invoke the existing Bun scripts for the actual build and test on both OSes; avoid Linux-only `apt-get` and `xvfb-run`. Do not require `source coverage-env.sh` on Windows. Prefer small OS-conditional workflow steps to new cross-platform shell abstractions.
+Keep **one `shell: bash` build step and one `shell: bash` run step** for both OSes. Git Bash is available on `windows-latest`. Remove only Linux-specific `apt-get` and `xvfb-run`; retain `set -o pipefail` and `tee` so failures are not masked. In each shared step, source `packages/dtx-desktop/src-tauri/coverage-env.sh` **only** when `RUNNER_OS=macOS`. Condition coverage preparation/report/upload steps with `if: runner.os == 'macOS'`; do not fork the build and test steps by OS.
 
-Keep `DTX_DESKTOP_BINARY` optional: the existing `wdio.conf.ts` and standalone scripts already resolve the correct host binary. If hosted runners expose a genuine path or process issue, correct it in the same PR with a targeted regression test, not a rewrite of the harness.
+Before the native build on **both** OSes, run the five harness unit-test files, one process per file, to avoid the cross-suite `mock.module` leak:
+
+```bash
+for f in support/*.test.mjs scripts/*.test.mjs; do
+  bun test "./$f" || exit 1
+done
+```
+
+Keep `DTX_DESKTOP_BINARY` optional: the existing `wdio.conf.ts` and standalone scripts already resolve the correct host binary. If hosted runners expose a genuine path or process issue, correct it in the same PR with a targeted regression test (covered by the isolated CI test step), not a rewrite of the harness.
 
 ### 3. Retain E2E Rust coverage on macOS only
 
@@ -39,20 +48,21 @@ On **Windows**, compile and run uninstrumented native E2E. Windows Rust coverage
 
 ### 4. Keep failures attributable to the correct OS
 
-Both OS matrix entries must independently report test failure. Upload per-OS E2E logs on failure; preserve nonzero process exits instead of letting a pipe or log step conceal them. Only add small diagnostic steps (binary existence, WebDriver startup logs) if CI indicates they are needed. Do not broaden this issue to unrelated production code changes.
+With `strategy.fail-fast: false`, both OS matrix entries independently report success or failure, even if the other fails. Upload per-OS E2E logs on failure; preserve nonzero process exits using `set -o pipefail`. Record CI-run evidence and caveats in the **PR body Verification checklist**, not in the design/plan files. Only add small diagnostic steps (binary existence, WebDriver startup logs) if CI indicates they are needed. Do not broaden this issue to unrelated production code changes.
 
 ## Acceptance contract
 
 | Target | Required end-to-end evidence |
 | --- | --- |
-| macOS | On a hosted macOS runner: build debug E2E binary, launch and connect the embedded WebDriver session, complete WDIO specs plus relaunch and crash-recovery scripts; generate the Rust E2E LCOV report and upload the `desktop-e2e-rust` flag. |
-| Windows | On a hosted Windows runner: build the debug `.exe`, launch and connect an embedded WebDriver session in WebView2, complete the **same** WDIO, relaunch and crash-recovery scripts without any Linux setup, native-driver installer, or Rust coverage requirement. |
-| CI | A ready-for-review PR touching the E2E workflow produces two distinct target-OS jobs. A failing platform fails its matrix entry; diagnostics identify the OS. Scope-based workflow triggers and existing draft skip behavior remain intact. |
+| macOS | On a hosted macOS runner: pass isolated harness unit tests; build debug E2E binary, launch and connect the embedded WebDriver session, complete WDIO specs plus relaunch and crash-recovery scripts; generate Rust E2E LCOV and upload the `desktop-e2e-rust` flag. Visually confirm the normal desktop workspace/library UI is rendered. |
+| Windows | On a hosted Windows runner: pass isolated harness unit tests; build the debug `.exe`, launch and connect an embedded WebDriver session in WebView2, complete the **same** WDIO, relaunch and crash-recovery scripts without any Linux setup, native-driver installer, or Rust coverage requirement. Visually confirm the normal desktop workspace/library UI is rendered. |
+| CI | A ready-for-review PR touching the E2E workflow produces two distinct target-OS jobs with `fail-fast: false`; a failing platform does not cancel the other. Diagnostics identify the OS. Scope-based workflow triggers and existing draft skip behavior remain intact. |
 
-No Android or Linux E2E acceptance. Existing independent CI for those environments, if any, is outside this ticket.
+No UI mockup is attached to HPA-316; the visual checks compare to the existing desktop UI rather than to a proposed redesign. No Android or Linux E2E acceptance. Existing independent CI for those environments, if any, is outside this ticket.
 
 ## Risks and limits
 
+- **Native single-instance guard:** `tauri_plugin_single_instance` runs on macOS and Windows, and the E2E app uses the same `com.hapadona.drumery.e2e` identifier for sequential WDIO/relaunch/crash-recovery launches. If a prior process is still alive, a subsequent app launch can exit early (possibly with exit code 0), appearing to be a WebDriver startup failure. First inspect for an existing `dtx-desktop` process and the child exit code; do **not** add sleeps or blindly raise timeouts. If reproduced in native CI, make the early-exit error show the exit code, then fix the demonstrated lifecycle defect in this PR.
 - **Host GUI / WebView differences:** an embedded driver documented as cross-platform may still fail to start in hosted macOS or Windows sessions. Prove real session startup in CI; investigate Tauri bundle path, process lifetime, and runner display permissions before increasing timeouts.
 - **Windows process and shell semantics:** the current relaunch and crash-recovery scripts deliberately own PIDs and ports. A platform-specific failure must be fixed locally, without replacing the ownership handshake with a less reliable generic helper.
 - **Coverage preservation:** the macOS instrumented app must still launch and collect LCOV. Do not duplicate Codecov uploads or weaken coverage configuration as a workaround.

@@ -64,14 +64,36 @@ export type IpcDiagnosticInstallOutcome =
  * HPA-316 Windows diagnostic: the Rust IPC parser rejects postMessage-path
  * messages whose `callback`/`error` field is `null`
  * (`JSON error: invalid type: null, expected u32`), so those invokes never run.
- * This wrapper records the rejected message bodies for the spec to dump into
- * the runner log, identifying exactly which commands are being dropped.
+ * This wrapper records WHICH command and field were rejected — command name
+ * and null field only; IPC payloads, credentials, and any other message
+ * content are never stored. Unparseable input is recorded as `unparseable`.
  *
  * Passed DIRECTLY to browser.execute: WDIO serializes the function source, so
  * it must stay self-contained (no module-level references) and zero-arg; the
  * page's global window is the injection point (tests stub globalThis.window).
  */
 export const installIpcDiagnostics = (): IpcDiagnosticInstallOutcome => {
+	// Summarizes a rejected message as `cmd=<name> null=<field(s)>`; null when
+	// the regex hit was a nested false positive; `unparseable` without any
+	// message content when JSON parsing fails.
+	const describeRejectedMessage = (text: string): string | null => {
+		try {
+			const parsed = JSON.parse(text) as {
+				cmd?: unknown;
+				callback?: unknown;
+				error?: unknown;
+			};
+			const nullFields = [
+				parsed.callback === null ? 'callback' : null,
+				parsed.error === null ? 'error' : null
+			].filter(Boolean);
+			if (nullFields.length === 0) return null;
+			const cmd = typeof parsed.cmd === 'string' ? parsed.cmd : 'unknown';
+			return `cmd=${cmd} null=${nullFields.join('+')}`;
+		} catch {
+			return 'unparseable';
+		}
+	};
 	const targetWindow = window as unknown as IpcDiagnosticWindow;
 	if (targetWindow.__wdio_ipc_diag_installed) return 'already-installed';
 	const target = targetWindow.ipc;
@@ -85,9 +107,12 @@ export const installIpcDiagnostics = (): IpcDiagnosticInstallOutcome => {
 					typeof text === 'string' &&
 					(/"callback"\s*:\s*null/.test(text) || /"error"\s*:\s*null/.test(text))
 				) {
-					const captured =
-						targetWindow.__wdio_ipc_diag__ ?? (targetWindow.__wdio_ipc_diag__ = []);
-					if (captured.length < 20) captured.push(text.slice(0, 600));
+					const summary = describeRejectedMessage(text);
+					if (summary) {
+						const captured =
+							targetWindow.__wdio_ipc_diag__ ?? (targetWindow.__wdio_ipc_diag__ = []);
+						if (captured.length < 20) captured.push(summary);
+					}
 				}
 			} catch {
 				// Diagnostics must never break IPC delivery.
@@ -102,8 +127,9 @@ export const installIpcDiagnostics = (): IpcDiagnosticInstallOutcome => {
 };
 
 /**
- * Companion to installIpcDiagnostics: returns the captured null-callback IPC
- * message bodies. Passed DIRECTLY to browser.execute (self-contained source).
+ * Companion to installIpcDiagnostics: returns the captured rejection summaries
+ * (command name + null field only). Passed DIRECTLY to browser.execute
+ * (self-contained source).
  */
 export const collectIpcDiagnostics = (): string[] =>
 	(window as unknown as { __wdio_ipc_diag__?: string[] }).__wdio_ipc_diag__ ?? [];

@@ -175,12 +175,8 @@ export const snapshotGoogleDriveE2e = async (): Promise<E2eDriveSnapshot> =>
 		({ core }) => core.invoke('snapshot_google_drive_e2e') as unknown as E2eDriveSnapshot
 	);
 
-export type IpcCallOutcome = {
-	ok: boolean;
-	value?: unknown;
-	error?: string;
-	timedOut?: boolean;
-};
+export type IpcCallOutcome =
+	{ ok: true; exists?: boolean; connected?: boolean } | { ok: false; timedOut?: boolean };
 
 export type GoogleDriveConnectionDiagnostics = {
 	session: IpcCallOutcome;
@@ -192,8 +188,11 @@ export type GoogleDriveConnectionDiagnostics = {
  * failure (the store only records the error), so the captured logs cannot tell
  * apart "refresh never ran", "refresh errored", and "refresh returned
  * connected:false". This probe asks both commands directly at the IPC
- * boundary; each call races a timeout so a hanging invoke cannot stall the
- * spec. Remove once the root cause is confirmed.
+ * boundary and reports ONLY safe facts — session existence and Drive
+ * `connected` booleans, or a generic failure/timeout marker; raw values,
+ * error text, and any credentials never leave the page. Each call races a
+ * timeout so a hanging invoke cannot stall the spec. Remove once the root
+ * cause is confirmed.
  */
 export const probeGoogleDriveConnectionDiagnostics =
 	async (): Promise<GoogleDriveConnectionDiagnostics> =>
@@ -201,16 +200,13 @@ export const probeGoogleDriveConnectionDiagnostics =
 			const withTimeout = (
 				promise: Promise<unknown>,
 				timeoutMs: number
-			): Promise<IpcCallOutcome> =>
+			): Promise<{ ok: boolean; value?: unknown; timedOut?: boolean }> =>
 				Promise.race([
 					promise.then(
 						(value) => ({ ok: true, value }),
-						(error) => ({
-							ok: false,
-							error: error instanceof Error ? error.message : String(error)
-						})
+						() => ({ ok: false })
 					),
-					new Promise<IpcCallOutcome>((resolve) =>
+					new Promise<{ ok: boolean; timedOut: boolean }>((resolve) =>
 						setTimeout(() => resolve({ ok: false, timedOut: true }), timeoutMs)
 					)
 				]);
@@ -223,8 +219,22 @@ export const probeGoogleDriveConnectionDiagnostics =
 					core.invoke('get_google_drive_connection_state') as unknown as Promise<unknown>,
 					5000
 				)
-			]).then(([session, connection]) => ({
-				session,
-				connection
-			})) as unknown as GoogleDriveConnectionDiagnostics;
+			]).then(([session, connection]) => {
+				const genericFailure = (raw: { timedOut?: boolean }): IpcCallOutcome =>
+					raw.timedOut ? { ok: false, timedOut: true } : { ok: false };
+				return {
+					session: session.ok
+						? { ok: true, exists: session.value != null }
+						: genericFailure(session),
+					connection: connection.ok
+						? {
+								ok: true,
+								connected:
+									typeof connection.value === 'object' &&
+									connection.value !== null &&
+									(connection.value as { connected?: unknown }).connected === true
+							}
+						: genericFailure(connection)
+				};
+			}) as unknown as GoogleDriveConnectionDiagnostics;
 		});

@@ -155,8 +155,9 @@ const openAuthenticatedLinkedSong = async ({
 	await waitForUiDisplayed('h2', { text: 'Song Details' });
 
 	// Temporary HPA-316 Windows diagnostics: probe the seeded Drive connection
-	// at the IPC boundary and capture the null-callback IPC messages the Rust
-	// IPC parser rejects. Remove once the root cause is confirmed.
+	// at the IPC boundary (safe booleans only — no payload contents) and capture
+	// which null-callback IPC commands the Rust IPC parser rejects (command name
+	// + null field only). Remove once the root cause is confirmed.
 	console.info(
 		`[gdrive-diag] connection probe: ${JSON.stringify(await probeGoogleDriveConnectionDiagnostics())}`
 	);

@@ -1,16 +1,29 @@
 import { expect, test } from 'bun:test';
 
-const { collectIpcDiagnostics, installIpcDiagnostics } = await import('./app.ts');
+const { collectIpcDiagnostics, dumpIpcDiagnosticsSafely, installIpcDiagnostics } =
+	await import('./app.ts');
 
-const nullCallbackMessage =
-	'{"cmd":"plugin:event|listen","callback":null,"error":1,"payload":{},"options":null}';
-const numericCallbackMessage =
-	'{"cmd":"get_workspace_root","callback":42,"error":43,"payload":null,"options":null}';
-const nullErrorMessage =
-	'{"cmd":"get_workspace_root","callback":1,"error":null,"payload":null,"options":null}';
-const secretBearerMessage =
-	'{"cmd":"plugin:event|listen","event":"auth://session","payload":{"token":"SUPER-SECRET-TOKEN","session":{"user":{"email":"secret@example.com"}}},"callback":null,"error":1}';
-const truncatedMessage = '{"cmd":"leak-me","callback":null,"payload":{"token":"TRUNCATED-SECRET';
+// Mirrors wry 0.57.0 exactly, on both WebView2 and WKWebView:
+//   Object.defineProperty(window, 'ipc', { value: Object.freeze({ postMessage: ... }) })
+// (src/webview2/mod.rs:952 and src/wkwebview/mod.rs:642). The property and the
+// object are both locked: postMessage cannot be wrapped in page code.
+const wryStyleWindow = () => {
+	const sent = [];
+	const targetWindow = {
+		fetch: async (input, init) => {
+			return { status: 200, url: String(input) };
+		},
+		__TAURI_INTERNALS__: { callbacks: { size: 3 } }
+	};
+	Object.defineProperty(targetWindow, 'ipc', {
+		value: Object.freeze({
+			postMessage: (data) => {
+				sent.push(data);
+			}
+		})
+	});
+	return { targetWindow, sent };
+};
 
 const withPageWindow = (targetWindow, run) => {
 	const previousWindow = globalThis.window;
@@ -23,166 +36,219 @@ const withPageWindow = (targetWindow, run) => {
 	}
 };
 
-const fakeWindow = ({ postMessage }) => {
-	const calls = [];
-	return {
-		window: {
-			ipc: {
-				postMessage: (data) => {
-					calls.push(data);
-				}
-			}
-		},
-		calls
-	};
+const withPageWindowAsync = async (targetWindow, run) => {
+	const previousWindow = globalThis.window;
+	globalThis.window = targetWindow;
+	try {
+		await run();
+	} finally {
+		if (previousWindow === undefined) delete globalThis.window;
+		else globalThis.window = previousWindow;
+	}
 };
 
-test('installIpcDiagnostics wraps postMessage once and reports already-installed afterwards', () => {
-	const { window: targetWindow } = fakeWindow({});
+const captureConsoleInfo = async (run) => {
+	const lines = [];
+	const originalInfo = console.info;
+	console.info = (...args) => {
+		lines.push(args.map((argument) => String(argument)).join(' '));
+	};
+	try {
+		await run();
+	} finally {
+		console.info = originalInfo;
+	}
+	return lines;
+};
+
+test('installIpcDiagnostics installs on the real wry frozen ipc shape without touching it', () => {
+	const { targetWindow, sent } = wryStyleWindow();
 	withPageWindow(targetWindow, () => {
+		const originalPostMessage = targetWindow.ipc.postMessage;
+		const originalFetch = targetWindow.fetch;
 		const outcome = installIpcDiagnostics();
+
 		expect(outcome).toBe('installed');
-		expect(installIpcDiagnostics()).toBe('already-installed');
+		// The frozen wry channel is left byte-for-byte intact: same descriptor,
+		// same function identity, still able to deliver.
+		const descriptor = Object.getOwnPropertyDescriptor(targetWindow, 'ipc');
+		expect(descriptor.writable).toBeFalse();
+		expect(descriptor.configurable).toBeFalse();
+		expect(Object.isFrozen(descriptor.value)).toBeTrue();
+		expect(targetWindow.ipc.postMessage).toBe(originalPostMessage);
+		targetWindow.ipc.postMessage('ping');
+		expect(sent).toEqual(['ping']);
+		// Observation went through the writable seam instead.
+		expect(targetWindow.fetch).not.toBe(originalFetch);
 	});
 });
 
-test('installIpcDiagnostics reports unavailable when window.ipc.postMessage is missing', () => {
-	withPageWindow({}, () => {
-		expect(installIpcDiagnostics()).toBe('window-ipc-unavailable');
-	});
-	withPageWindow({ ipc: {} }, () => {
-		expect(installIpcDiagnostics()).toBe('window-ipc-unavailable');
-	});
-});
-
-test('collectIpcDiagnostics returns an empty array before anything is captured', () => {
-	withPageWindow({}, () => {
-		expect(collectIpcDiagnostics()).toEqual([]);
-	});
-});
-
-test('installIpcDiagnostics records rejected command name and null field, forwarding unchanged', () => {
-	const { window: targetWindow, calls } = fakeWindow({});
+test('installIpcDiagnostics reports already-installed and wraps fetch only once', () => {
+	const { targetWindow } = wryStyleWindow();
 	withPageWindow(targetWindow, () => {
+		expect(installIpcDiagnostics()).toBe('installed');
+		const wrappedFetch = targetWindow.fetch;
+		expect(installIpcDiagnostics()).toBe('already-installed');
+		expect(targetWindow.fetch).toBe(wrappedFetch);
+	});
+});
+
+test('installIpcDiagnostics reports unavailable when Tauri internals are missing', () => {
+	withPageWindow({ fetch: async () => ({ status: 200 }) }, () => {
+		expect(installIpcDiagnostics()).toBe('tauri-internals-unavailable');
+	});
+	withPageWindow({ fetch: async () => ({ status: 200 }), __TAURI_INTERNALS__: {} }, () => {
+		expect(installIpcDiagnostics()).toBe('tauri-internals-unavailable');
+	});
+});
+
+test('installIpcDiagnostics reports unavailable when window.fetch is missing', () => {
+	withPageWindow({ __TAURI_INTERNALS__: { callbacks: { size: 0 } } }, () => {
+		expect(installIpcDiagnostics()).toBe('fetch-unavailable');
+	});
+});
+
+test('collectIpcDiagnostics returns null before anything is installed', () => {
+	withPageWindow({}, () => {
+		expect(collectIpcDiagnostics()).toBeNull();
+	});
+});
+
+test('fetch wrapper records IPC sends by command name and forwards them unchanged', async () => {
+	const { targetWindow } = wryStyleWindow();
+	const forwarded = [];
+	targetWindow.fetch = async (input, init) => {
+		forwarded.push({ input, init });
+		return { status: 200 };
+	};
+	await withPageWindowAsync(targetWindow, async () => {
 		installIpcDiagnostics();
+		await targetWindow.fetch('http://ipc.localhost/get_google_drive_connection_state', {
+			method: 'POST',
+			headers: { 'Tauri-Callback': '7' }
+		});
 
-		targetWindow.ipc.postMessage(nullCallbackMessage);
-		targetWindow.ipc.postMessage(numericCallbackMessage);
-		targetWindow.ipc.postMessage(nullErrorMessage);
-
-		expect(calls).toEqual([nullCallbackMessage, numericCallbackMessage, nullErrorMessage]);
-		expect(collectIpcDiagnostics()).toEqual([
-			'cmd=plugin:event|listen null=callback',
-			'cmd=get_workspace_root null=error'
+		expect(forwarded).toHaveLength(1);
+		expect(forwarded[0].input).toBe('http://ipc.localhost/get_google_drive_connection_state');
+		expect(forwarded[0].init).toEqual({ method: 'POST', headers: { 'Tauri-Callback': '7' } });
+		expect(collectIpcDiagnostics().fetchTransport).toEqual([
+			'fetch cmd=get_google_drive_connection_state status=200'
 		]);
 	});
 });
 
-test('installIpcDiagnostics never stores secrets from a credential-bearing payload', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
+test('fetch wrapper records the ipc:// scheme used on non-Windows platforms', async () => {
+	const { targetWindow } = wryStyleWindow();
+	await withPageWindowAsync(targetWindow, async () => {
 		installIpcDiagnostics();
-
-		targetWindow.ipc.postMessage(secretBearerMessage);
-
-		expect(collectIpcDiagnostics()).toEqual(['cmd=plugin:event|listen null=callback']);
-		const stored = collectIpcDiagnostics().join(' ');
-		expect(stored).not.toContain('SUPER-SECRET-TOKEN');
-		expect(stored).not.toContain('secret@example.com');
-		expect(stored).not.toContain('payload');
+		await targetWindow.fetch('ipc://localhost/get_workspace_root');
+		expect(collectIpcDiagnostics().fetchTransport).toEqual([
+			'fetch cmd=get_workspace_root status=200'
+		]);
 	});
 });
 
-test('installIpcDiagnostics records unparseable rejected input without its contents', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
+test('fetch wrapper never records non-IPC traffic or its contents', async () => {
+	const { targetWindow } = wryStyleWindow();
+	await withPageWindowAsync(targetWindow, async () => {
 		installIpcDiagnostics();
+		await targetWindow.fetch('https://api.example.test/graphql?token=API-SECRET');
+		await targetWindow.fetch('http://ipc.localhost/get_current_session', {
+			headers: { Authorization: 'Bearer HEADER-SECRET' }
+		});
 
-		targetWindow.ipc.postMessage(truncatedMessage);
-
-		expect(collectIpcDiagnostics()).toEqual(['unparseable']);
-		const stored = collectIpcDiagnostics().join(' ');
-		expect(stored).not.toContain('leak-me');
-		expect(stored).not.toContain('TRUNCATED-SECRET');
+		const report = collectIpcDiagnostics();
+		expect(report.fetchTransport).toEqual(['fetch cmd=get_current_session status=200']);
+		const serialized = JSON.stringify(report);
+		expect(serialized).not.toContain('API-SECRET');
+		expect(serialized).not.toContain('HEADER-SECRET');
+		expect(serialized).not.toContain('Bearer');
 	});
 });
 
-test('installIpcDiagnostics records cmd=unknown when the rejected message has no command name', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
-		installIpcDiagnostics();
-
-		targetWindow.ipc.postMessage('{"callback":null}');
-
-		expect(collectIpcDiagnostics()).toEqual(['cmd=unknown null=callback']);
-	});
-});
-
-test('installIpcDiagnostics skips messages whose null-callback hit is nested inside a payload', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
-		installIpcDiagnostics();
-
-		const nested =
-			'{"cmd":"get_workspace_root","payload":{"inner":"\\"callback\\":null"},"callback":5,"error":6}';
-		targetWindow.ipc.postMessage(nested);
-
-		expect(collectIpcDiagnostics()).toEqual([]);
-	});
-});
-
-test('installIpcDiagnostics stringifies non-string payloads before filtering', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
-		installIpcDiagnostics();
-
-		const payload = JSON.stringify({ cmd: 'plugin:event|listen', callback: null });
-		targetWindow.ipc.postMessage(payload);
-
-		expect(collectIpcDiagnostics()).toEqual(['cmd=plugin:event|listen null=callback']);
-		expect(collectIpcDiagnostics().join(' ')).not.toContain('null":null');
-	});
-});
-
-test('installIpcDiagnostics captures the JSON error format with whitespace after the colon', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
-		installIpcDiagnostics();
-
-		const spaced = '{"cmd":"x","callback" :  null,"error":1}';
-		targetWindow.ipc.postMessage(spaced);
-
-		expect(collectIpcDiagnostics()).toEqual(['cmd=x null=callback']);
-	});
-});
-
-test('installIpcDiagnostics caps the capture buffer at 20 entries', () => {
-	const { window: targetWindow } = fakeWindow({});
-	withPageWindow(targetWindow, () => {
-		installIpcDiagnostics();
-
-		for (let index = 0; index < 25; index += 1) {
-			targetWindow.ipc.postMessage(`{"cmd":"c${index}","callback":null}`);
-		}
-
-		const captured = collectIpcDiagnostics();
-		expect(captured).toHaveLength(20);
-		expect(captured[0]).toContain('c0');
-		expect(captured[19]).toContain('c19');
-	});
-});
-
-test('installIpcDiagnostics reports wrap-rejected when postMessage is not writable', () => {
-	const targetWindow = {
-		ipc: {}
+test('fetch wrapper records a failed IPC send without the error text and preserves the rejection', async () => {
+	const { targetWindow } = wryStyleWindow();
+	targetWindow.fetch = async () => {
+		throw new Error('network failure DETAIL-SECRET');
 	};
-	Object.defineProperty(targetWindow.ipc, 'postMessage', {
-		value: () => {},
-		writable: false,
-		configurable: false
-	});
+	await withPageWindowAsync(targetWindow, async () => {
+		installIpcDiagnostics();
 
-	withPageWindow(targetWindow, () => {
-		expect(installIpcDiagnostics()).toBe('wrap-rejected');
+		let rejection;
+		try {
+			await targetWindow.fetch('http://ipc.localhost/get_workspace_root');
+		} catch (error) {
+			rejection = error;
+		}
+		expect(rejection?.message).toBe('network failure DETAIL-SECRET');
+		expect(collectIpcDiagnostics().fetchTransport).toEqual([
+			'fetch cmd=get_workspace_root failed'
+		]);
 	});
+});
+
+test('fetch wrapper strips query strings and records the command name only', async () => {
+	const { targetWindow } = wryStyleWindow();
+	await withPageWindowAsync(targetWindow, async () => {
+		installIpcDiagnostics();
+		await targetWindow.fetch('http://ipc.localhost/get_workspace_root?token=QUERY-SECRET');
+
+		const serialized = JSON.stringify(collectIpcDiagnostics());
+		expect(serialized).toContain('fetch cmd=get_workspace_root status=200');
+		expect(serialized).not.toContain('QUERY-SECRET');
+	});
+});
+
+test('collectIpcDiagnostics reports the frozen ipc transport honestly and callback growth', async () => {
+	const { targetWindow } = wryStyleWindow();
+	withPageWindow(targetWindow, () => {
+		installIpcDiagnostics();
+		targetWindow.__TAURI_INTERNALS__.callbacks.size = 9;
+
+		const report = collectIpcDiagnostics();
+		expect(report.ipc).toEqual({ present: true, postMessageWritable: false });
+		expect(report.callbacks).toEqual({ atInstall: 3, now: 9 });
+	});
+});
+
+test('fetch wrapper caps recorded summaries at 20 entries', async () => {
+	const { targetWindow } = wryStyleWindow();
+	await withPageWindowAsync(targetWindow, async () => {
+		installIpcDiagnostics();
+		const sends = [];
+		for (let index = 0; index < 25; index += 1) {
+			sends.push(targetWindow.fetch(`http://ipc.localhost/cmd_${index}`));
+		}
+		await Promise.all(sends);
+
+		const captured = collectIpcDiagnostics().fetchTransport;
+		expect(captured).toHaveLength(20);
+		expect(captured[0]).toContain('cmd_0');
+		expect(captured[19]).toContain('cmd_19');
+	});
+});
+
+test('dumpIpcDiagnosticsSafely logs the sanitized report', async () => {
+	const lines = await captureConsoleInfo(async () => {
+		await dumpIpcDiagnosticsSafely(async () => ({
+			ipc: { present: true, postMessageWritable: false },
+			fetchTransport: ['fetch cmd=get_workspace_root status=200'],
+			callbacks: { atInstall: 1, now: 2 }
+		}));
+	});
+	expect(lines).toHaveLength(1);
+	expect(lines[0]).toContain('fetch cmd=get_workspace_root status=200');
+});
+
+test('dumpIpcDiagnosticsSafely logs a fixed marker without exception content on failure', async () => {
+	const lines = await captureConsoleInfo(async () => {
+		await dumpIpcDiagnosticsSafely(async () => {
+			throw new Error('WebDriver session SESS-SECRET-TOKEN aborted for secret@example.com');
+		});
+	});
+	expect(lines).toHaveLength(1);
+	expect(lines[0]).toContain('ipc diagnostics dump failed');
+	expect(lines.join(' ')).not.toContain('SESS-SECRET-TOKEN');
+	expect(lines.join(' ')).not.toContain('secret@example.com');
+	expect(lines.join(' ')).not.toContain('WebDriver');
 });

@@ -71,12 +71,23 @@ test('canonicalExpectedPath leaves paths unprefixed off Windows', () => {
 	expect(resolved).toBe('/private/tmp/ws');
 });
 
-test('created fixture workspaceRoot stays a plain resolved path off Windows', () => {
+// Platform-aware: the helper deliberately mirrors Rust's std::fs::canonicalize,
+// which returns verbatim (\\?\-prefixed) paths on Windows and plain paths
+// elsewhere. Asserts the canonical form computed independently of the helper's
+// fixture plumbing (native realpath + explicit prefix rule).
+test('created fixture workspaceRoot matches the platform canonical form', () => {
 	const parent = mkdtempSync(join(tmpdir(), 'dtx-e2e-fixture-canonical-'));
 	try {
 		const fixture = createWorkspaceFixture({ parentPath: parent, includeSong: false });
-		expect(fixture.workspaceRoot.startsWith('\\\\?\\')).toBeFalse();
-		expect(fixture.workspaceRoot).toBe(realpathSync(join(parent, 'workspace')));
+		const native =
+			typeof realpathSync.native === 'function' ? realpathSync.native : realpathSync;
+		const resolved = native(join(parent, 'workspace'));
+		const withoutVerbatim = resolved.startsWith('\\\\?\\') ? resolved.slice(4) : resolved;
+		if (process.platform === 'win32') {
+			expect(fixture.workspaceRoot).toBe(`\\\\?\\${withoutVerbatim}`);
+		} else {
+			expect(fixture.workspaceRoot).toBe(resolved);
+		}
 	} finally {
 		rmSync(parent, { recursive: true, force: true });
 	}

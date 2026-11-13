@@ -45,7 +45,7 @@ test('discovers support and scripts suites in sorted order', () => {
 	}
 });
 
-test('spawns one inherited-stdio test process per suite and succeeds when all pass', async () => {
+test('spawns one inherited-stdio test process per suite in the package root and succeeds when all pass', async () => {
 	const root = makeSandbox({ 'support/a.test.mjs': '', 'scripts/b.test.mjs': '' });
 	const spawned = [];
 	const spawn = (command, args, options) => {
@@ -58,14 +58,29 @@ test('spawns one inherited-stdio test process per suite and succeeds when all pa
 			{
 				command: process.execPath,
 				args: ['test', './scripts/b.test.mjs'],
-				options: { stdio: 'inherit' }
+				options: { stdio: 'inherit', cwd: root }
 			},
 			{
 				command: process.execPath,
 				args: ['test', './support/a.test.mjs'],
-				options: { stdio: 'inherit' }
+				options: { stdio: 'inherit', cwd: root }
 			}
 		]);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+test('fails the gate when no harness suites are discovered', async () => {
+	const root = makeSandbox({ 'support/helper.mjs': '', 'scripts/README.md': '' });
+	let spawned = 0;
+	const spawn = () => {
+		spawned += 1;
+		return exitChild(0);
+	};
+	try {
+		await expect(runHarnessTests(root, { spawn })).resolves.toBe(1);
+		expect(spawned).toBe(0);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

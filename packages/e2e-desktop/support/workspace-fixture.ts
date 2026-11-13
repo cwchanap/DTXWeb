@@ -16,6 +16,9 @@ export type WorkspaceFixture = {
 
 type NativeRealpath = typeof realpathSync & { native?: (path: string) => string };
 
+const verbatimPrefix = '\\\\?\\';
+const verbatimUncPrefix = '\\\\?\\UNC\\';
+
 export type CanonicalPathOptions = {
 	platform?: NodeJS.Platform;
 	realpath?: (path: string) => string;
@@ -43,7 +46,22 @@ export const canonicalExpectedPath = (
 		});
 	const resolved = resolve(path);
 	if (platform !== 'win32') return resolved;
-	return resolved.startsWith('\\\\?\\') ? resolved : `\\\\?\\${resolved}`;
+	if (resolved.startsWith(verbatimPrefix)) return resolved;
+	// Rust std::fs::canonicalize maps a UNC share to the \\?\UNC\ namespace,
+	// not to \\?\ + the leading separators.
+	if (resolved.startsWith('\\\\')) return `\\\\?\\UNC\\${resolved.slice(2)}`;
+	return `\\\\?\\${resolved}`;
+};
+
+/**
+ * Inverse of the verbatim normalization above: rebuilds a path whose `..`
+ * segments Win32 will actually navigate. Path normalization is disabled inside
+ * verbatim (\\?\-prefixed) paths, and stripping only `\\?\` from a namespaced
+ * UNC root would leave a relative `UNC\...` path instead of the share.
+ */
+export const toNavigableWindowsPath = (path: string): string => {
+	if (path.startsWith(verbatimUncPrefix)) return `\\\\${path.slice(verbatimUncPrefix.length)}`;
+	return path.startsWith(verbatimPrefix) ? path.slice(verbatimPrefix.length) : path;
 };
 
 const encodeUtf16Le = (value: string): Uint8Array => {

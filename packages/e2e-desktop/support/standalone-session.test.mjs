@@ -394,6 +394,32 @@ test('reports the child signal when the app is killed before embedded readiness'
 	}
 });
 
+test('reports the clean exit code when the app exits during an outstanding readiness probe', async () => {
+	// Regression: the exit happens while a status fetch is in flight, not
+	// before startup, so the diagnostic must be built from the exit observed
+	// during the probe (the pre-startup exit tests cannot tell the difference).
+	const child = new FakeChild();
+	const dependencies = makeDependencies({ child, port: 46_025 });
+	dependencies.fetch = mock(async () => {
+		child.exit(0);
+		return await new Promise(() => undefined);
+	});
+	try {
+		const error = await startStandaloneTauriSession(input, dependencies).then(
+			(browser) => ({ browser }),
+			(caught) => ({ error: caught })
+		);
+		expect(error.error).toBeInstanceOf(Error);
+		expect(error.error.message).toContain(
+			'exited before the embedded WebDriver server became ready'
+		);
+		expect(error.error.message).toContain('exit code 0');
+		expect(dependencies.remote).not.toHaveBeenCalled();
+	} finally {
+		cleanupLease(46_025);
+	}
+});
+
 test('reports the child signal when the app exits before the invoke bridge becomes ready', async () => {
 	const dependencies = makeDependencies({ port: 46_024 });
 	const child = dependencies.child;

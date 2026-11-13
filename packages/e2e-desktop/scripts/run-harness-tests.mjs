@@ -8,7 +8,11 @@ export const discoverHarnessTests = (packageRoot) =>
 	TEST_DIRECTORIES.flatMap((directory) =>
 		readdirSync(join(packageRoot, directory))
 			.filter((name) => name.endsWith('.test.mjs'))
-			.map((name) => join(directory, name))
+			// Portable forward-slash relative paths: `node:path.join` would emit
+			// backslashes on Windows, breaking the spawn args asserted by the
+			// harness tests and run by `bun test` in CI. Native join is kept only
+			// for real filesystem access above.
+			.map((name) => `${directory}/${name}`)
 	).sort();
 
 const runTestFile = (spawnProcess, file) =>

@@ -37,30 +37,22 @@ permissions:
 jobs:
   desktop-e2e:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
-    name: Tauri Integration Test
-    runs-on: ubuntu-latest
+    name: Tauri Integration Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            xvfb
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -74,6 +66,7 @@ jobs:
           components: llvm-tools-preview
 
       - name: Install cargo-llvm-cov
+        if: runner.os == 'macOS'
         uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
         with:
           tool: cargo-llvm-cov
@@ -93,8 +86,11 @@ jobs:
       - name: Build shared packages
         run: bun run --filter=@dtx/common build && bun run --filter=@dtx/ui-components build
 
+      - name: Run harness unit tests
+        run: bun run --filter=dtx-e2e-desktop test:harness
+
       - name: Configure Rust coverage instrumentation
-        shell: bash
+        if: runner.os == 'macOS'
         working-directory: packages/dtx-desktop/src-tauri
         run: |
           export CARGO_TARGET_DIR="$PWD/target-e2e"
@@ -103,27 +99,26 @@ jobs:
           cargo llvm-cov clean --workspace
 
       - name: Build test-enabled desktop app
-        shell: bash
         run: |
-          source packages/dtx-desktop/src-tauri/coverage-env.sh
+          if [ "$RUNNER_OS" = macOS ]; then source packages/dtx-desktop/src-tauri/coverage-env.sh; fi
           bun run --filter=dtx-e2e-desktop e2e:build
 
       - name: Run desktop integration and relaunch tests
-        shell: bash
         run: |
-          source packages/dtx-desktop/src-tauri/coverage-env.sh
+          if [ "$RUNNER_OS" = macOS ]; then source packages/dtx-desktop/src-tauri/coverage-env.sh; fi
           mkdir -p packages/e2e-desktop/logs
           set -o pipefail
-          xvfb-run -a bun run --filter=dtx-e2e-desktop e2e:run 2>&1 | tee packages/e2e-desktop/logs/runner.log
+          bun run --filter=dtx-e2e-desktop e2e:run 2>&1 | tee packages/e2e-desktop/logs/runner.log
 
       - name: Generate desktop E2E Rust coverage
-        shell: bash
+        if: runner.os == 'macOS'
         working-directory: packages/dtx-desktop/src-tauri
         run: |
           source coverage-env.sh
           cargo llvm-cov report --lcov --output-path e2e-lcov.info
 
       - name: Upload desktop E2E Rust coverage artifact
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-e2e-rust-lcov
@@ -131,6 +126,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload desktop E2E Rust coverage to Codecov
+        if: runner.os == 'macOS'
         uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -142,6 +138,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: desktop-e2e-logs
+          name: desktop-e2e-logs-${{ matrix.os }}
           path: packages/e2e-desktop/logs/
           if-no-files-found: warn

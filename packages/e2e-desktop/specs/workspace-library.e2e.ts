@@ -1,6 +1,4 @@
-import { mkdirSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { browser, expect, $ } from '@wdio/globals';
 
@@ -25,21 +23,6 @@ describe('Desktop workspace library', () => {
 
 	it('restores a workspace and filters its DTX songs', async () => {
 		await waitForUiDisplayed('span', { text: fixtureSongTitle });
-
-		// TEMPORARY (HPA-316 task 4): capture the workspace library UI once per
-		// runner for a vision-capable reviewer; removed after inspection. An
-		// empty capture throws so evidence loss is never silent.
-		const evidencePath = resolve(
-			dirname(fileURLToPath(import.meta.url)),
-			'..',
-			'visual-evidence',
-			`workspace-library-${process.platform}.png`
-		);
-		mkdirSync(dirname(evidencePath), { recursive: true });
-		const screenshot = await browser.saveScreenshot(evidencePath);
-		if (!screenshot?.length) {
-			throw new Error('Expected a non-empty workspace library screenshot');
-		}
 
 		const search = await $('input[placeholder="Search songs and folders..."]');
 		await search.setValue('does-not-exist');

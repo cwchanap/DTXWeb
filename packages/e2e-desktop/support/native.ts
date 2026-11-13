@@ -174,3 +174,57 @@ export const snapshotGoogleDriveE2e = async (): Promise<E2eDriveSnapshot> =>
 	await browser.tauri.execute<E2eDriveSnapshot, []>(
 		({ core }) => core.invoke('snapshot_google_drive_e2e') as unknown as E2eDriveSnapshot
 	);
+
+export type IpcCallOutcome = {
+	ok: boolean;
+	value?: unknown;
+	error?: string;
+	timedOut?: boolean;
+};
+
+export type GoogleDriveConnectionDiagnostics = {
+	session: IpcCallOutcome;
+	connection: IpcCallOutcome;
+};
+
+/**
+ * HPA-316 Windows diagnostic: the renderer's Drive refresh path is silent on
+ * failure (the store only records the error), so the captured logs cannot tell
+ * apart "refresh never ran", "refresh errored", and "refresh returned
+ * connected:false". This probe asks both commands directly at the IPC
+ * boundary; each call races a timeout so a hanging invoke cannot stall the
+ * spec. Remove once the root cause is confirmed.
+ */
+export const probeGoogleDriveConnectionDiagnostics =
+	async (): Promise<GoogleDriveConnectionDiagnostics> =>
+		await browser.tauri.execute<GoogleDriveConnectionDiagnostics, []>(({ core }) => {
+			const withTimeout = (
+				promise: Promise<unknown>,
+				timeoutMs: number
+			): Promise<IpcCallOutcome> =>
+				Promise.race([
+					promise.then(
+						(value) => ({ ok: true, value }),
+						(error) => ({
+							ok: false,
+							error: error instanceof Error ? error.message : String(error)
+						})
+					),
+					new Promise<IpcCallOutcome>((resolve) =>
+						setTimeout(() => resolve({ ok: false, timedOut: true }), timeoutMs)
+					)
+				]);
+			return Promise.all([
+				withTimeout(
+					core.invoke('get_current_session') as unknown as Promise<unknown>,
+					5000
+				),
+				withTimeout(
+					core.invoke('get_google_drive_connection_state') as unknown as Promise<unknown>,
+					5000
+				)
+			]).then(([session, connection]) => ({
+				session,
+				connection
+			})) as unknown as GoogleDriveConnectionDiagnostics;
+		});

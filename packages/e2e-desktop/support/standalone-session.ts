@@ -199,6 +199,13 @@ const isLeaseStale = (record: OwnershipRecord | null, now: number): boolean =>
 const errorCode = (error: unknown): string | null =>
 	error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : null;
 
+const describeChildExit = (child: ChildLike): string => {
+	const parts: string[] = [];
+	if (child.exitCode !== null) parts.push(`exit code ${child.exitCode}`);
+	if (child.signalCode !== null) parts.push(`signal ${child.signalCode}`);
+	return parts.length > 0 ? parts.join(', ') : 'no exit status reported';
+};
+
 const isPublicationContention = (
 	error: unknown,
 	path: string,
@@ -428,15 +435,20 @@ const waitForEmbeddedReadiness = async (
 	fetchStatus: StatusFetch
 ): Promise<void> => {
 	const deadline = clock.now() + READINESS_TIMEOUT_MS;
-	const earlyExitError = new Error(
-		'Standalone Tauri app exited before the embedded WebDriver server became ready'
-	);
+	// Built when the exit is observed so the message carries the actual exit code/signal.
+	let earlyExitFailure: Error | undefined;
+	const observeEarlyExit = (): Error => {
+		earlyExitFailure ??= new Error(
+			`Standalone Tauri app exited before the embedded WebDriver server became ready (${describeChildExit(child)})`
+		);
+		return earlyExitFailure;
+	};
 	const earlyExit = exitPromise.then(async (exited) => {
-		if (exited) throw earlyExitError;
+		if (exited) throw observeEarlyExit();
 		return await new Promise<never>(() => undefined);
 	});
 	while (clock.now() <= deadline) {
-		if (child.exitCode !== null || child.signalCode !== null) throw earlyExitError;
+		if (child.exitCode !== null || child.signalCode !== null) throw observeEarlyExit();
 		try {
 			const response = await Promise.race([
 				fetchStatus(`http://127.0.0.1:${port}/status`, {
@@ -447,7 +459,7 @@ const waitForEmbeddedReadiness = async (
 			const payload = (await response.json()) as { value?: { ready?: unknown } };
 			if (response.ok && payload.value?.ready === true) return;
 		} catch (error) {
-			if (error === earlyExitError) throw error;
+			if (error === earlyExitFailure) throw error;
 			// A pre-ready embedded server commonly rejects the first connection.
 		}
 		if (clock.now() >= deadline) break;
@@ -467,15 +479,20 @@ const waitForTauriInvokeReadiness = async (
 ): Promise<string> => {
 	const deadline = clock.now() + READINESS_TIMEOUT_MS;
 	const readinessTimeoutError = new Error('Tauri invoke bridge did not become ready');
-	const earlyExitError = new Error(
-		'Standalone Tauri app exited before the invoke bridge became ready'
-	);
+	// Built when the exit is observed so the message carries the actual exit code/signal.
+	let earlyExitFailure: Error | undefined;
+	const observeEarlyExit = (): Error => {
+		earlyExitFailure ??= new Error(
+			`Standalone Tauri app exited before the invoke bridge became ready (${describeChildExit(child)})`
+		);
+		return earlyExitFailure;
+	};
 	const earlyExit = exitPromise.then(async (exited) => {
-		if (exited) throw earlyExitError;
+		if (exited) throw observeEarlyExit();
 		return await new Promise<never>(() => undefined);
 	});
 	while (clock.now() <= deadline) {
-		if (child.exitCode !== null || child.signalCode !== null) throw earlyExitError;
+		if (child.exitCode !== null || child.signalCode !== null) throw observeEarlyExit();
 		const nonceResult = readSessionNonce();
 		let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 		const deadlineReached = (async (): Promise<never> => {
@@ -492,7 +509,7 @@ const waitForTauriInvokeReadiness = async (
 		try {
 			return await Promise.race([nonceResult, earlyExit, deadlineReached]);
 		} catch (error) {
-			if (error === earlyExitError) throw error;
+			if (error === earlyExitFailure) throw error;
 			if (error === readinessTimeoutError) throw error;
 			const message = error instanceof Error ? error.message : String(error);
 			if (message !== TAURI_INVOKE_UNAVAILABLE_ERROR) throw error;

@@ -9,6 +9,7 @@
 		"e2e:run": "wdio run wdio.conf.ts && bun run e2e:relaunch && bun run e2e:drive-crash",
 		"e2e:relaunch": "bun run scripts/relaunch-smoke.ts",
 		"e2e:drive-crash": "bun run scripts/google-drive-crash-recovery.ts",
+		"test:harness": "bun scripts/run-harness-tests.mjs",
 		"check": "tsc --noEmit"
 	},
 	"devDependencies": {

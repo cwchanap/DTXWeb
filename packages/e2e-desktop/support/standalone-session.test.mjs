@@ -354,6 +354,70 @@ test('fails immediately when the owned child exits before readiness', async () =
 	}
 });
 
+test('reports the clean child exit code when the app exits before embedded readiness', async () => {
+	const child = new FakeChild();
+	child.exit(0);
+	const dependencies = makeDependencies({ child, port: 46_022 });
+	try {
+		const error = await startStandaloneTauriSession(input, dependencies).then(
+			(browser) => ({ browser }),
+			(caught) => ({ error: caught })
+		);
+		expect(error.error).toBeInstanceOf(Error);
+		expect(error.error.message).toContain(
+			'exited before the embedded WebDriver server became ready'
+		);
+		expect(error.error.message).toContain('exit code 0');
+		expect(dependencies.remote).not.toHaveBeenCalled();
+	} finally {
+		cleanupLease(46_022);
+	}
+});
+
+test('reports the child signal when the app is killed before embedded readiness', async () => {
+	const child = new FakeChild();
+	child.exit(null, 'SIGKILL');
+	const dependencies = makeDependencies({ child, port: 46_023 });
+	try {
+		const error = await startStandaloneTauriSession(input, dependencies).then(
+			(browser) => ({ browser }),
+			(caught) => ({ error: caught })
+		);
+		expect(error.error).toBeInstanceOf(Error);
+		expect(error.error.message).toContain(
+			'exited before the embedded WebDriver server became ready'
+		);
+		expect(error.error.message).toContain('signal SIGKILL');
+		expect(dependencies.remote).not.toHaveBeenCalled();
+	} finally {
+		cleanupLease(46_023);
+	}
+});
+
+test('reports the child signal when the app exits before the invoke bridge becomes ready', async () => {
+	const dependencies = makeDependencies({ port: 46_024 });
+	const child = dependencies.child;
+	const evaluate = dependencies.evaluate;
+	dependencies.evaluate = mock(async (port, script, args) => {
+		if (script.includes('read_e2e_session_nonce')) {
+			child.exit(null, 'SIGTERM');
+			throw new Error('Tauri core.invoke is unavailable');
+		}
+		return await evaluate(port, script, args);
+	});
+	try {
+		const error = await startStandaloneTauriSession(input, dependencies).then(
+			(browser) => ({ browser }),
+			(caught) => ({ error: caught })
+		);
+		expect(error.error).toBeInstanceOf(Error);
+		expect(error.error.message).toContain('exited before the invoke bridge became ready');
+		expect(error.error.message).toContain('signal SIGTERM');
+	} finally {
+		cleanupLease(46_024);
+	}
+});
+
 test('escalates from controlled exit through TERM to KILL and waits for exit', async () => {
 	const child = new FakeChild();
 	child.exitOnSignal.add('SIGKILL');

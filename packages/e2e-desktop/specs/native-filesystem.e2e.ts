@@ -17,6 +17,7 @@ import {
 	fixtureFolderName,
 	fixtureSongTitle,
 	getPreseededWorkspaceFixture,
+	toNavigableWindowsPath,
 	type WorkspaceFixture
 } from '../support/workspace-fixture';
 
@@ -164,16 +165,13 @@ describe('Desktop native filesystem boundary', () => {
 			return this.skip();
 		}
 
-		// The workspace root is the verbatim long path Rust canonicalize returns;
+		// The workspace root is the verbatim path Rust canonicalize returns;
 		// Win32 disables `..` normalization inside verbatim (\\?\-prefixed) paths,
-		// so strip the prefix to build a navigable traversal input while keeping
+		// so rebuild a navigable path (drive letter or UNC share) to construct a
+		// traversal input that genuinely starts inside the workspace while keeping
 		// the assertion: backslash traversal from inside the workspace is rejected.
-		const verbatimPrefix = '\\\\?\\';
-		const navigableWorkspaceRoot = fixture.workspaceRoot.startsWith(verbatimPrefix)
-			? fixture.workspaceRoot.slice(verbatimPrefix.length)
-			: fixture.workspaceRoot;
 		await expectOutsideWorkspaceRead(
-			`${navigableWorkspaceRoot}\\FixtureSong\\..\\..\\outside\\private.dtx`
+			`${toNavigableWindowsPath(fixture.workspaceRoot)}\\FixtureSong\\..\\..\\outside\\private.dtx`
 		);
 	});
 

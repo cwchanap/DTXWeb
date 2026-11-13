@@ -15,9 +15,12 @@ export const discoverHarnessTests = (packageRoot) =>
 			.map((name) => `${directory}/${name}`)
 	).sort();
 
-const runTestFile = (spawnProcess, file) =>
+const runTestFile = (spawnProcess, file, packageRoot) =>
 	new Promise((resolve) => {
-		const child = spawnProcess(process.execPath, ['test', `./${file}`], { stdio: 'inherit' });
+		const child = spawnProcess(process.execPath, ['test', `./${file}`], {
+			cwd: packageRoot,
+			stdio: 'inherit'
+		});
 		let settled = false;
 		const settle = (exitCode) => {
 			if (settled) return;
@@ -29,8 +32,15 @@ const runTestFile = (spawnProcess, file) =>
 	});
 
 export const runHarnessTests = async (packageRoot, { spawn: spawnProcess = spawn } = {}) => {
-	for (const file of discoverHarnessTests(packageRoot)) {
-		const exitCode = await runTestFile(spawnProcess, file);
+	const files = discoverHarnessTests(packageRoot);
+	// A gate that passes without running anything would silently stop testing
+	// the harness after a rename; fail loudly instead.
+	if (files.length === 0) {
+		console.error(`No *.test.mjs harness suites found under ${packageRoot}`);
+		return 1;
+	}
+	for (const file of files) {
+		const exitCode = await runTestFile(spawnProcess, file, packageRoot);
 		if (exitCode !== 0) return exitCode;
 	}
 	return 0;

@@ -3,8 +3,12 @@ import { existsSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const { canonicalExpectedPath, createWorkspaceFixture, getOrCreatePreseededWorkspaceFixture } =
-	await import('./workspace-fixture.ts');
+const {
+	canonicalExpectedPath,
+	createWorkspaceFixture,
+	getOrCreatePreseededWorkspaceFixture,
+	toNavigableWindowsPath
+} = await import('./workspace-fixture.ts');
 
 const fixtureEnvironmentKeys = [
 	'DTX_E2E_WORKSPACE_ROOT',
@@ -61,6 +65,45 @@ test('canonicalExpectedPath keeps a single verbatim prefix when realpath already
 		realpath: (value) => value
 	});
 	expect(resolved).toBe(verbatim);
+});
+
+test('canonicalExpectedPath converts a UNC share path to the verbatim UNC namespace on win32', () => {
+	// Rust std::fs::canonicalize maps \\server\share\... to \\?\UNC\server\share\...;
+	// blindly prepending \\?\ would double the leading separators instead.
+	const resolved = canonicalExpectedPath('\\\\server\\share\\workspace', {
+		platform: 'win32',
+		realpath: (value) => value
+	});
+	expect(resolved).toBe('\\\\?\\UNC\\server\\share\\workspace');
+});
+
+test('canonicalExpectedPath keeps an already verbatim UNC path unchanged', () => {
+	const verbatimUnc = '\\\\?\\UNC\\server\\share\\workspace';
+	const resolved = canonicalExpectedPath(verbatimUnc, {
+		platform: 'win32',
+		realpath: (value) => value
+	});
+	expect(resolved).toBe(verbatimUnc);
+});
+
+test('toNavigableWindowsPath rebuilds navigable drive-letter and UNC roots from verbatim forms', () => {
+	expect(toNavigableWindowsPath('\\\\?\\C:\\Temp\\ws')).toBe('C:\\Temp\\ws');
+	expect(toNavigableWindowsPath('\\\\?\\UNC\\server\\share\\ws')).toBe('\\\\server\\share\\ws');
+	expect(toNavigableWindowsPath('C:\\Temp\\ws')).toBe('C:\\Temp\\ws');
+});
+
+test('traversal input built from a verbatim UNC workspace root stays anchored at the share', () => {
+	// Stripping only \\?\ from a \\?\UNC\... root would leave a relative
+	// UNC\... path, so the traversal construction would no longer traverse
+	// from inside the workspace.
+	const root = canonicalExpectedPath('\\\\server\\share\\workspace', {
+		platform: 'win32',
+		realpath: (value) => value
+	});
+	const navigableRoot = toNavigableWindowsPath(root);
+	const traversalInput = `${navigableRoot}\\FixtureSong\\..\\..\\outside\\private.dtx`;
+	expect(navigableRoot).toBe('\\\\server\\share\\workspace');
+	expect(traversalInput.startsWith(navigableRoot)).toBe(true);
 });
 
 test('canonicalExpectedPath leaves paths unprefixed off Windows', () => {

@@ -4,7 +4,12 @@ import { join } from 'node:path';
 
 import { $, browser, expect } from '@wdio/globals';
 
-import { collectIpcDiagnostics, installIpcDiagnostics, waitForUiDisplayed } from '../support/app';
+import {
+	collectIpcDiagnostics,
+	dumpIpcDiagnosticsSafely,
+	installIpcDiagnostics,
+	waitForUiDisplayed
+} from '../support/app';
 import {
 	configureGoogleDriveE2e,
 	probeGoogleDriveConnectionDiagnostics,
@@ -148,21 +153,27 @@ const openAuthenticatedLinkedSong = async ({
 		}
 	);
 	await browser.refresh();
+	// Temporary HPA-316 Windows diagnostics. Installed at the earliest point
+	// possible after navigation (page wrappers cannot survive a reload and the
+	// Tauri WDIO service offers no init-script hook); boot-time invokes may race
+	// ahead of this line, but the callbacks-map snapshot keeps counting their
+	// outcome and wry's frozen `window.ipc` means no send-side wrap was ever
+	// possible anyway. Interpretation: fetch summaries name every
+	// custom-protocol invoke (including the boot refresh while the transport is
+	// healthy); a `failed` summary marks the fallback to the postMessage
+	// transport; postMessage-path drops surface as callbacks growth that never
+	// resolves; the probe (after Song Details) distinguishes a stale backend
+	// seed (connected:false) from a renderer-side failure. Remove once the
+	// root cause is confirmed.
+	console.info(`[gdrive-diag] ipc install: ${await browser.execute(installIpcDiagnostics)}`);
 	await waitForUiDisplayed('input[placeholder="Search songs and folders..."]', {
 		timeoutMsg: 'Expected the authenticated E2E workspace to restore'
 	});
 	await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 	await waitForUiDisplayed('h2', { text: 'Song Details' });
 
-	// Temporary HPA-316 Windows diagnostics: probe the seeded Drive connection
-	// at the IPC boundary (safe booleans only — no payload contents) and capture
-	// which null-callback IPC commands the Rust IPC parser rejects (command name
-	// + null field only). Remove once the root cause is confirmed.
 	console.info(
 		`[gdrive-diag] connection probe: ${JSON.stringify(await probeGoogleDriveConnectionDiagnostics())}`
-	);
-	console.info(
-		`[gdrive-diag] ipc capture install: ${await browser.execute(installIpcDiagnostics)}`
 	);
 	const upload = await $(
 		`button[aria-label="${googleDriveFileId ? 'Re-upload ZIP to Drive' : 'Upload ZIP to Drive'}"]`
@@ -173,15 +184,9 @@ const openAuthenticatedLinkedSong = async ({
 			timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
 		});
 	} finally {
-		try {
-			const captured = await browser.execute(collectIpcDiagnostics);
-			console.info(`[gdrive-diag] captured null-callback IPC messages: ${captured.length}`);
-			for (const message of captured) {
-				console.info(`[gdrive-diag] ipc: ${message}`);
-			}
-		} catch (dumpError) {
-			console.info(`[gdrive-diag] ipc dump failed: ${String(dumpError)}`);
-		}
+		// Sanitized diagnostics only; dump failures reduce to a fixed marker
+		// (raw exception text may carry session details).
+		await dumpIpcDiagnosticsSafely(async () => await browser.execute(collectIpcDiagnostics));
 	}
 };
 

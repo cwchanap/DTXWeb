@@ -4,12 +4,7 @@ import { join } from 'node:path';
 
 import { $, browser, expect } from '@wdio/globals';
 
-import {
-	collectIpcDiagnostics,
-	dumpIpcDiagnosticsSafely,
-	installIpcDiagnostics,
-	waitForUiDisplayed
-} from '../support/app';
+import { logDriveRefreshDiagnosticsSafely, waitForUiDisplayed } from '../support/app';
 import {
 	configureGoogleDriveE2e,
 	probeGoogleDriveConnectionDiagnostics,
@@ -153,22 +148,27 @@ const openAuthenticatedLinkedSong = async ({
 		}
 	);
 	await browser.refresh();
-	// Temporary HPA-316 Windows diagnostics. Installed at the earliest point
-	// possible after navigation (page wrappers cannot survive a reload and the
-	// Tauri WDIO service offers no init-script hook); boot-time invokes may race
-	// ahead of this line, but the callbacks-map snapshot keeps counting their
-	// outcome and wry's frozen `window.ipc` means no send-side wrap was ever
-	// possible anyway. Interpretation: fetch summaries name every
-	// custom-protocol invoke (including the boot refresh while the transport is
-	// healthy); a `failed` summary marks the fallback to the postMessage
-	// transport; postMessage-path drops surface as callbacks growth that never
-	// resolves; the probe (after Song Details) distinguishes a stale backend
-	// seed (connected:false) from a renderer-side failure. Remove once the
-	// root cause is confirmed.
-	console.info(`[gdrive-diag] ipc install: ${await browser.execute(installIpcDiagnostics)}`);
+	// Temporary HPA-316 Windows diagnostics (remove once the root cause is
+	// confirmed). The e2e build (VITE_WDIO=true) wraps
+	// googleDriveService.refreshConnection in the renderer BEFORE mount, so the
+	// ORIGINAL boot refresh fired by restoreSession is attributed directly —
+	// no post-hoc transport inference. Interpretation of the snapshot:
+	// - resolved+connected+storeConnected → refresh fine; button issue is
+	//   renderer-side beyond the store.
+	// - resolved+connected+!storeConnected → store discarded the result
+	//   (generation guard or later reset).
+	// - resolved+!withConnection+storeHasError → refresh errored (error text
+	//   withheld by design).
+	// - resolved+connected:false → backend returned disconnected; seeding or
+	//   backend issue (the probe below corroborates).
+	// - pending:true at BOTH reads → the invoke never settled: dropped at the
+	//   IPC boundary on Windows; the probe then shows whether the backend
+	//   itself answers (seed fine, transport-side drop) or not.
 	await waitForUiDisplayed('input[placeholder="Search songs and folders..."]', {
 		timeoutMsg: 'Expected the authenticated E2E workspace to restore'
 	});
+	// Post-boot snapshot: the boot refresh is pending or already settled here.
+	await logDriveRefreshDiagnosticsSafely('post-boot');
 	await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 	await waitForUiDisplayed('h2', { text: 'Song Details' });
 
@@ -184,9 +184,9 @@ const openAuthenticatedLinkedSong = async ({
 			timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
 		});
 	} finally {
-		// Sanitized diagnostics only; dump failures reduce to a fixed marker
-		// (raw exception text may carry session details).
-		await dumpIpcDiagnosticsSafely(async () => await browser.execute(collectIpcDiagnostics));
+		// Final snapshot whether waitForEnabled passed or failed; sanitized
+		// booleans/timestamps only, fixed marker on read failure.
+		await logDriveRefreshDiagnosticsSafely('final');
 	}
 };
 

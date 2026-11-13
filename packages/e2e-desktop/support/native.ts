@@ -184,15 +184,15 @@ export type GoogleDriveConnectionDiagnostics = {
 };
 
 /**
- * HPA-316 Windows diagnostic: the renderer's Drive refresh path is silent on
- * failure (the store only records the error), so the captured logs cannot tell
- * apart "refresh never ran", "refresh errored", and "refresh returned
- * connected:false". This probe asks both commands directly at the IPC
- * boundary and reports ONLY safe facts — session existence and Drive
- * `connected` booleans, or a generic failure/timeout marker; raw values,
- * error text, and any credentials never leave the page. Each call races a
- * timeout so a hanging invoke cannot stall the spec. Remove once the root
- * cause is confirmed.
+ * HPA-316 Windows diagnostic: backend-truth probe for the Drive upload specs.
+ * It issues NEW commands and is NOT evidence about the original boot refresh —
+ * that attribution belongs to the renderer-side diagnostic
+ * (driveRefreshDiagnostics.ts, read via support/app.ts). This probe answers
+ * whether the backend itself responds and what it reports: session existence
+ * and Drive `connected` booleans, or a generic failure/timeout marker; raw
+ * values, error text, and any credentials never leave the page. Each call
+ * races a timeout so a hanging invoke cannot stall the spec. Remove once the
+ * root cause is confirmed.
  */
 export const probeGoogleDriveConnectionDiagnostics =
 	async (): Promise<GoogleDriveConnectionDiagnostics> =>

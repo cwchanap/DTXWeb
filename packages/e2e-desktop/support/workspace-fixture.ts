@@ -14,6 +14,38 @@ export type WorkspaceFixture = {
 	escapeLinkUnavailableReason?: string;
 };
 
+type NativeRealpath = typeof realpathSync & { native?: (path: string) => string };
+
+export type CanonicalPathOptions = {
+	platform?: NodeJS.Platform;
+	realpath?: (path: string) => string;
+};
+
+/**
+ * Canonical form of a fixture path as the Rust backend reports it.
+ *
+ * Rust canonicalizes workspace-owned outputs with std::fs::canonicalize, which
+ * on Windows returns the verbatim long path (`\\?\C:\...`), expanding 8.3
+ * short names such as the GitHub runner's temp root (`C:\Users\RUNNER~1\...`).
+ * Node's native realpath resolves the same symlinks and short names, so the
+ * only remaining difference is the verbatim prefix, normalized here. Off
+ * Windows, canonicalize matches plain realpath.
+ */
+export const canonicalExpectedPath = (
+	path: string,
+	{ platform = process.platform, realpath }: CanonicalPathOptions = {}
+): string => {
+	const resolve =
+		realpath ??
+		((candidate: string) => {
+			const native = (realpathSync as NativeRealpath).native;
+			return typeof native === 'function' ? native(candidate) : realpathSync(candidate);
+		});
+	const resolved = resolve(path);
+	if (platform !== 'win32') return resolved;
+	return resolved.startsWith('\\\\?\\') ? resolved : `\\\\?\\${resolved}`;
+};
+
 const encodeUtf16Le = (value: string): Uint8Array => {
 	const bytes = new Uint8Array(2 + value.length * 2);
 	bytes[0] = 0xff;
@@ -80,11 +112,12 @@ export const createWorkspaceFixture = ({
 		escapeLinkUnavailableReason = code;
 	}
 
+	const canonicalWorkspaceRoot = canonicalExpectedPath(workspaceRoot);
 	return {
-		workspaceRoot: realpathSync(workspaceRoot),
+		workspaceRoot: canonicalWorkspaceRoot,
 		outsideRoot: realpathSync(outsideRoot),
-		songFolder,
-		exportRoot,
+		songFolder: join(canonicalWorkspaceRoot, fixtureFolderName),
+		exportRoot: join(canonicalWorkspaceRoot, 'exports'),
 		escapeLinkPath: resolvedEscapeLinkPath,
 		escapeLinkUnavailableReason
 	};
@@ -103,15 +136,16 @@ const requiredEnvironmentPath = (
 export const getPreseededWorkspaceFixture = (): WorkspaceFixture => {
 	const workspaceRoot = requiredEnvironmentPath('DTX_E2E_WORKSPACE_ROOT');
 	const outsideRoot = requiredEnvironmentPath('DTX_E2E_OUTSIDE_ROOT');
+	const canonicalWorkspaceRoot = canonicalExpectedPath(workspaceRoot);
 	const escapeLinkPath = process.env.DTX_E2E_ESCAPE_LINK_PATH || null;
 	const escapeLinkUnavailableReason =
 		process.env.DTX_E2E_ESCAPE_LINK_UNAVAILABLE_REASON || undefined;
 
 	return {
-		workspaceRoot,
+		workspaceRoot: canonicalWorkspaceRoot,
 		outsideRoot,
-		songFolder: join(workspaceRoot, fixtureFolderName),
-		exportRoot: join(workspaceRoot, 'exports'),
+		songFolder: join(canonicalWorkspaceRoot, fixtureFolderName),
+		exportRoot: join(canonicalWorkspaceRoot, 'exports'),
 		escapeLinkPath,
 		escapeLinkUnavailableReason
 	};

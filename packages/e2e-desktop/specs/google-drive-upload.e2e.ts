@@ -4,9 +4,10 @@ import { join } from 'node:path';
 
 import { $, browser, expect } from '@wdio/globals';
 
-import { waitForUiDisplayed } from '../support/app';
+import { collectIpcDiagnostics, installIpcDiagnostics, waitForUiDisplayed } from '../support/app';
 import {
 	configureGoogleDriveE2e,
+	probeGoogleDriveConnectionDiagnostics,
 	snapshotGoogleDriveE2e,
 	type E2eDriveControl,
 	type E2eDriveSnapshot
@@ -152,13 +153,35 @@ const openAuthenticatedLinkedSong = async ({
 	});
 	await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 	await waitForUiDisplayed('h2', { text: 'Song Details' });
+
+	// Temporary HPA-316 Windows diagnostics: probe the seeded Drive connection
+	// at the IPC boundary and capture the null-callback IPC messages the Rust
+	// IPC parser rejects. Remove once the root cause is confirmed.
+	console.info(
+		`[gdrive-diag] connection probe: ${JSON.stringify(await probeGoogleDriveConnectionDiagnostics())}`
+	);
+	console.info(
+		`[gdrive-diag] ipc capture install: ${await browser.execute(installIpcDiagnostics)}`
+	);
 	const upload = await $(
 		`button[aria-label="${googleDriveFileId ? 'Re-upload ZIP to Drive' : 'Upload ZIP to Drive'}"]`
 	);
-	await upload.waitForEnabled({
-		timeout: 15_000,
-		timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
-	});
+	try {
+		await upload.waitForEnabled({
+			timeout: 15_000,
+			timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
+		});
+	} finally {
+		try {
+			const captured = await browser.execute(collectIpcDiagnostics);
+			console.info(`[gdrive-diag] captured null-callback IPC messages: ${captured.length}`);
+			for (const message of captured) {
+				console.info(`[gdrive-diag] ipc: ${message}`);
+			}
+		} catch (dumpError) {
+			console.info(`[gdrive-diag] ipc dump failed: ${String(dumpError)}`);
+		}
+	}
 };
 
 const clickDriveUpload = async (hasExistingFile: boolean): Promise<void> => {

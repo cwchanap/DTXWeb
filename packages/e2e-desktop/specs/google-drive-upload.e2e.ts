@@ -4,10 +4,9 @@ import { join } from 'node:path';
 
 import { $, browser, expect } from '@wdio/globals';
 
-import { logDriveRefreshDiagnosticsSafely, waitForUiDisplayed } from '../support/app';
+import { waitForUiDisplayed } from '../support/app';
 import {
 	configureGoogleDriveE2e,
-	probeGoogleDriveConnectionDiagnostics,
 	snapshotGoogleDriveE2e,
 	type E2eDriveControl,
 	type E2eDriveSnapshot
@@ -148,46 +147,18 @@ const openAuthenticatedLinkedSong = async ({
 		}
 	);
 	await browser.refresh();
-	// Temporary HPA-316 Windows diagnostics (remove once the root cause is
-	// confirmed). The e2e build (VITE_WDIO=true) wraps
-	// googleDriveService.refreshConnection in the renderer BEFORE mount, so the
-	// ORIGINAL boot refresh fired by restoreSession is attributed directly —
-	// no post-hoc transport inference. Interpretation of the snapshot:
-	// - resolved+connected+storeConnected → refresh fine; button issue is
-	//   renderer-side beyond the store.
-	// - resolved+connected+!storeConnected → store discarded the result
-	//   (generation guard or later reset).
-	// - resolved+!withConnection+storeHasError → refresh errored (error text
-	//   withheld by design).
-	// - resolved+connected:false → backend returned disconnected; seeding or
-	//   backend issue (the probe below corroborates).
-	// - pending:true at BOTH reads → the invoke never settled: dropped at the
-	//   IPC boundary on Windows; the probe then shows whether the backend
-	//   itself answers (seed fine, transport-side drop) or not.
 	await waitForUiDisplayed('input[placeholder="Search songs and folders..."]', {
 		timeoutMsg: 'Expected the authenticated E2E workspace to restore'
 	});
-	// Post-boot snapshot: the boot refresh is pending or already settled here.
-	await logDriveRefreshDiagnosticsSafely('post-boot');
 	await $(`//button[.//span[normalize-space()="${fixtureSongTitle}"]]`).click();
 	await waitForUiDisplayed('h2', { text: 'Song Details' });
-
-	console.info(
-		`[gdrive-diag] connection probe: ${JSON.stringify(await probeGoogleDriveConnectionDiagnostics())}`
-	);
 	const upload = await $(
 		`button[aria-label="${googleDriveFileId ? 'Re-upload ZIP to Drive' : 'Upload ZIP to Drive'}"]`
 	);
-	try {
-		await upload.waitForEnabled({
-			timeout: 15_000,
-			timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
-		});
-	} finally {
-		// Final snapshot whether waitForEnabled passed or failed; sanitized
-		// booleans/timestamps only, fixed marker on read failure.
-		await logDriveRefreshDiagnosticsSafely('final');
-	}
+	await upload.waitForEnabled({
+		timeout: 15_000,
+		timeoutMsg: 'Expected seeded Google Drive connection to enable upload'
+	});
 };
 
 const clickDriveUpload = async (hasExistingFile: boolean): Promise<void> => {

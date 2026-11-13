@@ -26,6 +26,14 @@ async function initializeApp() {
 		// `window.__TAURI__.core.invoke` so e2e tests can intercept/spy on
 		// Tauri commands. No namespace is consumed here by design.
 		void (await import('@wdio/tauri-plugin'));
+		// HPA-316 temporary Windows diagnostic (remove after CI diagnosis):
+		// wraps googleDriveService.refreshConnection BEFORE mount so the
+		// original boot refresh is observed directly (pending/settled/rejected
+		// plus the applied store outcome). Exposes only safe booleans/timestamps
+		// via window.__dtxDriveRefreshDiag; forwards the result unchanged.
+		const { installDriveRefreshDiagnostics } =
+			await import('./services/driveRefreshDiagnostics');
+		installDriveRefreshDiagnostics();
 	}
 
 	// Ensure dark mode is enabled for TailwindCSS

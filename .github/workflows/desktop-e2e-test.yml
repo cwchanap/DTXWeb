@@ -110,6 +110,15 @@ jobs:
           set -o pipefail
           bun run --filter=dtx-e2e-desktop e2e:run 2>&1 | tee packages/e2e-desktop/logs/runner.log
 
+      # TEMPORARY (HPA-316 task 4): OS-named workspace library screenshot for a
+      # vision-capable reviewer; remove this step with the spec capture.
+      - name: Upload workspace library visual evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-e2e-visual-evidence-${{ matrix.os }}
+          path: packages/e2e-desktop/visual-evidence/
+          if-no-files-found: error
+
       - name: Generate desktop E2E Rust coverage
         if: runner.os == 'macOS'
         working-directory: packages/dtx-desktop/src-tauri

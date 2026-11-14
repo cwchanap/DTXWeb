@@ -57,7 +57,8 @@ describe('Desktop workspace library', () => {
 			join(fixture.workspaceRoot, fixtureFolderName)
 		);
 
-		await waitForUiDisplayed('h1', { text: 'DTX EDITOR' });
+		await waitForUiDisplayed('h1');
+		await expect($('h1')).toHaveText('DTX EDITOR', { containing: true });
 		await expect($('#title-input')).toHaveValue(fixtureSongTitle);
 		await expect(
 			$('//*[contains(normalize-space(), "Could not load chart files")]')

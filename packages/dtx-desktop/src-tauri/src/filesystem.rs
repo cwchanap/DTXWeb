@@ -236,7 +236,11 @@ async fn list_files_with_workspace_state(
 /// Strips the Windows verbatim path prefix (`\\?\` or `\\?\UNC\`) returned by
 /// `fs::canonicalize` when the resulting Win32 path stays below `MAX_PATH`, so
 /// IPC paths exposed to the renderer behave like normal Windows paths (allowing
-/// `/` separators and `..` normalization). Leaves non-Windows paths untouched.
+/// `/` separators and `..` normalization). The prefix is kept when a path
+/// component needs it to preserve its identity (trailing periods/spaces, DOS
+/// device names): without `\\?\`, Win32 normalization would retarget the path
+/// (`song.` resolves to `song`, `NUL` resolves to the device). Leaves
+/// non-Windows paths untouched.
 pub(crate) fn simplify_canonical_path(path: PathBuf) -> PathBuf {
     #[cfg(windows)]
     {
@@ -251,7 +255,7 @@ pub(crate) fn simplify_canonical_path(path: PathBuf) -> PathBuf {
 fn strip_windows_verbatim_prefix(raw: &str) -> String {
     if let Some(unc_tail) = raw.strip_prefix(r"\\?\UNC\") {
         let simplified = format!(r"\\{unc_tail}");
-        if simplified.len() < 260 {
+        if simplified.len() < 260 && !requires_windows_verbatim_prefix(unc_tail) {
             return simplified;
         }
         return raw.to_string();
@@ -263,11 +267,52 @@ fn strip_windows_verbatim_prefix(raw: &str) -> String {
             && bytes[1] == b':'
             && bytes[2] == b'\\'
             && drive_tail.len() < 260
+            && !requires_windows_verbatim_prefix(&drive_tail[3..])
         {
             return drive_tail.to_string();
         }
     }
     raw.to_string()
+}
+
+/// Returns true when a path tail (after the drive/`UNC\server` portion)
+/// contains a component that Win32 would normalize away: trailing periods or
+/// spaces are stripped, and legacy DOS device names redirect to the device
+/// rather than the directory entry, so only the verbatim form preserves the
+/// canonical path's identity.
+#[cfg(any(windows, test))]
+fn requires_windows_verbatim_prefix(tail: &str) -> bool {
+    tail.split('\\').any(|component| {
+        if component.ends_with('.') || component.ends_with(' ') {
+            return true;
+        }
+        let stem = component.split('.').next().unwrap_or(component);
+        matches!(
+            stem.to_ascii_uppercase().as_str(),
+            "CON"
+                | "PRN"
+                | "AUX"
+                | "NUL"
+                | "COM1"
+                | "COM2"
+                | "COM3"
+                | "COM4"
+                | "COM5"
+                | "COM6"
+                | "COM7"
+                | "COM8"
+                | "COM9"
+                | "LPT1"
+                | "LPT2"
+                | "LPT3"
+                | "LPT4"
+                | "LPT5"
+                | "LPT6"
+                | "LPT7"
+                | "LPT8"
+                | "LPT9"
+        )
+    })
 }
 
 pub(crate) fn canonicalize_path_sync(path: &Path) -> std::io::Result<PathBuf> {

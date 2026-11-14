@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toBlobPart } from './fileUtils';
+import { isWindowsPath, toBlobPart } from './fileUtils';
 
 describe('toBlobPart', () => {
 	it('returns ArrayBuffer when given Uint8Array (including views with offsets)', () => {
@@ -23,5 +23,22 @@ describe('toBlobPart', () => {
 		const bytes = new Uint8Array([65, 66]); // "AB"
 		const file = new File([toBlobPart(bytes)], 'test.bin');
 		expect(file.size).toBe(2);
+	});
+});
+
+describe('isWindowsPath', () => {
+	it('detects drive-letter and UNC/verbatim roots', () => {
+		expect(isWindowsPath('C:\\songs\\win-song')).toBe(true);
+		expect(isWindowsPath('C:/songs/win-song')).toBe(true);
+		expect(isWindowsPath('d:\\songs')).toBe(true);
+		expect(isWindowsPath('\\\\server\\share\\songs')).toBe(true);
+		expect(isWindowsPath('\\\\?\\C:\\music\\song.')).toBe(true);
+	});
+
+	it('rejects POSIX paths, including names with literal backslashes', () => {
+		expect(isWindowsPath('/songs/test-song')).toBe(false);
+		expect(isWindowsPath('/Users/me/AC\\DC')).toBe(false);
+		expect(isWindowsPath('/Users/me/AC\\DC\\SET.def')).toBe(false);
+		expect(isWindowsPath('')).toBe(false);
 	});
 });

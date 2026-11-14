@@ -28,6 +28,7 @@
 	import { DTXFile, LaneMeasureNote, SimFile, SoundChip, setFileProvider } from '@dtx/common';
 	import { DesktopFileProvider } from '../services/desktopFileProvider';
 	import { desktopHost } from '../services/desktopHost';
+	import { isWindowsPath } from '../utils/fileUtils';
 	import { editorMappingStore } from '../stores/editorMappingStore';
 	import { workspaceStore } from '../stores/workspaceStore';
 
@@ -394,8 +395,12 @@
 	});
 
 	const joinFolderPath = (folderPath: string, fileName: string): string => {
-		const separator = folderPath.includes('\\') ? '\\' : '/';
-		return `${folderPath.replace(/[/\\]+$/, '')}${separator}${fileName}`;
+		// Only real Windows path syntax (drive/UNC) selects '\' — a literal
+		// backslash inside a POSIX folder name must be preserved.
+		const windows = isWindowsPath(folderPath);
+		const separator = windows ? '\\' : '/';
+		const trimmed = folderPath.replace(windows ? /[/\\]+$/ : /\/+$/, '');
+		return `${trimmed}${separator}${fileName}`;
 	};
 
 	const loadFromSimFileId = async (simFileIdParam: string) => {
@@ -422,7 +427,10 @@
 			// Get song name from metadata or fall back to folder name
 			const songName =
 				songMetadata?.songName ||
-				folderPath.split(/[/\\]/).filter(Boolean).pop() ||
+				folderPath
+					.split(isWindowsPath(folderPath) ? /[/\\]/ : /\//)
+					.filter(Boolean)
+					.pop() ||
 				'Unknown';
 			currentSongName = songName;
 

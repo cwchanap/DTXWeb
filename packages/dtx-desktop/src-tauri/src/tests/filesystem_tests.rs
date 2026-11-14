@@ -1565,3 +1565,30 @@ fn strip_windows_verbatim_prefix_normalizes_drive_and_unc_paths() {
     let long_verbatim = format!(r"\\?\{long_tail}");
     assert_eq!(strip_windows_verbatim_prefix(&long_verbatim), long_verbatim);
 }
+
+#[test]
+fn strip_windows_verbatim_prefix_preserves_normalization_sensitive_paths() {
+    // Win32 resolves non-verbatim paths through normalization that strips
+    // trailing periods/spaces and redirects DOS device names, so dropping
+    // `\\?\` would silently retarget these paths.
+    for verbatim in [
+        r"\\?\C:\music\song.",
+        r"\\?\C:\music\trailing ",
+        r"\\?\C:\music\a.dtx\song.",
+        r"\\?\C:\devices\NUL",
+        r"\\?\C:\devices\nul.txt",
+        r"\\?\C:\devices\COM1",
+        r"\\?\UNC\server\share\song.",
+    ] {
+        assert_eq!(strip_windows_verbatim_prefix(verbatim), verbatim);
+    }
+    // Interior periods/spaces that Win32 preserves still simplify.
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\C:\music\song.dtx"),
+        r"C:\music\song.dtx"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\C:\music\my song"),
+        r"C:\music\my song"
+    );
+}

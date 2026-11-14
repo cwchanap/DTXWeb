@@ -155,8 +155,8 @@ fn set_persists_canonical_root_before_replacing_memory() {
     assert_eq!(
         fs::read_to_string(path).expect("settings file"),
         format!(
-            "{{\n  \"workspaceRoot\": \"{}\",\n  \"bookmarks\": []\n}}",
-            canonical.display()
+            "{{\n  \"workspaceRoot\": {},\n  \"bookmarks\": []\n}}",
+            serde_json::to_string(canonical.to_str().expect("UTF-8 canonical path")).unwrap()
         )
     );
 }
@@ -770,6 +770,71 @@ fn bookmarks_persist_across_a_reload() {
         reloaded.current_root_id().as_deref(),
         Some(bookmark.id.as_str())
     );
+}
+
+#[test]
+fn load_preserves_bookmark_entries_and_order() {
+    // Bookmark paths are not validated on load — entries whose directories
+    // no longer exist stay in the pool (switch_to_bookmark reports
+    // NotAccessible at switch time) and keep their id, name, and order.
+    let data_dir = TempDir::new().expect("data dir");
+    let missing = data_dir.path().join("missing-workspace");
+    let other = data_dir.path().join("other-workspace");
+    let path = settings_path(data_dir.path());
+    fs::create_dir_all(path.parent().expect("settings parent")).expect("settings parent");
+    fs::write(
+        &path,
+        format!(
+            r#"{{"workspaceRoot":null,"bookmarks":[{{"id":"b1","path":{},"name":"Gone"}},{{"id":"b2","path":{},"name":"Also Gone"}}]}}"#,
+            serde_json::to_string(&missing.to_str().expect("UTF-8 path")).unwrap(),
+            serde_json::to_string(&other.to_str().expect("UTF-8 path")).unwrap()
+        ),
+    )
+    .expect("settings file");
+
+    let state = WorkspaceRootState::load_from_path(path);
+
+    let bookmarks = state.list_bookmarks();
+    assert_eq!(bookmarks.len(), 2);
+    assert_eq!(bookmarks[0].id, "b1");
+    assert_eq!(bookmarks[0].name, "Gone");
+    assert_eq!(bookmarks[1].id, "b2");
+    assert_eq!(bookmarks[1].name, "Also Gone");
+    assert_eq!(std::path::PathBuf::from(&bookmarks[0].path), missing);
+}
+
+#[cfg(windows)]
+#[test]
+fn load_normalizes_verbatim_bookmark_paths() {
+    // Older builds persisted raw `fs::canonicalize` output, which carries a
+    // `\\?\` verbatim prefix on Windows. On load the stored path must be
+    // simplified to the same form as freshly canonicalized roots, otherwise
+    // current_root_id misses and re-bookmarking appends a duplicate.
+    let data_dir = TempDir::new().expect("data dir");
+    let root = data_dir.path().join("workspace");
+    fs::create_dir(&root).expect("workspace directory");
+    let canonical = canonicalize_path_sync(&root).expect("canonical root");
+    let verbatim = format!(r"\\?\{}", canonical.display());
+    let path = settings_path(data_dir.path());
+    fs::create_dir_all(path.parent().expect("settings parent")).expect("settings parent");
+    fs::write(
+        &path,
+        format!(
+            r#"{{"workspaceRoot":{},"bookmarks":[{{"id":"b1","path":{},"name":"Songs"}}]}}"#,
+            serde_json::to_string(&canonical.to_str().expect("UTF-8 workspace path")).unwrap(),
+            serde_json::to_string(&verbatim).unwrap()
+        ),
+    )
+    .expect("settings file");
+
+    let state = WorkspaceRootState::load_from_path(path);
+
+    let bookmarks = state.list_bookmarks();
+    assert_eq!(bookmarks.len(), 1);
+    assert_eq!(bookmarks[0].id, "b1");
+    assert_eq!(bookmarks[0].name, "Songs");
+    assert_eq!(std::path::PathBuf::from(&bookmarks[0].path), canonical);
+    assert_eq!(state.current_root_id().as_deref(), Some("b1"));
 }
 
 // ---------------------------------------------------------------------------

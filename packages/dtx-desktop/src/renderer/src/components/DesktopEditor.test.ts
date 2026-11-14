@@ -553,6 +553,35 @@ describe('DesktopEditor', () => {
 			});
 		});
 
+		it('preserves literal backslashes in POSIX folder paths', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: '/songs/AC\\DC',
+				songName: ''
+			});
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('SET.def')) {
+					return { kind: 'text', error: null, content: '#TITLE ACDC' };
+				}
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'text', error: null, content: '#TITLE ACDC' };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({
+				files: [{ fileName: 'ext.dtx' }],
+				error: null
+			});
+
+			render(DesktopEditor, { props: { simFileId: 'acdc-song' } });
+
+			await waitFor(() => {
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith('/songs/AC\\DC/SET.def');
+			});
+			await waitFor(() => {
+				expect(screen.getByText(/· AC\\DC/)).toBeInTheDocument();
+			});
+		});
+
 		it('falls back to lowercase set.def when uppercase fails', async () => {
 			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
 				folderPath: '/songs/test-song',

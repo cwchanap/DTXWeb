@@ -1,4 +1,5 @@
 use super::*;
+use crate::filesystem::canonicalize_path_sync;
 use std::fs;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{mpsc, Arc, TryLockError};
@@ -132,7 +133,7 @@ fn load_canonicalizes_a_saved_workspace_directory() {
 
     assert_eq!(
         state.current_optional(),
-        Some(fs::canonicalize(root).expect("canonical root"))
+        Some(canonicalize_path_sync(&root).expect("canonical root"))
     );
 }
 
@@ -147,7 +148,7 @@ fn set_persists_canonical_root_before_replacing_memory() {
     let selected = state
         .set_from_dialog_selection(&root.join("."))
         .expect("set workspace");
-    let canonical = fs::canonicalize(&root).expect("canonical root");
+    let canonical = canonicalize_path_sync(&root).expect("canonical root");
 
     assert_eq!(selected, canonical);
     assert_eq!(state.current_optional(), Some(canonical.clone()));
@@ -175,7 +176,7 @@ fn set_keeps_existing_memory_when_persistence_fails() {
     assert!(state.set_from_dialog_selection(&replacement).is_err());
     assert_eq!(
         state.current_optional(),
-        Some(fs::canonicalize(original).expect("canonical original"))
+        Some(canonicalize_path_sync(&original).expect("canonical original"))
     );
 }
 
@@ -209,7 +210,7 @@ fn clear_keeps_existing_memory_when_persistence_fails() {
     assert!(state.clear().is_err());
     assert_eq!(
         state.current_optional(),
-        Some(fs::canonicalize(root).expect("canonical root"))
+        Some(canonicalize_path_sync(&root).expect("canonical root"))
     );
 }
 
@@ -226,7 +227,7 @@ fn canceled_selection_does_not_establish_or_replace_a_workspace() {
     assert!(result.file_paths.is_empty());
     assert_eq!(
         state.current_optional(),
-        Some(fs::canonicalize(root).expect("canonical root"))
+        Some(canonicalize_path_sync(&root).expect("canonical root"))
     );
 
     let first_run = WorkspaceRootState::load_from_path(
@@ -283,7 +284,7 @@ fn concurrent_clear_cannot_interleave_after_a_selector_persists() {
     selector_arrived_receiver
         .recv_timeout(TEST_COORDINATION_TIMEOUT)
         .expect("selector post-persist rendezvous");
-    let canonical_root = fs::canonicalize(&root).expect("canonical root");
+    let canonical_root = canonicalize_path_sync(&root).expect("canonical root");
     let persisted: WorkspaceSettings = read_json_or_default(&path, "workspace interleaving test");
     assert_eq!(
         persisted.workspace_root,
@@ -405,7 +406,7 @@ fn persist_errors_when_no_settings_path_is_configured() {
     fs::create_dir(&replacement).expect("replacement directory");
 
     let state = test_support::managed_workspace_state(&original);
-    let canonical_original = fs::canonicalize(&original).expect("canonical original");
+    let canonical_original = canonicalize_path_sync(&original).expect("canonical original");
 
     let error = state
         .set_from_dialog_selection(&replacement)
@@ -430,7 +431,7 @@ fn selection_result_returns_the_canonical_path_for_a_valid_selection() {
     let root = data_dir.path().join("workspace");
     fs::create_dir(&root).expect("workspace directory");
     let state = WorkspaceRootState::load_from_path(settings_path(data_dir.path()));
-    let canonical = fs::canonicalize(&root).expect("canonical root");
+    let canonical = canonicalize_path_sync(&root).expect("canonical root");
 
     let result = selection_result(&state, Some(root)).expect("selection result");
 
@@ -453,7 +454,7 @@ fn load_reads_workspace_settings_from_the_e2e_data_directory() {
     let data_dir = TempDir::new().expect("data dir");
     let root = data_dir.path().join("workspace");
     fs::create_dir(&root).expect("workspace directory");
-    let canonical = fs::canonicalize(&root).expect("canonical root");
+    let canonical = canonicalize_path_sync(&root).expect("canonical root");
 
     let settings = data_dir.path().join("dtxweb").join("workspace.json");
     fs::create_dir_all(settings.parent().expect("settings parent")).expect("settings parent");

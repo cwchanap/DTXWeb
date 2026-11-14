@@ -235,6 +235,23 @@ test('waits through an initial connection refusal until the embedded server repo
 	}
 });
 
+test('keeps retrying when an embedded readiness probe rejects with undefined before child exit', async () => {
+	const dependencies = makeDependencies({ port: 46_026 });
+	let fetchAttempts = 0;
+	dependencies.fetch = mock(async () => {
+		fetchAttempts += 1;
+		if (fetchAttempts === 1) throw undefined;
+		return { ok: true, json: async () => ({ value: { ready: true } }) };
+	});
+	try {
+		const browser = await startStandaloneTauriSession(input, dependencies);
+		expect(fetchAttempts).toBe(2);
+		await terminateStandaloneTauriSession(browser);
+	} finally {
+		cleanupLease(46_026);
+	}
+});
+
 test('waits for the Tauri invoke bridge after the embedded server reports ready', async () => {
 	const dependencies = makeDependencies({ port: 46_018 });
 	const evaluate = dependencies.evaluate;

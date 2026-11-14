@@ -522,6 +522,37 @@ describe('DesktopEditor', () => {
 			});
 		});
 
+		it('reads SET.def and derives fallback song name from Windows backslash folder paths', async () => {
+			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
+				folderPath: 'C:\\songs\\win-song',
+				songName: ''
+			});
+			mockDesktopHost.readFile.mockImplementation(async (filePath: string) => {
+				if (filePath.endsWith('SET.def')) {
+					return { kind: 'text', error: null, content: '#TITLE Win Song' };
+				}
+				if (filePath.endsWith('.dtx')) {
+					return { kind: 'text', error: null, content: '#TITLE Win Song' };
+				}
+				return { kind: 'error', error: 'not found', content: '' };
+			});
+			mockDesktopHost.listFiles.mockResolvedValue({
+				files: [{ fileName: 'ext.dtx' }],
+				error: null
+			});
+
+			render(DesktopEditor, { props: { simFileId: 'win-song' } });
+
+			await waitFor(() => {
+				expect(mockDesktopHost.readFile).toHaveBeenCalledWith(
+					'C:\\songs\\win-song\\SET.def'
+				);
+			});
+			await waitFor(() => {
+				expect(screen.getByText(/· win-song/)).toBeInTheDocument();
+			});
+		});
+
 		it('falls back to lowercase set.def when uppercase fails', async () => {
 			vi.mocked(editorMappingStore.getSongMetadata).mockReturnValue({
 				folderPath: '/songs/test-song',

@@ -107,6 +107,18 @@ describe('DesktopFileProvider', () => {
 			expect(host.readFile).toHaveBeenCalledWith('/workspace/sound/kick.wav');
 		});
 
+		it('joins Windows backslash workspace roots with backslashes', async () => {
+			provider.setWorkspaceRoot('C:\\workspace');
+			host.readFile.mockResolvedValue({
+				error: null,
+				content: new Uint8Array([1, 2, 3])
+			});
+
+			await provider.getFile(null, 'sound/kick.wav');
+
+			expect(host.readFile).toHaveBeenCalledWith('C:\\workspace\\sound\\kick.wav');
+		});
+
 		it('returns undefined when host returns error', async () => {
 			provider.setWorkspaceRoot('/workspace');
 			host.readFile.mockResolvedValue({

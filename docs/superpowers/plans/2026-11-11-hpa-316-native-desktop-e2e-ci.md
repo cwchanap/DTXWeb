@@ -1,6 +1,6 @@
 # HPA-316 — Native desktop E2E CI: implementation plan
 
-**Status:** Planned (not implemented).  
+**Status:** Implemented (target-OS CI verification in progress).  
 **Linear:** https://linear.app/cwchanap/issue/HPA-316/ci-run-desktop-e2e-on-macos-and-windows-target-oses-not-ubuntu-latest  
 **Design (source of truth):** [2026-11-11-hpa-316-native-desktop-e2e-ci-design.md](../specs/2026-11-11-hpa-316-native-desktop-e2e-ci-design.md)  
 **Delivery rule:** **Exactly one PR for HPA-316.** Commit the implementation, tests, and verified results to the **same** draft-PR branch; do not open a follow-up implementation PR.
@@ -10,7 +10,7 @@
 | File                                                                                           | Intended change                                                                                                                                                                                 |
 | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `.github/workflows/desktop-e2e-test.yml`                                                       | Replace Ubuntu E2E with a non-fail-fast macOS + Windows matrix; job-level Bash default; portable harness unit-test step; shared build/run; macOS-only Rust E2E coverage; OS-named failure logs. |
-| `packages/e2e-desktop/package.json` and `scripts/run-harness-tests.mjs`                        | Add one reusable cross-platform `test:harness` command; run each of the five Bun test files in a separate child process to isolate process-global mocks.                                        |
+| `packages/e2e-desktop/package.json` and `scripts/run-harness-tests.mjs`                        | Add one reusable cross-platform `test:harness` command; run each of the six Bun test files in a separate child process to isolate process-global mocks.                                         |
 | `packages/e2e-desktop/support/standalone-session.ts` and `support/standalone-session.test.mjs` | **Upfront diagnostic only:** include child exit code and signal in early-readiness failures and add focused regression coverage; other harness fixes require reproduced target-OS CI evidence.  |
 | `packages/e2e-desktop/wdio.conf.ts`                                                            | **Only if real CI failure proves it necessary:** targeted embedded driver startup fix.                                                                                                          |
 | `packages/e2e-desktop/scripts/*.ts` / focused tests                                            | **Only if needed** to fix a reproduced Windows/macOS relaunch or crash-recovery regression.                                                                                                     |
@@ -56,7 +56,7 @@ Do not edit package versions, Rust business logic, the production Tauri config, 
 
 ## Done when
 
-- [ ] `bun run --filter=dtx-e2e-desktop test:harness` passes locally on macOS and Windows and as a pre-build step in both CI jobs, running the five suites in separate Bun processes.
+- [ ] `bun run --filter=dtx-e2e-desktop test:harness` passes locally on macOS and Windows and as a pre-build step in both CI jobs, running the six suites in separate Bun processes.
 - [ ] `macos-latest` runs native E2E end-to-end, including relaunch and crash recovery.
 - [ ] `windows-latest` runs native E2E end-to-end, including relaunch and crash recovery.
 - [ ] A first-iteration early native-app exit shows the child exit code and signal (with focused harness regression tests).

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
-import { readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const TEST_DIRECTORIES = ['support', 'scripts'];
 
@@ -16,7 +17,7 @@ export const discoverHarnessTests = (packageRoot) =>
 	).sort();
 
 const runTestFile = (spawnProcess, file, packageRoot) =>
-	new Promise((resolve) => {
+	new Promise((resolvePromise) => {
 		const child = spawnProcess(process.execPath, ['test', `./${file}`], {
 			cwd: packageRoot,
 			stdio: 'inherit'
@@ -25,13 +26,20 @@ const runTestFile = (spawnProcess, file, packageRoot) =>
 		const settle = (exitCode) => {
 			if (settled) return;
 			settled = true;
-			resolve(exitCode);
+			resolvePromise(exitCode);
 		};
 		child.once('exit', (code) => settle(code ?? 1));
 		child.once('error', () => settle(1));
 	});
 
-export const runHarnessTests = async (packageRoot, { spawn: spawnProcess = spawn } = {}) => {
+export const runHarnessTests = async (
+	packageRoot,
+	{ spawn: spawnProcess = spawn, versions = process.versions } = {}
+) => {
+	if (!versions?.bun) {
+		console.error('run-harness-tests.mjs must be executed with Bun');
+		return 1;
+	}
 	const files = discoverHarnessTests(packageRoot);
 	// A gate that passes without running anything would silently stop testing
 	// the harness after a rename; fail loudly instead.
@@ -46,6 +54,18 @@ export const runHarnessTests = async (packageRoot, { spawn: spawnProcess = spawn
 	return 0;
 };
 
-if (import.meta.main) {
-	process.exit(await runHarnessTests(join(import.meta.dirname, '..')));
+const isDirectExecution = () => {
+	if (import.meta.main) return true;
+	const entryArg = process.argv[1];
+	if (!entryArg) return false;
+	try {
+		return realpathSync(resolve(entryArg)) === realpathSync(fileURLToPath(import.meta.url));
+	} catch {
+		return false;
+	}
+};
+
+if (isDirectExecution()) {
+	const scriptDir = dirname(fileURLToPath(import.meta.url));
+	process.exit(await runHarnessTests(join(scriptDir, '..')));
 }

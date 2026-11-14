@@ -1019,9 +1019,7 @@ async fn canonicalize_within_workspace_accepts_path_inside_root() {
 
     assert!(result.is_ok());
     let canonical = result.unwrap();
-    let canonical_root = fs::canonicalize(root.path())
-        .await
-        .expect("canonicalize root");
+    let canonical_root = canonicalize_path_sync(root.path()).expect("canonicalize root");
     assert!(canonical.starts_with(&canonical_root));
 }
 
@@ -1543,4 +1541,27 @@ async fn load_tree_structure_command_wrapper_returns_dtx_folders() {
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].name, "DTXFiles.Test");
     assert!(result[0].contains_dtx_files);
+}
+
+#[test]
+fn strip_windows_verbatim_prefix_normalizes_drive_and_unc_paths() {
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\C:\Users\runneradmin\AppData\Local\Temp\ws"),
+        r"C:\Users\runneradmin\AppData\Local\Temp\ws"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\UNC\server\share\workspace"),
+        r"\\server\share\workspace"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"C:\Users\runneradmin\ws"),
+        r"C:\Users\runneradmin\ws"
+    );
+    assert_eq!(
+        strip_windows_verbatim_prefix(r"\\?\Volume{1234}\foo"),
+        r"\\?\Volume{1234}\foo"
+    );
+    let long_tail = format!(r"C:\{}", "a".repeat(260));
+    let long_verbatim = format!(r"\\?\{long_tail}");
+    assert_eq!(strip_windows_verbatim_prefix(&long_verbatim), long_verbatim);
 }

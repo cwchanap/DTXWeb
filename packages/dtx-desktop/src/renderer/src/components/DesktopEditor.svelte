@@ -393,6 +393,11 @@
 		};
 	});
 
+	const joinFolderPath = (folderPath: string, fileName: string): string => {
+		const separator = folderPath.includes('\\') ? '\\' : '/';
+		return `${folderPath.replace(/[/\\]+$/, '')}${separator}${fileName}`;
+	};
+
 	const loadFromSimFileId = async (simFileIdParam: string) => {
 		// Decode the simFileId in case it's URL-encoded
 		const decodedSimFileId = decodeURIComponent(simFileIdParam);
@@ -415,7 +420,10 @@
 			}
 
 			// Get song name from metadata or fall back to folder name
-			const songName = songMetadata?.songName || folderPath.split('/').pop() || 'Unknown';
+			const songName =
+				songMetadata?.songName ||
+				folderPath.split(/[/\\]/).filter(Boolean).pop() ||
+				'Unknown';
 			currentSongName = songName;
 
 			// Create chart structure for difficulty switching
@@ -464,7 +472,7 @@
 
 		try {
 			// Read SET.def directly from folder path
-			const setDefResult = await desktopHost.readFile(`${folderPath}/SET.def`);
+			const setDefResult = await desktopHost.readFile(joinFolderPath(folderPath, 'SET.def'));
 			if (!setDefResult.error) {
 				const blob = new Blob([toBlobPart(setDefResult.content)], {
 					type: 'text/plain'
@@ -472,7 +480,9 @@
 				setDefFile = new File([blob], 'SET.def');
 			} else {
 				// Try lowercase
-				const setDefLowerResult = await desktopHost.readFile(`${folderPath}/set.def`);
+				const setDefLowerResult = await desktopHost.readFile(
+					joinFolderPath(folderPath, 'set.def')
+				);
 				if (!setDefLowerResult.error) {
 					const blob = new Blob([toBlobPart(setDefLowerResult.content)], {
 						type: 'text/plain'
@@ -499,7 +509,9 @@
 		try {
 			const dtxFiles = ['ext.dtx', 'mas.dtx', 'bas.dtx', 'adv.dtx', 'nov.dtx'];
 			for (const dtxFileName of dtxFiles) {
-				const dtxResult = await desktopHost.readFile(`${folderPath}/${dtxFileName}`);
+				const dtxResult = await desktopHost.readFile(
+					joinFolderPath(folderPath, dtxFileName)
+				);
 				if (!dtxResult.error) {
 					// Use the pre-decoded content directly since the Rust backend already handled encoding
 					if (dtxResult.kind === 'text') {
@@ -584,7 +596,7 @@
 				)
 				.map((file: { fileName: string }) => ({
 					name: file.fileName,
-					path: `${folderPath}/${file.fileName}`
+					path: joinFolderPath(folderPath, file.fileName)
 				}));
 
 			if (dtxFiles.length > 0) {
@@ -627,7 +639,7 @@
 			let bpmNotes: Record<string, number> = {};
 			let soundChips: SoundChip[] = [];
 
-			const dtxResult = await desktopHost.readFile(`${folderPath}/${dtxFileName}`);
+			const dtxResult = await desktopHost.readFile(joinFolderPath(folderPath, dtxFileName));
 
 			if (!dtxResult.error) {
 				dtxFile = new DTXFile(toUtf8String(dtxResult.content));

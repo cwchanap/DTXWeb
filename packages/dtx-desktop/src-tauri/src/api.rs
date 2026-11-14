@@ -623,6 +623,10 @@ pub async fn upload_file_to_api(
         Ok(path) => path,
         Err(error) => return api_failure(error.to_string()),
     };
+    let containment_song_folder = match fs::canonicalize(&canonical_song_folder).await {
+        Ok(path) => path,
+        Err(error) => return api_failure(error.to_string()),
+    };
     let file_path = canonical_song_folder.join(file_name);
     let canonical_file_path = match fs::canonicalize(&file_path).await {
         Ok(path) => path,
@@ -630,7 +634,7 @@ pub async fn upload_file_to_api(
             return api_failure(format!("File not found: {}", file_path.display()));
         }
     };
-    if !canonical_file_path.starts_with(&canonical_song_folder) {
+    if !canonical_file_path.starts_with(&containment_song_folder) {
         return api_failure("File path is outside song folder");
     }
 

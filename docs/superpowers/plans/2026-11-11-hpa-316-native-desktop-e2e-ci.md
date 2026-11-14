@@ -7,14 +7,14 @@
 
 ## Change surface
 
-| File | Intended change |
-| --- | --- |
-| `.github/workflows/desktop-e2e-test.yml` | Replace Ubuntu E2E with a non-fail-fast macOS + Windows matrix; job-level Bash default; portable harness unit-test step; shared build/run; macOS-only Rust E2E coverage; OS-named failure logs. |
-| `packages/e2e-desktop/package.json` and `scripts/run-harness-tests.mjs` | Add one reusable cross-platform `test:harness` command; run each of the five Bun test files in a separate child process to isolate process-global mocks. |
-| `packages/e2e-desktop/support/standalone-session.ts` and `support/standalone-session.test.mjs` | **Upfront diagnostic only:** include child exit code and signal in early-readiness failures and add focused regression coverage; other harness fixes require reproduced target-OS CI evidence. |
-| `packages/e2e-desktop/wdio.conf.ts` | **Only if real CI failure proves it necessary:** targeted embedded driver startup fix. |
-| `packages/e2e-desktop/scripts/*.ts` / focused tests | **Only if needed** to fix a reproduced Windows/macOS relaunch or crash-recovery regression. |
-| These two planning docs | Record agreed design decisions and scope changes only. Keep ephemeral CI run URLs and caveats in this PR's Verification checklist. |
+| File                                                                                           | Intended change                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `.github/workflows/desktop-e2e-test.yml`                                                       | Replace Ubuntu E2E with a non-fail-fast macOS + Windows matrix; job-level Bash default; portable harness unit-test step; shared build/run; macOS-only Rust E2E coverage; OS-named failure logs. |
+| `packages/e2e-desktop/package.json` and `scripts/run-harness-tests.mjs`                        | Add one reusable cross-platform `test:harness` command; run each of the five Bun test files in a separate child process to isolate process-global mocks.                                        |
+| `packages/e2e-desktop/support/standalone-session.ts` and `support/standalone-session.test.mjs` | **Upfront diagnostic only:** include child exit code and signal in early-readiness failures and add focused regression coverage; other harness fixes require reproduced target-OS CI evidence.  |
+| `packages/e2e-desktop/wdio.conf.ts`                                                            | **Only if real CI failure proves it necessary:** targeted embedded driver startup fix.                                                                                                          |
+| `packages/e2e-desktop/scripts/*.ts` / focused tests                                            | **Only if needed** to fix a reproduced Windows/macOS relaunch or crash-recovery regression.                                                                                                     |
+| These two planning docs                                                                        | Record agreed design decisions and scope changes only. Keep ephemeral CI run URLs and caveats in this PR's Verification checklist.                                                              |
 
 Do not edit package versions, Rust business logic, the production Tauri config, or the separate native-dialog automation ticket unless a demonstrated blocker requires it.
 
@@ -28,7 +28,7 @@ Do not edit package versions, Rust business logic, the production Tauri config, 
 - Add `test:harness` to `packages/e2e-desktop/package.json` as `bun scripts/run-harness-tests.mjs`. Implement the small runner in `packages/e2e-desktop/scripts/run-harness-tests.mjs`: enumerate `support/*.test.mjs` and `scripts/*.test.mjs` with Node filesystem APIs, sort paths, and spawn `process.execPath test ./<path>` for **each file in its own process** via `node:child_process` with inherited stdio; stop at the first failed exit/spawn error. No new test dependency or shell glob. The separate processes isolate `relaunch-smoke.test.mjs`'s process-global `mock.module` from `standalone-session.test.mjs`.
 - Before the expensive native build, run `bun run --filter=dtx-e2e-desktop test:harness` in the two-OS matrix. Verify the **same command locally on macOS and Windows**, rather than requiring developers to copy a Bash loop from CI.
 
-- Before the **first** native CI run, add the minimal early-exit diagnostic to `support/standalone-session.ts`: when the child exits during embedded WebDriver readiness, include its actual `exitCode` and `signalCode` in the thrown error. Construct or refresh the message *when the exit is observed* (not before spawning), while keeping current readiness/retry semantics. Apply consistently to the invoke-bridge early-exit path if it shares the same issue; no new abstraction is needed. Add focused regression tests for a clean code-0 exit and a failed exit/signal in `standalone-session.test.mjs`, run through `test:harness`.
+- Before the **first** native CI run, add the minimal early-exit diagnostic to `support/standalone-session.ts`: when the child exits during embedded WebDriver readiness, include its actual `exitCode` and `signalCode` in the thrown error. Construct or refresh the message _when the exit is observed_ (not before spawning), while keeping current readiness/retry semantics. Apply consistently to the invoke-bridge early-exit path if it shares the same issue; no new abstraction is needed. Add focused regression tests for a clean code-0 exit and a failed exit/signal in `standalone-session.test.mjs`, run through `test:harness`.
 - Keep the E2E build as a debug, feature-gated, non-bundled app. Verify the produced binary path before diagnosing WebDriver issues.
 
 ### 2. Preserve Rust E2E coverage without duplicate work

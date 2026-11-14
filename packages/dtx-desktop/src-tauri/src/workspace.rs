@@ -119,10 +119,26 @@ impl WorkspaceRootState {
             .workspace_root
             .as_deref()
             .and_then(|root| canonical_workspace_directory(Path::new(root)));
+        // Older builds persisted raw `fs::canonicalize` output, so stored
+        // bookmark paths can carry a `\\?\` verbatim prefix while freshly
+        // canonicalized roots are simplified. Normalize both sides onto the
+        // same form or the string equality in current_root_id /
+        // bookmark_current_root misses and appends a duplicate entry.
+        let bookmarks = settings
+            .bookmarks
+            .into_iter()
+            .map(|mut bookmark| {
+                bookmark.path =
+                    crate::filesystem::simplify_canonical_path(PathBuf::from(&bookmark.path))
+                        .to_string_lossy()
+                        .into_owned();
+                bookmark
+            })
+            .collect();
 
         Self {
             root: RwLock::new(root),
-            bookmarks: RwLock::new(settings.bookmarks),
+            bookmarks: RwLock::new(bookmarks),
             settings_path: Some(settings_path),
             operation_lock: Mutex::new(()),
             #[cfg(test)]

@@ -6,6 +6,7 @@
 
 import type { IFileProvider } from '@dtx/common';
 import { desktopHost } from './desktopHost';
+import { isWindowsPath } from '../utils/fileUtils';
 
 export class DesktopFileProvider implements IFileProvider {
 	private fileCache = new Map<string, File>();
@@ -57,8 +58,11 @@ export class DesktopFileProvider implements IFileProvider {
 
 			// For simfile-specific files, look in the simfile directory
 			// For local files (simfileId is null), look in the workspace root
-			const separator = this._workspaceRoot.includes('\\') ? '\\' : '/';
-			const normalizedRoot = this._workspaceRoot.replace(/[/\\]+$/, '');
+			// Only real Windows path syntax (drive/UNC) selects '\'; a literal
+			// backslash inside a POSIX folder name is preserved.
+			const windows = isWindowsPath(this._workspaceRoot);
+			const separator = windows ? '\\' : '/';
+			const normalizedRoot = this._workspaceRoot.replace(windows ? /[/\\]+$/ : /\/+$/, '');
 			const relativeFileName =
 				separator === '\\' ? normalizedFileName.replaceAll('/', '\\') : normalizedFileName;
 			const filePath = simfileId

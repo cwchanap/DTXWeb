@@ -125,9 +125,11 @@ test('created fixture workspaceRoot matches the platform canonical form', () => 
 		const native =
 			typeof realpathSync.native === 'function' ? realpathSync.native : realpathSync;
 		const resolved = native(join(parent, 'workspace'));
-		const withoutVerbatim = resolved.startsWith('\\\\?\\') ? resolved.slice(4) : resolved;
+		let canonicalTail = resolved;
+		if (resolved.startsWith('\\\\?\\')) canonicalTail = resolved.slice(4);
+		else if (resolved.startsWith('\\\\')) canonicalTail = `UNC\\${resolved.slice(2)}`;
 		if (process.platform === 'win32') {
-			expect(fixture.workspaceRoot).toBe(`\\\\?\\${withoutVerbatim}`);
+			expect(fixture.workspaceRoot).toBe(`\\\\?\\${canonicalTail}`);
 		} else {
 			expect(fixture.workspaceRoot).toBe(resolved);
 		}

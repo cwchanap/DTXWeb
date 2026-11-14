@@ -814,7 +814,18 @@ fn load_normalizes_verbatim_bookmark_paths() {
     let root = data_dir.path().join("workspace");
     fs::create_dir(&root).expect("workspace directory");
     let canonical = canonicalize_path_sync(&root).expect("canonical root");
-    let verbatim = format!(r"\\?\{}", canonical.display());
+    // The stored form must be a valid extended-length path for the root's
+    // type: UNC roots take the `\\?\UNC\` form, and roots that keep the
+    // verbatim prefix (long or normalization-sensitive paths) are stored
+    // as-is rather than receiving a second `\\?\`.
+    let canonical_str = canonical.to_str().expect("UTF-8 canonical root");
+    let verbatim = if canonical_str.starts_with(r"\\?\") {
+        canonical_str.to_string()
+    } else if let Some(unc_tail) = canonical_str.strip_prefix(r"\\") {
+        format!(r"\\?\UNC\{unc_tail}")
+    } else {
+        format!(r"\\?\{canonical_str}")
+    };
     let path = settings_path(data_dir.path());
     fs::create_dir_all(path.parent().expect("settings parent")).expect("settings parent");
     fs::write(

@@ -11,7 +11,7 @@
 		"test:watch": "vitest"
 	},
 	"dependencies": {
-		"@pulumi/cloudflare": "^6.23.2",
+		"@pulumi/cloudflare": "^6.23.3",
 		"@pulumi/pulumi": "^3.273.0"
 	},
 	"devDependencies": {

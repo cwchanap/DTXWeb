@@ -448,6 +448,12 @@ const createEarlyExitMonitor = (
 		if (exited) throw observeEarlyExit();
 		return await new Promise<never>(() => undefined);
 	});
+	// If the child exits before the first readiness race, throwIfExited()
+	// raises the same error synchronously and the loop unwinds without ever
+	// awaiting earlyExit — leaving its rejection unhandled under Node's
+	// default unhandled-rejection mode. This side-branch sink marks it
+	// observed; Promise.race still awaits the original rejected promise.
+	void earlyExit.catch(() => undefined);
 	return {
 		earlyExit,
 		isEarlyExitError: (error: unknown): boolean =>

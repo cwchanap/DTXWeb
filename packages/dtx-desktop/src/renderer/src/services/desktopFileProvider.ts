@@ -57,12 +57,13 @@ export class DesktopFileProvider implements IFileProvider {
 
 			// For simfile-specific files, look in the simfile directory
 			// For local files (simfileId is null), look in the workspace root
-			let filePath: string;
-			if (simfileId) {
-				filePath = `${this._workspaceRoot}/${simfileId}/${normalizedFileName}`;
-			} else {
-				filePath = `${this._workspaceRoot}/${normalizedFileName}`;
-			}
+			const separator = this._workspaceRoot.includes('\\') ? '\\' : '/';
+			const normalizedRoot = this._workspaceRoot.replace(/[/\\]+$/, '');
+			const relativeFileName =
+				separator === '\\' ? normalizedFileName.replaceAll('/', '\\') : normalizedFileName;
+			const filePath = simfileId
+				? `${normalizedRoot}${separator}${simfileId}${separator}${relativeFileName}`
+				: `${normalizedRoot}${separator}${relativeFileName}`;
 
 			// Ask host process to read the local file
 			const result = await desktopHost.readFile(filePath);

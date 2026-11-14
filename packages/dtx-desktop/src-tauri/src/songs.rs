@@ -572,13 +572,16 @@ struct SongFileCollector {
 
 impl SongFileCollector {
     async fn new(song_path: &Path, workspace_root: &Path) -> Result<Self> {
-        let canonical_song_path = crate::filesystem::canonicalize_within_workspace(
+        let verified_song_path = crate::filesystem::canonicalize_within_workspace(
             &song_path.to_string_lossy(),
             Some(&workspace_root.to_string_lossy()),
         )
         .await?;
+        let entries = fs::read_dir(&verified_song_path).await?;
+        // Use raw canonical paths for prefix containment checks so mixed
+        // simplified/verbatim paths never cause a false mismatch on Windows.
+        let canonical_song_path = fs::canonicalize(&verified_song_path).await?;
         let canonical_workspace_root = fs::canonicalize(workspace_root).await?;
-        let entries = fs::read_dir(&canonical_song_path).await?;
 
         Ok(Self {
             canonical_song_path,

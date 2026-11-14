@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { lstat } from 'node:fs/promises';
 
 import { browser, expect } from '@wdio/globals';
@@ -17,7 +17,6 @@ import {
 	fixtureFolderName,
 	fixtureSongTitle,
 	getPreseededWorkspaceFixture,
-	toNavigableWindowsPath,
 	type WorkspaceFixture
 } from '../support/workspace-fixture';
 
@@ -93,6 +92,11 @@ describe('Desktop native filesystem boundary', () => {
 		expect(dtx).toMatchObject({ kind: 'text', error: null });
 		expect(dtx.content).toContain(`#TITLE:${fixtureSongTitle}`);
 
+		// Verify forward-slash concatenation works across platforms (no \\?\ verbatim failure on Windows).
+		const setDef = await readFile(`${fixture.songFolder}/SET.def`);
+		expect(setDef).toMatchObject({ kind: 'text', error: null });
+		expect(setDef.content).toContain(`#TITLE ${fixtureSongTitle}`);
+
 		const wav = await readFile(join(fixture.songFolder, 'preview.wav'));
 		expect(wav).toEqual({
 			kind: 'binary',
@@ -134,7 +138,7 @@ describe('Desktop native filesystem boundary', () => {
 
 	it('rejects every native filesystem escape from the Rust-owned workspace root', async () => {
 		const outsideFile = join(fixture.outsideRoot, 'private.dtx');
-		const traversalFile = join(fixture.workspaceRoot, '..', 'outside', 'private.dtx');
+		const traversalFile = `${fixture.workspaceRoot}${sep}..${sep}outside${sep}private.dtx`;
 
 		for (const filePath of [outsideFile, traversalFile]) {
 			await expectOutsideWorkspaceRead(filePath);
@@ -171,7 +175,7 @@ describe('Desktop native filesystem boundary', () => {
 		// traversal input that genuinely starts inside the workspace while keeping
 		// the assertion: backslash traversal from inside the workspace is rejected.
 		await expectOutsideWorkspaceRead(
-			`${toNavigableWindowsPath(fixture.workspaceRoot)}\\FixtureSong\\..\\..\\outside\\private.dtx`
+			`${fixture.workspaceRoot}\\FixtureSong\\..\\..\\outside\\private.dtx`
 		);
 	});
 

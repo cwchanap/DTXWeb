@@ -56,5 +56,11 @@ describe('Desktop workspace library', () => {
 		expect(mapping?.simFileIdToMetadata?.FixtureSong?.folderPath).toBe(
 			join(fixture.workspaceRoot, fixtureFolderName)
 		);
+
+		await waitForUiDisplayed('h1', { text: 'DTX EDITOR' });
+		await expect($('#title-input')).toHaveValue(fixtureSongTitle);
+		await expect(
+			$('//*[contains(normalize-space(), "Could not load chart files")]')
+		).not.toExist();
 	});
 });

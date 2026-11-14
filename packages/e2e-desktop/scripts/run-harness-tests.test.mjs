@@ -121,3 +121,18 @@ test('stops with a failure when a suite process fails to spawn', async () => {
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test('fails loudly when run outside Bun without spawning suites', async () => {
+	const root = makeSandbox({ 'support/a.test.mjs': '' });
+	let spawned = 0;
+	const spawn = () => {
+		spawned += 1;
+		return exitChild(0);
+	};
+	try {
+		await expect(runHarnessTests(root, { spawn, versions: {} })).resolves.toBe(1);
+		expect(spawned).toBe(0);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});

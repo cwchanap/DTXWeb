@@ -60,7 +60,7 @@ async fn create_song_uses_the_managed_workspace_for_successful_writes() {
     assert!(result.success);
     assert_eq!(
         result.song_folder_path,
-        std::fs::canonicalize(&selected)
+        crate::filesystem::canonicalize_path_sync(&selected)
             .expect("canonical selected path")
             .join("DTXFiles.Song")
             .to_string_lossy()
@@ -1740,7 +1740,7 @@ async fn create_song_with_workspace_state_copies_template_from_within_workspace(
     .expect("create song with in-workspace template");
 
     assert!(result.success);
-    let song_folder = std::fs::canonicalize(&selected)
+    let song_folder = crate::filesystem::canonicalize_path_sync(&selected)
         .expect("canonical selected")
         .join("NewSong");
     assert!(song_folder.join("chart.dtx").is_file());
@@ -1773,7 +1773,8 @@ async fn create_song_with_workspace_root_canonicalizes_selected_path_without_tem
     .expect("create song without template");
 
     assert!(result.success);
-    let canonical_selected = std::fs::canonicalize(&selected).expect("canonical");
+    let canonical_selected =
+        crate::filesystem::canonicalize_path_sync(&selected).expect("canonical");
     assert!(canonical_selected
         .join("SoloSong")
         .join("SET.def")

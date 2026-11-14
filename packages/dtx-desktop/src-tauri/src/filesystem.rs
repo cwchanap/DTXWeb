@@ -233,6 +233,47 @@ async fn list_files_with_workspace_state(
 /// would distinguish "exists outside the workspace" from "missing"). Ancestors
 /// inside the workspace still surface `NotFound` so legitimate missing-file
 /// probes report "not found" rather than falsely reporting existence.
+/// Strips the Windows verbatim path prefix (`\\?\` or `\\?\UNC\`) returned by
+/// `fs::canonicalize` when the resulting Win32 path stays below `MAX_PATH`, so
+/// IPC paths exposed to the renderer behave like normal Windows paths (allowing
+/// `/` separators and `..` normalization). Leaves non-Windows paths untouched.
+pub(crate) fn simplify_canonical_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if let Some(raw) = path.to_str() {
+            return PathBuf::from(strip_windows_verbatim_prefix(raw));
+        }
+    }
+    path
+}
+
+#[cfg(any(windows, test))]
+fn strip_windows_verbatim_prefix(raw: &str) -> String {
+    if let Some(unc_tail) = raw.strip_prefix(r"\\?\UNC\") {
+        let simplified = format!(r"\\{unc_tail}");
+        if simplified.len() < 260 {
+            return simplified;
+        }
+        return raw.to_string();
+    }
+    if let Some(drive_tail) = raw.strip_prefix(r"\\?\") {
+        let bytes = drive_tail.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'\\'
+            && drive_tail.len() < 260
+        {
+            return drive_tail.to_string();
+        }
+    }
+    raw.to_string()
+}
+
+pub(crate) fn canonicalize_path_sync(path: &Path) -> std::io::Result<PathBuf> {
+    std::fs::canonicalize(path).map(simplify_canonical_path)
+}
+
 pub(crate) async fn canonicalize_within_workspace(
     target_path: &str,
     workspace_root: Option<&str>,
@@ -269,7 +310,7 @@ pub(crate) async fn canonicalize_within_workspace(
             "Path is outside the workspace".to_string(),
         ));
     }
-    Ok(canonical_target)
+    Ok(simplify_canonical_path(canonical_target))
 }
 
 /// Walks up `target_path` until it finds an existing ancestor, then returns

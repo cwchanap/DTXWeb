@@ -406,7 +406,7 @@ fn basename(path: &str) -> String {
 }
 
 fn canonical_workspace_directory(path: &Path) -> Option<PathBuf> {
-    let canonical = fs::canonicalize(path).ok()?;
+    let canonical = crate::filesystem::canonicalize_path_sync(path).ok()?;
     let metadata = fs::metadata(&canonical).ok()?;
     if !metadata.is_dir() {
         return None;
@@ -530,7 +530,7 @@ pub(crate) mod test_support {
     pub(crate) fn managed_workspace_state(root: &Path) -> WorkspaceRootState {
         WorkspaceRootState {
             root: RwLock::new(Some(
-                fs::canonicalize(root).expect("canonical workspace root"),
+                crate::filesystem::canonicalize_path_sync(root).expect("canonical workspace root"),
             )),
             bookmarks: RwLock::new(Vec::new()),
             settings_path: None,

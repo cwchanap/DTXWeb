@@ -23,6 +23,21 @@ vi.mock('$lib/api', () => ({
 
 vi.mock('svelte-i18n');
 
+// Lets a single test stub the joined level string while every other test keeps
+// the real formatter. The component splits the result on ', ' into chips.
+const mockFormatLevelDisplay = vi.hoisted(() => ({
+	override: undefined as undefined | (() => string)
+}));
+
+vi.mock('../utils', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('../utils')>();
+	return {
+		...actual,
+		formatLevelDisplay: (dtxFiles: Parameters<typeof actual.formatLevelDisplay>[0]) =>
+			mockFormatLevelDisplay.override?.() ?? actual.formatLevelDisplay(dtxFiles)
+	};
+});
+
 vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 	Switch: vi.fn().mockReturnValue(null),
 	Pagination: vi.fn().mockReturnValue(null)
@@ -593,6 +608,7 @@ describe('ChartList Rendering', () => {
 	});
 
 	afterEach(() => {
+		mockFormatLevelDisplay.override = undefined;
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 	});
@@ -739,6 +755,40 @@ describe('ChartList Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => {
 			expect(screen.getByText('3.00 / 5.00')).toBeInTheDocument();
+		});
+	});
+
+	it('renders repeated level chips without a duplicate-key error', async () => {
+		// The component splits formatLevelDisplay's output on ', ', so a chart
+		// whose formatted levels repeat produces identical chip texts. Keying
+		// this each by the chip text would throw each_key_duplicate — verified by
+		// temporarily switching the key to (level): this test then fails. The
+		// key must stay positional.
+		mockFormatLevelDisplay.override = () => '3.00, 3.00';
+		mockFetchSuccess(
+			[
+				{
+					id: 1,
+					title: 'My Song',
+					artist: 'Artist',
+					bpm: 120,
+					isPublished: true,
+					displayId: 1,
+					dtxFiles: [
+						{ level: 30, label: 'BSC' },
+						{ level: 30, label: 'ADV' }
+					],
+					publishDate: '2024-01-01',
+					downloadUrl: null,
+					videoPreviewUrl: null
+				}
+			],
+			1
+		);
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
+		await waitFor(() => {
+			expect(screen.getAllByText('3.00')).toHaveLength(2);
 		});
 	});
 

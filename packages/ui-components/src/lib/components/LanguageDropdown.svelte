@@ -13,17 +13,21 @@
 	export let buttonText = 'Change Language';
 
 	let triggerButton: HTMLButtonElement | null = null;
-	let menuItemRefs: HTMLButtonElement[] = [];
+	const menuItemRefs = new Map<string, HTMLButtonElement>();
 
-	const setMenuItemRef: Action<HTMLButtonElement, number> = (node, index) => {
-		if (typeof index === 'number') {
-			menuItemRefs[index] = node;
-		}
+	// Refs are stored by locale (the each-block key) rather than by mount-time
+	// index so keyboard navigation can derive the current visual order from
+	// `locales` — keyed reordering moves nodes without re-running the action.
+	const orderedMenuItems = (): HTMLButtonElement[] =>
+		locales
+			.map((locale) => menuItemRefs.get(locale))
+			.filter((ref): ref is HTMLButtonElement => ref !== undefined);
+
+	const setMenuItemRef: Action<HTMLButtonElement, string> = (node, locale) => {
+		menuItemRefs.set(locale, node);
 		return {
 			destroy() {
-				if (typeof index === 'number') {
-					menuItemRefs[index] = undefined as unknown as HTMLButtonElement;
-				}
+				menuItemRefs.delete(locale);
 			}
 		};
 	};
@@ -33,14 +37,14 @@
 		isOpen = true;
 		onToggle?.(true);
 		await tick();
-		menuItemRefs[0]?.focus();
+		orderedMenuItems()[0]?.focus();
 	}
 
 	function closeMenu(focusTrigger = false) {
 		if (!isOpen) return;
 		isOpen = false;
 		onToggle?.(false);
-		menuItemRefs = [];
+		menuItemRefs.clear();
 		if (focusTrigger) {
 			triggerButton?.focus();
 		}
@@ -69,8 +73,9 @@
 	function handleWindowKeydown(event: KeyboardEvent) {
 		if (!isOpen) return;
 
+		const items = orderedMenuItems();
 		const activeElement = document.activeElement as HTMLElement | null;
-		const menuHasFocus = menuItemRefs.some((ref) => ref === activeElement);
+		const menuHasFocus = items.some((ref) => ref === activeElement);
 
 		switch (event.key) {
 			case 'Escape':
@@ -80,28 +85,28 @@
 			case 'ArrowDown':
 			case 'ArrowUp': {
 				event.preventDefault();
-				if (menuItemRefs.length === 0) return;
+				if (items.length === 0) return;
 
-				let nextIndex = menuItemRefs.findIndex((ref) => ref === activeElement);
+				let nextIndex = items.findIndex((ref) => ref === activeElement);
 
 				if (nextIndex === -1) {
-					nextIndex = event.key === 'ArrowDown' ? 0 : menuItemRefs.length - 1;
+					nextIndex = event.key === 'ArrowDown' ? 0 : items.length - 1;
 				} else {
 					nextIndex =
 						event.key === 'ArrowDown'
-							? (nextIndex + 1) % menuItemRefs.length
-							: (nextIndex - 1 + menuItemRefs.length) % menuItemRefs.length;
+							? (nextIndex + 1) % items.length
+							: (nextIndex - 1 + items.length) % items.length;
 				}
 
-				menuItemRefs[nextIndex]?.focus();
+				items[nextIndex]?.focus();
 				return;
 			}
 			case 'Home':
 			case 'End': {
 				if (!menuHasFocus) return;
 				event.preventDefault();
-				const targetIndex = event.key === 'Home' ? 0 : menuItemRefs.length - 1;
-				menuItemRefs[targetIndex]?.focus();
+				const targetIndex = event.key === 'Home' ? 0 : items.length - 1;
+				items[targetIndex]?.focus();
 				return;
 			}
 			case 'Tab':
@@ -130,13 +135,13 @@
 			role="menu"
 			aria-label="Language selection"
 		>
-			{#each locales as locale, index (locale)}
+			{#each locales as locale (locale)}
 				<button
 					class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 					on:click={() => handleLanguageSelect(locale)}
 					role="menuitem"
 					tabindex="-1"
-					use:setMenuItemRef={index}
+					use:setMenuItemRef={locale}
 				>
 					{localeMap[locale] || locale}
 				</button>

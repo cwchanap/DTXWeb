@@ -24,7 +24,10 @@ The [reviewer measured](https://github.com/cwchanap/DTXWeb/pull/351#pullrequestr
 
 ## 2. Apply focused Svelte source fixes
 
-- `require-each-key`: update the **30 reviewer-reported sites** with keys unique within each dynamic list. Review `WorkspaceTree.svelte`, `UploadedAssetFiles.svelte`, `SoundLibraryModal.svelte` and `ChartList.svelte` especially. Prefer stable id/path; do not use nonunique formatted display strings, or random values. Index keys require evidence that list order/identity makes them safe. Verify reconciliation after list updates.
+- `require-each-key`: update the **30 reviewer-reported sites** with unique keys. Prefer stable IDs/paths for dynamic lists (`WorkspaceTree.svelte`, `SoundLibraryModal.svelte`); never use random keys. Check two easy-to-miss cases before implementing:
+  - `packages/common/src/lib/components/UploadedAssetFiles.svelte:413` merges cloud and local files. Local-only rows are created with `key: ''` (`:318`), so **do not key by `file.key` alone**. Use a source-qualified fallback such as `` `${file.source}:${file.key || file.name}` `` (or `file.key || file.name` if uniqueness across sources is proven). `processedUserFiles` already deduplicates local rows by name; confirm the resulting key is unique across the **whole** merged collection, including cloud rows, and test two local files plus cloud/local replacements.
+  - `packages/dtx-web/src/lib/components/ChartList.svelte:459` and `ChartListItem.svelte:300` render level **text** from `formatLevelDisplay(...).split(', ')`. The real formatter joins levels with `' / '`, whereas the component-test mock joins `', '`. Level text is not a stable unique identifier; use `as level, index (index)` for these purely presentational, nonstateful spans (or `` `${level}-${index}` ``). Do **not** use `(level)`, which may duplicate. Verify repeated level labels render without `each_key_duplicate`.
+  - For other lists, choose stable keys appropriate to their data. Check reordering and insertion rather than assuming an index is safe.
 - `no-useless-children-snippet`: simplify **17** unnecessary snippets without changing component rendering.
 - `prefer-writable-derived`: correct the **one** `ChartList.svelte` state pattern.
 - `no-dom-manipulating`: place a targeted disable + rationale beside **one** `NotationView.svelte` imperative container clear.
@@ -37,6 +40,8 @@ These counts describe the reviewer's baseline; use the new lint output if main d
 
 ```bash
 bun install --frozen-lockfile
+(cd packages/dtx-web && bunx svelte-kit sync)
+bun run --filter=@dtx/common build
 bun run lint
 bun run check
 bun run --filter=dtx-desktop typecheck
@@ -44,13 +49,13 @@ bun run test
 bunx prettier --check .
 ```
 
-Use existing shared-package build order if required for generated outputs. Add a focused unit regression only if modified list/state behavior is not covered. The normal `lint-and-format` job already checks E2E package TypeScript; no redundant local `dtx-e2e-* check` steps.
+**Order is required:** this task edits `@dtx/common` Svelte components; `turbo.json` has no `^build` dependency for `check`, and desktop's TypeScript resolver reads `@dtx/common/dist/*.d.ts`. Sync web-generated types, then rebuild common **before** lint/check/desktop typechecking to avoid stale declarations. CI already follows this sequence. Add a focused unit regression only if modified list/state behavior is not covered. The normal `lint-and-format` job already checks E2E package TypeScript; no redundant local `dtx-e2e-* check` steps.
 
 **After the first implementation commit**, mark **this PR #351** ready for review (drafts skip required CI). The root manifest/lockfile already triggers existing native E2E jobs. Record verification on the final head SHA:
 
-- **macOS:** native Tauri/WebdriverIO actually launches the app and passes existing library/workspace flows.
-- **Windows:** same real E2E suite and WebView2 UI checks pass.
-- **Web:** existing Playwright E2E and required checks pass; compare rendered chart/list/preview output to existing UI. HPA-914 has **no UI mockup**.
+- **macOS:** the existing native Tauri/WebdriverIO suite launches the app and passes its DOM/behavior assertions for library and workspace screens.
+- **Windows:** the same native suite passes through WebView2, including existing visible-element and interaction assertions.
+- **Web:** existing Chromium Playwright E2E and required CI checks pass for chart/list/preview UI behavior. HPA-914 has **no UI mockup**, and these suites do **not** capture passing-run screenshots; the automated UI presence/visibility assertions are the applicable visual-rendering check, not a pixel/screenshot comparison.
 - Required lint, unit tests, formatter and relevant CI are green. Don't treat a successful build, skipped draft check or old #329 CI as proof.
 
 Fix only reproduced migration regressions here; keep unrelated CI issues independent.
@@ -72,9 +77,9 @@ Link the prior GitHub decisions to HPA-914:
 
 - [ ] Dependency and ESLint changes committed to **PR #351**; frozen install, lint, typechecks, `bun run test` and formatting pass.
 - [ ] All targeted rule fixes pass with stable each-block keys, no duplicate-key runtime error, correct list/state and children rendering.
-- [ ] macOS native desktop E2E passes; existing workspace/library UI visually renders correctly.
-- [ ] Windows native desktop E2E passes; existing workspace/library UI visually renders correctly.
-- [ ] Web E2E and required GitHub Actions checks pass at final implementation SHA.
+- [ ] macOS native desktop E2E passes, including existing workspace/library DOM visibility and interaction checks.
+- [ ] Windows native desktop E2E passes, including existing workspace/library DOM visibility and interaction checks.
+- [ ] Web Playwright DOM/behavior E2E and required GitHub Actions checks pass at final implementation SHA (no screenshot artifact requirement).
 - [ ] Four existing prior-PR decisions linked on HPA-914.
 - [ ] After merge: targeted plugin unignore verified.
 

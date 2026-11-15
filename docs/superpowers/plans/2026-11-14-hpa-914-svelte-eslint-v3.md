@@ -1,109 +1,99 @@
-# HPA-914 — Svelte ESLint v3 migration: implementation plan
+# HPA-914 — Svelte ESLint v3 implementation plan
 
-**Status:** Proposed; implementation not started.  
+**Status:** Proposed; code changes and validation not yet performed.  
 **Linear:** https://linear.app/cwchanap/issue/HPA-914/maintenance-stage-ignored-lint-vite-and-sveltekit-upgrades  
 **Design:** [2026-11-14-hpa-914-svelte-eslint-v3-design.md](../specs/2026-11-14-hpa-914-svelte-eslint-v3-design.md)  
-**Delivery:** **One PR for HPA-914**. This draft PR contains the planning documents first; make all ensuing lint implementation, focused tests and verification changes on **this branch**. No second implementation PR. Any future Vite/SvelteKit/UUID/Node-major implementation belongs to its own Linear ticket and one PR per ticket.
+**Delivery:** Exactly **one PR #351 for HPA-914**, starting as a design draft, then amended with the implementation. No additional HPA-914 implementation PR.
 
-## Change surface
+## Scope and source of truth
 
-| Path | Action |
+The [GitHub design review](https://github.com/cwchanap/DTXWeb/pull/351#pullrequestreview-5908536527) reproduced **113 v3 lint diagnostics in 40 files** (112 rule violations, one `.svelte.ts` parse failure) against `main b014c236` using `eslint-plugin-svelte@3.24.1` and Bun 1.3.9. Treat the counts as a useful measured baseline, not as our own verified test result or fixed numbers if main changes. The design document contains **the decisions for each rule**; don't re-debate them during implementation unless a reproduced counterexample appears.
+
+| Target | Change |
 | --- | --- |
-| Root `package.json` | Change `eslint-plugin-svelte` from v2 range to a compatible v3 range (start with `^3.23.1` from closed #329, confirm resolved version). Leave other dependency major ranges unchanged. |
-| Root `bun.lock` | Recalculate mechanically with Bun 1.3.9; ensure frozen-install consistency. |
-| Root `eslint.config.js` | **Only if necessary:** minimally adapt the existing Svelte flat preset, TypeScript-in-Svelte parser setup, or a documented problematic new recommended rule. |
-| Narrowly affected `*.svelte` source files | **Only if necessary:** fix real new lint diagnostics without changing runtime behavior. Avoid formatting or auto-fixing the whole repository. |
-| Planning docs / PR body | Keep enduring decisions in docs and time-sensitive CI SHA/run links in the PR's Verification section. Record later-upgrade gates on HPA-914. |
+| Root `package.json` | Upgrade `eslint-plugin-svelte` to `^3.24.1`; remove unused direct `svelte-eslint-parser` and `@types/uuid`. Leave ESLint, TS parser, Node typings and framework majors alone. |
+| `packages/dtx-web/package.json` | Remove unused JS `uuid`; **do not** touch the Rust `uuid` dependency. |
+| Root `bun.lock` | Regenerate with Bun 1.3.9; do not copy closed #329's lockfile. Check unrelated versions for churn. |
+| Root `eslint.config.js` | Keep `flat/recommended`; add `'**/.wrangler'` ignore; widen TS sub-parser override to `*.svelte.{js,ts}`; permanently disable exactly the two reviewed rules with reasons. |
+| Existing Svelte source | Key the 30 reported each-blocks, simplify 17 children snippets, fix one writable-derived pattern, suppress one intentional imperative notation-renderer line. No blanket formatting. |
+| PR #351 | Record actual run SHA and CI status; stay one PR through implementation and verification. |
 
-No new lint framework, scripts, CI workflow, shared abstraction, test infrastructure, runtime dependency upgrade, or standalone implementation branch is expected.
+## Work sequence
 
-## Work sequence — all within this PR
+### 1. Apply manifest and parser changes
 
-### 1. Establish the current lint baseline
+1. Recheck current main and verify no overlapping implementation PR; remain on **this PR's branch**. The prior review already established the dependency-unused decisions for `uuid` and `svelte-eslint-parser`; a quick search for newly introduced consumers before removal is sufficient.
+2. Change the two package manifests as above. Run `bun install` with Bun 1.3.9 and verify `bun install --frozen-lockfile`. Inspect the changed lockfile for unintended framework or toolchain majors.
+3. In `eslint.config.js`:
+   - Preserve `...svelte.configs['flat/recommended']`.
+   - Change the existing Svelte-scoped override to `files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js']`, retaining `parserOptions: { parser: tsParser }`. Verify `packages/dtx-web/src/lib/audioPreview.svelte.ts` now parses.
+   - In that scope set `'svelte/no-navigation-without-resolve': 'off'` (external URLs and desktop non-SvelteKit) and `'svelte/prefer-svelte-reactivity': 'off'` (intentional scratch/nonreactive maps); each with a concise permanent rationale.
+   - Ignore generated `'**/.wrangler'` output globally, alongside existing build artifacts.
+4. Run `bun run lint` to get the current rule-by-rule residual list. Do not spend time auditing a Node engine migration: it is not implicated by this plugin upgrade.
 
-1. Recheck current `main` immediately before implementation; do not blindly cherry-pick the closed Dependabot #329 lockfile, which was generated against an older base.
-2. Inspect `package.json`, `bun.lock`, `eslint.config.js` and all existing `svelte.configs['flat/recommended']` / `tsParser` uses. Confirm current Svelte, TypeScript, SvelteKit, ESLint and parser peer requirements. Upstream v3.23.1 advertises ESLint 10 and Svelte 5 compatibility, but a successful install and execution are required.
-3. Run or record existing clean-baseline output from:
-   `bun install --frozen-lockfile`
-   `bun run lint`
-   `bun run check`
-   Note pre-existing failures separately; avoid hiding them with unrelated code edits.
-4. Check that the root Node engine floor and actual CI Node/Bun executables meet installed ESLint 10 and plugin v3 requirements. Tighten a demonstrably incorrect engine declaration only if needed to make this lint setup valid; do not plan a new Node major.
+**Exit:** v3 parser loads all Svelte and rune modules; only intentionally retained source diagnostics remain.
 
-**Exit:** reproducible baseline, exact plugin/parser constraints, and no conflicting implementation PR.
+### 2. Fix the measured source diagnostics
 
-### 2. Upgrade the plugin and lockfile, nothing else
+1. For every `svelte/require-each-key` finding (30 at review baseline), add a **unique, stable** key (id/path for dynamic collections). Audit duplicates and reordering, especially `WorkspaceTree.svelte`, `UploadedAssetFiles.svelte`, `SoundLibraryModal.svelte` and `ChartList.svelte`; **never** use formatted display strings like the split level labels as keys. If no distinct identity exists, evaluate the list semantics before choosing an index key. No random keys or generic wrapper components.
+2. Replace the 17 `svelte/no-useless-children-snippet` cases with equivalent normal children. Preserve slot/snippet behavior and rendering.
+3. Fix `svelte/prefer-writable-derived` in `ChartList.svelte` while keeping user-driven filter/list state behavior.
+4. Suppress the single `svelte/no-dom-manipulating` report at `NotationView.svelte`'s deliberate `container.innerHTML = ''` with a one-line in-code rationale. Do not globally disable the rule.
+5. Rerun lint and fix any genuinely new, adjacent diagnostic. Do **not** run a repository-wide `eslint --fix .`, rewrite the UI, or turn off `require-each-key`. Keyed-list changes affect reconciliation, so they require runtime testing rather than a promise of zero behavioral change.
 
-1. Update the root `eslint-plugin-svelte` version range to `^3.23.1` (or a compatible later 3.x patch selected at execution time). Keep `eslint`, `@eslint/js`, `@typescript-eslint/*`, `svelte-eslint-parser` and product framework version ranges unchanged unless an actual peer conflict proves a minimal coordinated fix necessary.
-2. Run `bun install` using Bun 1.3.9 to update `bun.lock`, then run `bun install --frozen-lockfile`. Review `git diff -- package.json bun.lock` for accidental major bumps or broad unrelated churn.
-3. Run `bun run lint` immediately. If it passes, **do not edit `eslint.config.js` just to modernize its syntax**. Confirm a representative Svelte component with `<script lang="ts">` and a Svelte 5 rune has been included in lint's discovered files.
-4. If lint fails, classify each failure as version incompatibility, parser configuration, or newly recommended rule. Fix only the failing scope:
-   - Preserve the existing v3 flat recommended preset and `tsParser` override wherever they work.
-   - Correct genuine errors in affected files only; for false positives or intentional project idioms, use narrow file/rule exceptions with a short rationale.
-   - Avoid broad `--fix .`, suppression of all recommended rules, a duplicated config, or introducing backward-compatibility adapters.
-5. Rerun root lint until it is green without warnings/errors that violate the repository's existing policy.
+**Exit:** root lint passes; only relevant source/config/manifest/lock changes are in the diff.
 
-**Exit:** plugin v3 is installed, Bun lockfile is reproducible, and the repository-wide linter operates on JS, TS and Svelte.
+### 3. Verify test behavior and CI
 
-### 3. Run focused quality gates
-
-On the implementation commit, validate:
+Run locally using the repository's existing build order when generated shared output is needed:
 
 ```bash
 bun install --frozen-lockfile
 bun run lint
 bun run check
-bun run --filter=dtx-web check
 bun run --filter=dtx-desktop typecheck
-bun run --filter=dtx-e2e-web check
-bun run --filter=dtx-e2e-desktop check
-bunx prettier --check package.json eslint.config.js
+bun run test
+bunx prettier --check .
 ```
 
-The final Prettier command should include `eslint.config.js` only if modified. CI's full `bunx prettier --check .` is authoritative. Where a check needs generated shared output, use the repository's existing build order rather than changing the task's dependency graph. Do not build or deploy applications merely to verify a lint-only migration unless a real validation failure requires it.
+The already-configured `lint-and-format` CI job checks the E2E packages' TypeScript; no duplicate local `dtx-e2e-web` / `dtx-e2e-desktop` typecheck requirement. Existing Svelte unit/component tests should cover keyed dynamic lists, children snippets, and filter state where tests already exist. Add a focused regression test **only** if a changed behavior lacks coverage; avoid new test platforms.
 
-**Exit:** frozen install, lint, package typechecks, and formatter pass.
+After the **first implementation commit**, mark **this same PR** ready for review so required workflows run (draft PRs skip them). On the final implementation SHA:
 
-### 4. Exercise the existing supported-platform E2E gate
+- **macOS:** existing native Tauri/WebdriverIO E2E passes app startup and library/workspace scenarios, with the current UI visually rendered as expected.
+- **Windows:** same native Tauri/WebdriverIO E2E passes on WebView2, including library/workspace scenarios and the expected visual layout.
+- **Web:** existing Playwright E2E and CI-selected checks pass for chart listing/preview and other affected flows. No UI mockup is attached to HPA-914; use the existing UI and E2E screenshots/artifacts for comparison if a regression appears.
+- Required lint, unit, format and other relevant CI checks pass on the PR head. A successful build or skipped draft check is not a substitute for real E2E execution.
 
-1. Once the first **implementation** commit lands, mark **this PR** ready for review. The required lint, unit and E2E workflows skip drafts, so skipped checks are not evidence.
-2. Inspect the GitHub Actions runs for that head SHA. The root `package.json` / `bun.lock` changes already trigger the shipped desktop native matrix (`macos-latest` and `windows-latest`). Require both WebdriverIO/Tauri runs to pass the existing application-launch and workspace/library scenarios; do not accept successful native compilation alone.
-3. Require the existing web Playwright E2E and web-related checks selected by current affected-scope logic to pass. Web's current Playwright projects use Chromium; this ticket does not introduce a browser/OS matrix or new web E2E cases.
-4. Confirm no user-visible UI behavior has changed. HPA-914 provides no UI mockup: reuse existing render/smoke assertions and failure screenshots if the E2E jobs produce them. Do not introduce a manual approval gate or a screenshot-baseline framework.
-5. If macOS or Windows fails, fix a reproduced **plugin-induced** regression on this PR. If an unrelated pre-existing environmental E2E failure occurs, document its independent evidence and disposition; do not opportunistically rewrite the Tauri harness or CI.
+Avoid fixing unrelated native harness or deployment problems in this dependency PR. Document any proven pre-existing CI failure separately.
 
-**Exit:** required CI green at the implementation SHA and both shipped desktop OSes exercise real native E2E. No iOS-native app is built in DTXWeb; Android/Linux are CI-only, not acceptance targets.
+### 4. Finalize the existing major-upgrade decisions
 
-### 5. Close the HPA-914 decision ledger without broadening the PR
+Link these **existing** decisions on HPA-914 rather than creating a new process or ticket just to restate them:
 
-Document evidence on the Linear issue / PR:
+- [#289](https://github.com/cwchanap/DTXWeb/pull/289#issuecomment-6093778424): unused JS `uuid` and root `@types/uuid` removed by this PR; Cargo unaffected.
+- [#290](https://github.com/cwchanap/DTXWeb/pull/290#issuecomment-6093778422): Vite 8 held for coordinated build migration with web plus macOS/Windows production packaging verification.
+- [#330](https://github.com/cwchanap/DTXWeb/pull/330#issuecomment-6677955853): adapter-auto 8 held for a deliberate SvelteKit 3 compatibility migration.
+- [#291](https://github.com/cwchanap/DTXWeb/pull/291#issuecomment-6093778453): intended Node 22 typings contradicted by merged [#307](https://github.com/cwchanap/DTXWeb/pull/307)'s `^25.9.9`. **Decision:** align to `@types/node@^22` in a separate, targeted follow-up after its own compatibility check. No change to node typings in #351.
 
-- **#329 lint v3:** link this validated upgrade PR and the passing commit SHA.
-- **#289 `uuid` / `@types/uuid`:** perform a repository-wide JS/TS/scripts/config import audit (e.g. `rg "from ['\"]uuid|require\(['\"]uuid|import\(['\"]uuid" packages scripts`). The current index suggests no JS/TS import, but prove it before removal. If unused, create a **separate** small cleanup ticket with a one-PR scope; keep the Rust `uuid` crate.
-- **#290 Vite 8:** defer to a linked follow-up ticket gated on a compatible Vite/Svelte plugin/Vitest build stack and web build + macOS/Windows packaging verification.
-- **#330 adapter-auto 8:** coordinate with SvelteKit 3 in a separate task; examine common/UI adapters and web's Cloudflare adapter at that point.
-- **#291 `@types/node` 26:** retain on hold with the Node runtime/CI compatibility gate until intentionally revisited.
-
-The parent HPA-913 remains a cross-project index. Do not complete HPA-914 until every item either has a verified upgrade, a linked gated follow-up, or an explicit retain/remove decision; do not bulk unignore versions or dismiss dependency/security alerts.
+**After #351 merges and v3 is present on main**, remove only the old major ignore for the plugin by commenting `@dependabot unignore eslint-plugin-svelte` on an applicable Dependabot PR. Verify using `@dependabot show eslint-plugin-svelte ignore conditions` or the GitHub Dependabot settings if the old PR doesn't process commands. Do not unignore unrelated packages, and don't dismiss any security alert. Keep the issue open until the implementation and the documented closeout evidence are complete.
 
 ## Acceptance criteria
 
-- **Functional tooling:** clean frozen install; `bun run lint` correctly analyzes JS, TS, and Svelte 5/TS components; root and relevant per-package typechecks pass with no unrelated runtime majors.
-- **macOS desktop E2E:** existing Tauri/WebdriverIO matrix runs and passes native launch + workspace/library flows after the root manifest/lockfile change.
-- **Windows desktop E2E:** same native suite passes on Windows, including real WebView2 application interaction.
-- **Web E2E:** existing Playwright suite and CI checks pass, with no new browser-specific behavior or UI regression. No UI mockup exists for HPA-914; preserve current visual output.
-- **Process:** implementation and proof remain on this single PR; all remaining ignored upgrades are given a documented disposition or linked separate follow-up with a clear gate.
+- Clean, reproducible Bun install; ESLint v3 parses Svelte components and `.svelte.ts`, passes full lint, checks, formatting and `bun run test`.
+- Native macOS and Windows E2E actually exercise the existing UI (including keyed library/workspace lists) and pass; current visual layout remains consistent with the existing UI.
+- Web Playwright and required CI checks pass on the same implementation SHA; no major framework versions, product APIs or runtime behavior are unintentionally changed.
+- All changes and verification remain on **one PR**; prior-PR dependency decisions are linked, with the targeted Dependabot v3 unignore performed only after merge.
 
-No human acceptance, Android, or Linux end-to-end criteria. No deployment is needed for a development-time lint dependency.
+## PR verification checklist (update when implementation runs)
 
-## PR evidence checklist (update when implementation lands)
+- [ ] Plugin v3, manifest removals and Bun lockfile committed; no unrelated upgrades.
+- [ ] Svelte parser/ignore/rule config changes and targeted source fixes committed.
+- [ ] Frozen install, lint, checks, unit tests and formatter green.
+- [ ] macOS native E2E green on final head SHA; UI rendering checked.
+- [ ] Windows native E2E green on final head SHA; UI rendering checked.
+- [ ] Web E2E and required CI green at final SHA.
+- [ ] Four prior-PR decisions recorded in HPA-914.
+- [ ] After merge: targeted Dependabot plugin unignore verified.
 
-- [ ] Manifest + `bun.lock` diff reviewed; no unintended majors.
-- [ ] Frozen install + root lint + type checks passed, with exact execution evidence.
-- [ ] Required GitHub Actions lint/unit/web E2E green at head SHA.
-- [ ] macOS native Tauri E2E green at head SHA.
-- [ ] Windows native Tauri E2E green at head SHA.
-- [ ] Linear HPA-914 contains decisions and links/gates for #289, #290, #330 and #291.
-- [ ] No unreviewed UI changes, Dependabot bulk unignore, or security-alert dismissals.
-
-The boxes are deliberately **unchecked** in this documentation-only draft; do not report implementation or CI success until those actions actually run.
+This remains a **documentation-only draft** until implementation commits land; the test/CI boxes are intentionally unchecked.

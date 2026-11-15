@@ -1052,7 +1052,7 @@
 			<span class="text-amber text-sm font-medium">
 				{$_('googleDrive.songDetails.uploadWarningsHeading')}
 			</span>
-			{#each uploadWarnings as warning, index (index)}
+			{#each uploadWarnings as warning, index (`${warning}-${index}`)}
 				<span class="text-amber text-xs">{warning}</span>
 			{/each}
 		</div>

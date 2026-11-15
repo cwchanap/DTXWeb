@@ -1,6 +1,6 @@
 # HPA-914 — Svelte ESLint v3 implementation plan
 
-**Status:** Proposed, not implemented. **One PR #351** for design, code and verification; do not open a second implementation PR.  
+**Status:** Implemented on **PR #351**; verification in progress. **One PR #351** for design, code and verification; do not open a second implementation PR.  
 **Linear:** https://linear.app/cwchanap/issue/HPA-914/maintenance-stage-ignored-lint-vite-and-sveltekit-upgrades  
 **Design:** [2026-11-14-hpa-914-svelte-eslint-v3-design.md](../specs/2026-11-14-hpa-914-svelte-eslint-v3-design.md)
 
@@ -84,4 +84,4 @@ Link the prior GitHub decisions to HPA-914:
 - [ ] Four existing prior-PR decisions linked on HPA-914.
 - [ ] After merge: targeted plugin unignore verified.
 
-These are **not yet completed**: this draft still contains planning docs only. No additional PR, new CI system, production deployment command or feature migration is part of this ticket.
+The implementation has landed on PR #351; the checklist tracks merge acceptance, so E2E verification and the post-merge unignore remain open. No additional PR, new CI system, production deployment command or feature migration is part of this ticket.

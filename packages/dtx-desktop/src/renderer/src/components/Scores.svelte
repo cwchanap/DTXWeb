@@ -788,7 +788,7 @@
 	{/if}
 	{#if skipped.length > 0}
 		<ul class="mb-3 text-xs text-red-300">
-			{#each skipped as row, index (index)}
+			{#each skipped as row (row.chartId)}
 				<li>
 					{$_('score.chart_skipped', {
 						values: { chartId: row.chartId, reason: humanizeSkipReason(row.reason) }

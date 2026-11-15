@@ -72,10 +72,15 @@ export default [
 	},
 	...svelte.configs['flat/recommended'],
 	{
+		// svelte-eslint-parser also handles .svelte.ts/.svelte.js rune modules;
+		// delegate their script content to the TypeScript parser.
 		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
 		languageOptions: {
 			parserOptions: { parser: tsParser }
-		},
+		}
+	},
+	{
+		files: ['**/*.svelte'],
 		rules: {
 			// Svelte 5 reactive tracking idiom: bare expressions inside $effect
 			'@typescript-eslint/no-unused-expressions': 'off',

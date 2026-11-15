@@ -1,74 +1,61 @@
-# HPA-914 — Staged dependency majors: Svelte ESLint v3 design
+# HPA-914 — Svelte ESLint v3 migration design
 
-**Status:** Proposed; planning-only draft, with implementation on this **same PR**.  
+**Status:** Proposed; implementation follows on the **same draft PR #351**.  
 **Linear:** https://linear.app/cwchanap/issue/HPA-914/maintenance-stage-ignored-lint-vite-and-sveltekit-upgrades  
-**Implementation plan:** [2026-11-14-hpa-914-svelte-eslint-v3.md](../plans/2026-11-14-hpa-914-svelte-eslint-v3.md)  
-**Superseded Dependabot PR:** https://github.com/cwchanap/DTXWeb/pull/329
+**Plan:** [2026-11-14-hpa-914-svelte-eslint-v3.md](../plans/2026-11-14-hpa-914-svelte-eslint-v3.md)
 
-## Goal and delivery boundary
+## Goal and current evidence
 
-Restore the previously ignored `eslint-plugin-svelte` major upgrade, making the existing ESLint 10 + Svelte 5 lint setup work consistently. The migration should affect **lint tooling only**, not application behavior, SvelteKit/Vite versions, native Rust, or deployment infrastructure.
+Replace the unsupported `eslint-plugin-svelte` v2 / ESLint 10 combination with v3, keeping Svelte 5 / SvelteKit 2 / Vite 6 and application APIs intact. One PR for the complete HPA-914 slice: these design/plan files now, implementation and verification on the same branch. No bulk dependency-major upgrade.
 
-**Exactly one PR for HPA-914:** first review this spec and plan as a draft; commit the lint-only implementation and verification to this same branch. Treat remaining dependency majors as explicitly gated later work, with separate Linear tasks/PRs if implementation becomes necessary. Do not create a second implementation PR for HPA-914. No bulk Dependabot unignore or security-alert dismissal.
+- `main` at `b014c236` has `eslint@^10.14.0`, `eslint-plugin-svelte@^2.45.1` and a root `svelte-eslint-parser@^1.10.1`. The installed v2 plugin resolves its own older parser and does not advertise ESLint 10 peer support. Closed, unmerged [Dependabot #329](https://github.com/cwchanap/DTXWeb/pull/329) proposed v3.23.1.
+- `eslint.config.js` already uses `...svelte.configs['flat/recommended']` with `@typescript-eslint/parser`. Keep that structure.
+- **Reproduced by the [PR design reviewer](https://github.com/cwchanap/DTXWeb/pull/351#pullrequestreview-5908536527):** upgrading to `eslint-plugin-svelte@3.24.1` with Bun 1.3.9 yielded **113 diagnostics in 40 files** (112 rule violations plus a `.svelte.ts` parse error). These results are reviewer evidence, not a CI pass or a run performed by this planning branch.
+- The root manifest/lockfile trigger the existing macOS and Windows desktop E2E matrix. Draft PRs skip the required workflows; mark **PR #351** ready after the first implementation commit.
 
-## Current repository evidence (main `b014c236`, 2026-11-14)
+## Design: explicit rule decisions
 
-| Area | Observed state | Implication |
-| --- | --- | --- |
-| Root `package.json` | `eslint@^10.14.0`, `@eslint/js@^10.0.1`, `@typescript-eslint/{eslint-plugin,parser}@^8.72.1`, `eslint-plugin-svelte@^2.45.1`, `svelte-eslint-parser@^1.10.1` | ESLint 10 is already in place; this is a **plugin v2 → v3** migration, not an ESLint major migration. |
-| `eslint.config.js` | Existing flat config extends `...svelte.configs['flat/recommended']` and assigns `tsParser` to `*.svelte`; has scoped JS/TS/Svelte/test overrides | Preserve the current flat-config structure and TS-in-Svelte parsing unless a verified incompatibility requires a local fix. |
-| Svelte packages | Web, desktop, common and UI use Svelte 5; web uses SvelteKit 2 and Vite 6; common/UI currently use `@sveltejs/adapter-auto@^7.0.1` | Do not pair lint work with Vite 8, SvelteKit 3 or adapter-auto 8. |
-| Toolchain | Bun `1.3.9` in CI; root Node engine `>=22.0.0` | Check the actual ESLint 10 / plugin v3 runtime requirements. Do not independently change the runtime major as a workaround. |
-| `.github/workflows/lint-and-format.yml` | Frozen Bun install, repo-wide ESLint and Prettier; expensive checks scope-filtered; draft PRs skip the job | A draft with only plans is intentionally unverified; mark **this same PR** ready after first implementation commit to exercise CI. |
-| `.github/workflows/desktop-e2e-test.yml` | macOS + Windows Tauri E2E matrix; `package.json` and `bun.lock` trigger it; drafts skip | A lint dependency PR can receive native-OS end-to-end coverage without adding new harnesses. |
-| Dependabot #329 | Attempted `eslint-plugin-svelte` 2.46.1 → 3.23.1, modified manifest and Bun lockfile, was closed **unmerged** after an ignore-major command | Reproduce only the relevant version change against current main; do not reopen an obsolete branch or copy its stale lockfile. |
+Use `eslint-plugin-svelte@^3.24.1`, regenerate `bun.lock` with pinned Bun 1.3.9, and preserve the v3 `flat/recommended` preset. Fix only the measured diagnostics and any remaining ones confirmed by execution.
 
-`eslint-plugin-svelte@3.23.1` advertises peer support for ESLint `^10.0.0` and Svelte `^5.0.0`. Its upstream [v2 → v3 guide](https://sveltejs.github.io/eslint-plugin-svelte/migration/) documents flat-config-only support and additional recommended rules. The existing flat config is a suitable starting point; green lint is still required to prove compatibility.
+| v3 diagnostic | Reported hits | Decision | Reason |
+| --- | ---: | --- | --- |
+| `svelte/no-navigation-without-resolve` | 43 | **Disable in existing Svelte-scoped config** | Web has no `paths.base`, many values are external URLs, and desktop isn't SvelteKit; bulk `resolve()` changes would add noise and invalid desktop imports. |
+| `svelte/require-each-key` | 30 | **Fix source** | Dynamic list reconciliation benefits from stable unique keys. Choose ids or paths where stable; do **not** key by formatted display strings that may duplicate (Svelte `each_key_duplicate`). Test affected interactions. |
+| `svelte/prefer-svelte-reactivity` | 20 | **Disable in existing Svelte-scoped config** | Reported hits include scratch maps/sets, intentionally nonreactive bookkeeping, and immutable-map replacement. Converting to reactive collections changes behavior needlessly. |
+| `svelte/no-useless-children-snippet` | 17 | **Fix source** | Use equivalent ordinary children syntax; preserve component rendering. |
+| `svelte/prefer-writable-derived` | 1 | **Fix `ChartList.svelte`** | Address the actual writable-derived pattern, then check state transitions with existing tests. |
+| `svelte/no-dom-manipulating` | 1 | **Line-level disable in `NotationView.svelte`** | Clearing the imperative notation-renderer container is intentional; document the reason beside the line. |
+| Parser error in `audioPreview.svelte.ts` | 1 | **Fix config** | v3 applies `svelte-eslint-parser` to `*.svelte.{js,ts}`. Extend the current TypeScript sub-parser override to `['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js']`. |
 
-## Design decisions
+The two disabled recommended rules are deliberate **permanent project decisions**, not vague temporary exemptions. Keep `require-each-key` on rather than weakening the preset globally. Adding keys does change reconciliation semantics; it must be tested, not described as a behavior-free lint edit.
 
-### 1. Minimal lint-only migration
+## Minimal other changes
 
-- Begin with the v3 release evidenced by #329 (3.23.1), or a newer compatible v3 patch available at implementation time; update the **root manifest and regenerated `bun.lock`** together.
-- Keep `eslint.config.js`'s existing rule scopes, ignore patterns, Svelte flat preset, and TypeScript parser integration. Do not introduce a new wrapper package, duplicate lint config, legacy compatibility layer, or wholesale rewrite.
-- Run the updated parser/preset on representative `.svelte` files using TypeScript `<script lang="ts">`, as well as the whole workspace lint. Adjust only proven v3 incompatibilities or new recommended-rule findings. Prefer focused source fixes; allow narrowly explained rule overrides when a new rule is inappropriate, not blanket `recommended` disablement.
-- Do not change Vite, SvelteKit, Svelte, Vitest, `@types/node`, or application runtime dependencies in this lint PR. Do not use `eslint --fix .` to produce unrelated repository-wide churn.
-- If a supported Node floor is misdeclared, verify it against the **already installed ESLint 10** and adjust the declaration only if the lint migration needs it; this is not a Node-major-upgrade ticket.
+- Remove the unused **direct** root `svelte-eslint-parser` entry. The app does not import it and plugin v3 declares the parser as its own dependency. Keep the existing `@typescript-eslint/parser` direct dependency.
+- Add `'**/.wrangler'` to `eslint.config.js` ignores. The reviewer's local baseline found 744 generated `packages/dtx-api/.wrangler/tmp` diagnostics; generated build output should not be linted.
+- Also remove `uuid` from `packages/dtx-web/package.json` and `@types/uuid` from root `package.json` in this **same** lockfile PR. [#289's closing decision](https://github.com/cwchanap/DTXWeb/pull/289#issuecomment-6093778424) already established no JS/TS consumers; the reviewer rechecked zero imports. This is manifest-only cleanup and avoids another CI cycle. Do **not** touch the active Rust `uuid` crate.
+- No Node engine adjustment: plugin v3's Node engine range is less restrictive than the already-installed ESLint 10. Leave all other major upgrades out.
 
-### 2. Decision ledger for remaining ignored upgrades
+## Prior-PR decisions to carry forward
 
-The other HPA-914 checklist items are **not additional commits in this lint-only PR**. Before marking HPA-914 done, record one explicit decision or linked next task for each:
-
-| Prior PR | Current evidence and decision | Gate for a separate task / PR |
-| --- | --- | --- |
-| [#289 — `uuid` 14](https://github.com/cwchanap/DTXWeb/pull/289) | Web declares `uuid@^11.1.0` and root declares `@types/uuid@^10.0.0`. Indexed source search found no JS/TS `uuid` imports; Rust's `uuid::Uuid` is actively used and unrelated. **Candidate removal, not a proven-unused claim.** | Audit all current JS/TS source, scripts, tests and configs with `rg`. If unused, make a small separate dependency-removal ticket/PR for web `uuid` and root `@types/uuid`; leave Cargo dependencies untouched. Otherwise document the real consumers and upgrade gate. |
-| [#290 — Vite 8](https://github.com/cwchanap/DTXWeb/pull/290) | Workspace packages use Vite 6 and Svelte Vite plugin 5; web/desktop/common/UI and Vitest are affected. **Defer.** | New issue after a compatible Svelte Vite plugin, Vitest and build stack are established; verify web build and macOS/Windows desktop packaging together in its own PR. |
-| [#330 — adapter-auto 8](https://github.com/cwchanap/DTXWeb/pull/330) | `@sveltejs/adapter-auto` is in common/UI, while their SvelteKit remains 2. **Defer; do not apply independently.** | Pair with a deliberate, compatible SvelteKit 3 migration on a separate ticket after assessing workspace packages and web Cloudflare adapter. |
-| [#291 — `@types/node` 26](https://github.com/cwchanap/DTXWeb/pull/291) | Root currently uses `@types/node@^25.9.9`; Node engine says `>=22`, Bun CI is pinned. **Hold.** | Revisit when supported Node/CI baseline is deliberately defined; no type-major bump in a lint-only PR. |
-
-These decisions are **holding gates**, not permission to dismiss alerts or mass-unignore major versions. Keep HPA-914 open until its follow-up links or explicit retain/remove outcomes are recorded on the ticket.
-
-### 3. Verification and release behavior
-
-- Regenerate the Bun lockfile using the repository's pinned Bun version. Then validate `bun install --frozen-lockfile` from the updated tree. A dependency update is incomplete if the clean frozen install fails.
-- Run root `bun run lint` and `bun run check`, with explicit web SvelteKit check and desktop renderer typecheck as diagnostics if root checks fail.
-- After the implementation commit, mark **this PR** ready for review to run the existing required lint/unit and affected web/desktop E2E workflows. Confirm status against that head SHA; draft-only skipped checks are not acceptance evidence.
-- Keep application UI and behavior unchanged. There is **no HPA-914 UI mockup**. Use existing automated smoke/E2E evidence for shipped web and desktop flows rather than add visual snapshot infrastructure to a tooling change.
-
-## End-to-end acceptance contract
-
-| Target | Required automated evidence |
+| Item | Recorded decision |
 | --- | --- |
-| macOS | Existing native Tauri/WebdriverIO E2E suite passes on the macOS runner, including app launch and the existing workspace/library interaction. Web Playwright suite remains green for chart/preview flows. |
-| Windows | Existing native Tauri/WebdriverIO E2E suite passes on the Windows runner, including app launch and the same supported interactions; no Windows-specific parser/config fallback. |
-| Tooling and CI | Clean frozen Bun install, full ESLint, relevant type checks, and required CI checks pass on the implementation commit. No runtime package majors or unrelated lockfile upgrades are introduced. |
-| Visual behavior | Existing web/desktop UI output is unchanged; there is no ticket mockup to compare. Investigate test screenshot artifacts if an E2E render check fails, but do not add a new screenshot test framework. |
+| [#289 `uuid` 14](https://github.com/cwchanap/DTXWeb/pull/289#issuecomment-6093778424) | Remove unused web `uuid` / root `@types/uuid` now; no JS major upgrade. |
+| [#290 Vite 8](https://github.com/cwchanap/DTXWeb/pull/290#issuecomment-6093778422) | Keep held: coordinated bundler/plugin/Vitest migration requires web build and **macOS/Windows production packaging** verification. Do not bundle it here. |
+| [#330 adapter-auto 8](https://github.com/cwchanap/DTXWeb/pull/330#issuecomment-6677955853) | Keep ignored until a compatible, intentional SvelteKit 3 migration; no standalone adapter-auto bump. |
+| [#291 `@types/node` 26](https://github.com/cwchanap/DTXWeb/pull/291#issuecomment-6093778453) | The closing decision was to align types to Node **22**, but merged [#307](https://github.com/cwchanap/DTXWeb/pull/307) later installed `@types/node@^25.9.9`. **Choose Node-22-aligned typings as the eventual correction**, explicitly defer that separate types/runtime alignment task; do not downgrade it in this PR. Keep the Node 26 ignore. |
 
-Native iOS is a different client (not in this repository); no iOS-native acceptance is needed for a build-time lint migration. Android/Linux are not acceptance targets; existing CI may continue covering them. No human sign-off is an acceptance criterion.
+No new process/architecture is needed for these existing decisions: link them in HPA-914 closeout.
 
-## Risks and non-goals
+## Verification and acceptance
 
-- **Recommended rules changed:** v3 may surface additional lint errors. Triage individual diagnostics without silencing the whole preset or rewriting unrelated product behavior.
-- **Parser interaction:** Svelte 5, `svelte-eslint-parser` and `@typescript-eslint/parser` must continue to lint TypeScript scripts and reactive syntax correctly.
-- **Lockfile drift / skipped CI:** generate `bun.lock` against the current main state, and do not treat skipped draft checks or historical #329 builds as verification of this PR.
-- Out of scope: UI redesign, application refactors, Rust UUID updates, Cloudflare changes, Vite/SvelteKit/Node majors, new test harnesses, compatibility shims, and Dependabot policy changes.
+- **Tools / CI:** clean `bun install --frozen-lockfile`, `bun run lint` (including rune modules), `bun run check`, desktop typecheck, `bun run test`, formatting and required CI pass on the implementation head SHA. The source fixes justify component-unit coverage; don't add a test framework.
+- **macOS desktop:** existing native Tauri/WebdriverIO E2E starts the real app and completes existing library/workspace flows.
+- **Windows desktop:** the same native E2E flows pass on Windows/WebView2.
+- **Visual check:** existing rendered desktop UI and web chart/list/preview output remain consistent with current behavior; no UI mockup is attached, and no new visual-regression framework is required. Use existing E2E assertions and failure screenshots to investigate regressions.
+
+**Post-merge only:** the “ignore this major version” on #329 would otherwise suppress later v3 patch notifications. Send the **targeted** `@dependabot unignore eslint-plugin-svelte` on an appropriate Dependabot PR, then check `@dependabot show eslint-plugin-svelte ignore conditions` (or confirm via Dependabot settings if the bot does not act on the old thread). Do not bulk-unignore other packages or dismiss security alerts.
+
+## Non-goals
+
+No application feature changes, deployment commands, Vite/SvelteKit/Svelte/Vitest upgrades, Rust dependency changes, new CI/test harness, compatibility adapters, or second PR for this ticket.

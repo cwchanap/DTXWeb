@@ -43,7 +43,7 @@ Keep the two global Svelte-rule exceptions as **permanent, documented choices**;
 ## Acceptance and closeout
 
 - Frozen Bun install, full lint including rune modules, typechecks, `bun run test`, formatting and required CI pass at the **implementation SHA**.
-- **macOS and Windows:** existing native Tauri/WebdriverIO E2E exercises real app launch and library/workspace screens. **Visual check:** existing UI remains consistent (no HPA-914 mockup); use current E2E screenshots/assertions, not a new snapshot framework. Existing web Playwright checks pass.
+- **macOS and Windows:** existing native Tauri/WebdriverIO E2E exercises real app launch, visible library/workspace UI elements and interactions on both shipped OSes. **Automated visual-rendering check:** assert the existing UI is present/visible through the current DOM/behavior suites (no HPA-914 mockup). The WebdriverIO and web Playwright suites do not capture screenshots on successful runs; **do not** require nonexistent screenshot artifacts or claim pixel-level comparison. Existing web Playwright tests also pass.
 - After the first implementation commit, mark PR #351 ready to run CI; draft/skipped checks do not count.
 - **After merge only:** reverse the [#329](https://github.com/cwchanap/DTXWeb/pull/329) major ignore with targeted `@dependabot unignore eslint-plugin-svelte` on an applicable Dependabot PR; verify using `@dependabot show eslint-plugin-svelte ignore conditions` or the Dependabot settings if necessary. No bulk unignore/security dismissals.
 

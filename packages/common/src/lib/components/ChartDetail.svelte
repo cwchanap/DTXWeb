@@ -131,7 +131,7 @@
 				>
 			</div>
 			<div class="col-span-7 flex">
-				{#each displayLevels() as level (level)}
+				{#each displayLevels() as level, index (level?.id ?? index)}
 					{#if level}
 						<div class="card mr-2 rounded-lg bg-gray-100 p-2 dark:bg-slate-700">
 							<h4 class="text-sm font-bold text-slate-800 dark:text-slate-200">

@@ -1,6 +1,6 @@
 # HPA-914 — Svelte ESLint v3 design
 
-**Status:** Proposed; implementation on **the same draft PR #351**.  
+**Status:** Implemented on **the same PR #351**.  
 **Linear:** https://linear.app/cwchanap/issue/HPA-914/maintenance-stage-ignored-lint-vite-and-sveltekit-upgrades  
 **Plan:** [2026-11-14-hpa-914-svelte-eslint-v3.md](../plans/2026-11-14-hpa-914-svelte-eslint-v3.md)
 

@@ -44,7 +44,6 @@
 		if (!isOpen) return;
 		isOpen = false;
 		onToggle?.(false);
-		menuItemRefs.clear();
 		if (focusTrigger) {
 			triggerButton?.focus();
 		}

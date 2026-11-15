@@ -55,7 +55,7 @@
 	};
 </script>
 
-{#each nodes as node}
+{#each nodes as node (node.path)}
 	<div class="tree-node">
 		<div class="flex w-full items-center gap-2">
 			<button

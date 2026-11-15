@@ -711,6 +711,37 @@ describe('ChartList Rendering', () => {
 		);
 	});
 
+	it('renders the joined level display for a chart with multiple dtx files', async () => {
+		// The real formatLevelDisplay joins formatted levels with ' / ', and the
+		// component splits on ', ' — so the chips are positional, not keyed by
+		// level text. Assert the joined chip still renders under the keyed each.
+		mockFetchSuccess(
+			[
+				{
+					id: 1,
+					title: 'My Song',
+					artist: 'Artist',
+					bpm: 120,
+					isPublished: true,
+					displayId: 1,
+					dtxFiles: [
+						{ level: 30, label: 'BSC' },
+						{ level: 50, label: 'ADV' }
+					],
+					publishDate: '2024-01-01',
+					downloadUrl: null,
+					videoPreviewUrl: null
+				}
+			],
+			1
+		);
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
+		await waitFor(() => {
+			expect(screen.getByText('3.00 / 5.00')).toBeInTheDocument();
+		});
+	});
+
 	const renderSingleChartInTableMode = async (isBlog: boolean) => {
 		mockApi.listSimfiles.mockResolvedValue({ data: [mockListedChart], count: 1 });
 		render(ChartList, { props: { isBlog } });

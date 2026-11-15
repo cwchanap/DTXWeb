@@ -27,7 +27,7 @@
 </script>
 
 <nav aria-label="pagination">
-	{#each Array(totalPages).keys() as p}
+	{#each Array(totalPages).keys() as p (p)}
 		<button onclick={() => go(p + 1)} aria-current={page === p + 1 ? 'page' : undefined}>
 			{p + 1}
 		</button>

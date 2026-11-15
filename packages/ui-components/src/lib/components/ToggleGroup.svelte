@@ -99,7 +99,7 @@
 </script>
 
 <div class={clsx(getGroupClasses(), className)} role="group" aria-label={ariaLabel}>
-	{#each options as option, index}
+	{#each options as option, index (option.value)}
 		{@const isSelected = value === option.value}
 		{@const isDisabled = disabled || option.disabled}
 		<button

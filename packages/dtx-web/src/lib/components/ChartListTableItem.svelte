@@ -75,7 +75,7 @@
 						fullWidth
 						justify="start"
 					>
-						{#snippet children()}{$_('chart_list.open_in_editor')}{/snippet}
+						{$_('chart_list.open_in_editor')}
 					</Button>
 				{/if}
 
@@ -103,11 +103,11 @@
 					fullWidth
 					justify="start"
 				>
-					{#snippet children()}{item.isPublished ? 'Unpublish' : 'Publish'}{/snippet}
+					{item.isPublished ? 'Unpublish' : 'Publish'}
 				</Button>
 
 				<Button onclick={openModal} variant="menuItem" fullWidth justify="start">
-					{#snippet children()}Delete{/snippet}
+					Delete
 				</Button>
 			</div>
 		{/snippet}

@@ -130,7 +130,7 @@
 			role="menu"
 			aria-label="Language selection"
 		>
-			{#each locales as locale, index}
+			{#each locales as locale, index (locale)}
 				<button
 					class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 					on:click={() => handleLanguageSelect(locale)}

@@ -146,17 +146,13 @@
 	     below via the {:else} branch of the second if-block. -->
 	<div class="music-card mb-4 flex items-center justify-between p-4">
 		<p class="text-sm text-slate-300">{$_('score.load_error')}</p>
-		<Button onclick={() => loadScores()} variant="secondary"
-			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
-		>
+		<Button onclick={() => loadScores()} variant="secondary">{$_('score.retry')}</Button>
 	</div>
 {/if}
 {#if loadError && songs.length === 0}
 	<div class="music-card p-8 text-center">
 		<p class="mb-4 text-slate-300">{$_('score.load_error')}</p>
-		<Button onclick={() => loadScores()} variant="secondary"
-			>{#snippet children()}{$_('score.retry')}{/snippet}</Button
-		>
+		<Button onclick={() => loadScores()} variant="secondary">{$_('score.retry')}</Button>
 	</div>
 {:else if loading && songs.length === 0}
 	<!-- Initial load only: a full-page spinner. During a page-change load the

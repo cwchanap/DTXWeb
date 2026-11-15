@@ -197,7 +197,7 @@
 		{#if subWorkspaces.length > 0}
 			<div class="mb-4">
 				<div class="space-y-1">
-					{#each subWorkspaces as subWorkspace}
+					{#each subWorkspaces as subWorkspace (subWorkspace)}
 						<SubWorkspaceItem
 							{subWorkspace}
 							isActive={currentSubWorkspace === subWorkspace}

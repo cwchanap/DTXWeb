@@ -245,7 +245,7 @@
 				{/snippet}
 				{#snippet content()}
 					<div class="mt-1 rounded-sm border border-purple-500/30 bg-slate-900 shadow-lg">
-						{#each $locales as l}
+						{#each $locales as l (l)}
 							<button
 								class="w-full p-2 text-left text-slate-300 transition-all duration-200 hover:bg-purple-800/30 hover:text-purple-300"
 								onclick={() => locale.set(l)}
@@ -438,7 +438,7 @@
 						</p>
 
 						<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-							{#each Object.entries(midiToDtxMap) as [midiNote]}
+							{#each Object.entries(midiToDtxMap) as [midiNote] (midiNote)}
 								<div class="flex items-center space-x-3">
 									<span class="min-w-[120px] text-sm font-medium text-slate-300">
 										{getDrumName(Number(midiNote))} ({midiNote}):
@@ -452,7 +452,7 @@
 										}}
 										class="rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 									>
-										{#each availableLanes as lane}
+										{#each availableLanes as lane (lane)}
 											<option value={lane} class="bg-slate-900 text-slate-200"
 												>{lane} - {getLaneName(lane)}</option
 											>

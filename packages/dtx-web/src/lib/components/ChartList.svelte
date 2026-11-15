@@ -52,17 +52,14 @@
 	let searchFilter: string = $state('');
 	let searchTimeout: ReturnType<typeof setTimeout>;
 	let hideUnpublished = $state(false);
-	let filteredItems = $state<ListedChart[]>([]);
+	let filteredItems = $derived(
+		hideUnpublished ? items.filter((item) => item.isPublished) : items
+	);
 	let viewMode = $state<'card' | 'table'>('card');
 	let selectMode = $state(false);
 	let selectedIds = $state(new Set<number>());
 	let bulkDownloading = $state(false);
 	let supportsBulkDownloadStreaming = $state(false);
-
-	// Replace the run() function with a reactive effect using $effect
-	$effect(() => {
-		filteredItems = hideUnpublished ? items.filter((item) => item.isPublished) : items;
-	});
 
 	const togglePublishChart = async (id: number, published: boolean) => {
 		try {
@@ -151,7 +148,7 @@
 			return; // Abort if R2 deletion fails
 		}
 
-		// filteredItems is derived reactively from items via $effect, so no manual update needed
+		// filteredItems is derived reactively from items via $derived, so no manual update needed
 		await loadItems();
 		if (result.partialDeletion) {
 			toastStore.warning({
@@ -456,7 +453,7 @@
 									>{$_('blog.level')}:</span
 								>
 								<div class="flex flex-wrap gap-1">
-									{#each formatLevelDisplay(item.dtxFiles).split(', ') as level}
+									{#each formatLevelDisplay(item.dtxFiles).split(', ') as level, index (index)}
 										<span
 											class="rounded-full border border-purple-500/30 bg-linear-to-r from-purple-600/30 to-cyan-600/30 px-2 py-1 text-xs text-purple-200"
 										>

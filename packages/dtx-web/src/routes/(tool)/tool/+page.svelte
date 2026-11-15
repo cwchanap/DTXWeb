@@ -80,7 +80,7 @@
 				{/snippet}
 				{#snippet content()}
 					<div class="rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl">
-						{#each $locales as l}
+						{#each $locales as l (l)}
 							<button
 								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 								onclick={() => locale.set(l)}
@@ -102,7 +102,7 @@
 				Available Tools
 			</h2>
 			<div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-				{#each tools as tool}
+				{#each tools as tool (tool.href)}
 					<div class="music-card p-6">
 						<h3 class="mb-2 text-xl font-semibold text-slate-200">{tool.title}</h3>
 						<p class="mb-4 text-slate-300">{tool.description}</p>

@@ -31,7 +31,7 @@
 			onchange={(e) => onSwitchDifficulty((e.target as HTMLSelectElement).value)}
 			aria-label="Difficulty"
 		>
-			{#each difficulties as d}<option value={d.name}
+			{#each difficulties as d (d.name)}<option value={d.name}
 					>{d.name.replace('.dtx', '').toUpperCase()}</option
 				>{/each}
 		</select>

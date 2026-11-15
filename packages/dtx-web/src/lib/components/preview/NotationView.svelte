@@ -122,6 +122,9 @@
 
 	const renderChart = () => {
 		if (!container) return;
+		// VexFlow owns this container's DOM, so clearing its rendered SVG must be
+		// imperative — Svelte cannot reconcile nodes it did not create.
+		// eslint-disable-next-line svelte/no-dom-manipulating
 		container.innerHTML = '';
 		geometry = [];
 		noteOnsets = [];

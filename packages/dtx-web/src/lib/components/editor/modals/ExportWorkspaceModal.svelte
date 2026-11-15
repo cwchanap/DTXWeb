@@ -262,7 +262,7 @@
 			{/if}
 
 			<div class="space-y-2">
-				{#each availableWorkspaces as workspace}
+				{#each availableWorkspaces as workspace (workspace.name)}
 					<button
 						class="w-full rounded-md border p-3 text-left transition-colors {isExportingWorkspace &&
 						workspaceToExport?.name === workspace.name

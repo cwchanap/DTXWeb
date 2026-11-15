@@ -636,6 +636,175 @@ describe('Scores', () => {
 		expect(screen.getByText(/duplicate match/i)).toBeInTheDocument();
 	});
 
+	it('renders every duplicate-match warning when three songs share one cloud chart', async () => {
+		// Three songs all linked to the same cloud song whose only chart is
+		// '10'. The first uploads; the second and third each produce a
+		// duplicate-match skip, so `skipped` holds two rows with chartId
+		// '10'. The skipped-list each key must disambiguate them — keyed by
+		// chartId alone, Svelte reports each_key_duplicate.
+		const threeSongs = [
+			{
+				songId: 1,
+				title: 'First Song',
+				artist: 'Artist A',
+				genre: 'Rock',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-a',
+						aggregate: chartAggregate(7, 5),
+						best: bestRow,
+						recent: [recentRow]
+					}
+				]
+			},
+			{
+				songId: 2,
+				title: 'Second Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-b',
+						aggregate: chartAggregate(3, 1),
+						best: bestRow,
+						recent: []
+					}
+				]
+			},
+			{
+				songId: 3,
+				title: 'Third Song',
+				artist: 'Artist C',
+				genre: 'Jazz',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-c',
+						aggregate: chartAggregate(2, 0),
+						best: bestRow,
+						recent: []
+					}
+				]
+			}
+		];
+		host.parseDtxmaniaScores.mockResolvedValue(threeSongs);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42',
+			['/path/songs.db\u001f2']: '42',
+			['/path/songs.db\u001f3']: '42'
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+
+		render(Scores);
+		expect(await screen.findByText('First Song')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText('Third Song')).toBeInTheDocument());
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledTimes(3));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+
+		// Only the first chart uploads; the other two are client-side
+		// duplicates.
+		await waitFor(() =>
+			expect(host.uploadScores).toHaveBeenCalledWith({
+				charts: [
+					{
+						chartId: '10',
+						...chartAggregate(7, 5),
+						scores: [bestRow, recentRow]
+					}
+				]
+			})
+		);
+
+		// Both duplicate warnings render as separate rows.
+		expect(await screen.findAllByText(/Chart 10 skipped/i)).toHaveLength(2);
+		expect(screen.getAllByText(/duplicate match/i)).toHaveLength(2);
+	});
+
+	it('renders both a duplicate-match warning and a server rejection for the same chart', async () => {
+		// Two songs linked to cloud chart '10': the first uploads (and the
+		// server rejects it), the second is a client-side duplicate. The
+		// merged `skipped` list holds two rows with chartId '10' — one from
+		// each source — so the each key must be unique across both.
+		const twoSongs = [
+			{
+				songId: 1,
+				title: 'First Song',
+				artist: 'Artist A',
+				genre: 'Rock',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-a',
+						aggregate: chartAggregate(7, 5),
+						best: bestRow,
+						recent: [recentRow]
+					}
+				]
+			},
+			{
+				songId: 2,
+				title: 'Second Song',
+				artist: 'Artist B',
+				genre: 'Pop',
+				charts: [
+					{
+						difficultyLevel: 2,
+						difficultyLabel: 'BASIC',
+						drumLevel: 55,
+						fileHash: 'hash-b',
+						aggregate: chartAggregate(3, 1),
+						best: bestRow,
+						recent: []
+					}
+				]
+			}
+		];
+		host.parseDtxmaniaScores.mockResolvedValue(twoSongs);
+		host.readScoreSongLinks.mockResolvedValue({
+			['/path/songs.db\u001f1']: '42',
+			['/path/songs.db\u001f2']: '42'
+		});
+		host.fetchCloudSongCharts.mockResolvedValue({
+			success: true,
+			data: [{ id: '10', label: 'BASIC', level: 55 }]
+		});
+		host.uploadScores.mockResolvedValue({
+			success: true,
+			data: {
+				updatedCharts: 0,
+				insertedScores: 0,
+				skipped: [{ chartId: '10', reason: 'write failed' }]
+			}
+		});
+
+		render(Scores);
+		expect(await screen.findByText('First Song')).toBeInTheDocument();
+		await waitFor(() => expect(screen.getByText('Second Song')).toBeInTheDocument());
+		await waitFor(() => expect(host.fetchCloudSongCharts).toHaveBeenCalledTimes(2));
+
+		await fireEvent.click(screen.getByRole('button', { name: /^upload/i }));
+		await waitFor(() => expect(host.uploadScores).toHaveBeenCalled());
+
+		// One row per warning source, both for chart '10'.
+		expect(await screen.findAllByText(/Chart 10 skipped/i)).toHaveLength(2);
+		expect(screen.getByText(/duplicate match/i)).toBeInTheDocument();
+		expect(screen.getByText(/Server write failed/i)).toBeInTheDocument();
+	});
+
 	it('does not skip a chart with scores when an empty chart reserved the same cloud ID first', async () => {
 		// Two songs linked to the same cloud chart '10'. The first song has
 		// no best/recent rows (empty), the second has scores. The empty chart

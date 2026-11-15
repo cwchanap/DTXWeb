@@ -754,7 +754,7 @@ describe('ChartList Rendering', () => {
 		render(ChartList, { props: { isBlog: false } });
 		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
 		await waitFor(() => {
-			expect(screen.getByText('3.00 / 5.00')).toBeInTheDocument();
+			expect(screen.getByText('3.00 / 5.00')).toBeTruthy();
 		});
 	});
 

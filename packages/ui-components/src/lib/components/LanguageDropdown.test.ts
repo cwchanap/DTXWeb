@@ -15,9 +15,9 @@ describe('LanguageDropdown keyboard focus after locales change', () => {
 		menuItems()[1].focus();
 		await rerender({ locales: ['fr', 'en', 'jp'] });
 		await fireEvent.keyDown(window, { key: 'End' });
-		expect(document.activeElement).toHaveTextContent('日本語');
+		expect(document.activeElement).toBe(menuItems()[2]);
 		await fireEvent.keyDown(window, { key: 'Home' });
-		expect(document.activeElement).toHaveTextContent('Français');
+		expect(document.activeElement).toBe(menuItems()[0]);
 	});
 
 	it('keeps arrow navigation in visual order after a locale is inserted', async () => {
@@ -25,7 +25,7 @@ describe('LanguageDropdown keyboard focus after locales change', () => {
 		await rerender({ locales: ['en', 'jp', 'fr'] });
 		menuItems()[1].focus();
 		await fireEvent.keyDown(window, { key: 'ArrowDown' });
-		expect(document.activeElement).toHaveTextContent('Français');
+		expect(document.activeElement).toBe(menuItems()[2]);
 	});
 
 	it('focuses the first item with Home after a locale is removed', async () => {
@@ -33,6 +33,6 @@ describe('LanguageDropdown keyboard focus after locales change', () => {
 		await rerender({ locales: ['jp', 'fr'] });
 		menuItems()[1].focus();
 		await fireEvent.keyDown(window, { key: 'Home' });
-		expect(document.activeElement).toHaveTextContent('日本語');
+		expect(document.activeElement).toBe(menuItems()[0]);
 	});
 });

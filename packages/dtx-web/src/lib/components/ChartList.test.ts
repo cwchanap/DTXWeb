@@ -868,7 +868,7 @@ describe('ChartList Rendering', () => {
 	});
 });
 
-import { Pagination } from '@skeletonlabs/skeleton-svelte';
+import { Pagination, Switch } from '@skeletonlabs/skeleton-svelte';
 import ChartListTableItemModule from '$lib/components/ChartListTableItem.svelte';
 import toastStore from '@/lib/toaster';
 
@@ -1104,5 +1104,127 @@ describe('ChartList – togglePublishChart via ChartListTableItem prop', () => {
 		} else {
 			expect(props).toBeDefined();
 		}
+	});
+});
+
+// Helper: get last Svelte 5 component call props for the mocked Switch
+// (index 1 = props, fallback to index 0)
+function getLastSwitchProps<T = Record<string, unknown>>(): T | undefined {
+	const calls = vi.mocked(Switch).mock.calls;
+	const last = calls[calls.length - 1];
+	return (last?.[1] ?? last?.[0]) as T | undefined;
+}
+
+// Helper: get a required prop from Switch or throw if missing
+function getRequiredSwitchProp<T>(propName: string): T {
+	const props = getLastSwitchProps();
+	const value = props?.[propName];
+	if (value === undefined) {
+		throw new Error(
+			`Expected prop "${propName}" to be passed to Switch, but it was not found. Mock calls: ${vi.mocked(Switch).mock.calls.length}`
+		);
+	}
+	return value as T;
+}
+
+// Helper: get onPageChange from the mocked Pagination or throw if missing
+function getPaginationOnPageChange(): (e: { page: number }) => void {
+	const calls = vi.mocked(Pagination).mock.calls;
+	const lastCall = calls[calls.length - 1];
+	const props = (lastCall?.[1] ?? lastCall?.[0]) as Record<string, unknown> | undefined;
+	const onPageChange = props?.onPageChange as ((e: { page: number }) => void) | undefined;
+	if (onPageChange === undefined) {
+		throw new Error(
+			`Expected prop "onPageChange" to be passed to Pagination, but it was not found. Mock calls: ${calls.length}`
+		);
+	}
+	return onPageChange;
+}
+
+describe('ChartList – hide-unpublished filtered view', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
+	});
+
+	const publishedChart = {
+		...mockListedChart,
+		id: 1,
+		title: 'Published Song',
+		isPublished: true
+	};
+	const unpublishedChart = {
+		...mockListedChart,
+		id: 2,
+		title: 'Draft Song',
+		isPublished: false
+	};
+
+	const renderTableView = async () => {
+		render(ChartList, { props: { isBlog: false } });
+		await fireEvent.click(screen.getByRole('button', { name: 'chart_list.table_view' }));
+	};
+
+	const fireHideUnpublished = (checked: boolean) => {
+		const onCheckedChange =
+			getRequiredSwitchProp<(e: { checked: boolean }) => void>('onCheckedChange');
+		onCheckedChange({ checked });
+	};
+
+	it('hides and re-shows unpublished charts when the Switch toggles', async () => {
+		// The Switch mock captures onCheckedChange; firing it drives the real
+		// hideUnpublished state → $derived filteredItems → rendered rows.
+		mockApi.listSimfiles.mockResolvedValue({
+			data: [publishedChart, unpublishedChart],
+			count: 2
+		});
+		await renderTableView();
+		await waitFor(() => expect(screen.queryByText(/Draft Song/)).toBeTruthy());
+		expect(screen.queryByText(/Published Song/)).toBeTruthy();
+
+		await fireHideUnpublished(true);
+		await waitFor(() => expect(screen.queryByText(/Draft Song/)).toBeNull());
+		expect(screen.queryByText(/Published Song/)).toBeTruthy();
+
+		await fireHideUnpublished(false);
+		await waitFor(() => expect(screen.queryByText(/Draft Song/)).toBeTruthy());
+	});
+
+	it('removes a chart from the filtered view when it is unpublished while hidden', async () => {
+		mockApi.listSimfiles.mockResolvedValue({ data: [publishedChart], count: 1 });
+		await renderTableView();
+		await waitFor(() => expect(screen.queryByText(/Published Song/)).toBeTruthy());
+		await fireHideUnpublished(true);
+
+		// Drive the real togglePublishChart through the table-item prop so items
+		// mutates and filteredItems re-derives without a reload.
+		const togglePublishChart =
+			getRequiredPropFromTableItem<(id: number, published: boolean) => Promise<void>>(
+				'togglePublishChart'
+			);
+		await togglePublishChart(1, true);
+		await waitFor(() => {
+			expect(mockApi.updateSimfile).toHaveBeenCalledWith('1', { isPublished: false });
+		});
+		await waitFor(() => expect(screen.queryByText(/Published Song/)).toBeNull());
+	});
+
+	it('keeps newly loaded unpublished charts hidden while the filter stays on', async () => {
+		// count=25 makes totalPages > 1 so the mocked Pagination captures
+		// onPageChange; page 2 returns fresh data including a new draft.
+		const reloadedPublished = { ...publishedChart, id: 3, title: 'Reloaded Pub' };
+		const reloadedDraft = { ...unpublishedChart, id: 4, title: 'Reloaded Draft' };
+		mockApi.listSimfiles
+			.mockResolvedValueOnce({ data: [publishedChart, unpublishedChart], count: 25 })
+			.mockResolvedValueOnce({ data: [reloadedPublished, reloadedDraft], count: 25 });
+
+		await renderTableView();
+		await waitFor(() => expect(screen.queryByText(/Draft Song/)).toBeTruthy());
+		await fireHideUnpublished(true);
+		await waitFor(() => expect(screen.queryByText(/Draft Song/)).toBeNull());
+
+		getPaginationOnPageChange()({ page: 2 });
+		await waitFor(() => expect(screen.queryByText(/Reloaded Pub/)).toBeTruthy());
+		expect(screen.queryByText(/Reloaded Draft/)).toBeNull();
 	});
 });

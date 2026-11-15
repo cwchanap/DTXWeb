@@ -12,15 +12,15 @@ The [reviewer reproduced](https://github.com/cwchanap/DTXWeb/pull/351#pullreques
 
 ## ESLint v3 rule decisions
 
-| Rule | Hits | Resolution |
-| --- | ---: | --- |
-| `svelte/no-navigation-without-resolve` | 43 | **Disable in Svelte scope.** Many targets are external URLs, the web app has no `paths.base`, and desktop isn't SvelteKit. |
-| `svelte/require-each-key` | 30 | **Fix.** Add unique, stable identifiers/paths to dynamic `{#each}` blocks. Never key by nonunique display strings (e.g. comma-split level labels); test list reconciliation. |
-| `svelte/prefer-svelte-reactivity` | 20 | **Disable in Svelte scope.** Scratch collections, nonreactive bookkeeping and immutable-map replacement are intentional; making them reactive changes behavior. |
-| `svelte/no-useless-children-snippet` | 17 | **Fix** redundant children snippets without changing rendered output. |
-| `svelte/prefer-writable-derived` | 1 | **Fix** `ChartList.svelte` and check reactive state transitions. |
-| `svelte/no-dom-manipulating` | 1 | **Line-level suppression** for `NotationView.svelte`'s intentional imperative renderer clear, with a reason. |
-| Parse error | 1 | **Fix config** for `audioPreview.svelte.ts`. v3 parses `*.svelte.{ts,js}`; expand the current TypeScript parser override to `['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js']`. |
+| Rule                                   | Hits | Resolution                                                                                                                                                                         |
+| -------------------------------------- | ---: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `svelte/no-navigation-without-resolve` |   43 | **Disable in Svelte scope.** Many targets are external URLs, the web app has no `paths.base`, and desktop isn't SvelteKit.                                                         |
+| `svelte/require-each-key`              |   30 | **Fix.** Add unique, stable identifiers/paths to dynamic `{#each}` blocks. Never key by nonunique display strings (e.g. comma-split level labels); test list reconciliation.       |
+| `svelte/prefer-svelte-reactivity`      |   20 | **Disable in Svelte scope.** Scratch collections, nonreactive bookkeeping and immutable-map replacement are intentional; making them reactive changes behavior.                    |
+| `svelte/no-useless-children-snippet`   |   17 | **Fix** redundant children snippets without changing rendered output.                                                                                                              |
+| `svelte/prefer-writable-derived`       |    1 | **Fix** `ChartList.svelte` and check reactive state transitions.                                                                                                                   |
+| `svelte/no-dom-manipulating`           |    1 | **Line-level suppression** for `NotationView.svelte`'s intentional imperative renderer clear, with a reason.                                                                       |
+| Parse error                            |    1 | **Fix config** for `audioPreview.svelte.ts`. v3 parses `*.svelte.{ts,js}`; expand the current TypeScript parser override to `['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js']`. |
 
 Keep the two global Svelte-rule exceptions as **permanent, documented choices**; leave the other new recommended rules enabled. Keys change runtime reconciliation, so this is not guaranteed zero-behavior-change work. No broad `eslint --fix .` or new configuration abstraction.
 
@@ -33,11 +33,11 @@ Keep the two global Svelte-rule exceptions as **permanent, documented choices**;
 
 ## Existing decisions on other ignored majors
 
-| PR | Decision |
-| --- | --- |
-| [#289](https://github.com/cwchanap/DTXWeb/pull/289#issuecomment-6093778424) | Remove unused JS UUID dependencies now; no UUID 14 upgrade. |
-| [#290](https://github.com/cwchanap/DTXWeb/pull/290#issuecomment-6093778422) | Vite 8 remains held for a coordinated migration validated by web build plus macOS/Windows production packages. |
-| [#330](https://github.com/cwchanap/DTXWeb/pull/330#issuecomment-6677955853) | Hold adapter-auto 8 until deliberately upgrading compatible SvelteKit packages. |
+| PR                                                                          | Decision                                                                                                                                                                                                                                                                      |
+| --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [#289](https://github.com/cwchanap/DTXWeb/pull/289#issuecomment-6093778424) | Remove unused JS UUID dependencies now; no UUID 14 upgrade.                                                                                                                                                                                                                   |
+| [#290](https://github.com/cwchanap/DTXWeb/pull/290#issuecomment-6093778422) | Vite 8 remains held for a coordinated migration validated by web build plus macOS/Windows production packages.                                                                                                                                                                |
+| [#330](https://github.com/cwchanap/DTXWeb/pull/330#issuecomment-6677955853) | Hold adapter-auto 8 until deliberately upgrading compatible SvelteKit packages.                                                                                                                                                                                               |
 | [#291](https://github.com/cwchanap/DTXWeb/pull/291#issuecomment-6093778453) | Intended `@types/node@^22` to match the Node 22 runtime, but merged [#307](https://github.com/cwchanap/DTXWeb/pull/307) installed `^25.9.9`. Choose a **separate Node-22 typings correction**, after compatibility checking; keep unchanged in #351 and keep Node 26 ignored. |
 
 ## Acceptance and closeout

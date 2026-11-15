@@ -303,11 +303,17 @@ describe('UploadedAssetFiles', () => {
 		const localKick = new File(['x'], 'kick.wav', { type: 'text/plain' });
 		const localSnare = new File(['x'], 'snare.wav', { type: 'text/plain' });
 		render(UploadedAssetFiles, {
-			props: makeProps({
-				simfileId: 'sim-1',
-				isDesktop: true,
-				userFiles: [replacingFile, localKick, localSnare]
-			})
+			// `uploadFile` is set on the literal — not inside `makeProps` — because
+			// `makeProps`'s `...overrides` is untyped and drops it from the props
+			// type, which the component's props type cascade reports as missing.
+			props: {
+				...makeProps({
+					simfileId: 'sim-1',
+					isDesktop: true,
+					userFiles: [replacingFile, localKick, localSnare]
+				}),
+				uploadFile: vi.fn().mockResolvedValue({ success: true })
+			}
 		});
 		await waitFor(() => {
 			expect(screen.getByText('kick.wav')).toBeInTheDocument();

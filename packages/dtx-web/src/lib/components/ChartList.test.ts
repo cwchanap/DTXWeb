@@ -1131,7 +1131,8 @@ function getRequiredSwitchProp<T>(propName: string): T {
 function getPaginationOnPageChange(): (e: { page: number }) => void {
 	const calls = vi.mocked(Pagination).mock.calls;
 	const lastCall = calls[calls.length - 1];
-	const props = (lastCall?.[1] ?? lastCall?.[0]) as Record<string, unknown> | undefined;
+	const props = (lastCall?.[1] ?? lastCall?.[0]) as unknown as
+		Record<string, unknown> | undefined;
 	const onPageChange = props?.onPageChange as ((e: { page: number }) => void) | undefined;
 	if (onPageChange === undefined) {
 		throw new Error(

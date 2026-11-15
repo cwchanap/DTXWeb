@@ -63,7 +63,7 @@
 					onOverrideMatch(chartIndex, (e.currentTarget as HTMLSelectElement).value)}
 			>
 				<option value="">{$_('score.none')}</option>
-				{#each cloudCharts as cc}
+				{#each cloudCharts as cc (cc.id)}
 					<option value={cc.id}
 						>{cc.label || $_('score.chart_fallback')} ({$_('score.level_short')}
 						{formatCloudLevel(cc.level)})</option

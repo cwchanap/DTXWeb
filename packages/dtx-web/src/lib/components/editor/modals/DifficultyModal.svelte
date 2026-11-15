@@ -21,7 +21,7 @@
 			<h2 class="mb-4 text-xl font-bold text-gray-800">Switch Difficulty</h2>
 
 			<div class="space-y-2">
-				{#each availableLevels as { level, label, isActive }}
+				{#each availableLevels as { level, label, isActive } (level)}
 					<button
 						class="w-full rounded-md border px-4 py-3 text-left transition-colors"
 						class:border-blue-500={isActive}

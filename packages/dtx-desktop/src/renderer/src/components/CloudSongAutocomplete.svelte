@@ -282,7 +282,7 @@
 						aria-label={$_('score.link.title')}
 						class="border-hairline border-t"
 					>
-						{#each suggestions as song, index}
+						{#each suggestions as song, index (song.id)}
 							<button
 								role="option"
 								id={`cloud-song-option-${index}`}

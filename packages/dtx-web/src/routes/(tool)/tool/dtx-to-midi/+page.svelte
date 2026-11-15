@@ -172,7 +172,7 @@
 				{/snippet}
 				{#snippet content()}
 					<div class="rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl">
-						{#each $locales as l}
+						{#each $locales as l (l)}
 							<button
 								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 								onclick={() => locale.set(l)}
@@ -296,7 +296,7 @@
 						</p>
 
 						<div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
-							{#each Object.entries(laneNoteMap) as [lane]}
+							{#each Object.entries(laneNoteMap) as [lane] (lane)}
 								<div class="flex items-center space-x-2">
 									<label
 										for="lane-{lane}"

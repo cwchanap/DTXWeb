@@ -36,45 +36,43 @@
 
 <!-- Versions Modal -->
 <Modal bind:open={openState} title="Application Information" size="lg">
-	{#snippet children()}
-		<article>
-			<div class="grid gap-3 md:grid-cols-2">
-				<div
-					class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
-				>
-					<div class="flex items-center gap-3">
-						<div
-							class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
-						>
-							<Zap size={24} class="text-cyan" />
-						</div>
-						<div>
-							<p class="text-faint text-xs">Application</p>
-							<p class="text-hi font-medium">{versions.app ?? '—'}</p>
-						</div>
+	<article>
+		<div class="grid gap-3 md:grid-cols-2">
+			<div
+				class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
+			>
+				<div class="flex items-center gap-3">
+					<div
+						class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
+					>
+						<Zap size={24} class="text-cyan" />
 					</div>
-				</div>
-
-				<div
-					class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
-				>
-					<div class="flex items-center gap-3">
-						<div
-							class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
-						>
-							<Server size={24} class="text-green" />
-						</div>
-						<div>
-							<p class="text-faint text-xs">Tauri</p>
-							<p class="text-hi font-medium">{versions.tauri ?? '—'}</p>
-						</div>
+					<div>
+						<p class="text-faint text-xs">Application</p>
+						<p class="text-hi font-medium">{versions.app ?? '—'}</p>
 					</div>
 				</div>
 			</div>
-		</article>
 
-		<footer class="mt-6 flex justify-end gap-4">
-			<button type="button" class="btn preset-tonal" onclick={modalClose}> Close </button>
-		</footer>
-	{/snippet}
+			<div
+				class="border-hairline bg-surface-1 rounded-lg border p-4 shadow-sm transition-shadow hover:shadow-md"
+			>
+				<div class="flex items-center gap-3">
+					<div
+						class="bg-surface-2 flex h-10 w-10 items-center justify-center rounded-full"
+					>
+						<Server size={24} class="text-green" />
+					</div>
+					<div>
+						<p class="text-faint text-xs">Tauri</p>
+						<p class="text-hi font-medium">{versions.tauri ?? '—'}</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</article>
+
+	<footer class="mt-6 flex justify-end gap-4">
+		<button type="button" class="btn preset-tonal" onclick={modalClose}> Close </button>
+	</footer>
 </Modal>

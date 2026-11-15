@@ -169,7 +169,7 @@
 					</div>
 				{:else}
 					<div class="space-y-2">
-						{#each soundLibraryFiles as file}
+						{#each soundLibraryFiles as file (file.hash)}
 							<div
 								class="flex items-center justify-between rounded-lg border border-gray-200 p-3 hover:bg-gray-50"
 							>
@@ -224,9 +224,7 @@
 	confirmText="Remove"
 	confirmVariant="danger"
 >
-	{#snippet children()}
-		<p class="text-gray-700">Are you sure you want to remove this sound file?</p>
-	{/snippet}
+	<p class="text-gray-700">Are you sure you want to remove this sound file?</p>
 </Modal>
 
 <!-- Clear Library Confirmation Modal -->
@@ -237,9 +235,7 @@
 	confirmText="Clear All"
 	confirmVariant="danger"
 >
-	{#snippet children()}
-		<p class="text-gray-700">
-			Are you sure you want to clear the entire sound library? This cannot be undone.
-		</p>
-	{/snippet}
+	<p class="text-gray-700">
+		Are you sure you want to clear the entire sound library? This cannot be undone.
+	</p>
 </Modal>

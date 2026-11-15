@@ -461,7 +461,7 @@
 					<div
 						class="absolute top-full right-0 z-50 mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl"
 					>
-						{#each $locales as l}
+						{#each $locales as l (l)}
 							<button
 								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 								onclick={() => {
@@ -651,7 +651,7 @@
 					</h2>
 
 					<div class="space-y-4">
-						{#each midiData.tracks as track, index}
+						{#each midiData.tracks as track, index (track)}
 							<div class="rounded-lg border border-purple-500/20 bg-slate-800/30 p-4">
 								<div class="mb-3 flex items-center justify-between">
 									<h3 class="text-lg font-semibold text-slate-200">

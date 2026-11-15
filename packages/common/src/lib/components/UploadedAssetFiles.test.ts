@@ -295,6 +295,31 @@ describe('UploadedAssetFiles', () => {
 		});
 	});
 
+	it('renders distinct local-only files and cloud/local replacements without duplicate keys', async () => {
+		// Local-only rows carry `key: ''`, so the keyed each must qualify the
+		// fallback by source; keying by `file.key` alone would collide for the
+		// two local rows and throw each_key_duplicate during render.
+		const replacingFile = new File(['x'], 'song.dtx', { type: 'text/plain' });
+		const localKick = new File(['x'], 'kick.wav', { type: 'text/plain' });
+		const localSnare = new File(['x'], 'snare.wav', { type: 'text/plain' });
+		render(UploadedAssetFiles, {
+			props: makeProps({
+				simfileId: 'sim-1',
+				isDesktop: true,
+				userFiles: [replacingFile, localKick, localSnare]
+			})
+		});
+		await waitFor(() => {
+			expect(screen.getByText('kick.wav')).toBeInTheDocument();
+			expect(screen.getByText('snare.wav')).toBeInTheDocument();
+			expect(screen.getByText('Replacing')).toBeInTheDocument();
+			expect(screen.getAllByText('New')).toHaveLength(2);
+		});
+		// The untouched cloud row and the replaced row each render exactly once.
+		expect(screen.getAllByText('bass.xa')).toHaveLength(1);
+		expect(screen.getAllByText('song.dtx')).toHaveLength(1);
+	});
+
 	it('shows bulk upload button when isDesktop, file is selected, and simfileId present', async () => {
 		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
 		render(UploadedAssetFiles, {

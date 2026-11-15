@@ -351,6 +351,26 @@ describe('ChartListItem Component Logic', () => {
 			).not.toBeInTheDocument();
 		});
 
+		it('renders repeated level labels without a duplicate-key error', () => {
+			// The mocked formatLevelDisplay joins raw levels with ', ', so two
+			// equal levels produce two identical chip texts. The each key must be
+			// positional (level text is not unique), or Svelte throws
+			// each_key_duplicate here.
+			render(ChartListItem, {
+				props: {
+					...renderProps,
+					item: {
+						...mockItem,
+						dtxFiles: [
+							{ level: 3, label: 'BSC' },
+							{ level: 3, label: 'ADV' }
+						]
+					}
+				}
+			});
+			expect(screen.getAllByText('3')).toHaveLength(2);
+		});
+
 		it('shows R2 download link in blog mode', () => {
 			render(ChartListItem, {
 				props: {

@@ -410,7 +410,7 @@
 								</tr>
 							</thead>
 							<tbody>
-								{#each mergedFiles as file}
+								{#each mergedFiles as file (`${file.source}:${file.key || file.name}`)}
 									<tr
 										class="border-b border-gray-300 hover:bg-gray-50 dark:border-slate-600 dark:hover:bg-slate-700 {simfileId &&
 										file.status === 'new'

@@ -882,23 +882,17 @@
 
 <!-- Import Result Modal -->
 <Modal bind:open={showImportResultModal} title="Import Result">
-	{#snippet children()}
-		<p class="whitespace-pre-line text-gray-700">{importResultMessage}</p>
-	{/snippet}
+	<p class="whitespace-pre-line text-gray-700">{importResultMessage}</p>
 </Modal>
 
 <!-- Refresh Result Modal -->
 <Modal bind:open={showRefreshResultModal} title="Refresh Result">
-	{#snippet children()}
-		<p class="whitespace-pre-line text-gray-700">{refreshResultMessage}</p>
-	{/snippet}
+	<p class="whitespace-pre-line text-gray-700">{refreshResultMessage}</p>
 </Modal>
 
 <!-- Import Error Modal -->
 <Modal bind:open={showImportErrorModal} title="Import Error">
-	{#snippet children()}
-		<p class="text-gray-700">{importErrorMessage}</p>
-	{/snippet}
+	<p class="text-gray-700">{importErrorMessage}</p>
 </Modal>
 
 <!-- Workspace DTX Switcher Modal -->

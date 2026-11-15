@@ -66,7 +66,7 @@
 					<div
 						class="absolute top-full right-0 z-[100] mt-2 min-w-[120px] rounded-lg border border-purple-500/30 bg-slate-800 shadow-xl"
 					>
-						{#each $locales as l}
+						{#each $locales as l (l)}
 							<button
 								class="w-full p-3 text-left text-slate-300 transition-colors duration-200 first:rounded-t-lg last:rounded-b-lg hover:bg-purple-600/20 hover:text-purple-200"
 								onclick={() => {

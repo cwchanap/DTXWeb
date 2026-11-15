@@ -98,7 +98,7 @@
 			{/if}
 
 			<div class="space-y-2">
-				{#each availableWorkspaces as workspace}
+				{#each availableWorkspaces as workspace (workspace.name)}
 					<div
 						class="flex items-center rounded-md border transition-colors {currentWorkspace?.name ===
 						workspace.name
@@ -167,15 +167,13 @@
 	confirmText="Delete"
 	confirmVariant="danger"
 >
-	{#snippet children()}
-		{#if workspaceToDelete}
-			<p class="text-gray-700">
-				Are you sure you want to delete the workspace "{workspaceToDelete.name}"?
-			</p>
-			<p class="mt-2 text-sm text-gray-500">
-				This will permanently remove {workspaceToDelete.dtxFiles.length} DTX files and
-				{workspaceToDelete.audioFiles.length} audio files. This action cannot be undone.
-			</p>
-		{/if}
-	{/snippet}
+	{#if workspaceToDelete}
+		<p class="text-gray-700">
+			Are you sure you want to delete the workspace "{workspaceToDelete.name}"?
+		</p>
+		<p class="mt-2 text-sm text-gray-500">
+			This will permanently remove {workspaceToDelete.dtxFiles.length} DTX files and
+			{workspaceToDelete.audioFiles.length} audio files. This action cannot be undone.
+		</p>
+	{/if}
 </Modal>

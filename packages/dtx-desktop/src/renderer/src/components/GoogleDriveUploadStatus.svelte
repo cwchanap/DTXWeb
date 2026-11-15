@@ -181,7 +181,7 @@
 			aria-live="polite"
 		>
 			<p class="text-yellow text-sm">{$_(errorMessageKey(visibleOutcome.errorCode))}</p>
-			{#each actionsFor(visibleOutcome.errorCode) as action}
+			{#each actionsFor(visibleOutcome.errorCode) as action (action)}
 				{#if action === 'retry' && onRetry}
 					<button class="text-dim text-sm" onclick={onRetry}
 						>{$_('googleDrive.upload.retry')}</button

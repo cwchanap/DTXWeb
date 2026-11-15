@@ -29,7 +29,8 @@ export default [
 			'**/coverage',
 			'**/*.svelte.d.ts',
 			'**/*.sh',
-			'**/worker-configuration.d.ts'
+			'**/worker-configuration.d.ts',
+			'**/.wrangler'
 		]
 	},
 	eslint.configs.recommended,
@@ -71,13 +72,19 @@ export default [
 	},
 	...svelte.configs['flat/recommended'],
 	{
-		files: ['**/*.svelte'],
+		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
 		languageOptions: {
 			parserOptions: { parser: tsParser }
 		},
 		rules: {
 			// Svelte 5 reactive tracking idiom: bare expressions inside $effect
-			'@typescript-eslint/no-unused-expressions': 'off'
+			'@typescript-eslint/no-unused-expressions': 'off',
+			// Many links are external URLs and the desktop package isn't SvelteKit,
+			// so there is no resolve() base path to apply.
+			'svelte/no-navigation-without-resolve': 'off',
+			// Scratch collections and bookkeeping maps are deliberately nonreactive;
+			// SvelteMap/SvelteSet wrapping would change their behavior.
+			'svelte/prefer-svelte-reactivity': 'off'
 		}
 	},
 	{

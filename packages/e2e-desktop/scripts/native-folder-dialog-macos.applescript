@@ -43,6 +43,17 @@ on run argv
 				delay 0.25
 				if not (focused of gotoField) then error "Go to Folder text field did not take focus"
 				keystroke targetDirectory
+				if value of gotoField is not targetDirectory then error "Go to Folder field did not receive the target path"
+
+				set preSelected to false
+				repeat with preElement in (entire contents of sheet 1 of window "Drumery")
+					try
+						if selected of preElement and name of preElement is destinationName then set preSelected to true
+					end try
+					if preSelected then exit repeat
+				end repeat
+				if preSelected then error "a selected item named '" & destinationName & "' already exists before navigation"
+
 				key code 36
 
 				set dismissDeadline to (current date) + 10
@@ -54,15 +65,15 @@ on run argv
 
 				set navigateDeadline to (current date) + 10
 				repeat
-					set destinationShown to false
+					set destinationSelected to false
 					repeat with panelElement in (entire contents of sheet 1 of window "Drumery")
 						try
-							if name of panelElement is destinationName then set destinationShown to true
+							if selected of panelElement and name of panelElement is destinationName then set destinationSelected to true
 						end try
-						if destinationShown then exit repeat
+						if destinationSelected then exit repeat
 					end repeat
-					if destinationShown then exit repeat
-					if (current date) > navigateDeadline then error "open panel did not navigate to '" & destinationName & "' after 10s"
+					if destinationSelected then exit repeat
+					if (current date) > navigateDeadline then error "open panel did not select '" & destinationName & "' after 10s"
 					delay 0.25
 				end repeat
 

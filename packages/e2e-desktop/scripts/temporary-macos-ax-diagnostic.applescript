@@ -4,9 +4,9 @@ property candidates : {}
 property destinationName : ""
 property stageName : "initializing"
 
-on note(messageText)
+on emitDiagnostic(messageText)
 	log ("AX_DIAGNOSTIC " & messageText)
-end note
+end emitDiagnostic
 
 on addPathValues(pathText, delimiterText)
 	set previousDelimiters to AppleScript's text item delimiters
@@ -24,9 +24,9 @@ on preparePath(pathText)
 	try
 		set aliasText to (POSIX file pathText as alias) as text
 		my addPathValues(aliasText, ":")
-		my note("target HFS alias=" & aliasText)
+		my emitDiagnostic("target HFS alias=" & aliasText)
 	on error errorText number errorNumber
-		my note("target HFS alias unavailable, error=" & errorNumber)
+		my emitDiagnostic("target HFS alias unavailable, error=" & errorNumber)
 	end try
 end preparePath
 
@@ -72,7 +72,7 @@ on describeElement(elementRef, elementPath, detailed)
 			set lineText to lineText & " " & attributeName & "=" & (my safeAttribute(elementRef, contents of attributeName))
 		end repeat
 	end if
-	my note(lineText)
+	my emitDiagnostic(lineText)
 end describeElement
 
 on walkElement(elementRef, elementPath, depth, detailed, collectCandidates)
@@ -89,11 +89,11 @@ on walkElement(elementRef, elementPath, depth, detailed, collectCandidates)
 		end try
 	end if
 	if roleText is in {"AXScrollArea", "AXTable", "AXOutline", "AXBrowser", "AXList", "AXWebArea", "AXColumn", "AXRow"} then
-		my note(elementPath & " children omitted for privacy")
+		my emitDiagnostic(elementPath & " children omitted for privacy")
 		return
 	end if
 	if depth ≥ 8 then
-		my note(elementPath & " depth limit")
+		my emitDiagnostic(elementPath & " depth limit")
 		return
 	end if
 	try
@@ -103,12 +103,12 @@ on walkElement(elementRef, elementPath, depth, detailed, collectCandidates)
 			set childIndex to childIndex + 1
 			my walkElement(contents of childRef, elementPath & "/" & childIndex, depth + 1, detailed, collectCandidates)
 			if nodeCount ≥ 160 then
-				my note("tree node limit reached")
+				my emitDiagnostic("tree node limit reached")
 				exit repeat
 			end if
 		end repeat
 	on error errorText number errorNumber
-		my note(elementPath & " children unavailable, error=" & errorNumber)
+		my emitDiagnostic(elementPath & " children unavailable, error=" & errorNumber)
 	end try
 end walkElement
 
@@ -117,7 +117,7 @@ on dumpPanel(detailed)
 	set candidates to {}
 	tell application "System Events" to tell process "dtx-desktop"
 		set ownedWindows to every window
-		my note("owned process window count=" & (count of ownedWindows))
+		my emitDiagnostic("owned process window count=" & (count of ownedWindows))
 		set windowIndex to 0
 		repeat with windowRef in ownedWindows
 			set windowIndex to windowIndex + 1
@@ -125,13 +125,13 @@ on dumpPanel(detailed)
 			my walkElement(contents of windowRef, "window[" & windowIndex & "]", 0, true, false)
 		end repeat
 		if not (exists window "Drumery") then
-			my note("owned Drumery window unavailable")
+			my emitDiagnostic("owned Drumery window unavailable")
 			return
 		end if
 		set ownedWindow to window "Drumery"
 		my describeElement(ownedWindow, "window Drumery", detailed)
 		set sheetCount to count of sheets of ownedWindow
-		my note("owned window sheet count=" & sheetCount)
+		my emitDiagnostic("owned window sheet count=" & sheetCount)
 		if sheetCount is 0 then return
 		set panelRef to sheet 1 of ownedWindow
 	end tell
@@ -155,7 +155,7 @@ on cancelPanel()
 			end if
 			if not (exists sheet 1 of window "Drumery") then
 				if (count of windows) is not 1 then error "cannot confirm closure with other app windows present"
-				my note("cleanup: owned sheet closed")
+				my emitDiagnostic("cleanup: owned sheet closed")
 				return
 			end if
 			set frontmost to true
@@ -165,7 +165,7 @@ on cancelPanel()
 		end repeat
 		if exists sheet 1 of window "Drumery" then error "owned sheet still open after cancellation"
 		if (count of windows) is not 1 then error "cannot confirm closure with other app windows present"
-		my note("cleanup: owned sheet closed")
+		my emitDiagnostic("cleanup: owned sheet closed")
 	end tell
 end cancelPanel
 
@@ -175,7 +175,7 @@ on capturePath(pathText)
 	set destinationName to last text item of pathText
 	set AppleScript's text item delimiters to previousDelimiters
 	set stageName to "Go to Folder " & pathText
-	my note("stage=" & stageName)
+	my emitDiagnostic("stage=" & stageName)
 	tell application "System Events" to tell process "dtx-desktop"
 		if not (exists sheet 1 of window "Drumery") then error "owned sheet missing"
 		set frontmost to true
@@ -204,13 +204,13 @@ on capturePath(pathText)
 	end tell
 	delay 1
 	set stageName to "panel tree after Go to Folder " & pathText
-	my note("stage=" & stageName)
+	my emitDiagnostic("stage=" & stageName)
 	my dumpPanel(true)
-	my note("matching location-value popup count=" & (count of candidates))
+	my emitDiagnostic("matching location-value popup count=" & (count of candidates))
 	if (count of candidates) is not 1 then error "location popup not unique"
 	set locationPopup to item 1 of candidates
 	set stageName to "location menu " & pathText
-	my note("stage=" & stageName)
+	my emitDiagnostic("stage=" & stageName)
 	tell application "System Events"
 		click locationPopup
 		delay 0.5
@@ -219,7 +219,7 @@ on capturePath(pathText)
 		set menuElements to UI elements of menuRef
 	end tell
 	my describeElement(menuRef, "location menu", true)
-	my note("location menu child count=" & (count of menuElements))
+	my emitDiagnostic("location menu child count=" & (count of menuElements))
 	set menuIndex to 0
 	repeat with menuElement in menuElements
 		set menuIndex to menuIndex + 1
@@ -247,7 +247,7 @@ on run argv
 	set safeValues to {"Drumery", "Where", "Where:", "Cancel", "Open", "Choose", "New Folder", "window", "sheet", "group", "toolbar", "button", "pop up button", "menu", "menu item"}
 	my preparePath(item 2 of argv)
 	my preparePath(item 3 of argv)
-	my note("AX_DIAGNOSTIC_READY")
+	my emitDiagnostic("AX_DIAGNOSTIC_READY")
 	set failed to false
 	with timeout of 4 seconds
 		try
@@ -264,21 +264,21 @@ on run argv
 			my capturePath(item 3 of argv)
 		on error errorText number errorNumber
 			set failed to true
-			my note("failure stage=" & stageName & " error=" & errorNumber)
+			my emitDiagnostic("failure stage=" & stageName & " error=" & errorNumber)
 			try
-				my note("best available owned window tree and sheet roles")
+				my emitDiagnostic("best available owned window tree and sheet roles")
 				my dumpPanel(false)
 			on error errorText2 number errorNumber2
-				my note("tree unavailable, error=" & errorNumber2)
+				my emitDiagnostic("tree unavailable, error=" & errorNumber2)
 			end try
 		end try
 		try
 			my cancelPanel()
 		on error errorText number errorNumber
 			set failed to true
-			my note("cleanup failed, error=" & errorNumber)
+			my emitDiagnostic("cleanup failed, error=" & errorNumber)
 		end try
 	end timeout
 	if failed then error "temporary AX diagnostic failed"
-	my note("capture complete; no native acceptance asserted")
+	my emitDiagnostic("capture complete; no native acceptance asserted")
 end run

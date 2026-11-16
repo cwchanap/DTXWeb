@@ -11,7 +11,7 @@ on run argv
 	set AppleScript's text item delimiters to "/"
 	set pathParts to {}
 	repeat with pathPart in (text items of targetDirectory)
-		if pathPart is not "" then set end of pathParts to pathPart
+		if (contents of pathPart) is not "" then set end of pathParts to contents of pathPart
 	end repeat
 	set AppleScript's text item delimiters to previousDelimiters
 	if (count of pathParts) is 0 then error "target directory has no name: " & targetDirectory
@@ -29,7 +29,7 @@ on run argv
 		set pathParts to text items of text 1 thru -2 of targetHFSPath
 		set AppleScript's text item delimiters to previousDelimiters
 		repeat with pathPart in pathParts
-			if pathPart is "" then error "target directory has an invalid HFS path: " & targetDirectory
+			if (contents of pathPart) is "" then error "target directory has an invalid HFS path: " & targetDirectory
 		end repeat
 	end if
 
@@ -91,29 +91,33 @@ on run argv
 				repeat
 					set locationPopup to missing value
 					set popupCount to 0
-					repeat with panelElement in (entire contents of sheet 1 of window "Drumery")
-						try
-							if (role of panelElement is "AXPopUpButton") and (name of panelElement is "Where:") then
-								set locationPopup to contents of panelElement
-								set popupCount to popupCount + 1
-							end if
-						end try
+					set panelElements to entire contents of sheet 1 of window "Drumery"
+					repeat with panelElement in panelElements
+						set elementRef to contents of panelElement
+						if (value of attribute "AXRole" of elementRef is "AXPopUpButton") and (name of elementRef is "Where:") then
+							set locationPopup to elementRef
+							set popupCount to popupCount + 1
+						end if
 					end repeat
 					if popupCount is greater than 1 then error "multiple Where location popups in open panel"
 					if locationPopup is not missing value then
 						set ancestorNames to {}
-						if value of locationPopup is destinationName then
+						if value of attribute "AXValue" of locationPopup is destinationName then
 							click locationPopup
 							delay 0.25
 							if exists menu 1 of locationPopup then
-								try
-									set ancestorNames to name of menu items of menu 1 of locationPopup
-								end try
+								set menuRef to a reference to menu 1 of locationPopup
+								set menuElements to UI elements of menuRef
+								repeat with menuElement in menuElements
+									set menuElementRef to contents of menuElement
+									if value of attribute "AXRole" of menuElementRef is not "AXMenuItem" then error "open panel location menu has an invalid item"
+									set menuName to name of menuElementRef
+									set end of ancestorNames to menuName
+								end repeat
 								if not frontmost then error "dtx-desktop lost focus before closing location menu"
 								key code 53
 								if not (exists sheet 1 of window "Drumery") then error "open panel closed before location confirmation"
 							end if
-							if class of ancestorNames is not list then set ancestorNames to {ancestorNames}
 							set previousDelimiters to AppleScript's text item delimiters
 							set AppleScript's text item delimiters to ":"
 							set lastPathSeen to (reverse of ancestorNames) as text

@@ -41,6 +41,7 @@ Avoid new fixtures, another WDIO spec file, another screenshot artifact step, a 
 
 - Do not swallow the exit status or suppress stderr. A TCC denial such as -1719/-25211 is an actionable blocked result. No new macOS utility/runtime is required.
 - Commit **only this workflow capability gate as the first executable change**, then **mark the existing draft PR ready for review** so the ready_for_review workflow event runs it. On a red macOS gate, stop work on the scripts until a supported native runner/accessibility approach is demonstrated. A green gate is permission evidence only, **not yet a passing app-owned sheet test**.
+- **Trigger sequencing caveat (verified on this PR):** marking ready immediately after pushing the gate commit can race GitHub's PR head update — `ready_for_review` ran against the prior docs-only head, and the gate commit's own `synchronize` event was skipped because it was dispatched while the PR still counted as a draft. A skipped draft run is **not** preflight evidence. When this happens, land a follow-up commit so a `synchronize` event fires after the PR reflects the new head and is non-draft; that run is the actual gate.
 - **Do not add a Windows preflight**: existing native Windows/WebView2 tests already run on its interactive desktop. Any UI Automation details are diagnosed through the actual Windows picker helper. Do not duplicate E2E jobs or alter the existing OS matrix.
 
 

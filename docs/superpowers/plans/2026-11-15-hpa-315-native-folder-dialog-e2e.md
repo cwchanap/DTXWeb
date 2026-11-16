@@ -6,78 +6,92 @@
 **Prerequisite:** HPA-316 merged in https://github.com/cwchanap/DTXWeb/pull/350.
 **Target:** Current production Tauri workspace trust flow, not the generic Export Settings picker.
 
+
 ## One-PR contract
 
-Use one HPA-315 PR for the initial design, test implementation, platform helpers, CI changes, and evidence. This draft is not a throwaway planning PR. Once the first executable change is committed, mark the **same** PR ready for review to trigger the existing native E2E workflow (drafts skip it). Fix CI failures on this branch.
+Keep exactly **one PR for HPA-315**: initial design, early feasibility gate, platform scripts, the existing E2E spec extension, and real CI evidence all land here. The current PR remains a documentation-only draft until the **first executable commit** adds the macOS preflight immediately after checkout. **Mark this same PR ready for review after that commit**, rather than after the native-picker implementation, because drafts skip the existing native matrix.
 
-No application feature work, second PR, new UI design, extra test framework, Linux/Android acceptance, or human QA gate.
+If the macOS preflight is red, investigate the genuine permission/session blocker before writing elaborate scripts or repeatedly paying for an instrumented macOS build. Do not claim a skipped/mock test as completion.
+
+No second PR, app feature change, separate test framework, redundant Windows preflight, Linux/Android acceptance, or human QA gate.
+
 
 ## Exact change surface
 
-| Path | Purpose |
+| Path | Smallest intended change |
 | --- | --- |
-| **packages/e2e-desktop/specs/native-workspace-folder-dialog.e2e.ts** | One focused real-UI WDIO test with selection and cancellation assertions. |
-| **packages/e2e-desktop/support/native-folder-dialog.ts** | Small host orchestration wrapper: dispatch by OS, spawn an OS helper, synchronize readiness with the Browse click, bound deadlines, expose meaningful diagnostics. |
-| **packages/e2e-desktop/scripts/native-folder-dialog-macos.applescript** | Control the actual app-owned NSOpenPanel/sheet using installed macOS scripting tools; use the fixture's absolute path, confirm and cancel. |
-| **packages/e2e-desktop/scripts/native-folder-dialog-windows.ps1** | Control the actual app-owned folder picker with built-in PowerShell/.NET UI Automation; enter the supplied path, confirm and cancel. |
-| **.github/workflows/desktop-e2e-test.yml** | Only required GUI-permission preflight and per-OS screenshot artifacts. Retain matrix, existing runner build/test steps, draft guard, path filters, coverage, and logs. |
-| **These two planning documents and PR body** | Keep approved boundaries and record measured OS/CI findings, with links to artifacts. |
+| **.github/workflows/desktop-e2e-test.yml** | **First executable commit:** macOS-only System Events Accessibility preflight directly after checkout. **After script/test work:** reuse existing logs upload with always() and retention-days: 7. Keep both OS jobs and macOS Codecov. |
+| **packages/e2e-desktop/support/native-folder-dialog.ts** | Tiny Node stdlib execFile wrapper: action, path, OS dispatch, bounded timeout, plain stderr/exit diagnostics. No readiness protocol, stage enum or helper-specific tests. |
+| **packages/e2e-desktop/scripts/native-folder-dialog-macos.applescript** | Poll for app-owned NSOpenPanel sheet in Drumery window; frontmost, Go to Folder, confirm or cancel, exit only once closed. |
+| **packages/e2e-desktop/scripts/native-folder-dialog-windows.ps1** | Poll for the app-owned Win32 Common Item Dialog and verify UI Automation IDs, select or cancel, exit only once closed. |
+| **packages/e2e-desktop/specs/workspace-library.e2e.ts** | **Extend** existing WDIO suite with one real-picker selection/cancellation scenario, reusing fixture and getWorkspaceRoot. Save screenshot in existing logs/. |
+| **Design, plan, PR verification** | Update any verified runner-specific discoveries and link CI/screenshot artifact evidence. |
 
-Exact script filenames can be simplified if a single host helper proves cleaner; do not create a general-purpose GUI automation library.
+Avoid new fixtures, another WDIO spec file, another screenshot artifact step, a cross-platform GUI automation framework, or production Rust/renderer modifications.
 
 ## Steps, each committed to the same branch
 
-### 1. Verify the real target path and OS capability
 
-- Confirm the existing Library UI selectors: **Clear workspace**, **Workspace menu**, **Browse for folder…**, search input, and fixture song **Critical Workspace Song**. Use the current repository values, not the older ticket's generic select_folder command.
-- Confirm clearWorkspaceRoot updates native WorkspaceRootState and the empty-state still renders WorkspaceBookmarksMenu. Confirm the isolated WDIO fixture path from getPreseededWorkspaceFixture and canonicalExpectedPath.
-- Validate GUI scripting availability in the **actual native CI environments** before elaborate automation: macOS must be able to interact with an app-owned dialog through System Events/Accessibility; Windows must have a usable interactive desktop and UI Automation. Record tool exit code, stderr, and an actionable permission or session error. Merely finding osascript/PowerShell is not proof of permission.
-- If hosted macOS is blocked by TCC/Accessibility, treat it as a blocking feasibility finding on this PR. Identify and prove a viable macOS runner/session approach before declaring acceptance; do not skip macOS or substitute mocked IPC to turn the job green. Avoid unnecessary CI spending from repeated full builds.
+### 1. First executable commit: prove macOS GUI-scripting capability cheaply
 
-### 2. Implement the minimal platform controller
+- Add one **macOS-only** step **immediately after Checkout code** in the existing desktop-E2E workflow, before setup-bun, setup-Rust, cache, Rust coverage instrumentation and build. The current workflow file is already in its own path filters.
+- The probe must touch an actual accessibility UI element (Automation **and** Accessibility permission), rather than merely enumerating processes. Execute the System Events Dock probe:
 
-- Build a small host-side TypeScript helper that accepts only **action** (select/cancel) and an absolute fixture directory. Dispatch by process.platform and spawn the checked-in OS script with distinct arguments; no shell interpolation or added Node/Python packages.
-- The OS script waits with a bounded deadline for the real folder dialog belonging to the current desktop app, signals that it detected the picker, then completes the requested action. The test should arm the helper **before** WDIO clicks Browse. Use explicit synchronization to avoid races; do not rely on fixed sleeps.
-- For macOS identify NSOpenPanel or its sheet in the app's accessibility tree, use Go to Folder to navigate and choose, and support Escape/Cancel. For Windows identify the desktop app's native chooser by process/window ownership and UI Automation accessibility controls, enter the target directory and confirm or cancel.
-- Require positive evidence that the dialog appeared and closed. Errors state platform, stage, timeout, process exit code, and stderr. Do not send global keystrokes until the target dialog has been identified, and avoid hard-coded screen positions.
-- Keep OS script logic independent of renderer and Rust commands. No fake dialog selections or changes to production Tauri code.
+      osascript -e 'tell application "System Events" to count UI elements of process "Dock"'
 
-### 3. Write one end-to-end spec
+- Do not swallow the exit status or suppress stderr. A TCC denial such as -1719/-25211 is an actionable blocked result. No new macOS utility/runtime is required.
+- Commit **only this workflow capability gate as the first executable change**, then **mark the existing draft PR ready for review** so the ready_for_review workflow event runs it. On a red macOS gate, stop work on the scripts until a supported native runner/accessibility approach is demonstrated. A green gate is permission evidence only, **not yet a passing app-owned sheet test**.
+- **Do not add a Windows preflight**: existing native Windows/WebView2 tests already run on its interactive desktop. Any UI Automation details are diagnosed through the actual Windows picker helper. Do not duplicate E2E jobs or alter the existing OS matrix.
 
-- Begin with the normal preseeded WDIO fixture. Navigate to the Library UI, click **Clear workspace**, wait for the empty state, and assert the **native** getWorkspaceRoot() is null.
-- Arm platform folder-picker automation, open **Workspace menu → Browse for folder…** via WDIO, and let the OS script select the fixture path in the **real** native dialog.
-- Wait for the picker and native command to complete; assert getWorkspaceRoot() equals canonicalExpectedPath(fixture.workspaceRoot). Also assert the Library search field and **Critical Workspace Song** are visible and no workspace-load error is shown.
-- Save a screenshot of the populated Library view to a deterministic E2E artifact directory. The assertion and screenshot together constitute a UI visual check against the existing Library presentation; HPA-315 has no attached Linear mockup.
-- Arm cancel mode, reopen the picker through the real menu, cancel through OS chrome, and assert both Rust native root and visible Library contents are unchanged. A green test finishes with the fixture root selected, so it doesn't contaminate later specs.
-- Keep the spec runnable only on supported target OSes; an unexpected OS fails explicitly rather than recording a green skip.
 
-### 4. Integrate with existing CI
+### 2. Implement a minimal platform controller after the preflight
 
-- Preserve the macOS/Windows two-platform matrix and existing single shared build and test scripts. The new spec is picked up by the current **specs/**/*.e2e.ts** glob. Do not add a second native CI job or install another WebDriver.
-- Add a small host capability check where needed; it must fail clearly on GUI permission denial. Keep native dialog failure logs in the OS-specific artifact, including script diagnostics.
-- Capture platform-named screenshots (on success for evidence, and on failure where possible) and upload them using the existing artifact action with a short retention period. Avoid a snapshot-testing library or golden-image infrastructure.
-- Preserve macOS-only desktop-e2e-rust Codecov upload and all existing relaunch/crash-recovery tests.
-- After the first implementation commit, mark this **same** PR ready for review; use actual workflow evidence to refine it. Draft PR CI is intentionally skipped.
+- Reuse the installed OS scripting facilities. Create the smallest host wrapper in **support/native-folder-dialog.ts** with **execFile(command, [script, action, directory], { timeout })**. The script itself waits/polls for the dialog. No extra ready-handshake message, multiple stage enums, shell interpolation, helper-only test suite or new packages.
+- Start its promise before the WDIO Browse click, then await it after the click. Require scripts to positively identify the app-owned dialog and return **exit 0 only after it closes**. Fail with readable stderr (e.g. "dialog not found after 20s"), exit code or timeout if the dialog never appeared/closed.
+- **macOS expected shape:** rfd 0.17.2/tauri-plugin-dialog 2.8.4 opens an **NSOpenPanel sheet** on app window **Drumery** in binary/process **dtx-desktop** (Tauri E2E bundling disabled). Probe **sheet 1 of window "Drumery" of process "dtx-desktop"**. Verify it exists on the runner, bring the app frontmost, use Cmd+Shift+G / Go to Folder and confirm; Escape to cancel. Do not type until the sheet is detected.
+- **Windows expected shape:** rfd Common Item Dialog using **IFileOpenDialog + FOS_PICKFOLDERS**, *not* WinRT IFileOpenPicker or SHBrowseForFolder. Probe **#32770** owned by dtx-desktop and check standard control IDs **1152** (filename edit), **1** (OK/Select Folder), and **2** (Cancel). Verify actual IDs in the Windows spike before relying on them; use built-in PowerShell/.NET UI Automation, not localized text and not pywinauto.
+- Preserve genuine native picker behavior; scripts interact with OS dialog only, never invoke Rust directly or edit the E2E fixture's persistence file. Unsupported OS must fail.
+- Set a helper timeout within the test-level budget. The existing **Mocha 60s default** is insufficient for two up-to-20s dialogs plus Library loading; explicitly raise the one test's timeout to cover the bounded sequence. No blanket retry/sleep inflation.
+
+
+### 3. Extend the existing workspace-library E2E spec
+
+- Reuse **specs/workspace-library.e2e.ts**, the existing openWorkspace()/waitForUiDisplayed() helpers, fixtureSongTitle, getPreseededWorkspaceFixture(), and getWorkspaceRoot(). No second native-picker spec or fixture file.
+- From the preseeded Library, click the real **Clear workspace** button, wait for the empty-state menu, and **waitUntil(getWorkspaceRoot() === null)**. If root remains preseeded, the test must fail.
+- Start **driveDialog('select', fixture.workspaceRoot)**; via WDIO open **Workspace menu → Browse for folder…**; await the script's observed dialog closure. Wait until getWorkspaceRoot() matches the already canonicalized **fixture.workspaceRoot**, then assert Library search and **Critical Workspace Song** are visible without error.
+- Save the post-selection UI with **browser.saveScreenshot()** to a deterministic file in **packages/e2e-desktop/logs/**. The screenshot is evidence for the current visual layout; the pass condition is the actual DOM assertion plus the screenshot file being present in the per-OS artifact. No golden image or human screenshot sign-off.
+- Start the helper again in **cancel** mode, reopen the real picker from Workspace menu, wait for the helper to positively identify then cancel it, and assert both native root and visible Library content remain unchanged. Successful completion leaves the fixture root selected for existing tests.
+- Define one test-level Mocha timeout greater than the sum of the two bounded helper waits and app Library transitions. Do not drive DOM while the native picker has keyboard focus.
+
+
+### 4. Reuse the existing logs artifact for screenshots
+
+- Keep the current macOS and Windows E2E matrix, WDIO spec glob, shared build/run, Rust coverage, existing failure logging, and affected-path triggers.
+- The **only later CI edit** (after the first-commit macOS preflight) is to change the existing **Upload desktop e2e logs** step from **if: failure()** to **if: always()** and set **retention-days: 7**. It already uploads **packages/e2e-desktop/logs/** with a per-OS artifact name. No additional screenshot-upload action or matrix job.
+- The screenshot exists when the selection is completed; if the test fails earlier, existing backend/frontend logs and helper stderr explain why. A missing screenshot in a passing run should be a failure, not silently accepted.
+- Preserve all original relaunch and Google Drive crash-recovery checks and macOS-only desktop-e2e-rust Codecov upload.
+
 
 ### 5. Automated validation and evidence
 
-Use existing package and repository scripts, including:
+Run the existing commands after the first native implementation commit:
 
 - **bun install --frozen-lockfile**
 - **bun run --filter=dtx-e2e-desktop check**
 - **bun run --filter=dtx-e2e-desktop test:harness**
-- **bun run lint** and repository formatter/prettier check used by CI
-- **bun run --filter=dtx-e2e-desktop e2e:run** after a debug E2E build on a native target OS, or the same command through the existing two-OS GitHub workflow
+- **bun run lint** and the repository's relevant formatter/prettier check
+- **bun run --filter=dtx-e2e-desktop e2e:run** after a native E2E build, or through the two-OS GitHub Actions job
 
-Do not claim these have run at the planning-only stage. Record native macOS and Windows CI run URLs, script preflight diagnostics, actual dialog observations, and screenshot artifact links in the PR's Verification section. Review screenshots for the normal Library view, populated search field and song, and absence of a visible error. The screenshot verification is observable evidence; **human approval is not a pass condition**.
+Do not claim implementation tests have run during this design-review stage. Put the early macOS TCC probe result, full macOS and Windows native E2E CI run URLs, and each screenshot artifact link in the **PR verification section**, not as new infrastructure or unrelated documents. Screenshot-file presence + automatic DOM assertions are the visual acceptance evidence. No manual test/approval criterion.
+
 
 ## Acceptance criteria
 
-- [ ] **macOS native E2E:** Starting with an isolated root, the real GUI clears it and Rust reports null; WDIO opens the Library Browse action, macOS NSOpenPanel is detected and selects the fixture; Rust reports the expected canonical workspace root; the fixture song/search UI renders; the real picker can reopen and cancel without changing the root or UI.
-- [ ] **Windows native E2E:** The same full UI → real Windows folder dialog → Rust canonical root → Library UI → cancel flow passes in the Windows Tauri/WebView2 app. Expected path comparisons account for Windows canonicalization.
-- [ ] **Visual:** Each OS produces a correctly populated Library screenshot showing the current layout and fixture song (no new mockup is available); the screenshot is kept as a CI artifact and the corresponding DOM assertions pass.
-- [ ] **CI:** Both existing native desktop-E2E matrix jobs run the new spec and complete independently, with diagnostic logs and screenshots. A dialog that cannot open/be controlled or a permission failure is a failure, not a skip.
-- [ ] **Quality:** Existing package typecheck, harness tests, relevant lint/format checks, WDIO specs and native relaunch/crash-recovery checks pass; no production app change, new framework, Android/Linux acceptance, or second HPA-315 PR.
+- [ ] **macOS feasibility:** The early macOS-only osascript System Events probe reads an actual Dock UI element on the hosted runner, before any Rust/Tauri build; a permission denial fails the job.
+- [ ] **macOS native E2E:** The real UI clears the trusted root to null, detects and drives the app-owned NSOpenPanel sheet to select the fixture, verifies canonical native root and the populated Library, then detects/cancels a second sheet and verifies root/UI unchanged.
+- [ ] **Windows native E2E:** The real UI opens a Win32 Common Item Dialog in dtx-desktop, selects the fixture after root clearance, verifies canonical native root and populated Library, and cancels a second real dialog without changing root/UI.
+- [ ] **Automated visual evidence:** Each target OS's existing logs artifact contains a named post-selection Library screenshot; WDIO DOM assertions confirm the expected search field, fixture title, and no loading error. No mockup attached; no human sign-off.
+- [ ] **CI and quality:** Both original matrix jobs independently pass the complete E2E suite, relaunch and crash-recovery; existing package typecheck, test:harness and lint/format checks pass. Existing artifact step uses always() with 7-day retention. No mock selection, extra matrix, Android/Linux acceptance, production app changes, or second HPA-315 PR.
 
 ## Explicitly deferred
 

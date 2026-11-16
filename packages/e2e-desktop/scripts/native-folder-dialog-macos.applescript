@@ -122,7 +122,7 @@ on run argv
 								if (class of (last item of ancestorNames)) is not text then error "open panel location menu has an invalid trailing item"
 								if (last item of ancestorNames) is "" then error "open panel location menu has an empty trailing item"
 								set pathMatches to true
-								considering case but ignoring expansion
+								considering case
 									repeat with i from 1 to (count of pathParts)
 										if item i of ancestorNames is not item ((count of pathParts) - i + 1) of pathParts then
 											set pathMatches to false

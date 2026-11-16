@@ -54,6 +54,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Probe macOS GUI scripting permission
+        if: runner.os == 'macOS'
+        run: osascript -e 'tell application "System Events" to count UI elements of process "Dock"'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:

@@ -122,21 +122,31 @@ on dumpPanel(detailed)
 		repeat with windowRef in ownedWindows
 			set windowIndex to windowIndex + 1
 			set nodeCount to 0
+			set stageName to "dumpPanel: walk owned window " & windowIndex
+			my emitDiagnostic("stage=" & stageName)
 			my walkElement(contents of windowRef, "window[" & windowIndex & "]", 0, true, false)
+			my emitDiagnostic("completed " & stageName)
 		end repeat
+		set stageName to "dumpPanel: check Drumery window"
+		my emitDiagnostic("stage=" & stageName)
 		if not (exists window "Drumery") then
 			my emitDiagnostic("owned Drumery window unavailable")
 			return
 		end if
-		set ownedWindow to window "Drumery"
-		my describeElement(ownedWindow, "window Drumery", detailed)
-		set sheetCount to count of sheets of ownedWindow
+		set stageName to "dumpPanel: count Drumery sheets"
+		my emitDiagnostic("stage=" & stageName)
+		set sheetCount to count of sheets of window "Drumery"
 		my emitDiagnostic("owned window sheet count=" & sheetCount)
 		if sheetCount is 0 then return
-		set panelRef to sheet 1 of ownedWindow
+		set stageName to "dumpPanel: reference Drumery sheet"
+		my emitDiagnostic("stage=" & stageName)
+		set panelRef to a reference to sheet 1 of window "Drumery"
 	end tell
 	set nodeCount to 0
+	set stageName to "dumpPanel: walk Drumery sheet"
+	my emitDiagnostic("stage=" & stageName)
 	my walkElement(panelRef, "sheet[1]", 0, detailed, true)
+	my emitDiagnostic("completed " & stageName)
 end dumpPanel
 
 on requireUniqueProcess()
@@ -209,13 +219,17 @@ on capturePath(pathText)
 	my emitDiagnostic("matching location-value popup count=" & (count of candidates))
 	if (count of candidates) is not 1 then error "location popup not unique"
 	set locationPopup to item 1 of candidates
-	set stageName to "location menu " & pathText
+	set stageName to "location menu: open " & pathText
 	my emitDiagnostic("stage=" & stageName)
 	tell application "System Events"
 		click locationPopup
 		delay 0.5
+		set stageName to "location menu: resolve menu " & pathText
+		my emitDiagnostic("stage=" & stageName)
 		if not (exists menu 1 of locationPopup) then error "location menu unavailable"
-		set menuRef to menu 1 of locationPopup
+		set menuRef to a reference to menu 1 of locationPopup
+		set stageName to "location menu: read children " & pathText
+		my emitDiagnostic("stage=" & stageName)
 		set menuElements to UI elements of menuRef
 	end tell
 	my describeElement(menuRef, "location menu", true)
@@ -269,7 +283,7 @@ on run argv
 				my emitDiagnostic("best available owned window tree and sheet roles")
 				my dumpPanel(false)
 			on error errorText2 number errorNumber2
-				my emitDiagnostic("tree unavailable, error=" & errorNumber2)
+				my emitDiagnostic("tree unavailable stage=" & stageName & " error=" & errorNumber2)
 			end try
 		end try
 		try

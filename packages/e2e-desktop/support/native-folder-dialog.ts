@@ -5,9 +5,19 @@ export type NativeFolderDialogAction = 'select' | 'cancel';
 
 export const nativeFolderDialogTimeoutMs = 45_000;
 
-const drivers: Partial<Record<NodeJS.Platform, { command: string; script: string }>> = {
-	darwin: { command: 'osascript', script: 'native-folder-dialog-macos.applescript' },
-	win32: { command: 'powershell.exe', script: 'native-folder-dialog-windows.ps1' }
+const drivers: Partial<
+	Record<NodeJS.Platform, { command: string; prefixArgs: string[]; script: string }>
+> = {
+	darwin: {
+		command: 'osascript',
+		prefixArgs: [],
+		script: 'native-folder-dialog-macos.applescript'
+	},
+	win32: {
+		command: 'powershell.exe',
+		prefixArgs: ['-NoProfile', '-NonInteractive', '-File'],
+		script: 'native-folder-dialog-windows.ps1'
+	}
 };
 
 export const driveDialog = (action: NativeFolderDialogAction, directory: string): Promise<void> => {
@@ -21,7 +31,7 @@ export const driveDialog = (action: NativeFolderDialogAction, directory: string)
 	return new Promise((resolvePromise, reject) => {
 		execFile(
 			driver.command,
-			[script, action, directory],
+			[...driver.prefixArgs, script, action, directory],
 			{ timeout: nativeFolderDialogTimeoutMs },
 			(error, _stdout, stderr) => {
 				if (!error) {

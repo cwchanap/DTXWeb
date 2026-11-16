@@ -6,6 +6,13 @@ on run argv
 		error "unsupported action: " & dialogAction
 	end if
 
+	if targetDirectory ends with "/" then set targetDirectory to text 1 thru -2 of targetDirectory
+	set previousDelimiters to AppleScript's text item delimiters
+	set AppleScript's text item delimiters to "/"
+	set destinationName to last text item of targetDirectory
+	set AppleScript's text item delimiters to previousDelimiters
+	if destinationName is "" then error "target directory has no name: " & targetDirectory
+
 	tell application "System Events"
 		if not (exists process "dtx-desktop") then error "dtx-desktop process not found"
 		tell process "dtx-desktop"
@@ -26,24 +33,39 @@ on run argv
 
 				set fieldDeadline to (current date) + 10
 				repeat
-					if exists sheet 1 of sheet 1 of window "Drumery" then exit repeat
-					if exists text field 1 of sheet 1 of window "Drumery" then exit repeat
-					if (current date) > fieldDeadline then error "Go to Folder field not found after 10s"
+					if exists text field 1 of sheet 1 of sheet 1 of window "Drumery" then exit repeat
+					if (current date) > fieldDeadline then error "Go to Folder text field not found after 10s"
 					delay 0.25
 				end repeat
 
-				delay 0.5
+				set gotoField to text field 1 of sheet 1 of sheet 1 of window "Drumery"
+				set focused of gotoField to true
+				delay 0.25
+				if not (focused of gotoField) then error "Go to Folder text field did not take focus"
 				keystroke targetDirectory
 				key code 36
 
-				set navigateDeadline to (current date) + 10
+				set dismissDeadline to (current date) + 10
 				repeat
-					if (not (exists sheet 1 of sheet 1 of window "Drumery")) and (not (exists text field 1 of sheet 1 of window "Drumery")) then exit repeat
-					if (current date) > navigateDeadline then error "Go to Folder field did not close after 10s"
+					if not (exists sheet 1 of sheet 1 of window "Drumery") then exit repeat
+					if (current date) > dismissDeadline then error "Go to Folder sheet did not close after 10s"
 					delay 0.25
 				end repeat
 
-				delay 0.5
+				set navigateDeadline to (current date) + 10
+				repeat
+					set destinationShown to false
+					repeat with panelElement in (entire contents of sheet 1 of window "Drumery")
+						try
+							if name of panelElement is destinationName then set destinationShown to true
+						end try
+						if destinationShown then exit repeat
+					end repeat
+					if destinationShown then exit repeat
+					if (current date) > navigateDeadline then error "open panel did not navigate to '" & destinationName & "' after 10s"
+					delay 0.25
+				end repeat
+
 				key code 36
 			end if
 

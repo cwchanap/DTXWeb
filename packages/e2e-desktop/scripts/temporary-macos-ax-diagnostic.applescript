@@ -75,14 +75,14 @@ on describeElement(elementRef, elementPath, detailed)
 	my note(lineText)
 end describeElement
 
-on walkElement(elementRef, elementPath, depth, detailed)
+on walkElement(elementRef, elementPath, depth, detailed, collectCandidates)
 	if nodeCount ≥ 160 then return
 	set nodeCount to nodeCount + 1
 	set roleText to my elementRole(elementRef)
 	set inspectAttributes to false
 	if detailed and (roleText is in {"AXWindow", "AXSheet", "AXGroup", "AXToolbar", "AXPopUpButton", "AXButton"}) then set inspectAttributes to true
 	my describeElement(elementRef, elementPath, inspectAttributes)
-	if roleText is "AXPopUpButton" and detailed then
+	if roleText is "AXPopUpButton" and detailed and collectCandidates then
 		try
 			tell application "System Events" to set popupValue to value of attribute "AXValue" of elementRef
 			if popupValue is destinationName then set end of candidates to elementRef
@@ -101,7 +101,7 @@ on walkElement(elementRef, elementPath, depth, detailed)
 		set childIndex to 0
 		repeat with childRef in childElements
 			set childIndex to childIndex + 1
-			my walkElement(contents of childRef, elementPath & "/" & childIndex, depth + 1, detailed)
+			my walkElement(contents of childRef, elementPath & "/" & childIndex, depth + 1, detailed, collectCandidates)
 			if nodeCount ≥ 160 then
 				my note("tree node limit reached")
 				exit repeat
@@ -121,7 +121,8 @@ on dumpPanel(detailed)
 		set windowIndex to 0
 		repeat with windowRef in ownedWindows
 			set windowIndex to windowIndex + 1
-			my describeElement(contents of windowRef, "window[" & windowIndex & "]", false)
+			set nodeCount to 0
+			my walkElement(contents of windowRef, "window[" & windowIndex & "]", 0, true, false)
 		end repeat
 		if not (exists window "Drumery") then
 			my note("owned Drumery window unavailable")
@@ -134,7 +135,8 @@ on dumpPanel(detailed)
 		if sheetCount is 0 then return
 		set panelRef to sheet 1 of ownedWindow
 	end tell
-	my walkElement(panelRef, "sheet[1]", 0, detailed)
+	set nodeCount to 0
+	my walkElement(panelRef, "sheet[1]", 0, detailed, true)
 end dumpPanel
 
 on requireUniqueProcess()
@@ -264,7 +266,7 @@ on run argv
 			set failed to true
 			my note("failure stage=" & stageName & " error=" & errorNumber)
 			try
-				my note("best available owned tree, structural roles only")
+				my note("best available owned window tree and sheet roles")
 				my dumpPanel(false)
 			on error errorText2 number errorNumber2
 				my note("tree unavailable, error=" & errorNumber2)

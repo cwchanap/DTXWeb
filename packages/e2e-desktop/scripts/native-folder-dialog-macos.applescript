@@ -9,9 +9,13 @@ on run argv
 	if targetDirectory ends with "/" then set targetDirectory to text 1 thru -2 of targetDirectory
 	set previousDelimiters to AppleScript's text item delimiters
 	set AppleScript's text item delimiters to "/"
-	set destinationName to last text item of targetDirectory
+	set pathParts to {}
+	repeat with pathPart in (text items of targetDirectory)
+		if pathPart is not "" then set end of pathParts to pathPart
+	end repeat
 	set AppleScript's text item delimiters to previousDelimiters
-	if destinationName is "" then error "target directory has no name: " & targetDirectory
+	if (count of pathParts) is 0 then error "target directory has no name: " & targetDirectory
+	set destinationName to last item of pathParts
 
 	tell application "System Events"
 		if not (exists process "dtx-desktop") then error "dtx-desktop process not found"
@@ -44,16 +48,6 @@ on run argv
 				if not (focused of gotoField) then error "Go to Folder text field did not take focus"
 				keystroke targetDirectory
 				if value of gotoField is not targetDirectory then error "Go to Folder field did not receive the target path"
-
-				set preSelected to false
-				repeat with preElement in (entire contents of sheet 1 of window "Drumery")
-					try
-						if selected of preElement and name of preElement is destinationName then set preSelected to true
-					end try
-					if preSelected then exit repeat
-				end repeat
-				if preSelected then error "a selected item named '" & destinationName & "' already exists before navigation"
-
 				key code 36
 
 				set dismissDeadline to (current date) + 10
@@ -64,16 +58,50 @@ on run argv
 				end repeat
 
 				set navigateDeadline to (current date) + 10
+				set lastPathSeen to ""
 				repeat
-					set destinationSelected to false
+					set locationPopup to missing value
 					repeat with panelElement in (entire contents of sheet 1 of window "Drumery")
 						try
-							if selected of panelElement and name of panelElement is destinationName then set destinationSelected to true
+							if (role of panelElement is "AXPopUpButton") and (value of panelElement is destinationName) then
+								set locationPopup to panelElement
+								exit repeat
+							end if
 						end try
-						if destinationSelected then exit repeat
 					end repeat
-					if destinationSelected then exit repeat
-					if (current date) > navigateDeadline then error "open panel did not select '" & destinationName & "' after 10s"
+					if locationPopup is not missing value then
+						set ancestorNames to {}
+						click locationPopup
+						delay 0.25
+						if exists menu 1 of locationPopup then
+							try
+								set ancestorNames to name of menu items of menu 1 of locationPopup
+							end try
+							key code 53
+						end if
+						if class of ancestorNames is not list then set ancestorNames to {ancestorNames}
+						if (count of ancestorNames) >= (count of pathParts) then
+							set pathMatches to true
+							repeat with i from 1 to (count of pathParts)
+								if item i of ancestorNames is not item ((count of pathParts) - i + 1) of pathParts then
+									set pathMatches to false
+									exit repeat
+								end if
+							end repeat
+							if pathMatches then exit repeat
+							set previousDelimiters to AppleScript's text item delimiters
+							set AppleScript's text item delimiters to "/"
+							set lastPathSeen to (reverse of ancestorNames) as text
+							set AppleScript's text item delimiters to previousDelimiters
+						end if
+					end if
+					if (current date) > navigateDeadline then
+						if lastPathSeen is not "" then
+							error "open panel location '" & lastPathSeen & "' did not match '" & targetDirectory & "' after 10s"
+						else
+							error "open panel did not navigate to '" & targetDirectory & "' after 10s"
+						end if
+					end if
 					delay 0.25
 				end repeat
 

@@ -1,14 +1,37 @@
-import { join } from 'node:path';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { browser, expect, $ } from '@wdio/globals';
 
 import { openWorkspace, waitForUiDisplayed } from '../support/app';
+import { getWorkspaceRoot } from '../support/native';
+import {
+	driveDialog,
+	nativeFolderDialogTimeoutMs,
+	type NativeFolderDialogAction
+} from '../support/native-folder-dialog';
 import {
 	fixtureFolderName,
 	fixtureSongTitle,
 	getPreseededWorkspaceFixture,
 	type WorkspaceFixture
 } from '../support/workspace-fixture';
+
+const openNativeWorkspacePicker = async (): Promise<void> => {
+	await $('button[aria-label="Workspace menu"]').click();
+	await $('//button[@role="menuitem"][.//span[normalize-space()="Browse for folder…"]]').click();
+};
+
+const driveWorkspacePicker = async (
+	action: NativeFolderDialogAction,
+	directory: string
+): Promise<void> => {
+	const dialogDone = driveDialog(action, directory);
+	void dialogDone.catch(() => undefined);
+	await openNativeWorkspacePicker();
+	await dialogDone;
+};
 
 describe('Desktop workspace library', () => {
 	let fixture: WorkspaceFixture;
@@ -63,5 +86,41 @@ describe('Desktop workspace library', () => {
 		await expect(
 			$('//*[contains(normalize-space(), "Could not load chart files")]')
 		).not.toExist();
+	});
+
+	it('clears and reselects the fixture workspace through the real native folder picker', async function () {
+		this.timeout(nativeFolderDialogTimeoutMs * 2 + 90_000);
+
+		await $('button[aria-label="Clear workspace"]').click();
+		await waitForUiDisplayed('p', {
+			text: 'Select a root folder for your DTX files workspace',
+			timeoutMsg: 'Expected the empty workspace state after clearing the native root'
+		});
+		await browser.waitUntil(async () => (await getWorkspaceRoot()) === null, {
+			timeoutMsg: 'Expected the native workspace root to become null after Clear workspace'
+		});
+
+		await driveWorkspacePicker('select', fixture.workspaceRoot);
+
+		await browser.waitUntil(async () => (await getWorkspaceRoot()) === fixture.workspaceRoot, {
+			timeoutMsg: 'Expected the native workspace root to match the fixture after selection'
+		});
+		await waitForUiDisplayed('input[placeholder="Search songs and folders..."]');
+		await waitForUiDisplayed('span', { text: fixtureSongTitle });
+		await expect($('button[aria-label="Try again"]')).not.toExist();
+
+		const screenshotPath = fileURLToPath(
+			new URL('../logs/native-workspace-picker.png', import.meta.url)
+		);
+		mkdirSync(dirname(screenshotPath), { recursive: true });
+		await browser.saveScreenshot(screenshotPath);
+		expect(existsSync(screenshotPath) && statSync(screenshotPath).size > 0).toBe(true);
+
+		await driveWorkspacePicker('cancel', fixture.workspaceRoot);
+
+		await waitForUiDisplayed('input[placeholder="Search songs and folders..."]');
+		await waitForUiDisplayed('span', { text: fixtureSongTitle });
+		expect(await getWorkspaceRoot()).toBe(fixture.workspaceRoot);
+		await expect($('button[aria-label="Try again"]')).not.toExist();
 	});
 });

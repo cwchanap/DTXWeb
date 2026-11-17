@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
@@ -120,7 +121,7 @@
 	};
 
 	const handleBack = () => {
-		goto('/tool');
+		goto(resolve('/tool'));
 	};
 </script>
 

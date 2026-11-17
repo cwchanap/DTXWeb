@@ -1,4 +1,5 @@
 import { bulkDownloadBaseUrl, bulkDownloadHeaders } from '$lib/api';
+import type { Pathname } from '$app/types';
 
 export type SaveFilePickerHandle = {
 	createWritable: () => Promise<WritableStream<Uint8Array>>;
@@ -76,7 +77,7 @@ export const isPreviewable = (item: ChartNavigationItem): item is PreviewableCha
  * - Owner + uploaded -> `/editor/[id]`
  * - Otherwise -> `null` (no title link)
  */
-export const chartTitleHref = (item: ChartNavigationItem, isBlog: boolean): string | null => {
+export const chartTitleHref = (item: ChartNavigationItem, isBlog: boolean): Pathname | null => {
 	if (item.id === undefined) return null;
 	if (isBlog) return isPreviewable(item) ? `/preview/${item.id}` : null;
 	return item.hasUploadedFiles === true ? `/editor/${item.id}` : null;

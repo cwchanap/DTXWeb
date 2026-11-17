@@ -2,6 +2,7 @@
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { _ } from 'svelte-i18n';
 	import type { SimFile, DTXFile, SimfileModel } from '@dtx/common';
 	import { UploadedAssetFiles, ChartDetail } from '@dtx/common/components';
@@ -45,7 +46,7 @@
 	};
 
 	const handleGoBack = () => {
-		goto('/app/chart');
+		goto(resolve('/app/chart'));
 	};
 
 	const handleUpdateSimfile = async (
@@ -100,7 +101,7 @@
 			<div class="mb-4">
 				<a
 					class="rounded-sm bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-					href={`/preview/${$page.params.id}`}
+					href={resolve(`/preview/${$page.params.id}`)}
 					target="_blank"
 					rel="noopener"
 				>

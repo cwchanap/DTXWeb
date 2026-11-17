@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/stores';
 	import { _ } from 'svelte-i18n';
 	import { Pagination } from '@skeletonlabs/skeleton-svelte';
@@ -114,7 +115,7 @@
 				// the post-login destination.
 				redirecting = true;
 				const next = `${$page.url.pathname}${$page.url.search}`;
-				goto(`/login?next=${encodeURIComponent(next)}`);
+				goto(resolve(`/login?next=${encodeURIComponent(next)}`));
 				return;
 			}
 			console.error('Failed to load scores:', error);

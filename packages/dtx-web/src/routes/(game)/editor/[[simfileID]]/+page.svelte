@@ -17,6 +17,7 @@
 	import store from '$lib/store';
 	import { EventBus } from '@dtx/common/game';
 	import { goto } from '$app/navigation';
+	import { resolve as resolvePath } from '$app/paths';
 	import { Modal } from '@dtx/ui-components/components';
 	import EditorTips from '$lib/components/editor/EditorTips.svelte';
 	import EditorNavigation from '$lib/components/editor/EditorNavigation.svelte';
@@ -337,7 +338,7 @@
 
 		// If we're currently in a remote chart, redirect to local workspace after cleanup
 		if (redirectOnRemote && simfileID) {
-			goto('/editor');
+			goto(resolvePath('/editor'));
 		}
 	}
 

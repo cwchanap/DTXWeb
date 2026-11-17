@@ -72,6 +72,7 @@
 		{/if}
 	{/if}
 	{#if externalUrl}
+		<!-- eslint-disable svelte/no-navigation-without-resolve -->
 		<a
 			href={externalUrl}
 			target="_blank"
@@ -83,6 +84,7 @@
 			<ExternalLink size="16" />
 			{#if !compact}{$_('chart_list.external_link')}{/if}
 		</a>
+		<!-- eslint-enable svelte/no-navigation-without-resolve -->
 	{:else}
 		<span
 			class={externalDisabledClass}

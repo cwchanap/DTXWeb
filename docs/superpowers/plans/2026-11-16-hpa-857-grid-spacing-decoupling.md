@@ -8,14 +8,14 @@
 
 **Proceed.** The existing dependency is valid, but it supports only one fixed six-button selector. Replace the UI primitive inline, then delete the unused generic implementation and its package edge. Review confirmed the existing `ChartList.svelte` inline-toggle convention, plus Tailwind 4 `first:`/`last:`/`not-first:` variants. No separate implementation PR, reusable replacement component, extra E2E test, or compatibility layer.
 
-| File | Change |
-| --- | --- |
-| `packages/common/src/lib/components/editor/MainTab.svelte` | Replace the component import/instance with keyed native buttons; preserve accessible group, numeric options, state/effect and exact small/outline visual classes. |
-| `packages/common/src/lib/components/editor/MainTab.test.ts` | Remove the UI-package mock, add one selector interaction test, extend the existing preview-disabled test. |
-| `packages/common/package.json`, `bun.lock` | Remove the common package's now-unused UI dependency and regenerate the lockfile. |
-| `packages/common/vitest.config.ts` | Remove only the unused common UI-package alias. |
-| `packages/ui-components/src/lib/components/ToggleGroup.svelte` and `ToggleGroup.test.ts` | Delete obsolete implementation and generic-only test. |
-| `packages/ui-components/src/lib/index.ts` and `src/lib/components/index.ts` | Remove exactly the two dead ToggleGroup exports. |
+| File                                                                                     | Change                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/common/src/lib/components/editor/MainTab.svelte`                               | Replace the component import/instance with keyed native buttons; preserve accessible group, numeric options, state/effect and exact small/outline visual classes. |
+| `packages/common/src/lib/components/editor/MainTab.test.ts`                              | Remove the UI-package mock, add one selector interaction test, extend the existing preview-disabled test.                                                         |
+| `packages/common/package.json`, `bun.lock`                                               | Remove the common package's now-unused UI dependency and regenerate the lockfile.                                                                                 |
+| `packages/common/vitest.config.ts`                                                       | Remove only the unused common UI-package alias.                                                                                                                   |
+| `packages/ui-components/src/lib/components/ToggleGroup.svelte` and `ToggleGroup.test.ts` | Delete obsolete implementation and generic-only test.                                                                                                             |
+| `packages/ui-components/src/lib/index.ts` and `src/lib/components/index.ts`              | Remove exactly the two dead ToggleGroup exports.                                                                                                                  |
 
 Keep `packages/e2e-web/editor.spec.ts` and both apps' other ui-components imports/aliases unchanged unless one additional existing editor visibility assertion is needed. Keep `clsx` in ui-components for `Button.svelte` and `utils/cn.ts`.
 

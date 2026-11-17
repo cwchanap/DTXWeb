@@ -6,7 +6,6 @@
 	import { onMount } from 'svelte';
 	import { store } from '@dtx/common';
 	import { DTXFile } from '@dtx/common';
-	import { ToggleGroup } from '@dtx/ui-components';
 
 	let dtxFile: DTXFile | null = $state(null);
 	let measureCount = $state(10);
@@ -28,6 +27,13 @@
 		{ value: 48, label: '48th' },
 		{ value: 64, label: '64th' }
 	];
+
+	const gridButtonBase =
+		'inline-flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none px-2 py-1 text-xs first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10';
+	const gridButtonSelected =
+		'bg-purple-600 text-white border border-purple-600 hover:bg-purple-700';
+	const gridButtonUnselected =
+		'bg-slate-800/50 text-slate-300 border border-purple-500/30 hover:bg-slate-700/50 hover:text-slate-200';
 
 	run(() => {
 		if (dtxFile) {
@@ -162,15 +168,26 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="grid-spacing">Grid Spacing:</label>
-		<ToggleGroup
-			options={gridSpacingOptions}
-			bind:value={gridSpacing}
-			size="sm"
-			variant="outline"
-			ariaLabel="Select grid spacing for note placement"
-			disabled={isPreviewing}
-		/>
+		<span class="w-[15%] text-slate-300 2xl:w-1/3">Grid Spacing:</span>
+		<div
+			role="group"
+			aria-label="Select grid spacing for note placement"
+			class="inline-flex rounded-md shadow-sm"
+		>
+			{#each gridSpacingOptions as option (option.value)}
+				<button
+					type="button"
+					class="{gridButtonBase} {gridSpacing === option.value
+						? gridButtonSelected
+						: gridButtonUnselected}"
+					aria-pressed={gridSpacing === option.value}
+					disabled={isPreviewing}
+					onclick={() => (gridSpacing = option.value)}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
 	</div>
 	<div class="flex items-center space-x-2">
 		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="cell-height-input">Cell Height:</label>

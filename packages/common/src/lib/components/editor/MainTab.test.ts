@@ -55,11 +55,7 @@ vi.mock('@dtx/common/game', () => ({
 	}
 }));
 
-vi.mock('@dtx/ui-components', () => ({
-	ToggleGroup: vi.fn()
-}));
-
-import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/svelte';
 import MainTab from './MainTab.svelte';
 
 describe('MainTab', () => {
@@ -166,6 +162,48 @@ describe('MainTab', () => {
 		render(MainTab);
 		expect(screen.getByLabelText('BPM:')).toBeDisabled();
 		expect(screen.getByLabelText('Number of Measures:')).toBeDisabled();
+		const group = screen.getByRole('group', {
+			name: 'Select grid spacing for note placement'
+		});
+		const buttons = within(group).getAllByRole('button');
+		expect(buttons).toHaveLength(6);
+		for (const button of buttons) {
+			expect(button).toBeDisabled();
+		}
+	});
+
+	it('renders six grid spacing options in order, selects only the clicked option and emits once', async () => {
+		render(MainTab);
+		const group = screen.getByRole('group', {
+			name: 'Select grid spacing for note placement'
+		});
+		const buttons = within(group).getAllByRole('button');
+		expect(buttons).toHaveLength(6);
+		expect(buttons.map((b) => b.textContent)).toEqual([
+			'8th',
+			'12th',
+			'16th',
+			'24th',
+			'48th',
+			'64th'
+		]);
+		expect(buttons[2]).toHaveAttribute('aria-pressed', 'true');
+		expect(buttons.filter((b) => b.getAttribute('aria-pressed') === 'true')).toHaveLength(1);
+
+		mockEmit.mockClear();
+		await fireEvent.click(buttons[3]);
+
+		await waitFor(() => {
+			expect(buttons[3]).toHaveAttribute('aria-pressed', 'true');
+		});
+		expect(buttons.filter((b) => b.getAttribute('aria-pressed') === 'true')).toEqual([
+			buttons[3]
+		]);
+
+		const spacingCalls = mockEmit.mock.calls.filter(
+			(call) => call[0] === 'grid-spacing-update'
+		);
+		expect(spacingCalls).toEqual([['grid-spacing-update', 24]]);
 	});
 
 	it('sets store.measureCount when measure count changes', async () => {

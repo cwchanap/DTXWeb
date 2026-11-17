@@ -27,9 +27,18 @@ const driveWorkspacePicker = async (
 	action: NativeFolderDialogAction,
 	directory: string
 ): Promise<void> => {
-	const dialogDone = driveDialog(action, directory);
+	const abort = new AbortController();
+	const dialogDone = driveDialog(action, directory, abort.signal);
 	void dialogDone.catch(() => undefined);
-	await openNativeWorkspacePicker();
+	try {
+		await openNativeWorkspacePicker();
+	} catch (error) {
+		// The driver is already running — kill it so it can't interact with a
+		// later test's dialog, and wait for the process to actually exit.
+		abort.abort();
+		await dialogDone.catch(() => undefined);
+		throw error;
+	}
 	await dialogDone;
 };
 

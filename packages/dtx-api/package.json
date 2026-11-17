@@ -36,24 +36,24 @@
 	"dependencies": {
 		"@cloudflare/containers": "^0.3.7",
 		"@dtx/common": "*",
-		"@pothos/core": "^4.16.0",
-		"@pothos/plugin-errors": "^4.9.3",
-		"@pothos/plugin-scope-auth": "^4.2.2",
-		"better-auth": "1.7.18",
+		"@pothos/core": "^4.17.0",
+		"@pothos/plugin-errors": "^4.9.4",
+		"@pothos/plugin-scope-auth": "^4.3.0",
+		"better-auth": "1.7.23",
 		"drizzle-orm": "^0.45.4",
 		"graphql": "^17.1.0",
 		"graphql-yoga": "^5.24.4",
 		"zod": "^4.6.7"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^5.20261109.1",
+		"@cloudflare/workers-types": "^5.20261113.1",
 		"@vitest/coverage-v8": "^5.1.0",
-		"auth": "1.7.18",
+		"auth": "1.7.23",
 		"drizzle-kit": "^0.31.11",
 		"jszip": "^3.10.2",
 		"miniflare": "^4.20260730.0",
 		"typescript": "^5.8.3",
 		"vitest": "^5.1.0",
-		"wrangler": "^4.158.0"
+		"wrangler": "^4.161.0"
 	}
 }

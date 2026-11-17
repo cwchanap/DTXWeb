@@ -52,8 +52,7 @@ export default defineConfig({
 			phaser: path.resolve(__dirname, '../../__mocks__/phaser.ts'),
 			'@dtx/common/game': path.resolve(__dirname, './src/lib/game.ts'),
 			'@dtx/common/components': path.resolve(__dirname, './src/lib/components.ts'),
-			'@dtx/common': path.resolve(__dirname, './src/lib/index.ts'),
-			'@dtx/ui-components': path.resolve(__dirname, '../ui-components/src/lib/index.ts')
+			'@dtx/common': path.resolve(__dirname, './src/lib/index.ts')
 		},
 		conditions: ['browser']
 	}

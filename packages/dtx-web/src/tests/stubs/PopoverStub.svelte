@@ -1,5 +1,13 @@
 <script lang="ts">
-	type Snippet = () => unknown;
+	import type { Snippet } from 'svelte';
+	type Props = {
+		trigger?: Snippet;
+		content?: Snippet;
+		triggerAriaLabel?: string;
+		triggerClasses?: string;
+		open?: boolean;
+		onOpenChange?: (details: { open: boolean }) => void;
+	};
 	let {
 		trigger,
 		content,
@@ -7,14 +15,7 @@
 		triggerClasses,
 		open = false,
 		onOpenChange
-	} = $props<{
-		trigger?: Snippet;
-		content?: Snippet;
-		triggerAriaLabel?: string;
-		triggerClasses?: string;
-		open?: boolean;
-		onOpenChange?: (details: { open: boolean }) => void;
-	}>();
+	}: Props = $props();
 </script>
 
 <button

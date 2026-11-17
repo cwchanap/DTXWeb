@@ -15,6 +15,15 @@
 
 	type ChartListItemData = Partial<SimfileModel>;
 
+	type Props = {
+		item: ChartListItemData;
+		isBlog: boolean;
+		enableDownload?: boolean;
+		togglePublishChart: (id: number, published: boolean) => Promise<void>;
+		simfileBucketUrl: string;
+		onFileDelete: (id: number) => void;
+	};
+
 	let {
 		item,
 		isBlog,
@@ -22,14 +31,7 @@
 		togglePublishChart,
 		simfileBucketUrl,
 		onFileDelete
-	} = $props<{
-		item: ChartListItemData;
-		isBlog: boolean;
-		enableDownload?: boolean;
-		togglePublishChart: (id: number, published: boolean) => Promise<void>;
-		simfileBucketUrl: string;
-		onFileDelete: (id: number) => void;
-	}>();
+	}: Props = $props();
 
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);

@@ -93,7 +93,12 @@ on driveDialog(dialogAction, targetDirectory, destinationName, pathParts)
 					if not (focused of gotoField) then error "Go to Folder text field did not take focus"
 					if not frontmost then error "dtx-desktop lost focus before typing"
 					keystroke targetDirectory
-					if value of gotoField is not targetDirectory then error "Go to Folder field did not receive the target path"
+					set fieldValueDeadline to (current date) + 3
+					repeat
+						if value of gotoField is targetDirectory then exit repeat
+						if (current date) > fieldValueDeadline then error "Go to Folder field did not receive the target path"
+						delay 0.1
+					end repeat
 					my emitStage("navigate")
 					if not frontmost then error "dtx-desktop lost focus before navigation"
 					key code 36
@@ -138,8 +143,17 @@ on driveDialog(dialogAction, targetDirectory, destinationName, pathParts)
 							my emitStage("read popup value")
 							if value of attribute "AXValue" of locationPopup is destinationName then
 								my emitStage("open location menu")
-								click locationPopup
-								delay 0.25
+								-- System Events may not reply until the popup menu closes;
+								-- ignoring the response avoids an errAETimeout (-1712).
+								ignoring application responses
+									click locationPopup
+								end ignoring
+								set menuDeadline to (current date) + 3
+								repeat
+									if exists menu 1 of locationPopup then exit repeat
+									if (current date) > menuDeadline then exit repeat
+									delay 0.1
+								end repeat
 								if exists menu 1 of locationPopup then
 									my emitStage("read location menu children")
 									set menuRef to a reference to menu 1 of locationPopup
@@ -150,7 +164,12 @@ on driveDialog(dialogAction, targetDirectory, destinationName, pathParts)
 										if (current date) > navigateDeadline then error "open panel location probe exceeded 10s"
 										set menuElementRef to contents of menuElement
 										if value of attribute "AXRole" of menuElementRef is not "AXMenuItem" then error "open panel location menu has an invalid item"
-										set menuName to name of menuElementRef
+										try
+											set menuName to name of menuElementRef
+										on error
+											-- Separators and other nameless items carry no match value.
+											set menuName to missing value
+										end try
 										set end of ancestorNames to menuName
 									end repeat
 									my emitStage("close location menu")
@@ -161,22 +180,37 @@ on driveDialog(dialogAction, targetDirectory, destinationName, pathParts)
 								my emitStage("verify location")
 								set previousDelimiters to AppleScript's text item delimiters
 								set AppleScript's text item delimiters to ":"
-								set lastPathSeen to (reverse of ancestorNames) as text
+								set pathNames to {}
+								repeat with ancestorName in ancestorNames
+									if (class of ancestorName) is text then set end of pathNames to contents of ancestorName
+								end repeat
+								set lastPathSeen to (reverse of pathNames) as text
 								set AppleScript's text item delimiters to previousDelimiters
-								if (count of ancestorNames) is (count of pathParts) + 1 then
-									if (class of (last item of ancestorNames)) is not text then error "open panel location menu has an invalid trailing item"
-									if (last item of ancestorNames) is "" then error "open panel location menu has an empty trailing item"
-									set pathMatches to true
+								set pathCount to count of pathParts
+								set menuItemCount to count of ancestorNames
+								-- The menu may carry extras beyond the path itself (a
+								-- trailing "Computer" entry, Favorites, Recent Places,
+								-- separators): accept any contiguous run of items
+								-- matching the expected ancestor chain.
+								set pathMatches to false
+								if menuItemCount is greater than or equal to pathCount then
 									considering case
-										repeat with i from 1 to (count of pathParts)
-											if item i of ancestorNames is not item ((count of pathParts) - i + 1) of pathParts then
-												set pathMatches to false
+										repeat with startIndex from 1 to (menuItemCount - pathCount + 1)
+											set runMatches to true
+											repeat with i from 1 to pathCount
+												if item (startIndex + i - 1) of ancestorNames is not item (pathCount - i + 1) of pathParts then
+													set runMatches to false
+													exit repeat
+												end if
+											end repeat
+											if runMatches then
+												set pathMatches to true
 												exit repeat
 											end if
 										end repeat
 									end considering
-									if pathMatches then exit repeat
 								end if
+								if pathMatches then exit repeat
 							end if
 						end if
 						if (current date) > navigateDeadline then

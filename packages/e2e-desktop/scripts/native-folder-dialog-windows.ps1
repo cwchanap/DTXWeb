@@ -32,10 +32,16 @@ function Get-AppDialog {
 function Get-DialogControl {
 	param(
 		[System.Windows.Automation.AutomationElement]$Root,
-		[string]$AutomationId
+		[string]$AutomationId,
+		[System.Windows.Automation.ControlType]$ControlType = $null
 	)
 	$condition = New-Object System.Windows.Automation.PropertyCondition(
 		[System.Windows.Automation.AutomationElement]::AutomationIdProperty, $AutomationId)
+	if ($ControlType) {
+		$typeCondition = New-Object System.Windows.Automation.PropertyCondition(
+			[System.Windows.Automation.AutomationElement]::ControlTypeProperty, $ControlType)
+		$condition = New-Object System.Windows.Automation.AndCondition($condition, $typeCondition)
+	}
 	return $Root.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $condition)
 }
 
@@ -52,8 +58,8 @@ if (-not $dialog) {
 }
 
 $fileNameEdit = Get-DialogControl -Root $dialog -AutomationId '1152'
-$confirmButton = Get-DialogControl -Root $dialog -AutomationId '1'
-$cancelButton = Get-DialogControl -Root $dialog -AutomationId '2'
+$confirmButton = Get-DialogControl -Root $dialog -AutomationId '1' -ControlType ([System.Windows.Automation.ControlType]::Button)
+$cancelButton = Get-DialogControl -Root $dialog -AutomationId '2' -ControlType ([System.Windows.Automation.ControlType]::Button)
 if (-not $fileNameEdit -or -not $confirmButton -or -not $cancelButton) {
 	[Console]::Error.WriteLine('dialog found but expected controls 1152/1/2 are missing')
 	exit 1

@@ -83,7 +83,6 @@
 		"svelte"
 	],
 	"dependencies": {
-		"@dtx/ui-components": "*",
 		"jszip": "^3.10.2",
 		"xa_decoder": "^0.1.2"
 	}

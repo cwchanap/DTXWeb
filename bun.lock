@@ -29,7 +29,6 @@
       "name": "@dtx/common",
       "version": "0.0.1",
       "dependencies": {
-        "@dtx/ui-components": "*",
         "jszip": "^3.10.2",
         "xa_decoder": "^0.1.2",
       },

@@ -70,7 +70,7 @@ export default [
 			'no-redeclare': 'off'
 		}
 	},
-	...svelte.configs['flat/recommended'],
+	...svelte.configs.recommended,
 	{
 		// svelte-eslint-parser also handles .svelte.ts/.svelte.js rune modules;
 		// delegate their script content to the TypeScript parser.
@@ -80,16 +80,27 @@ export default [
 		}
 	},
 	{
-		files: ['**/*.svelte'],
+		// Same file set as the parser block above: .svelte.ts/.svelte.js rune
+		// modules hit these rules too.
+		files: ['**/*.svelte', '**/*.svelte.ts', '**/*.svelte.js'],
 		rules: {
 			// Svelte 5 reactive tracking idiom: bare expressions inside $effect
 			'@typescript-eslint/no-unused-expressions': 'off',
-			// Many links are external URLs and the desktop package isn't SvelteKit,
-			// so there is no resolve() base path to apply.
-			'svelte/no-navigation-without-resolve': 'off',
 			// Scratch collections and bookkeeping maps are deliberately nonreactive;
 			// SvelteMap/SvelteSet wrapping would change their behavior.
 			'svelte/prefer-svelte-reactivity': 'off'
+		}
+	},
+	{
+		// These packages also compile outside SvelteKit (Tauri desktop, shared
+		// component libs) where $app/paths resolve() doesn't exist; dtx-web
+		// keeps the rule active.
+		files: [
+			'packages/{common,dtx-desktop,ui-components}/**/*.svelte',
+			'packages/{common,dtx-desktop,ui-components}/**/*.svelte.{ts,js}'
+		],
+		rules: {
+			'svelte/no-navigation-without-resolve': 'off'
 		}
 	},
 	{

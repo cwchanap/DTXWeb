@@ -8,6 +8,7 @@
 	import { Modal, Button } from '@dtx/ui-components/components';
 	import DownloadDropdown from '$lib/components/DownloadDropdown.svelte';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import toastStore from '$lib/toaster';
 	import { isPreviewable, chartTitleHref } from '$lib/components/ChartList.helpers';
 	import { createAudioPreview } from '$lib/audioPreview.svelte';
@@ -54,7 +55,7 @@
 	const handleOpenInEditor = async () => {
 		if (item.id === undefined) return;
 		try {
-			await goto(`/editor/${item.id}`);
+			await goto(resolve(`/editor/${item.id}`));
 		} catch (error) {
 			console.error('Failed to navigate to editor:', error);
 			toastStore.error({ title: $_('toast.open_in_editor_failed'), duration: 3000 });
@@ -79,7 +80,7 @@
 					class="text-xl leading-tight font-bold text-slate-100 transition-colors duration-200 group-hover:text-purple-300"
 				>
 					{#if titleHref}
-						<a href={titleHref} class="hover:text-purple-300">{item.title}</a>
+						<a href={resolve(titleHref)} class="hover:text-purple-300">{item.title}</a>
 					{:else}
 						{item.title}
 					{/if}
@@ -126,7 +127,7 @@
 							{/if}
 							{#if previewable}
 								<a
-									href={`/preview/${item.id}`}
+									href={resolve(`/preview/${item.id}`)}
 									class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-purple-600/20 hover:text-purple-200"
 									role="menuitem"
 								>
@@ -148,7 +149,7 @@
 							{/if}
 							{#if !isBlog && item.id !== undefined}
 								<a
-									href={`/app/chart/${item.id}`}
+									href={resolve(`/app/chart/${item.id}`)}
 									class="flex items-center gap-3 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-purple-600/20 hover:text-purple-200"
 									role="menuitem"
 								>
@@ -311,6 +312,7 @@
 						hasUploadedFiles={item.hasUploadedFiles}
 					/>
 				{:else if item.downloadUrl}
+					<!-- eslint-disable svelte/no-navigation-without-resolve -->
 					<a
 						href={item.downloadUrl}
 						target="_blank"
@@ -327,6 +329,7 @@
 						</svg>
 						{$_('blog.download')}
 					</a>
+					<!-- eslint-enable svelte/no-navigation-without-resolve -->
 				{:else}
 					<div class="text-sm text-slate-500 italic">
 						{$_('chart_list.download_not_available')}

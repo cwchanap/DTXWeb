@@ -1,17 +1,18 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
 
 	const handleNavigateToBlog = (): void => {
-		goto('/blog');
+		goto(resolve('/blog'));
 	};
 
 	const handleNavigateToTools = (): void => {
-		goto('/tool');
+		goto(resolve('/tool'));
 	};
 
 	const handleNavigateToEditor = (): void => {
-		goto('/editor');
+		goto(resolve('/editor'));
 	};
 
 	let heroAnimated = false;
@@ -58,14 +59,17 @@
 					</div>
 				</div>
 				<nav class="hidden space-x-6 md:flex">
-					<a href="/blog" class="text-slate-300 transition-colors hover:text-purple-400"
-						>Charts</a
+					<a
+						href={resolve('/blog')}
+						class="text-slate-300 transition-colors hover:text-purple-400">Charts</a
 					>
-					<a href="/editor" class="text-slate-300 transition-colors hover:text-green-400"
-						>Editor</a
+					<a
+						href={resolve('/editor')}
+						class="text-slate-300 transition-colors hover:text-green-400">Editor</a
 					>
-					<a href="/tool" class="text-slate-300 transition-colors hover:text-cyan-400"
-						>Tools</a
+					<a
+						href={resolve('/tool')}
+						class="text-slate-300 transition-colors hover:text-cyan-400">Tools</a
 					>
 				</nav>
 			</div>

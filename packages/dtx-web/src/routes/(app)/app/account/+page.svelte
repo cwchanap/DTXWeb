@@ -86,6 +86,9 @@
 			cleanUrl.searchParams.delete('linked');
 			cleanUrl.searchParams.delete('error');
 			cleanUrl.searchParams.delete('error_description');
+			// cleanUrl is a fully-resolved URL object; resolve() would
+			// double-prefix a configured base path.
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
 			replaceState(cleanUrl, {});
 		}
 

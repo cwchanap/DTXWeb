@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import type { Snippet } from 'svelte';
 	import { authClient } from '$lib/auth/client';
 
@@ -32,7 +33,7 @@
 	};
 
 	const navigateToProfile = (): void => {
-		goto('/app/account');
+		goto(resolve('/app/account'));
 	};
 </script>
 
@@ -107,7 +108,7 @@
 			{#if !isSidebarCollapsed}
 				<nav class="space-y-3">
 					<a
-						href="/app/chart"
+						href={resolve('/app/chart')}
 						class="group flex items-center rounded-lg px-4 py-3 text-slate-300 transition-all duration-200 hover:bg-purple-600/20 hover:text-purple-300"
 					>
 						<svg
@@ -126,7 +127,7 @@
 						My Charts
 					</a>
 					<a
-						href="/app/score"
+						href={resolve('/app/score')}
 						class="group flex items-center rounded-lg px-4 py-3 text-slate-300 transition-all duration-200 hover:bg-cyan-600/20 hover:text-cyan-300"
 					>
 						<svg
@@ -145,7 +146,7 @@
 						Scores
 					</a>
 					<a
-						href="/editor"
+						href={resolve('/editor')}
 						class="group flex items-center rounded-lg px-4 py-3 text-slate-300 transition-all duration-200 hover:bg-amber-600/20 hover:text-amber-300"
 					>
 						<svg
@@ -164,7 +165,7 @@
 						Editor
 					</a>
 					<a
-						href="/game"
+						href={resolve('/game')}
 						class="group flex items-center rounded-lg px-4 py-3 text-slate-300 transition-all duration-200 hover:bg-pink-600/20 hover:text-pink-300"
 					>
 						<svg
@@ -186,7 +187,7 @@
 			{:else}
 				<nav class="space-y-3">
 					<a
-						href="/app/chart"
+						href={resolve('/app/chart')}
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-purple-600/20 hover:text-purple-300"
 						title="My Charts"
 						aria-label="My Charts"
@@ -201,7 +202,7 @@
 						</svg>
 					</a>
 					<a
-						href="/app/score"
+						href={resolve('/app/score')}
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-cyan-600/20 hover:text-cyan-300"
 						title="Scores"
 						aria-label="Scores"
@@ -216,7 +217,7 @@
 						</svg>
 					</a>
 					<a
-						href="/editor"
+						href={resolve('/editor')}
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-amber-600/20 hover:text-amber-300"
 						title="Editor"
 						aria-label="Editor"
@@ -231,7 +232,7 @@
 						</svg>
 					</a>
 					<a
-						href="/game"
+						href={resolve('/game')}
 						class="flex justify-center rounded-lg p-3 text-slate-300 transition-all duration-200 hover:bg-pink-600/20 hover:text-pink-300"
 						title="Play Game"
 						aria-label="Play Game"

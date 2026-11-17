@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import type { Pathname } from '$app/types';
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 
@@ -10,7 +12,7 @@
 
 	let languagePopoverOpen = $state(false);
 
-	const tools = [
+	const tools: { title: string; description: string; href: Pathname }[] = [
 		{
 			title: 'DTX to MIDI Converter',
 			description:
@@ -29,8 +31,8 @@
 		}
 	];
 
-	const handleToolClick = (href: string) => {
-		goto(href);
+	const handleToolClick = (href: Pathname) => {
+		goto(resolve(href));
 	};
 </script>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
+	import { resolve } from '$app/paths';
 	import { PUBLIC_SIMFILE_BUCKET_URL } from '$env/static/public';
 	import { _ } from 'svelte-i18n';
 	import toastStore from '$lib/toaster';
@@ -384,7 +385,7 @@
 							>
 								{#if chartTitleHref(item, isBlog)}
 									<a
-										href={chartTitleHref(item, isBlog)}
+										href={resolve(chartTitleHref(item, isBlog) ?? '/')}
 										class="hover:text-purple-300"
 										>{item.displayId}. {item.title}</a
 									>

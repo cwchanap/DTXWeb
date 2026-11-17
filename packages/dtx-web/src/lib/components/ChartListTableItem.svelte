@@ -6,6 +6,7 @@
 	import { Modal } from '@dtx/ui-components/components';
 	import { Button } from '@dtx/ui-components';
 	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import toastStore from '$lib/toaster';
 	import { isPreviewable } from '$lib/components/ChartList.helpers';
 	import { _ } from 'svelte-i18n';
@@ -40,7 +41,7 @@
 
 	const handleOpenInEditor = async () => {
 		try {
-			await goto(`/editor/${item.id}`);
+			await goto(resolve(`/editor/${item.id}`));
 		} catch (error) {
 			console.error('Failed to navigate to editor:', error);
 			toastStore.error({ title: $_('toast.open_in_editor_failed'), duration: 3000 });
@@ -81,7 +82,7 @@
 
 				{#if previewable}
 					<a
-						href={`/preview/${item.id}`}
+						href={resolve(`/preview/${item.id}`)}
 						class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
 						role="menuitem"
 					>
@@ -90,7 +91,7 @@
 				{/if}
 
 				<a
-					href={`/app/chart/${item.id}`}
+					href={resolve(`/app/chart/${item.id}`)}
 					class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
 					role="menuitem"
 				>
@@ -127,7 +128,7 @@
 		{/if}
 		{#if previewable}
 			<a
-				href={`/preview/${item.id}`}
+				href={resolve(`/preview/${item.id}`)}
 				class="inline-flex items-center justify-center rounded-full bg-slate-100 p-2 text-slate-600 hover:bg-slate-200"
 				aria-label={$_('preview.open')}
 				title={$_('preview.open')}
@@ -143,6 +144,7 @@
 				compact={true}
 			/>
 		{:else if item.downloadUrl}
+			<!-- eslint-disable svelte/no-navigation-without-resolve -->
 			<a
 				href={item.downloadUrl}
 				target="_blank"
@@ -153,6 +155,7 @@
 			>
 				<ExternalLink size="16" />
 			</a>
+			<!-- eslint-enable svelte/no-navigation-without-resolve -->
 		{:else}
 			<span
 				class="inline-flex cursor-not-allowed items-center justify-center rounded-full p-2 text-slate-300 opacity-50"

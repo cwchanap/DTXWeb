@@ -17,7 +17,7 @@ const RealTextDecoder = globalThis.TextDecoder;
 const mockTextDecoder = vi.fn() as any;
 const rawMockImplementation = mockTextDecoder.mockImplementation.bind(mockTextDecoder);
 mockTextDecoder.mockImplementation = (fn: (...args: unknown[]) => unknown) =>
-	rawMockImplementation(function (this: unknown, ...args: unknown[]) {
+	rawMockImplementation(function (this: object, ...args: unknown[]) {
 		const result = fn.apply(this, args);
 		if (result && typeof result === 'object') {
 			Object.assign(this, result);
@@ -54,7 +54,7 @@ describe('encoding-utils', () => {
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
 
 			// Mock TextDecoder to return valid content for UTF-8
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockReturnValue(testContent)
 			}));
 
@@ -77,7 +77,7 @@ describe('encoding-utils', () => {
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
 
 			// Mock TextDecoder to fail for first encoding but succeed for second
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					if (encoding === 'utf-8') {
 						return 'invalid content without markers';
@@ -109,7 +109,7 @@ describe('encoding-utils', () => {
 			);
 
 			let callCount = 0;
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					callCount++;
 					if (encoding === 'utf-8' && callCount > 2) {
@@ -138,7 +138,7 @@ describe('encoding-utils', () => {
 
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer('test'));
 
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					if (encoding === 'utf-8') {
 						return contentWithNulls; // Has too many null bytes
@@ -167,7 +167,7 @@ describe('encoding-utils', () => {
 
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
 
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					if (encoding === 'invalid-encoding') {
 						throw new Error('Unsupported encoding');
@@ -210,7 +210,7 @@ describe('encoding-utils', () => {
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer('test'));
 
 			let callCount = 0;
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					callCount++;
 					// First call is utf-8 (in encodings array) - return invalid content
@@ -291,7 +291,7 @@ describe('encoding-utils', () => {
 
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer('binary'));
 
-			mockTextDecoder.mockImplementation((encoding) => ({
+			mockTextDecoder.mockImplementation((encoding: string) => ({
 				decode: vi.fn().mockImplementation(() => {
 					if (encoding === 'utf-16le') {
 						return binaryContent; // Contains null bytes, should be rejected

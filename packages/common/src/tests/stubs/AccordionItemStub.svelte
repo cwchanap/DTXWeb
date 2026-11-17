@@ -1,12 +1,17 @@
 <script lang="ts">
-	type Snippet = () => unknown;
-	let { lead, control, panel, children } = $props<{
+	import type { Snippet } from 'svelte';
+	let {
+		lead,
+		control,
+		panel,
+		children
+	}: {
 		lead?: Snippet;
 		control?: Snippet;
 		panel?: Snippet;
 		children?: Snippet;
 		[key: string]: unknown;
-	}>();
+	} = $props();
 </script>
 
 {@render lead?.()}

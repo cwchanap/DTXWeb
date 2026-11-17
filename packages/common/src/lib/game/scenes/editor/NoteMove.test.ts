@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { NoteMove } from './NoteMove';
 import type { Editor } from '../Editor';
-// import type { MovedNoteData } from './NoteBuffer';
+import type { MovedNoteData } from './NoteBuffer';
 import { LaneMeasureNote } from '../../../chart/note';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
@@ -94,7 +94,7 @@ const createMockEditor = () => {
 describe('NoteMove', () => {
 	let noteMove: NoteMove;
 	let mockEditor: ReturnType<typeof createMockEditor>;
-	let mockRecordMoveAction: ReturnType<typeof vi.fn>;
+	let mockRecordMoveAction: Mock<(movedNotes: MovedNoteData[]) => void>;
 
 	beforeEach(() => {
 		vi.clearAllMocks();

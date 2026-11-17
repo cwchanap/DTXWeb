@@ -16,16 +16,7 @@
 	type ModalSize = 'sm' | 'md' | 'lg';
 	type ConfirmVariant = 'primary' | 'danger';
 
-	let {
-		open = $bindable(false),
-		title,
-		children,
-		onConfirm,
-		confirmText = 'Confirm',
-		cancelText = 'Cancel',
-		confirmVariant = 'primary' as ConfirmVariant,
-		size = 'md' as ModalSize
-	} = $props<{
+	interface Props {
 		open: boolean;
 		title: string;
 		children: Snippet;
@@ -34,7 +25,18 @@
 		cancelText?: string;
 		confirmVariant?: ConfirmVariant;
 		size?: ModalSize;
-	}>();
+	}
+
+	let {
+		open = $bindable(false),
+		title,
+		children,
+		onConfirm,
+		confirmText = 'Confirm',
+		cancelText = 'Cancel',
+		confirmVariant = 'primary',
+		size = 'md'
+	}: Props = $props();
 
 	function closeModal() {
 		open = false;
@@ -81,11 +83,7 @@
 		aria-labelledby="modal-title"
 		tabindex="-1"
 	>
-		<div
-			class="relative mx-4 w-full rounded-lg bg-white p-6 shadow-xl {sizeClasses[
-				size as ModalSize
-			]}"
-		>
+		<div class="relative mx-4 w-full rounded-lg bg-white p-6 shadow-xl {sizeClasses[size]}">
 			<div class="mb-4 flex items-center justify-between">
 				<h3 id="modal-title" class="text-lg font-semibold text-gray-900">{title}</h3>
 				<button
@@ -119,7 +117,7 @@
 					<button
 						type="button"
 						onclick={handleConfirm}
-						class={confirmClasses[confirmVariant as ConfirmVariant]}
+						class={confirmClasses[confirmVariant]}
 					>
 						{confirmText}
 					</button>

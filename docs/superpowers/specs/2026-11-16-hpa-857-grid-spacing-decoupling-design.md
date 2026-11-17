@@ -1,47 +1,43 @@
 # HPA-857 — Remove the unused ToggleGroup dependency from @dtx/common
 
-**Status:** Proposed, documentation-only draft PR. Implement, validate, and merge through this **same PR** if the small cleanup is approved by review.
+**Status:** Design accepted after review; this is still a documentation-only draft PR. Implement and verify on the **same PR**.
 **Linear:** https://linear.app/cwchanap/issue/HPA-857/refactor-decouple-dtxcommon-from-dtxui-components-maintab-togglegroup
 **Implementation plan:** [2026-11-16-hpa-857-grid-spacing-decoupling.md](../plans/2026-11-16-hpa-857-grid-spacing-decoupling.md)
 
-## Decision and motivation
+## Decision
 
-This is **optional low-priority maintenance**, not a bug or a build fix. Bun's isolated dependency declarations were already repaired: `@dtx/common` legally declares `@dtx/ui-components` and the workspace dependency is acyclic. The benefit of changing it is modest: remove an unnecessary cross-package edge and an unused generic component; it will not remove `@dtx/ui-components` from either web or desktop, which use other components. Do not claim a measurable performance win.
+**Proceed with the minimal cleanup.** The current dependency is valid and acyclic, not a build failure or user-facing bug. Removing it is worthwhile because `MainTab.svelte` is the only production consumer of `ToggleGroup`, and the current mock prevents grid-spacing interaction tests. This is a small maintenance cleanup, **not** a performance optimization.
 
-If implementing HPA-857, make the smallest coherent change: render its six **fixed grid-spacing buttons directly in MainTab.svelte**, using native buttons and existing Tailwind classes. Remove the generic ToggleGroup only after its sole production consumer is gone. Do not move a generic primitive into the domain package, duplicate the 90-line component, inject snippets from both apps, rename packages, or restructure the workspace.
+Render the six fixed grid-spacing options as **native buttons directly inside `MainTab.svelte`**. Reuse the inline `aria-pressed` button convention from `packages/dtx-web/src/lib/components/ChartList.svelte`, but **not** its `overflow-hidden` container (which would clip the focus ring). Do not move or duplicate `ToggleGroup`, introduce a new component or snippet injection, use Skeleton Segment (different semantics/styling), or restructure packages.
 
-If review finds the inline buttons more difficult to maintain than the current explicit dependency, **close this optional PR/ticket rather than expand the scope**.
+## Current repository evidence
 
-## Verified current code (main, 2026-11-16)
+- `packages/common/src/lib/components/editor/MainTab.svelte` imports `ToggleGroup` once. Web `EditorTabs.svelte` and the desktop editor both render the shared `MainTab`. Their other `@dtx/ui-components` imports remain live.
+- `packages/ui-components/src/lib/components/ToggleGroup.svelte` is exported from `src/lib/index.ts` and `src/lib/components/index.ts`; its keyed-reconciliation test covers a generic behavior no remaining consumer needs after the cleanup.
+- `packages/common/package.json` declares `@dtx/ui-components`, `packages/common/vitest.config.ts` aliases it, and `MainTab.test.ts` mocks it.
+- `packages/e2e-web/editor.spec.ts` already checks the real editor loads. It **does not provide a screenshot baseline**; no Linear mockup is attached. The existing web/desktop E2E CI matrix provides regression coverage for common/UI changes.
 
-- `packages/common/src/lib/components/editor/MainTab.svelte` is the only production import of `ToggleGroup`. It is consumed by the web editor's `EditorTabs.svelte` and desktop editor. Both apps continue to depend on `@dtx/ui-components` for unrelated controls.
-- `packages/ui-components/src/lib/components/ToggleGroup.svelte` is generic, but it has **no other consumers**; it is re-exported by `src/lib/index.ts` and `src/lib/components/index.ts`.
-- `packages/common/package.json` declares `@dtx/ui-components` under dependencies. `packages/common/vitest.config.ts` aliases it; `MainTab.test.ts` mocks its import, preventing a real grid-spacing interaction assertion.
-- `packages/ui-components/src/lib/components/ToggleGroup.test.ts` tests generic keyed reordering/insertion, which is not needed by a fixed editor-only set once the generic component is removed.
-- The web Playwright suite already has `packages/e2e-web/editor.spec.ts`, which opens the real editor and verifies hydration. No Linear UI mockup is attached.
-- Existing common/ui changes trigger unit/lint and the affected web/desktop E2E CI matrix. The branch may start as docs-only; draft PRs can skip the expensive native matrix.
+## Exact behavior and styling
 
-## Behavior to preserve
+- Preserve option order and numeric values: **8th (8), 12th (12), 16th (16), 24th (24), 48th (48), 64th (64)**. Initially 16th alone has `aria-pressed="true"`.
+- Clicking an option updates only `gridSpacing`. The existing `$effect` emits `GRID_SPACING_UPDATE` once after it settles; **do not emit in the click handler**. All six buttons are disabled during preview.
+- Preserve a `role="group"` wrapper with `aria-label="Select grid spacing for note placement"`, `class="inline-flex rounded-md shadow-sm"` and the Grid Spacing text as a `<span>` instead of the currently dangling label `for="grid-spacing"`. Each control is a native `<button type="button">` with keyed iteration, `aria-pressed` and `disabled={isPreviewing}`.
+- Copy the actual `ToggleGroup` classes for `size="sm"` + `variant="outline"`: base `inline-flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none`; size `px-2 py-1 text-xs`; selected `bg-purple-600 text-white border border-purple-600 hover:bg-purple-700`; unselected `bg-slate-800/50 text-slate-300 border border-purple-500/30 hover:bg-slate-700/50 hover:text-slate-200`.
+- Use **static Tailwind 4 positional variants** `first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10`. Do not replicate `ToggleGroup`'s index-based `getButtonClasses` logic. Use one reusable base-class string and one selected/unselected class expression in the template.
 
-- Exactly six buttons in order: 8th (8), 12th (12), 16th (16), 24th (24), 48th (48), 64th (64).
-- Initially, **16th is selected** (`gridSpacing = 16`), and exactly one button has `aria-pressed="true"`. Selecting another option updates `gridSpacing` and emits `GRID_SPACING_UPDATE` through the existing `$effect`. Do not emit twice from the click handler.
-- The whole selector is disabled during preview (`isPreviewing`). Native `button` semantics retain tab focus, Space/Enter activation, `type="button"`, and disabled interaction.
-- Preserve existing compact/outline appearance: purple selected background, slate unselected backgrounds, joined outline borders, rounded outer corners, focus ring, and readable labels. Preserve the accessible group name `Select grid spacing for note placement` and correct the current unassociated `for="grid-spacing"` label by using a text label without a non-existent input ID.
+## Smallest change surface
 
-## Change boundary
+1. In `MainTab.svelte`, replace the component with inline buttons; preserve existing state/options/effect and accessible styling.
+2. In `MainTab.test.ts`, remove the UI-package mock, add **one** real selection test (six ordered buttons, 16th default, 24th click, one numeric grid event), and **extend the existing preview-disabled test** to assert all six buttons are disabled. Filter `mockEmit` by event type because other editor controls use it.
+3. Remove `ToggleGroup.svelte` and `ToggleGroup.test.ts`; remove its two exports, `@dtx/common`'s `@dtx/ui-components` dependency, the now-unused common Vitest alias, and refresh `bun.lock`. Keep `clsx` in ui-components: `Button.svelte` and `utils/cn.ts` still use it. Keep web/desktop dependencies and Vite aliases.
+4. **Do not add a new E2E spec or screenshot-golden test.** The existing `editor.spec.ts` may receive one `toBeVisible()` assertion for the named selector if necessary; unit tests already cover the interactions.
 
-1. In `MainTab.svelte`, replace the imported `ToggleGroup` instance with a `role="group"` containing a keyed `{#each gridSpacingOptions as option (option.value)}` of native buttons. Keep the option array and existing state/event flow. Use a small constant base class plus a selected/unselected class expression, and per-position rounded/border classes; no new wrapper component or new package.
-2. In `MainTab.test.ts`, delete the `@dtx/ui-components` mock and test real selector behavior (initial pressed state, 24th selection/event, preview disabled). Keep unrelated editor tests unchanged.
-3. Delete `ToggleGroup.svelte` and its now-obsolete generic test; remove its two exports. Remove `@dtx/ui-components` only from `packages/common/package.json`, its unused common Vitest alias, and update `bun.lock`. Keep the package itself and web/desktop dependencies and aliases, which have other consumers.
-4. Extend the existing `packages/e2e-web/editor.spec.ts` with one focused real-editor selector interaction. Avoid a new harness, fixture, dependency, browser project, or separate PR.
+## Automated acceptance
 
-## Acceptance — automated only
+- **Unit:** one real `MainTab` selection test confirms exact option order, initial pressed state, and a single `GRID_SPACING_UPDATE(24)` after clicking 24th; existing preview-disabled test checks all six disabled.
+- **Dependency/CI:** source-only grep finds no remaining `ToggleGroup` imports/exports; common no longer imports/depend on ui-components; fresh Bun frozen install, common/UI tests and checks, web/desktop typechecks, lint/format and existing affected web/desktop E2E CI pass at the implementation SHA.
+- **MCP end-to-end (one platform):** use a Playwright MCP browser session to load the actual hydrated web editor and verify the named group is rendered and selecting 24th changes its `aria-pressed` state. **Take one screenshot** after selection and visually check labels, selected/unselected contrast, joined borders, focus treatment, alignment and clipping against the intended classes. No pre-existing baseline/golden or mockup exists; do **not** claim an automated pixel-diff or screenshot-clipping algorithm. Record an MCP result and screenshot link in the PR, without adding a permanent redundant E2E test or requiring human sign-off.
 
-- **Dependency:** repository search finds no remaining references to `ToggleGroup`; `@dtx/common` no longer declares/imports `@dtx/ui-components`. `bun install --frozen-lockfile` succeeds from a clean workspace and affected package builds/typechecks pass.
-- **Behavior:** common unit test renders six real buttons; 16th initially pressed, clicking 24th leaves only 24th pressed and emits `GRID_SPACING_UPDATE(24)` exactly once after the state settles; preview disables all six.
-- **E2E (MCP):** through a Playwright browser MCP session on the web editor, load the real hydrated editor, locate the named selector, verify six labels and 16th selected, click 24th, verify state transition, and take an after-click screenshot. Inspect that screenshot against the existing editor's layout/visual baseline for legibility, alignment, selected-state contrast, focus styles, and absence of clipping. There is **no attached mockup**, so use a screenshot visual check rather than invented pixel-golden thresholds. Record screenshot evidence and MCP test outcome on the **same PR**. No human acceptance criterion.
-- **CI:** affected common/ui tests, web and desktop typechecks/builds, lint/Prettier and existing web/desktop E2E gates pass at the implementation SHA. A single web-platform MCP acceptance run suffices for the shared UI change; retain CI's existing target-OS regression coverage without authoring a second platform-specific acceptance scenario.
+## Non-goals
 
-## Out of scope
-
-No separate art/SFX task (no new assets), authentication/Cloudflare changes, desktop IPC, package renames, generic design-system rebuild, compatibility alias, or second implementation PR.
+No new art/SFX, authentication, Cloudflare, desktop IPC, other package redesign, backward compatibility alias or second PR. Keep the PR as a draft until implementation and verification are ready.

@@ -15,19 +15,21 @@
 		hasUploadedFiles?: boolean;
 	};
 
+	type Props = {
+		item: ChartListTableItemData;
+		isBlog: boolean;
+		enableDownload?: boolean;
+		togglePublishChart: (id: number, published: boolean) => Promise<void>;
+		onFileDelete: (id: number) => void;
+	};
+
 	let {
 		item,
 		isBlog,
 		enableDownload = false,
 		togglePublishChart,
 		onFileDelete
-	} = $props<{
-		item: ChartListTableItemData;
-		isBlog: boolean;
-		enableDownload?: boolean;
-		togglePublishChart: (id: number, published: boolean) => Promise<void>;
-		onFileDelete: (id: number) => void;
-	}>();
+	}: Props = $props();
 
 	let popoverOpen = $state(false);
 	let modalOpen = $state(false);

@@ -1,6 +1,8 @@
 <script lang="ts">
-	type Snippet = () => unknown;
-	let { children } = $props<{
+	import type { Snippet } from 'svelte';
+	let {
+		children
+	}: {
 		children?: Snippet;
 		value?: string[];
 		rounded?: string;
@@ -9,7 +11,7 @@
 		base?: string;
 		collapsible?: boolean;
 		onValueChange?: (e: { value: string[] }) => void;
-	}>();
+	} = $props();
 </script>
 
 {@render children?.()}

@@ -45,7 +45,7 @@ vi.mock('@dtx/common/game', () => ({
 }));
 
 vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(function (this: unknown) {
+	DTXFile: vi.fn().mockImplementation(function (this: object) {
 		// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
 		Object.assign(this, {});
 	}),
@@ -1249,7 +1249,7 @@ describe('Editor Page – handleFileImport callback', () => {
 		const mockEvent = { target: { files: [mockFile] } } as unknown as Event;
 		// ponytail: vitest 4 keeps mock call history effects across mounted
 		// components from earlier tests — scope this assertion to the import act
-		store.currentDifficulty.set.mockClear();
+		vi.mocked(store.currentDifficulty.set).mockClear();
 		// Should not throw – error caught internally
 		await expect(
 			(mockInput.onchange as (e: Event) => Promise<void>)(mockEvent)

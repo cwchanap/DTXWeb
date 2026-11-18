@@ -40,7 +40,7 @@ const mockZipInstance = vi.hoisted(() => ({
 
 const mockJSZipConstructor = vi.hoisted(() =>
 	// ponytail: vitest 4+ constructable-mock rule — `new JSZip()`
-	vi.fn(function (this: unknown) {
+	vi.fn(function (this: object) {
 		Object.assign(this, mockZipInstance);
 	})
 );

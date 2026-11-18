@@ -29,7 +29,10 @@
 	];
 
 	const gridButtonBase =
-		'inline-flex items-center justify-center border transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:ring-offset-2 focus:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none px-2 py-1 text-xs first:rounded-l-md last:rounded-r-md not-first:-ml-px focus:z-10';
+		'inline-flex items-center justify-center border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 disabled:opacity-50 disabled:pointer-events-none px-2 py-1 text-xs first:rounded-l-md last:rounded-r-md not-first:-ml-px focus-visible:z-10';
+	const gridButtonSelected = 'bg-purple-600 text-white border-purple-600 hover:bg-purple-700';
+	const gridButtonUnselected =
+		'bg-slate-800/50 text-slate-300 border-purple-500/30 hover:bg-slate-700/50 hover:text-slate-200';
 
 	run(() => {
 		if (dtxFile) {
@@ -164,26 +167,24 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<span class="w-[15%] text-slate-300 2xl:w-1/3">Grid Spacing:</span>
+		<span id="grid-spacing-label" class="w-[15%] text-slate-300 2xl:w-1/3">Grid Spacing:</span>
 		<div
 			role="group"
-			aria-label="Select grid spacing for note placement"
+			aria-labelledby="grid-spacing-label"
 			class="inline-flex rounded-md shadow-sm"
 		>
 			{#each gridSpacingOptions as option (option.value)}
 				{@const selected = gridSpacing === option.value}
 				<button
 					type="button"
-					class={gridButtonBase}
-					class:bg-purple-600={selected}
-					class:text-white={selected}
-					class:border-purple-600={selected}
-					class:hover:bg-purple-700={selected}
-					class:bg-[color-mix(in_oklab,var(--color-slate-800)_50%,transparent)]={!selected}
-					class:text-slate-300={!selected}
-					class:border-[color-mix(in_oklab,var(--color-purple-500)_30%,transparent)]={!selected}
-					class:hover:bg-[color-mix(in_oklab,var(--color-slate-700)_50%,transparent)]={!selected}
-					class:hover:text-slate-200={!selected}
+					class={[
+						gridButtonBase,
+						{
+							[gridButtonSelected]: selected,
+							[gridButtonUnselected]: !selected,
+							'z-10': selected
+						}
+					]}
 					aria-pressed={selected}
 					disabled={isPreviewing}
 					onclick={() => (gridSpacing = option.value)}

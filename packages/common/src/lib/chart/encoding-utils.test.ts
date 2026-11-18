@@ -54,7 +54,7 @@ describe('encoding-utils', () => {
 			vi.spyOn(mockFile, 'arrayBuffer').mockResolvedValue(createMockArrayBuffer(testContent));
 
 			// Mock TextDecoder to return valid content for UTF-8
-			mockTextDecoder.mockImplementation((encoding: string) => ({
+			mockTextDecoder.mockImplementation(() => ({
 				decode: vi.fn().mockReturnValue(testContent)
 			}));
 

@@ -17,7 +17,7 @@
 	type ConfirmVariant = 'primary' | 'danger';
 
 	interface Props {
-		open: boolean;
+		open?: boolean;
 		title: string;
 		children: Snippet;
 		onConfirm?: () => void;

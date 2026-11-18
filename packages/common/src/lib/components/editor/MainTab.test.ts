@@ -162,9 +162,7 @@ describe('MainTab', () => {
 		render(MainTab);
 		expect(screen.getByLabelText('BPM:')).toBeDisabled();
 		expect(screen.getByLabelText('Number of Measures:')).toBeDisabled();
-		const group = screen.getByRole('group', {
-			name: 'Select grid spacing for note placement'
-		});
+		const group = screen.getByRole('group', { name: 'Grid Spacing:' });
 		const buttons = within(group).getAllByRole('button');
 		expect(buttons).toHaveLength(6);
 		for (const button of buttons) {
@@ -174,9 +172,7 @@ describe('MainTab', () => {
 
 	it('renders six grid spacing options in order, selects only the clicked option and emits once', async () => {
 		render(MainTab);
-		const group = screen.getByRole('group', {
-			name: 'Select grid spacing for note placement'
-		});
+		const group = screen.getByRole('group', { name: 'Grid Spacing:' });
 		const buttons = within(group).getAllByRole('button');
 		expect(buttons).toHaveLength(6);
 		expect(buttons.map((b) => b.textContent)).toEqual([

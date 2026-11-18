@@ -14,7 +14,7 @@
 		confirmVariant = 'primary' as ConfirmVariant,
 		size = 'md' as ModalSize
 	} = $props<{
-		open: boolean;
+		open?: boolean;
 		title: string;
 		children: Snippet;
 		onConfirm?: () => void;

@@ -9,8 +9,6 @@ export const MIDI_PPQ = 480;
 const DRUM_CHANNEL = 9;
 // BGM (01) and control lanes never produce MIDI notes or drum cells.
 const NON_DRUM_LANES = new Set(['01', '02', '03', '08']);
-// Drum hits get a fixed 16th-note release; ordering rules keep re-triggers clean.
-const NOTE_DURATION_TICKS = MIDI_PPQ / 4;
 // DTX measure headers are three digits, so conversions may emit at most
 // measures 0-999. '00' is the rest cell, leaving '01'-'ZZ' = 1295 BPM ids.
 const MAX_DTX_MEASURES = 1000;
@@ -47,7 +45,7 @@ const meterFor = (measureLength: number): { numerator: number; dd: number } | un
 };
 
 export interface DtxToMidiResult {
-	/** SMF format-0 bytes, 480 PPQ. */
+	/** SMF format-0 bytes, 480 PPQ or higher when a short bar needs it. */
 	data: Uint8Array<ArrayBuffer>;
 	/** Nonfatal diagnostics (unmapped lanes, approximated meters). */
 	warnings: string[];
@@ -62,10 +60,12 @@ interface PendingEvent {
 }
 
 /**
- * Convert a parsed DTX chart to a format-0 SMF at 480 PPQ.
+ * Convert a parsed DTX chart to a format-0 SMF.
  * Note ticks come from cumulative `4 * PPQ * measureLength` bar starts plus
  * each note's bar fraction; tempo/meter come from `buildTimingInput`, so the
  * export shares the notation path's channel-02/03/08 semantics exactly.
+ * PPQ stays 480 unless the shortest bar would leave fewer than 192 ticks —
+ * each 1/192 DTX slot must land on a distinct tick or adjacent hits merge.
  */
 export const dtxToMidi = (
 	dtx: DTXFile,
@@ -74,20 +74,36 @@ export const dtxToMidi = (
 	const timing = buildTimingInput(dtx);
 	const { measureLengths, measureCount } = timing;
 
+	// The shortest bar decides the division: 4 * ppq * length must reach 192
+	// ticks. SMF division is 15 bits, so an absurdly short bar still merges —
+	// capped at 0x7fff and reported below.
+	let minBarLength = Infinity;
+	for (let m = 0; m < measureCount; m++) {
+		minBarLength = Math.min(minBarLength, measureLengths[m] ?? 1);
+	}
+	const ppq = Math.min(0x7fff, Math.max(MIDI_PPQ, Math.ceil(48 / Math.max(minBarLength, 1e-9))));
+	const noteDurationTicks = ppq / 4;
+
 	// Cumulative bar starts in MIDI ticks.
 	const measureStart: number[] = new Array(measureCount);
 	let acc = 0;
 	for (let m = 0; m < measureCount; m++) {
 		measureStart[m] = acc;
-		acc += 4 * MIDI_PPQ * (measureLengths[m] ?? 1);
+		acc += 4 * ppq * (measureLengths[m] ?? 1);
 	}
 	const tickInMeasure = (measure: number, fraction: number): number =>
-		measureStart[measure] + fraction * 4 * MIDI_PPQ * (measureLengths[measure] ?? 1);
+		measureStart[measure] + fraction * 4 * ppq * (measureLengths[measure] ?? 1);
 
 	const events: PendingEvent[] = [];
 	let seq = 0;
 	const warnings: string[] = [];
 	const warned = new Set<string>();
+
+	if (4 * ppq * minBarLength < 192) {
+		warnings.push(
+			'the shortest bar cannot hold all 192 DTX slots at the MIDI PPQ limit; adjacent hits may merge'
+		);
+	}
 
 	// Tempo events from the normalized timing seam (base BPM at tick 0 plus
 	// every effective change); the first event lands on tick 0 by construction.
@@ -183,7 +199,7 @@ export const dtxToMidi = (
 					bytes: [0x90 | DRUM_CHANNEL, noteNumber, 100]
 				},
 				{
-					tick: tick + NOTE_DURATION_TICKS,
+					tick: tick + noteDurationTicks,
 					order: 1,
 					seq: seq++,
 					bytes: [0x80 | DRUM_CHANNEL, noteNumber, 0]
@@ -218,7 +234,7 @@ export const dtxToMidi = (
 	view.setUint32(4, 6, false);
 	view.setUint16(8, 0, false); // format 0
 	view.setUint16(10, 1, false); // one track
-	view.setUint16(12, MIDI_PPQ, false);
+	view.setUint16(12, ppq, false);
 	data.set([0x4d, 0x54, 0x72, 0x6b], 14); // MTrk
 	view.setUint32(18, trackBytes.length, false);
 	data.set(trackBytes, 22);
@@ -443,6 +459,8 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const bpmIds = new Map<number, string>();
 	let idCounter = 0;
 	let effectiveBpm = bpm;
+	let tempoSnapped = 0;
+	let maxTempoDrift = 0;
 	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
 		if (event.bpm === effectiveBpm) continue;
 		effectiveBpm = event.bpm;
@@ -460,6 +478,16 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		}
 		bpmChanges[id] = event.bpm;
 		const { measure, position } = quantize(event.tick);
+		// DTX tempo refs can only sit on the 1/192 grid; each off-grid snap
+		// shifts playback time, and shifts compound across segments.
+		const snappedTick =
+			barStarts[measure] +
+			position * ((barStarts[measure + 1] ?? barStarts[measure]) - barStarts[measure]);
+		const drift = Math.abs(snappedTick - event.tick);
+		if (drift > 0) {
+			tempoSnapped++;
+			maxTempoDrift = Math.max(maxTempoDrift, drift);
+		}
 		const groupKey = `08|${measure}`;
 		let group = groupBy.get(groupKey);
 		if (!group) {
@@ -472,6 +500,11 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		const existing = group.notes.findIndex((n) => n.position === position);
 		if (existing === -1) group.notes.push({ noteID: id, position });
 		else group.notes[existing].noteID = id;
+	}
+	if (tempoSnapped > 0) {
+		warnings.push(
+			`${tempoSnapped} tempo change(s) snapped to the 1/192 DTX grid; timing shifts up to ${Math.ceil(maxTempoDrift)} tick(s)`
+		);
 	}
 
 	// Channel-02 decimals only where the sticky bar length actually changes.

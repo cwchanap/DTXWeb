@@ -684,6 +684,34 @@ describe('midiToDtx', () => {
 		expect(result.controls.bpmChanges).toEqual({ '01': 90 });
 	});
 
+	it('warns when an off-grid tempo change snaps to the 1/192 grid', () => {
+		// Tick 485 falls between slots (48.5): it snaps to slot 49 = tick 490,
+		// shifting the segment boundary by 5 ticks — shifts compound across
+		// tempo segments, so the conversion must surface the drift.
+		const midi = parseMidi(
+			buildMidi(480, [[...evTempo(0, 120), ...evTempo(485, 90), ...evEndOfTrack]])
+		);
+		const result = midiToDtx(midi);
+		expect(result.controls.bpmChanges).toEqual({ '01': 90 });
+		expect(result.warnings).toContain(
+			'1 tempo change(s) snapped to the 1/192 DTX grid; timing shifts up to 5 tick(s)'
+		);
+	});
+
+	it('does not warn when tempo changes land exactly on grid slots', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evTempo(960, 90), // slot 96 of bar 0
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.warnings.every((w) => !w.includes('snapped'))).toBe(true);
+	});
+
 	it('reuses a BPM id when a tempo value repeats', () => {
 		const midi = parseMidi(
 			buildMidi(480, [

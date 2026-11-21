@@ -918,6 +918,27 @@ describe('DTXFile', () => {
 			expect(text).not.toMatch(/#\d{3}02:/);
 			expect(text).toContain('#00012: 01000000');
 		});
+
+		it('should emit channel-02 lengths when notes are omitted', () => {
+			// Controls-only export: measure lengths must not be dropped just
+			// because no note patterns were supplied.
+			const file = new DTXFile();
+			const text = file.toDtxText(undefined, {
+				measureLengths: new Map([[0, 0.75]])
+			});
+
+			expect(text).toContain('#00002: 0.75');
+		});
+
+		it('should keep parsed channel-02 lines on a notes-free export', () => {
+			// A parsed chart exported without notes still owns its bar-length
+			// lines — dropping them would silently flatten the meter.
+			const file = new DTXFile();
+			file.parseFromText('#BPM: 120\r\n#00102: 0.75\r\n#00211: 01000000');
+			const text = file.toDtxText();
+
+			expect(text).toContain('#00102: 0.75');
+		});
 	});
 
 	describe('parse', () => {

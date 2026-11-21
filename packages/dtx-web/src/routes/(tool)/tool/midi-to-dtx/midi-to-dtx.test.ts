@@ -44,9 +44,15 @@ import MidiToDtx from './+page.svelte';
 if (!File.prototype.arrayBuffer) {
 	Object.defineProperty(File.prototype, 'arrayBuffer', {
 		configurable: true,
+		// FileReader keeps the raw bytes; a text()/TextEncoder round trip
+		// would corrupt non-UTF-8 MIDI bytes such as 0x99.
 		value: async function arrayBuffer() {
-			const text = typeof this.text === 'function' ? await this.text() : '';
-			return new TextEncoder().encode(text).buffer;
+			return new Promise<ArrayBuffer>((resolve, reject) => {
+				const reader = new FileReader();
+				reader.onload = () => resolve(reader.result as ArrayBuffer);
+				reader.onerror = () => reject(reader.error);
+				reader.readAsArrayBuffer(this);
+			});
 		}
 	});
 }
@@ -133,6 +139,15 @@ describe('MIDI to DTX Converter Logic', () => {
 
 		expect(parseFloat(fileSizeKB)).toBe(2.5);
 		expect(fileSizeKB).toBe('2.5');
+	});
+
+	it('keeps non-UTF-8 bytes through File.arrayBuffer()', async () => {
+		// Guards the polyfill above: 0x99 is a valid MIDI status byte but is
+		// not valid UTF-8 — a text()-based fallback would destroy it.
+		const bytes = new Uint8Array([0x4d, 0x99, 0x80, 0xff]);
+		const file = new File([bytes], 'bin.mid', { type: 'audio/midi' });
+
+		expect(new Uint8Array(await file.arrayBuffer())).toEqual(bytes);
 	});
 
 	it('maps GM drum notes to canonical DTX lanes via the shared converter', async () => {

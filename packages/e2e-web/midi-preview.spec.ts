@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { PAGES } from './constants';
 import { CHART_D_ID, DTX_API_LOCAL_PORT } from './test-config';
-import { parseMidi, type ParsedMidi } from '../common/src/lib/midi/parser';
+import { parseMidi, type ParsedMidi } from '@dtx/common';
 import { readFileSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

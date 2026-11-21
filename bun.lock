@@ -199,6 +199,7 @@
       "name": "dtx-e2e-web",
       "version": "0.0.1",
       "devDependencies": {
+        "@dtx/common": "workspace:*",
         "@playwright/test": "^1.65.1",
         "dtx-api": "workspace:*",
         "typescript": "^5.8.3",

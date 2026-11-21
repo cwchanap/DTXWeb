@@ -187,6 +187,9 @@ for (const chartId of [CHART_A_ID, CHART_B_ID, CHART_C_ID]) {
 // Chart D: a mixed-form SET.def plus the four charts it names (including a
 // subdirectory reference), so the Worker pairs dtx_files rows by label —
 // duplicate "Basic Multi" labels included — instead of a single flat lookup.
+// 'aaa-decoy.dtx' sorts before every real chart key: if SET.def pairing
+// silently fell back to sorted-key matching, the first row would resolve to
+// the decoy and the catalog spec would fail instead of passing by accident.
 wrangler('put R2 object (set.def)', [
 	'r2',
 	'object',
@@ -198,7 +201,7 @@ wrangler('put R2 object (set.def)', [
 	'--file',
 	setDefFixture
 ]);
-for (const chartFile of ['basic.dtx', 'extra.dtx', 'maniac.dtx', 'sub/lead.dtx']) {
+for (const chartFile of ['aaa-decoy.dtx', 'basic.dtx', 'extra.dtx', 'maniac.dtx', 'sub/lead.dtx']) {
 	wrangler(`put R2 object (${chartFile})`, [
 		'r2',
 		'object',

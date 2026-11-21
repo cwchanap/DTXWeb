@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { PAGES } from './constants';
-import { parseMidi, type ParsedMidi } from '../common/src/lib/midi/parser';
+import { parseMidi, type ParsedMidi } from '@dtx/common';
 import { readFileSync } from 'node:fs';
 
 // A chart exercising the converter's semantics end-to-end: simultaneous

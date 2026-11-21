@@ -435,7 +435,7 @@
 				</p>
 				<p>
 					<strong class="text-slate-200">Supported formats:</strong> Standard MIDI files (.mid,
-					.midi)
+					.midi), SMF format 0 and 1
 				</p>
 				<p>
 					<strong class="text-slate-200">Features:</strong> Track analysis, instrument detection,

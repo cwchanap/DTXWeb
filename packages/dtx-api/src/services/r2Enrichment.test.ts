@@ -1559,4 +1559,127 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('matches set.def levels beyond L5', async () => {
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/maniac.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () => encodeToBuffer('#L6LABEL MANIAC\n#L6FILE maniac.dtx\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Maniac', level: 6 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Maniac',
+				level: 6,
+				fileUrl: 'https://cdn.example.test/42/maniac.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('ignores non-positive L0 slots instead of letting them claim a label queue', async () => {
+		// #L0 is not a real chart slot. If it entered the label queue it would
+		// shift()-claim the first matching row's file ahead of the real L1 entry.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/ghost.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L0LABEL BASIC\n#L0FILE ghost.dtx\n#L1LABEL BASIC\n#L1FILE basic.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 1 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('orders duplicate-label queues by numeric L-slot, not set.def line order', async () => {
+		// Two rows share label "DUP". L1 is written after L2 in the file, but
+		// the first matching DB row must still claim L1's file — queues are
+		// accumulated in sorted L-slot order.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer('#L2LABEL DUP\n#L2FILE b.dtx\n#L1LABEL DUP\n#L1FILE a.dtx\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Dup', level: 50 },
+					{ label: 'Dup', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Dup',
+				level: 50,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Dup',
+				level: 70,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

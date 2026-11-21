@@ -143,7 +143,7 @@ export class DTXFile {
 	}
 
 	async parseFromText(text: string) {
-		const lines = text.split('\r\n');
+		const lines = text.split(/\r?\n/);
 
 		const remove_prefix = (prefix: string) => {
 			// Look for the line that starts with the prefix (without colon)
@@ -160,7 +160,19 @@ export class DTXFile {
 		this.title = remove_prefix('#TITLE');
 		this.artist = remove_prefix('#ARTIST');
 		this.level = parseInt(remove_prefix('#DLEVEL')) || 0;
-		this.bpm = parseInt(remove_prefix('#BPM')) || 0;
+		// Base BPM needs the exact `#BPM` directive: prefix matching would let
+		// an earlier `#BPMxx` definition (e.g. `#BPM01: 200`) shadow it. The
+		// header half is compared before the colon, parsed with parseFloat so
+		// decimal BPMs survive, and validated positive/finite so a malformed
+		// value can't poison the timing builder with NaN/Infinity.
+		const baseBpmLine = lines.find((line) => {
+			const colonIndex = line.indexOf(':');
+			return colonIndex !== -1 && line.slice(0, colonIndex).trim() === '#BPM';
+		});
+		const baseBpm = baseBpmLine
+			? parseFloat(baseBpmLine.slice(baseBpmLine.indexOf(':') + 1).trim())
+			: NaN;
+		this.bpm = Number.isFinite(baseBpm) && baseBpm > 0 ? baseBpm : 0;
 		this.preview = remove_prefix('#PREIMAGE');
 		this.soundPreview = remove_prefix('#PREVIEW');
 

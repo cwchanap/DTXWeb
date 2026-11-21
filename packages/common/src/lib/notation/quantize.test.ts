@@ -3,8 +3,10 @@ import {
 	ticksToDurations,
 	quantizeMeasure,
 	groupNotesByLane,
-	buildNotationChart
+	buildNotationChart,
+	buildTimingInput
 } from './quantize';
+import { buildChartTiming } from './timing';
 import { DTXFile } from '../chart/dtx';
 import { LaneMeasureNote } from '../chart/note';
 
@@ -1025,5 +1027,72 @@ describe('buildNotationChart', () => {
 		const notes = chart.measures[0].entries.filter((e) => e.kind === 'note');
 		expect(notes).toHaveLength(1);
 		expect(notes[0].startTick).toBe(189);
+	});
+});
+
+describe('buildTimingInput', () => {
+	it('expands channel 02 bar lengths with sticky semantics', () => {
+		// Same sticky fixture as the buildNotationChart channel-02 test: m1
+		// sets 2/4, m2 inherits it, m3 restores 4/4.
+		const dtx = makeDtx(['#00012: 01', '#00102: 0.5', '#00302: 1', '#00412: 01'], 120);
+		const input = buildTimingInput(dtx);
+		expect(input.measureCount).toBe(5);
+		expect(input.measureLengths).toEqual([1, 0.5, 0.5, 1, 1]);
+	});
+
+	it('passes channel 08 bpm lanes through with their #BPMxx ids intact', () => {
+		const dtx = makeDtx(['#BPMAA: 180', '#00108: 00AA'], 120);
+		const input = buildTimingInput(dtx);
+		expect(input.bpmValueMap['AA']).toBe(180);
+		const lane08 = input.bpmChanges.find((lm) => lm.laneID === '08');
+		expect(lane08?.measure).toBe(1);
+		expect(lane08?.notes).toEqual([{ noteID: 'AA', position: 0.5 }]);
+	});
+
+	it('converts channel 03 direct-hex BPM notes into noncolliding synthetic IDs', () => {
+		// Channel 03 noteIDs are raw hex BPM values ('F0' = 240), not #BPMxx
+		// keys; the synthetic '03:' prefix keeps the two namespaces apart.
+		const dtx = makeDtx(['#00103: F0'], 120);
+		const input = buildTimingInput(dtx);
+		expect(input.bpmValueMap['03:F0']).toBe(240);
+		const legacy = input.bpmChanges.find((lm) => lm.laneID === '08' && lm.measure === 1);
+		expect(legacy?.notes).toEqual([{ noteID: '03:F0', position: 0 }]);
+	});
+
+	it('keeps a same-ID channel 03 value distinct from a channel 08 #BPMxx ref', () => {
+		// '0A' is a #BPMxx id worth 180 on channel 08, but a direct hex 10 bpm
+		// on channel 03 — the synthetic key prevents the collision.
+		const dtx = makeDtx(['#BPM0A: 180', '#00108: 0A', '#00103: 0A'], 120);
+		const input = buildTimingInput(dtx);
+		expect(input.bpmValueMap['0A']).toBe(180);
+		expect(input.bpmValueMap['03:0A']).toBe(10);
+	});
+
+	it('defaults bpm to 120 when the dtx has none', () => {
+		const dtx = makeDtx(['#00012: 01'], undefined as unknown as number);
+		const input = buildTimingInput(dtx);
+		expect(input.bpm).toBe(120);
+	});
+
+	it('produces the same timing that buildNotationChart builds', () => {
+		// Equivalence contract: buildNotationChart delegates its timing to this
+		// helper, so feeding the TimingInput into buildChartTiming must yield
+		// identical events, measure starts and duration.
+		const dtx = makeDtx(
+			[
+				'#BPMAA: 240',
+				'#00012: 0101',
+				'#00102: 0.75',
+				'#00108: AA',
+				'#00103: F0',
+				'#00212: 01'
+			],
+			150
+		);
+		const fromInput = buildChartTiming(buildTimingInput(dtx));
+		const { timing } = buildNotationChart(dtx);
+		expect(fromInput.tempoEvents).toEqual(timing.tempoEvents);
+		expect(fromInput.measureStartSeconds).toEqual(timing.measureStartSeconds);
+		expect(fromInput.totalDuration).toBe(timing.totalDuration);
 	});
 });

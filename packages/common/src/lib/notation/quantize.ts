@@ -9,7 +9,7 @@ import {
 	type NotationMeasure,
 	type NotationChart
 } from './model';
-import { buildChartTiming, type ChartTiming } from './timing';
+import { buildChartTiming, type ChartTiming, type TimingInput } from './timing';
 
 const BPM_CHANNEL = '08';
 // Channel 03 is the legacy DTX BPM-change channel: noteIDs are direct hex BPM
@@ -301,19 +301,14 @@ export const groupNotesByLane = (notes: LaneMeasureNote[]): Record<string, LaneM
 };
 
 /**
- * Build the full notation chart + timing from a parsed DTXFile.
- * Channel 02 bar-length changes are honored: a decimal multiplier of 4/4
- * (e.g. 0.75 = 3/4) is applied to the measure and persists (sticky) until
- * the next channel 02 line, matching DTX semantics.
+ * Build the TimingInput shared by the notation chart and MIDI export: base
+ * BPM + #BPMxx values, per-measure lengths from sticky channel-02 bar-length
+ * changes, and the channel-08/03 tempo-change lanes with channel 03's
+ * direct-hex notes normalized into noncolliding synthetic IDs. ChartTiming
+ * alone does not expose measure lengths, so consumers that need bar
+ * boundaries (MIDI export) must go through this rather than the ChartTiming.
  */
-export const buildNotationChart = (
-	dtx: DTXFile
-): {
-	chart: NotationChart;
-	timing: ChartTiming;
-	notesByLane: Record<string, LaneMeasureNote[]>;
-	measureCount: number;
-} => {
+export const buildTimingInput = (dtx: DTXFile): TimingInput => {
 	const flat = dtx.parseNotes();
 	const notesByLane = groupNotesByLane(flat);
 	const bpmValueMap = dtx.parseBPMChanges();
@@ -335,6 +330,53 @@ export const buildNotationChart = (
 		}
 		measureLengths[m] = currentLength;
 	}
+
+	// Channel 08 (#BPMzz references) and channel 03 (legacy direct-hex BPM) both
+	// carry tempo changes. The timing code looks up `bpmValueMap[change.noteID]`,
+	// which works for channel 08's #BPMzz keys. Channel 03 noteIDs are hex BPM
+	// values that can collide with #BPMzz keys (e.g. '0A' = hex 10 vs #BPM0A), so
+	// convert them to synthetic prefixed keys and populate bpmValueMap entries.
+	const legacyBpmChanges: LaneMeasureNote[] = [];
+	for (const lm of notesByLane[LEGACY_BPM_CHANNEL] ?? []) {
+		const convertedNotes = lm.notes
+			.filter((n) => n.noteID !== '00')
+			.map((n) => {
+				const syntheticId = `03:${n.noteID}`;
+				bpmValueMap[syntheticId] = parseInt(n.noteID, 16);
+				return { noteID: syntheticId, position: n.position };
+			});
+		if (convertedNotes.length > 0) {
+			legacyBpmChanges.push(new LaneMeasureNote(lm.measure, BPM_CHANNEL, convertedNotes));
+		}
+	}
+
+	return {
+		bpm: dtx.bpm || 120,
+		bpmValueMap,
+		bpmChanges: [...(notesByLane[BPM_CHANNEL] ?? []), ...legacyBpmChanges],
+		measureLengths,
+		measureCount
+	};
+};
+
+/**
+ * Build the full notation chart + timing from a parsed DTXFile.
+ * Channel 02 bar-length changes are honored: a decimal multiplier of 4/4
+ * (e.g. 0.75 = 3/4) is applied to the measure and persists (sticky) until
+ * the next channel 02 line, matching DTX semantics.
+ */
+export const buildNotationChart = (
+	dtx: DTXFile
+): {
+	chart: NotationChart;
+	timing: ChartTiming;
+	notesByLane: Record<string, LaneMeasureNote[]>;
+	measureCount: number;
+} => {
+	const flat = dtx.parseNotes();
+	const notesByLane = groupNotesByLane(flat);
+	const timingInput = buildTimingInput(dtx);
+	const { measureLengths, measureCount } = timingInput;
 
 	// Group notes by measure once (O(n)) instead of re-filtering the whole list
 	// for each measure (O(n*m)). Sparse charts with many empty measures would
@@ -390,32 +432,7 @@ export const buildNotationChart = (
 		measures.push(quantizeMeasure(m, notationLanesByMeasure.get(m) ?? [], measureLengths[m]));
 	}
 
-	// Channel 08 (#BPMzz references) and channel 03 (legacy direct-hex BPM) both
-	// carry tempo changes. The timing code looks up `bpmValueMap[change.noteID]`,
-	// which works for channel 08's #BPMzz keys. Channel 03 noteIDs are hex BPM
-	// values that can collide with #BPMzz keys (e.g. '0A' = hex 10 vs #BPM0A), so
-	// convert them to synthetic prefixed keys and populate bpmValueMap entries.
-	const legacyBpmChanges: LaneMeasureNote[] = [];
-	for (const lm of notesByLane[LEGACY_BPM_CHANNEL] ?? []) {
-		const convertedNotes = lm.notes
-			.filter((n) => n.noteID !== '00')
-			.map((n) => {
-				const syntheticId = `03:${n.noteID}`;
-				bpmValueMap[syntheticId] = parseInt(n.noteID, 16);
-				return { noteID: syntheticId, position: n.position };
-			});
-		if (convertedNotes.length > 0) {
-			legacyBpmChanges.push(new LaneMeasureNote(lm.measure, BPM_CHANNEL, convertedNotes));
-		}
-	}
-
-	const timing = buildChartTiming({
-		bpm: dtx.bpm || 120,
-		bpmValueMap,
-		bpmChanges: [...(notesByLane[BPM_CHANNEL] ?? []), ...legacyBpmChanges],
-		measureLengths,
-		measureCount
-	});
+	const timing = buildChartTiming(timingInput);
 
 	return {
 		chart: { measures, tempoEvents: [...timing.tempoEvents] },

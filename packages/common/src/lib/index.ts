@@ -31,7 +31,13 @@ export type { IFileProvider } from './services/fileProvider';
 export { setFileProvider, getFileProvider } from './services/fileProvider';
 
 // Notation model (pure; safe for SSR — no Phaser/Svelte)
-export { laneToStaff, staffKey, PLAYABLE_DRUM_LANES, type DrumStaff } from './notation/drumMapping';
+export {
+	laneToStaff,
+	staffKey,
+	PLAYABLE_DRUM_LANES,
+	GM_IMPORT_LANE,
+	type DrumStaff
+} from './notation/drumMapping';
 export {
 	TICKS_PER_WHOLE,
 	DURATION_TABLE,
@@ -47,7 +53,8 @@ export {
 	ticksToDurations,
 	quantizeMeasure,
 	groupNotesByLane,
-	buildNotationChart
+	buildNotationChart,
+	buildTimingInput
 } from './notation/quantize';
 export { exportNotationChartToMusicXml, type MusicXmlMetadata } from './notation/musicxml';
 

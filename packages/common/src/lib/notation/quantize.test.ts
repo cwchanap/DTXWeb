@@ -1069,7 +1069,10 @@ describe('buildTimingInput', () => {
 	});
 
 	it('defaults bpm to 120 when the dtx has none', () => {
-		const dtx = makeDtx(['#00012: 01'], undefined as unknown as number);
+		// `0` is the field's real value when a file lacks #BPM; passing
+		// `undefined` would hit makeDtx's own 120 default and hide whether the
+		// fallback under test (dtx.bpm || 120) did the work.
+		const dtx = makeDtx(['#00012: 01'], 0);
 		const input = buildTimingInput(dtx);
 		expect(input.bpm).toBe(120);
 	});

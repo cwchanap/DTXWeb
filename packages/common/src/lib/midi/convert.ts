@@ -261,7 +261,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// Meter changes sorted by tick; a change applies from its bar onward. A
 	// zero/invalid multiplier would make a zero-length bar (bars could never
 	// advance) — the file is not convertible.
-	const meterChanges: { tick: number; length: number }[] = [];
+	const merged: { tick: number; length: number }[] = [];
 	for (const event of midi.meterEvents) {
 		const length = event.numerator / event.denominator;
 		if (!Number.isFinite(length) || length <= 0) {
@@ -269,12 +269,21 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 				`Unsupported MIDI meter ${event.numerator}/${event.denominator} at tick ${event.tick}`
 			);
 		}
-		const last = meterChanges[meterChanges.length - 1];
+		const last = merged[merged.length - 1];
 		if (last && last.tick === event.tick) {
 			last.length = length; // same tick: last wins
 		} else {
-			meterChanges.push({ tick: event.tick, length });
+			merged.push({ tick: event.tick, length });
 		}
+	}
+	// An event equal to the effective meter changes nothing; keeping it would
+	// wrongly reject a repeated signature as a mid-bar change.
+	const meterChanges: { tick: number; length: number }[] = [];
+	let effectiveLength = 1;
+	for (const change of merged) {
+		if (change.length === effectiveLength) continue;
+		meterChanges.push(change);
+		effectiveLength = change.length;
 	}
 	let meterIndex = 0;
 	let currentLength = 1;

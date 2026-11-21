@@ -136,6 +136,24 @@ describe('SimFile', () => {
 			expect(simFile.levels[6]?.label).toBe('MANIAC');
 		});
 
+		it('resolves def file references with backslashes and ./ prefixes', async () => {
+			// SET.def written on Windows stores `.\\maniac.dtx` / `sub\\lead.dtx`;
+			// File names (and zip entries) use `maniac.dtx` / `sub/lead.dtx`.
+			const defContent =
+				'#L1LABEL BASIC\n#L1FILE .\\bas.dtx\n#L6LABEL MANIAC\n#L6FILE sub\\lead.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const simFile = new SimFile([
+				defFile,
+				new File(['dtx'], 'bas.dtx'),
+				new File(['dtx'], 'sub/lead.dtx')
+			]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[1]?.label).toBe('BASIC');
+			expect(simFile.levels[6]?.label).toBe('MANIAC');
+		});
+
 		it('parses a UTF-16LE-with-BOM def file whose directives are lowercase', async () => {
 			// parseSetDef is case-insensitive, but the encoding validation
 			// callback required uppercase '#TITLE'/'#L1…' — a lowercase UTF-16LE

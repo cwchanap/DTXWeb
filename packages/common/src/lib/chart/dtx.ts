@@ -225,9 +225,13 @@ export class DTXFile {
 			// times into NaN (NaN ?? bpm is NaN; `??` does not catch NaN).
 			const colonIndex = line.indexOf(':');
 			if (colonIndex === -1) return;
-			const header = line.slice(0, colonIndex);
+			// Only `#BPM` (base directive, keyed '') and exactly two-character
+			// `#BPMxx` ids are valid; a longer header like `#BPM01_EXTRA` must
+			// not alias the `01` definition via slice(4, 6).
+			const idMatch = /^#BPM([0-9A-Z]{2})?$/i.exec(line.slice(0, colonIndex).trim());
+			if (!idMatch) return;
+			const noteID = idMatch[1] ?? '';
 			const value = parseFloat(line.slice(colonIndex + 1).trim());
-			const noteID = header.slice(4, 6);
 			// Skip unparseable or non-finite values so a malformed line does not
 			// inject NaN/Infinity into the bpm map and poison the timing builder.
 			// `parseFloat('Infinity')` and `parseFloat('1e309')` (which overflows

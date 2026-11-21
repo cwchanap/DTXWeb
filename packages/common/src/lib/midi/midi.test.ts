@@ -1,4 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { parseMidi } from './parser';
 import { dtxToMidi, midiToDtx } from './convert';
 import { DTXFile } from '../chart/dtx';
@@ -175,6 +178,28 @@ describe('parseMidi', () => {
 		expect(midi.tracks[0].instruments.has(7)).toBe(true);
 	});
 
+	it('retains every attack when same-pitch note-ons overlap', () => {
+		// A re-attack before the release must not erase the pending note; each
+		// note-off pairs with the earliest still-open attack (FIFO).
+		const bytes = buildMidi(480, [
+			[
+				...evNoteOn(0, 38),
+				...evNoteOn(10, 38), // second attack while the first is open
+				...evNoteOff(10, 38), // closes the first attack
+				...evNoteOff(10, 38), // closes the second
+				...evNoteOff(0, 36), // unmatched off: ignored
+				...evEndOfTrack
+			]
+		]);
+
+		const midi = parseMidi(bytes);
+		expect(midi.totalNotes).toBe(2);
+		expect(midi.tracks[0].notes).toEqual([
+			{ channel: 9, note: 38, velocity: 100, startTime: 0, duration: 20 },
+			{ channel: 9, note: 38, velocity: 100, startTime: 10, duration: 20 }
+		]);
+	});
+
 	it('skips sysex blocks safely', () => {
 		const bytes = buildMidi(480, [
 			[
@@ -299,6 +324,35 @@ describe('parseMidi', () => {
 			[
 				'meta event length beyond track end',
 				buildMidi(480, [[...vlq(0), 0xff, 0x01, 0x7f, 0x41]])
+			],
+			[
+				'MTrk length with the high bit set',
+				(() => {
+					const bytes = buildMidi(480, [[...evEndOfTrack]]);
+					new DataView(bytes.buffer).setUint32(18, 0x80000000);
+					return bytes;
+				})()
+			],
+			[
+				'tempo meta event shorter than 3 bytes',
+				buildMidi(480, [[...vlq(0), 0xff, 0x51, 0x02, 0x07, 0xa1, ...evEndOfTrack]])
+			],
+			[
+				'tempo of zero microseconds per quarter',
+				buildMidi(480, [[...vlq(0), 0xff, 0x51, 0x03, 0x00, 0x00, 0x00, ...evEndOfTrack]])
+			],
+			[
+				'time signature meta event shorter than 4 bytes',
+				buildMidi(480, [[...vlq(0), 0xff, 0x58, 0x02, 0x03, 0x02, ...evEndOfTrack]])
+			],
+			[
+				'missing end-of-track meta event',
+				buildMidi(480, [[...evNoteOn(0, 36), ...evNoteOff(60, 36)]])
+			],
+			['events after end-of-track', buildMidi(480, [[...evEndOfTrack, ...evNoteOn(0, 36)]])],
+			[
+				'non-empty end-of-track payload',
+				buildMidi(480, [[...vlq(0), 0xff, 0x2f, 0x01, 0x00]])
 			]
 		];
 
@@ -396,6 +450,24 @@ describe('dtxToMidi', () => {
 		expect(ons).toHaveLength(2);
 		expect(ons.every((e) => e.note === 35)).toBe(true);
 		expect(warnings.some((w) => w.includes('51'))).toBe(true);
+	});
+
+	it('warns and skips lane overrides outside the 0-127 MIDI note range', () => {
+		const dtx = dtxFromText(
+			['#BPM: 120', '#00011: 01', '#00012: 01', '#00013: 01'].join('\r\n')
+		);
+		const { data, warnings } = dtxToMidi(dtx, { '11': 200, '12': Number.NaN });
+
+		expect(warnings).toHaveLength(2);
+		expect(warnings.every((w) => w.includes('invalid MIDI note'))).toBe(true);
+		// The file must still parse; only the valid lane emits a note.
+		expect(noteOnTicks(data)).toEqual([{ tick: 0, note: 36, channel: 9 }]);
+	});
+
+	it('rejects tempos that cannot fit the 24-bit MPQ field instead of wrapping', () => {
+		// 1 BPM -> MPQ 60,000,000 > 0xffffff; truncating would emit ~6.2 BPM.
+		const dtx = dtxFromText(['#BPM: 1', '#00013: 01'].join('\r\n'));
+		expect(() => dtxToMidi(dtx)).toThrow(/tempo/i);
 	});
 });
 
@@ -495,6 +567,25 @@ describe('midiToDtx', () => {
 		expect(Object.keys(result.notes)).toHaveLength(0);
 	});
 
+	it('rejects input that would exceed the 3-digit DTX measure range', () => {
+		// 480 PPQ 4/4: bar = 1920 ticks; a note at tick 1,920,000 lands in
+		// measure 1000, which #NNNxx headers cannot represent.
+		const midi = parseMidi(
+			buildMidi(480, [[...evNoteOn(1_920_000, 38), ...evNoteOff(60, 38), ...evEndOfTrack]])
+		);
+		expect(() => midiToDtx(midi)).toThrow(/measure/i);
+	});
+
+	it('rolls a hit that quantizes onto the barline into the next bar slot 0', () => {
+		// slot = 10 ticks at 480 PPQ 4/4: tick 1917 -> raw slot 191.7 -> 192.
+		const midi = parseMidi(
+			buildMidi(480, [[...evNoteOn(1917, 36), ...evNoteOff(60, 36), ...evEndOfTrack]])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['13'][0].measure).toBe(1);
+		expect(result.notes['13'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+	});
+
 	it('emits base BPM, #BPMxx defs and channel-08 refs consumable by toDtxText', () => {
 		const midi = parseMidi(
 			buildMidi(480, [
@@ -536,6 +627,37 @@ describe('midiToDtx', () => {
 		const result = midiToDtx(midi);
 		expect(result.bpm).toBe(120); // default before the first tempo event
 		expect(result.controls.bpmChanges).toEqual({ '01': 90 });
+	});
+
+	it('reuses a BPM id when a tempo value repeats', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evTempo(1920, 150), // bar 1 -> '01'
+					...evTempo(1920, 140), // bar 2 -> '02'
+					...evTempo(1920, 150), // bar 3 returns to 150 -> reuse '01'
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.controls.bpmChanges).toEqual({ '01': 150, '02': 140 });
+		expect(result.notes['08'].map((g) => g.notes[0].noteID)).toEqual(['01', '02', '01']);
+	});
+
+	it('throws instead of emitting a 3-char id when the BPM id space is exhausted', () => {
+		// 'ZZ' is id 1295; the 1296th distinct tempo has no valid #BPMxx def.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...Array.from({ length: 1296 }, (_, i) => evTempo(10, 5 + i)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		expect(() => midiToDtx(midi)).toThrow(/BPM|id/i);
 	});
 
 	it('rejects a zero-numerator meter instead of hanging', () => {
@@ -699,5 +821,99 @@ describe('round trips', () => {
 				halfSlotSeconds
 			);
 		});
+	});
+
+	it('round-trips a 3/4 -> 4/4 file with a mid-measure tempo change', () => {
+		// 480 PPQ: bar 0 is 3/4 (1440 ticks); 4/4 resumes at bar 1. Tempo drops
+		// 150 -> 90 at tick 2160 = position 0.375 inside bar 1.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evMeter(0, 3, 2),
+					...evTempo(0, 150),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36), // cursor 60
+					...evMeter(1380, 4, 2), // tick 1440 = bar 1 start
+					...evNoteOn(560, 38), // tick 2000 -> pos 56/192 in bar 1
+					...evNoteOff(60, 38), // cursor 2060
+					...evTempo(100, 90), // tick 2160, mid-bar
+					...evNoteOn(480, 42), // tick 2640 -> pos 120/192 = 0.625
+					...evNoteOff(60, 42),
+					...evEndOfTrack
+				]
+			])
+		);
+
+		const result = midiToDtx(midi);
+		expect(result.bpm).toBe(150);
+		expect(result.controls.bpmChanges).toEqual({ '01': 90 });
+		expect(result.controls.measureLengths?.get(0)).toBe(0.75);
+		expect(result.controls.measureLengths?.get(1)).toBe(1);
+		expect(result.notes['08'][0].notes).toEqual([{ noteID: '01', position: 0.375 }]);
+
+		// Base BPM, extended BPM, channel-08 refs and channel-02 controls must
+		// all appear together in the serialized text.
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		expect(text).toContain('#BPM: 150');
+		expect(text).toContain('#BPM01: 90');
+		expect(text).toContain('#00002: 0.75');
+		expect(text).toContain('#00102: 1');
+		expect(text).toContain('#00108:');
+
+		// Reparsing the serialized text preserves the tempo ref and timing.
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+		const refGroup = reparsed.parseNotes().find((lm) => lm.laneID === '08');
+		expect(refGroup?.measure).toBe(1);
+		expect(refGroup?.notes).toEqual([{ noteID: '01', position: 0.375 }]);
+
+		// Time domain across the mid-measure tempo change: hihat at tick 2640.
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+		const expectedSeconds = (2160 * (60 / 150)) / 480 + ((2640 - 2160) * (60 / 90)) / 480;
+		expect(timing.positionToTime(1, 0.625)).toBeCloseTo(expectedSeconds, 6);
+	});
+
+	it('converts the committed drum-off-grid fixture end-to-end', () => {
+		// packages/e2e-web/fixtures/drum-off-grid.mid: 960 PPQ, 140 BPM,
+		// 4/4 -> 3/4 at bar 2, humanized hits, one unmapped GM note (99) and
+		// one channel-0 note that must be ignored.
+		const bytes = new Uint8Array(
+			readFileSync(
+				path.join(
+					path.dirname(fileURLToPath(import.meta.url)),
+					'../../../../e2e-web/fixtures/drum-off-grid.mid'
+				)
+			)
+		);
+
+		const midi = parseMidi(bytes);
+		expect(midi.ticksPerQuarter).toBe(960);
+		// Eight positive-velocity note-ons in the file; overlapping snare
+		// attacks at ticks 487 and 500 are both retained.
+		expect(midi.totalNotes).toBe(8);
+		expect(midi.tracks[0].notes.filter((n) => n.note === 38).map((n) => n.startTime)).toEqual([
+			487, 500
+		]);
+		expect(midi.meterEvents).toEqual([
+			{ tick: 0, numerator: 4, denominator: 4 },
+			{ tick: 7680, numerator: 3, denominator: 4 }
+		]);
+
+		const result = midiToDtx(midi);
+		expect(result.bpm).toBe(140);
+		expect(result.unmappedNotes).toBe(1);
+		expect(result.warnings.some((w) => w.includes('non-drum'))).toBe(true);
+		expect(result.collisions).toBe(0);
+		expect(result.controls.measureLengths?.get(2)).toBe(0.75);
+		// Both snare attacks survive into adjacent 1/192 cells of lane '12'.
+		expect(result.notes['12'][0].notes).toHaveLength(2);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		expect(text).toContain('#BPM: 140');
+		expect(text).toContain('#00202: 0.75');
 	});
 });

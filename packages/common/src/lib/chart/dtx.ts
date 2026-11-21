@@ -20,6 +20,18 @@ export interface ParsedMidi {
 	tracks: MidiEvent[][];
 }
 
+/**
+ * Optional controls for {@link DTXFile.toDtxText}. Editor save omits them so
+ * values are recovered from the parsed file lines; MIDI import supplies them
+ * explicitly on a fresh DTXFile.
+ */
+export interface DtxExportControls {
+	/** Extended `#BPMxx` definitions keyed by two-char ID — same shape as parseBPMChanges(). */
+	bpmChanges?: Record<string, number>;
+	/** Channel-02 bar lengths: measure index -> decimal multiplier of 4/4. */
+	measureLengths?: Map<number, number>;
+}
+
 export class SoundChip {
 	label: string;
 	id: number;
@@ -75,7 +87,9 @@ export class DTXFile {
 	pathWav?: string;
 	comment!: string;
 	soundChips!: SoundChip[];
-	lines!: string[];
+	// Initialized empty so a fresh `new DTXFile()` used for MIDI import can
+	// call the control parsers and serializer without a prior parse().
+	lines: string[] = [];
 	detectedEncoding?: string;
 
 	constructor(
@@ -776,14 +790,28 @@ export class DTXFile {
 		return notesByLane;
 	}
 
-	async export(notes?: Record<string, LaneMeasureNote[]>): Promise<void> {
+	/**
+	 * Serialize this chart to DTX text. Pure counterpart of export() — safe
+	 * to call without a DOM, e.g. for MIDI import on a fresh DTXFile.
+	 */
+	toDtxText(notes?: Record<string, LaneMeasureNote[]>, controls?: DtxExportControls): string {
 		const content: string[] = [];
 
 		// Add header information
 		content.push(`#TITLE: ${this.title || ''}`);
 		content.push(`#ARTIST: ${this.artist || ''}`);
 		content.push(`#DLEVEL: ${this.level || 0}`);
+		// Base #BPM is emitted exactly once, here — never via the '' key that
+		// parseBPMChanges() reports for the base directive.
 		content.push(`#BPM: ${this.bpm || 120}`);
+
+		// Extended #BPMxx definitions: parsed lines on editor save, supplied
+		// controls on MIDI import. Only two-char IDs are definitions.
+		const bpmChanges = controls?.bpmChanges ?? this.parseBPMChanges();
+		for (const [id, value] of Object.entries(bpmChanges)) {
+			if (/^[0-9A-Z]{2}$/i.test(id)) content.push(`#BPM${id}: ${value}`);
+		}
+
 		if (this.preview) content.push(`#PREIMAGE: ${this.preview}`);
 		if (this.soundPreview) content.push(`#PREVIEW: ${this.soundPreview}`);
 		if (this.comment) content.push(`#COMMENT: ${this.comment}`);
@@ -806,8 +834,12 @@ export class DTXFile {
 		if (notes) {
 			const allMeasureNotes: { measure: number; laneID: string; pattern: string }[] = [];
 
-			// Collect all notes and convert to patterns
+			// Collect all notes and convert to patterns. Channel 02 is a
+			// decimal bar-length channel, not a pattern channel — its parsed
+			// "notes" are garbage pairs ('0.75' -> '0.', '75') that toPattern()
+			// would corrupt; #NNN02 is emitted from the length map below.
 			for (const [laneID, laneMeasureNotes] of Object.entries(notes)) {
+				if (laneID === '02') continue;
 				laneMeasureNotes.forEach((laneMeasureNote) => {
 					const pattern = laneMeasureNote.toPattern();
 					if (pattern) {
@@ -818,6 +850,11 @@ export class DTXFile {
 						});
 					}
 				});
+			}
+
+			const measureLengths = controls?.measureLengths ?? this.parseMeasureLengths();
+			for (const [measure, length] of measureLengths) {
+				allMeasureNotes.push({ measure, laneID: '02', pattern: `${length}` });
 			}
 
 			// Sort by measure then by lane ID for consistent output
@@ -833,7 +870,14 @@ export class DTXFile {
 			});
 		}
 
-		const fileContent = content.join('\r\n');
+		return content.join('\r\n');
+	}
+
+	async export(
+		notes?: Record<string, LaneMeasureNote[]>,
+		controls?: DtxExportControls
+	): Promise<void> {
+		const fileContent = this.toDtxText(notes, controls);
 
 		// Always export as UTF-8 for consistency and compatibility
 		const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8' });

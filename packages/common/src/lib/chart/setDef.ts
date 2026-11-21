@@ -10,7 +10,7 @@ export interface ParsedSetDef {
 }
 
 const titlePattern = /^#TITLE(?:\s*:\s*|\s+|$)/i;
-const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(.+)$/i;
+const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(\S.*)$/i;
 
 /**
  * Pure SET.def parser shared by the local SimFile parser, the web editor's

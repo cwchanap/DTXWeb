@@ -190,12 +190,13 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		const parsed = parseMidi(data);
 
 		expect(parsed.ticksPerQuarter).toBe(896);
-		// 4 * 896 * 7/128 = 196 ticks for the short bar, then 4/4 bars.
+		// 4 * 896 * 7/128 = 196 ticks for the short bar, then 4/4 bars of
+		// 4 * 896 = 3584 ticks each.
 		expect(parsed.meterEvents).toEqual([
 			{ tick: 0, numerator: 7, denominator: 128 },
 			{ tick: 196, numerator: 4, denominator: 4 }
 		]);
-		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([0, 196, 392, 588]);
+		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([0, 196, 3780, 7364]);
 		expect(parsed.tracks[0].notes.every((n) => n.duration === 224)).toBe(true);
 
 		// The exported file reimports without a mid-bar meter rejection.

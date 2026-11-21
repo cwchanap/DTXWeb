@@ -11,6 +11,10 @@ const DRUM_CHANNEL = 9;
 const NON_DRUM_LANES = new Set(['01', '02', '03', '08']);
 // Drum hits get a fixed 16th-note release; ordering rules keep re-triggers clean.
 const NOTE_DURATION_TICKS = MIDI_PPQ / 4;
+// DTX measure headers are three digits, so conversions may emit at most
+// measures 0-999. '00' is the rest cell, leaving '01'-'ZZ' = 1295 BPM ids.
+const MAX_DTX_MEASURES = 1000;
+const MAX_BPM_ID = parseInt('ZZ', 36); // 1295
 
 const encodeVlq = (value: number): number[] => {
 	const bytes = [value & 0x7f];
@@ -86,6 +90,11 @@ export const dtxToMidi = (
 	// every effective change); the first event lands on tick 0 by construction.
 	for (const event of normalizeTempoEvents(timing)) {
 		const mpq = Math.round(60000000 / event.bpm);
+		// MPQ is a 24-bit field; anything larger would silently wrap into a
+		// different, valid-looking tempo (~6.2 BPM for a 1 BPM source).
+		if (mpq < 1 || mpq > 0xffffff) {
+			throw new Error(`tempo ${event.bpm} BPM is outside the 24-bit MIDI range`);
+		}
 		events.push({
 			tick: Math.round(tickInMeasure(event.measure, event.fraction)),
 			order: 0,
@@ -132,6 +141,16 @@ export const dtxToMidi = (
 			if (!warned.has(key)) {
 				warned.add(key);
 				warnings.push(`lane ${lane} has no GM note; ${lm.notes.length} hit(s) skipped`);
+			}
+			continue;
+		}
+		// Overrides can carry non-note values; 128+ or NaN would emit a byte
+		// the parser itself rejects (or a silent note 0).
+		if (!Number.isInteger(noteNumber) || noteNumber < 0 || noteNumber > 127) {
+			const key = `note-${lane}`;
+			if (!warned.has(key)) {
+				warned.add(key);
+				warnings.push(`lane ${lane} maps to invalid MIDI note ${noteNumber}; hits skipped`);
 			}
 			continue;
 		}
@@ -249,10 +268,27 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		meterChanges[meterChanges.length - 1]?.tick ?? 0
 	);
 
+	// DTX measure headers are three digits (#NNNxx), so output is bounded to
+	// measure indices 0-999. A hostile tick (e.g. 0x0fffffff at PPQ 1) would
+	// otherwise allocate tens of millions of bars before conversion ends.
+	// Reject early using the fewest bars possible (every bar at the largest
+	// meter); the in-loop bound below still catches files where smaller
+	// meters later push the real count over the limit.
+	const maxBarLength = Math.max(
+		currentLength,
+		...meterChanges.slice(meterIndex).map((c) => c.length)
+	);
+	if (endTick / (4 * ppq * maxBarLength) > MAX_DTX_MEASURES) {
+		throw new Error(`MIDI conversion exceeds the ${MAX_DTX_MEASURES}-measure DTX range`);
+	}
+
 	// Bar starts; a meter event off a computed boundary is a mid-bar change.
 	const barStarts = [0];
 	const barLengths: number[] = [];
 	while (barStarts[barStarts.length - 1] <= endTick || meterIndex < meterChanges.length) {
+		if (barLengths.length >= MAX_DTX_MEASURES) {
+			throw new Error(`MIDI conversion exceeds the ${MAX_DTX_MEASURES}-measure DTX range`);
+		}
 		const start = barStarts[barStarts.length - 1];
 		while (meterIndex < meterChanges.length && meterChanges[meterIndex].tick <= start) {
 			if (meterChanges[meterIndex].tick < start) {
@@ -264,7 +300,12 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			meterIndex++;
 		}
 		barLengths.push(currentLength);
-		barStarts.push(start + 4 * ppq * currentLength);
+		const next = start + 4 * ppq * currentLength;
+		// A degenerate meter (numerator/huge denominator) must still advance.
+		if (next <= start) {
+			throw new Error('Unsupported meter produces a non-advancing bar');
+		}
+		barStarts.push(next);
 	}
 	const measureCount = barStarts.length - 1;
 
@@ -286,8 +327,15 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const quantize = (tick: number): { measure: number; position: number } => {
 		const measure = barAt(tick);
 		const span = barStarts[measure + 1] - barStarts[measure];
-		let slot = Math.round(((tick - barStarts[measure]) / span) * 192);
-		if (slot >= 192) return { measure: measure + 1, position: 0 };
+		const slot = Math.round(((tick - barStarts[measure]) / span) * 192);
+		if (slot >= 192) {
+			if (measure + 1 >= MAX_DTX_MEASURES) {
+				throw new Error(
+					`MIDI conversion exceeds the ${MAX_DTX_MEASURES}-measure DTX range`
+				);
+			}
+			return { measure: measure + 1, position: 0 };
+		}
 		return { measure, position: slot / 192 };
 	};
 
@@ -355,12 +403,24 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const bpm = options.bpm ?? (firstAtStart ? tempoEvents[0].bpm : 120);
 
 	const bpmChanges: Record<string, number> = {};
+	const bpmIds = new Map<number, string>();
 	let idCounter = 0;
 	let effectiveBpm = bpm;
 	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
 		if (event.bpm === effectiveBpm) continue;
 		effectiveBpm = event.bpm;
-		const id = (++idCounter).toString(36).toUpperCase().padStart(2, '0');
+		// Repeated BPM values share one #BPMxx def; ids past 'ZZ' would
+		// produce a three-char cell the writer cannot serialize.
+		let id = bpmIds.get(event.bpm);
+		if (id === undefined) {
+			if (++idCounter > MAX_BPM_ID) {
+				throw new Error(
+					`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
+				);
+			}
+			id = idCounter.toString(36).toUpperCase().padStart(2, '0');
+			bpmIds.set(event.bpm, id);
+		}
 		bpmChanges[id] = event.bpm;
 		const { measure, position } = quantize(event.tick);
 		const groupKey = `08|${measure}`;

@@ -486,6 +486,25 @@ describe('dtxToMidi', () => {
 		const dtx = dtxFromText(['#BPM: 1', '#00013: 01'].join('\r\n'));
 		expect(() => dtxToMidi(dtx)).toThrow(/tempo/i);
 	});
+
+	it('rejects bar lengths whose cumulative ticks exceed the 4-byte SMF delta range', () => {
+		// m0 = 1e8 whole notes -> measure 1 starts at 1.92e11 ticks; the delta
+		// to the first m1 event needs a >4-byte VLQ the parser itself refuses.
+		const dtx = dtxFromText(['#BPM: 120', '#00002: 100000000', '#00113: 01'].join('\r\n'));
+		expect(() => dtxToMidi(dtx)).toThrow(/tick|range/i);
+	});
+
+	it(
+		'rejects non-finite ticks from overflowing bar lengths instead of hanging',
+		{ timeout: 5000 },
+		() => {
+			// m0 = 1e308 whole notes -> measure 1 starts at +Infinity; encoding
+			// its delta previously ran encodeVlq(Infinity), a loop that never
+			// advances (a bounded reproduction timed out).
+			const dtx = dtxFromText(['#BPM: 120', '#00002: 1e308', '#00113: 01'].join('\r\n'));
+			expect(() => dtxToMidi(dtx)).toThrow(/tick|range/i);
+		}
+	);
 });
 
 describe('midiToDtx', () => {
@@ -711,6 +730,33 @@ describe('midiToDtx', () => {
 		expect(overridden.notes['1C']).toBeDefined();
 		expect(overridden.notes['13']).toBeUndefined();
 	});
+
+	it('normalizes lowercase lane overrides so same-slot hits collide on one lane', () => {
+		// '1c' and '1C' both validate (laneToStaff is case-insensitive), but
+		// raw-case grouping keys made them duplicate logical lanes: zero
+		// collisions reported and both #0001c and #0001C serialized.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evNoteOn(0, 35),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 35),
+					...evNoteOff(60, 36),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi, { noteToLane: { 35: '1c', 36: '1C' } });
+		expect(result.collisions).toBe(1);
+		expect(result.notes['1c']).toBeUndefined();
+		expect(result.notes['1C'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		expect(text).toContain('#0001C:');
+		expect(text).not.toContain('#0001c:');
+	});
 });
 
 describe('round trips', () => {
@@ -932,5 +978,50 @@ describe('round trips', () => {
 		const text = out.toDtxText(result.notes, result.controls);
 		expect(text).toContain('#BPM: 140');
 		expect(text).toContain('#00202: 0.75');
+	});
+
+	it('keeps absolute hit ticks reimportable when an unrepresentable meter precedes 4/4', () => {
+		// 0.96 has no power-of-two meter, so it exports no meter event. The 4/4
+		// restoration at measure 1 used to emit one at true tick 1843 — mid-bar
+		// on the bar grid the importer rebuilds, so reimport threw.
+		const source = dtxFromText(
+			['#BPM: 120', '#00002: 0.96', '#00013: 01', '#00102: 1', '#00112: 01'].join('\r\n')
+		);
+
+		const { data, warnings } = dtxToMidi(source);
+		expect(warnings.some((w) => w.includes('0.96'))).toBe(true);
+		// Kick at tick 0; snare at round(4 * 480 * 0.96) = 1843 — true ticks kept.
+		expect(noteOnTicks(data).map((e) => e.tick)).toEqual([0, 1843]);
+		// No meter event can land on the importer's rebuilt grid, so none is sent.
+		expect(meterEventsOf(data)).toEqual([]);
+
+		const back = midiToDtx(parseMidi(data)); // must not throw mid-bar meter
+		const out = new DTXFile();
+		out.bpm = back.bpm;
+		const reparsed = dtxFromText(out.toDtxText(back.notes, back.controls));
+
+		const recovered: Record<string, { measure: number; position: number }> = {};
+		for (const group of reparsed.parseNotes()) {
+			for (const n of group.notes) {
+				if (n.noteID === '00') continue;
+				recovered[group.laneID] = { measure: group.measure, position: n.position };
+			}
+		}
+		expect(recovered['13']).toEqual({ measure: 0, position: 0 });
+		const snare = recovered['12'];
+		expect(snare).toBeDefined();
+		if (!snare) throw new Error('snare hit lost in round trip');
+
+		// Onset seconds are preserved within half a 1/192 slot (5 ticks at
+		// 480 PPQ 4/4, ~5.2ms at 120 BPM).
+		const srcTiming = buildChartTiming(buildTimingInput(source));
+		const dstTiming = buildChartTiming(buildTimingInput(reparsed));
+		const halfSlotSeconds = (5 * (60 / 120)) / 480;
+		expect(
+			Math.abs(
+				dstTiming.positionToTime(snare.measure, snare.position) -
+					srcTiming.positionToTime(1, 0)
+			)
+		).toBeLessThanOrEqual(halfSlotSeconds);
 	});
 });

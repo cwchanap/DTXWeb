@@ -135,6 +135,32 @@ describe('SimFile', () => {
 
 			expect(simFile.levels[6]?.label).toBe('MANIAC');
 		});
+
+		it('parses a UTF-16LE-with-BOM def file whose directives are lowercase', async () => {
+			// parseSetDef is case-insensitive, but the encoding validation
+			// callback required uppercase '#TITLE'/'#L1…' — a lowercase UTF-16LE
+			// file failed every encoding heuristic and fell back to UTF-8
+			// garbage, yielding an empty title and no levels.
+			const text =
+				'#title Lowercase Song\n#l1label Basic\n#l1file bas.dtx\n' +
+				'#l6label Maniac\n#l6file man.dtx\n';
+			const bytes = [0xff, 0xfe]; // UTF-16LE BOM
+			for (let i = 0; i < text.length; i++) {
+				bytes.push(text.charCodeAt(i) & 0xff, (text.charCodeAt(i) >> 8) & 0xff);
+			}
+			const defFile = new File([new Uint8Array(bytes)], 'set.def');
+			const simFile = new SimFile([
+				defFile,
+				new File(['dtx'], 'bas.dtx'),
+				new File(['dtx'], 'man.dtx')
+			]);
+
+			await simFile.parse();
+
+			expect(simFile.title).toBe('Lowercase Song');
+			expect(simFile.levels[1]?.label).toBe('Basic');
+			expect(simFile.levels[6]?.label).toBe('Maniac');
+		});
 	});
 
 	describe('parse', () => {

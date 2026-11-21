@@ -151,12 +151,14 @@ export class SimFile {
 	}
 
 	private async readFileWithEncoding(file: File): Promise<string> {
-		// SimFile (.def) validation callback
+		// SimFile (.def) validation callback. Mirrors parseSetDef's contract —
+		// case-insensitive directives on any positive level slot — so a file
+		// that decodes correctly only under a later encoding (e.g. UTF-16LE
+		// lowercase) still passes the heuristic instead of falling back to
+		// UTF-8 garbage.
 		const validateSimFileContent = (content: string): boolean => {
 			return (
-				content.includes('#TITLE') ||
-				content.includes('#L1LABEL') ||
-				content.includes('#L1FILE')
+				/#title/i.test(content) || /#l\d+label/i.test(content) || /#l\d+file/i.test(content)
 			);
 		};
 

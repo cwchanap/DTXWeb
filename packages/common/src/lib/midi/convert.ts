@@ -15,6 +15,9 @@ const NOTE_DURATION_TICKS = MIDI_PPQ / 4;
 // measures 0-999. '00' is the rest cell, leaving '01'-'ZZ' = 1295 BPM ids.
 const MAX_DTX_MEASURES = 1000;
 const MAX_BPM_ID = parseInt('ZZ', 36); // 1295
+// SMF delta-times are 1-4 byte VLQs; the shared parser reads at most four,
+// so a single gap can span at most 0x0FFFFFFF ticks.
+const MAX_DELTA_TICKS = 0x0fffffff;
 
 const encodeVlq = (value: number): number[] => {
 	const bytes = [value & 0x7f];
@@ -106,17 +109,32 @@ export const dtxToMidi = (
 	// Meter events only where the bar length changes; unrepresentable
 	// multipliers keep note timing (which uses the true multiplier) and warn.
 	let previousLength = 0;
+	// Once an unrepresentable length is skipped the importer can no longer
+	// rebuild the true bar grid, so any later change's true-grid tick lands
+	// mid-bar on the rebuilt grid and makes the file unimportable. Suppress
+	// the rest; notes keep absolute ticks either way.
+	let meterSuppressed = false;
 	for (let m = 0; m < measureCount; m++) {
 		const length = measureLengths[m] ?? 1;
 		if (length === previousLength) continue;
 		previousLength = length;
 		const meter = meterFor(length);
 		if (!meter) {
+			meterSuppressed = true;
 			const key = `meter-${length}`;
 			if (!warned.has(key)) {
 				warned.add(key);
 				warnings.push(
 					`bar length ${length} is not a representable MIDI meter; note timing kept, meter omitted`
+				);
+			}
+			continue;
+		}
+		if (meterSuppressed) {
+			if (!warned.has('meter-suppressed')) {
+				warned.add('meter-suppressed');
+				warnings.push(
+					'meter changes after an unrepresentable bar length are omitted; note timing kept'
 				);
 			}
 			continue;
@@ -182,7 +200,14 @@ export const dtxToMidi = (
 	const trackBytes: number[] = [];
 	let previousTick = 0;
 	for (const event of events) {
-		trackBytes.push(...encodeVlq(event.tick - previousTick), ...event.bytes);
+		const delta = event.tick - previousTick;
+		// Non-finite ticks (huge channel-02 multipliers accumulate into bar
+		// starts) would hang encodeVlq forever; deltas past the 4-byte VLQ
+		// range produce bytes our own parser rejects. Reject both explicitly.
+		if (!Number.isFinite(delta) || delta < 0 || delta > MAX_DELTA_TICKS) {
+			throw new Error(`event at tick ${event.tick} is outside the representable MIDI range`);
+		}
+		trackBytes.push(...encodeVlq(delta), ...event.bytes);
 		previousTick = event.tick;
 	}
 	trackBytes.push(0x00, 0xff, 0x2f, 0x00); // end of track
@@ -361,7 +386,10 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 				skippedChannels++;
 				continue;
 			}
-			const lane = laneOf[event.note];
+			// Overrides may arrive lowercase; laneToStaff accepts any case but
+			// the collision/group keys and serialized lane ids below are
+			// case-sensitive — a lowercase '1c' would duplicate lane '1C'.
+			const lane = laneOf[event.note]?.toUpperCase();
 			if (!lane || !laneToStaff(lane)) {
 				unmappedNotes++;
 				continue;

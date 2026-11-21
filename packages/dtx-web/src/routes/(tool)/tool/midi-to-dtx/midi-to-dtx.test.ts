@@ -31,8 +31,69 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 	Popover: PopoverStub
 }));
 
-import { DTXFile } from '@dtx/common';
+import { DTXFile, GM_IMPORT_LANE, PLAYABLE_DRUM_LANES, laneToStaff } from '@dtx/common';
 import MidiToDtx from './+page.svelte';
+
+if (!File.prototype.arrayBuffer) {
+	Object.defineProperty(File.prototype, 'arrayBuffer', {
+		configurable: true,
+		value: async function arrayBuffer() {
+			const text = typeof this.text === 'function' ? await this.text() : '';
+			return new TextEncoder().encode(text).buffer;
+		}
+	});
+}
+
+const vlq = (v: number): number[] => {
+	const bytes = [v & 0x7f];
+	let r = Math.floor(v / 128);
+	while (r > 0) {
+		bytes.unshift((r & 0x7f) | 0x80);
+		r = Math.floor(r / 128);
+	}
+	return bytes;
+};
+
+const mpq = (bpm: number) => Math.round(60000000 / bpm);
+
+// Minimal format-0 SMF at 480 PPQ for the converter tests.
+const drumMidiFile = (opts: {
+	tempos?: { tick: number; bpm: number }[];
+	hits?: { tick: number; note: number; channel?: number }[];
+	name?: string;
+}): File => {
+	const events: { tick: number; bytes: number[] }[] = [];
+	for (const t of opts.tempos ?? []) {
+		const m = mpq(t.bpm);
+		events.push({
+			tick: t.tick,
+			bytes: [0xff, 0x51, 0x03, (m >> 16) & 0xff, (m >> 8) & 0xff, m & 0xff]
+		});
+	}
+	for (const h of opts.hits ?? []) {
+		const ch = h.channel ?? 9;
+		events.push({ tick: h.tick, bytes: [0x90 | ch, h.note, 100] });
+		events.push({ tick: h.tick + 120, bytes: [0x80 | ch, h.note, 0] });
+	}
+	events.sort((a, b) => a.tick - b.tick);
+	const track: number[] = [];
+	let prev = 0;
+	for (const e of events) {
+		track.push(...vlq(e.tick - prev), ...e.bytes);
+		prev = e.tick;
+	}
+	track.push(0x00, 0xff, 0x2f, 0x00);
+	const bytes = new Uint8Array(22 + track.length);
+	const view = new DataView(bytes.buffer);
+	bytes.set([0x4d, 0x54, 0x68, 0x64], 0);
+	view.setUint32(4, 6, false);
+	view.setUint16(10, 1, false);
+	view.setUint16(12, 480, false);
+	bytes.set([0x4d, 0x54, 0x72, 0x6b], 14);
+	view.setUint32(18, track.length, false);
+	bytes.set(track, 22);
+	return new File([bytes], opts.name ?? 'drums.mid', { type: 'audio/midi' });
+};
 
 describe('MIDI to DTX Converter Logic', () => {
 	it('should validate MIDI file extensions', () => {
@@ -120,52 +181,18 @@ describe('MIDI to DTX Converter Logic', () => {
 		expect(hihatNote.notes[0].position).toBe(240); // At beat 2 (480 ticks / 480 * 240)
 	});
 
-	it('should provide correct drum names for MIDI notes', () => {
-		const getDrumName = (noteNumber: number): string => {
-			const drumNames: Record<number, string> = {
-				36: 'Bass Drum',
-				38: 'Snare',
-				42: 'Closed Hi-Hat',
-				46: 'Open Hi-Hat',
-				49: 'Crash Cymbal',
-				51: 'Ride Cymbal',
-				45: 'Low Tom',
-				47: 'Mid Tom',
-				50: 'High Tom',
-				44: 'Pedal Hi-Hat',
-				57: 'Crash 2',
-				59: 'Ride 2'
-			};
-			return drumNames[noteNumber] || `Note ${noteNumber}`;
-		};
-
-		expect(getDrumName(36)).toBe('Bass Drum');
-		expect(getDrumName(38)).toBe('Snare');
-		expect(getDrumName(99)).toBe('Note 99'); // Unknown note
+	it('should label GM notes by their aliased lane instrument name', () => {
+		// The row label comes from GM_IMPORT_LANE + laneToStaff, not a
+		// second hardcoded drum-name table.
+		expect(laneToStaff(GM_IMPORT_LANE[36])?.instrumentName).toBe('Bass');
+		expect(laneToStaff(GM_IMPORT_LANE[38])?.instrumentName).toBe('Snare');
+		expect(GM_IMPORT_LANE[99]).toBeUndefined(); // unmapped note
 	});
 
-	it('should provide correct DTX lane names', () => {
-		const getLaneName = (laneId: string): string => {
-			const laneNames: Record<string, string> = {
-				'01': 'Bass Drum',
-				'02': 'Snare',
-				'03': 'Closed Hi-Hat',
-				'04': 'Open Hi-Hat',
-				'05': 'Crash Cymbal',
-				'06': 'Ride Cymbal',
-				'07': 'Low Tom',
-				'08': 'Mid Tom',
-				'09': 'High Tom',
-				'0A': 'Pedal Hi-Hat',
-				'0B': 'Crash 2',
-				'0C': 'Ride 2'
-			};
-			return laneNames[laneId] || `Lane ${laneId}`;
-		};
-
-		expect(getLaneName('01')).toBe('Bass Drum');
-		expect(getLaneName('02')).toBe('Snare');
-		expect(getLaneName('ZZ')).toBe('Lane ZZ'); // Unknown lane
+	it('should provide staff names for playable DTX lanes', () => {
+		expect(laneToStaff('13')?.instrumentName).toBe('Bass');
+		expect(laneToStaff('12')?.instrumentName).toBe('Snare');
+		expect(laneToStaff('ZZ')).toBeUndefined(); // Unknown lane
 	});
 
 	it('should validate DTX metadata ranges', () => {
@@ -417,44 +444,18 @@ describe('MIDI to DTX Converter Logic', () => {
 			expect(midiToDtxMap[42]).toBe('03'); // Unchanged
 		});
 
-		it('should generate select options for lane mapping', () => {
-			const availableLanes = [
-				'01',
-				'02',
-				'03',
-				'04',
-				'05',
-				'06',
-				'07',
-				'08',
-				'09',
-				'0A',
-				'0B',
-				'0C'
-			];
-			const laneNames = {
-				'01': 'Bass Drum',
-				'02': 'Snare',
-				'03': 'Closed Hi-Hat',
-				'04': 'Open Hi-Hat',
-				'05': 'Crash Cymbal',
-				'06': 'Ride Cymbal',
-				'07': 'Low Tom',
-				'08': 'Mid Tom',
-				'09': 'High Tom',
-				'0A': 'Pedal Hi-Hat',
-				'0B': 'Crash 2',
-				'0C': 'Ride 2'
-			};
-
-			const selectOptions = availableLanes.map((lane) => ({
+		it('should generate select options from the playable drum lanes', () => {
+			const selectOptions = PLAYABLE_DRUM_LANES.map((lane) => ({
 				value: lane,
-				label: `${lane} - ${laneNames[lane as keyof typeof laneNames]}`
+				label: `${lane} - ${laneToStaff(lane)?.instrumentName}`
 			}));
 
 			expect(selectOptions).toHaveLength(12);
-			expect(selectOptions[0]).toEqual({ value: '01', label: '01 - Bass Drum' });
-			expect(selectOptions[1]).toEqual({ value: '02', label: '02 - Snare' });
+			expect(selectOptions).toContainEqual({ value: '13', label: '13 - Bass' });
+			expect(selectOptions).toContainEqual({ value: '12', label: '12 - Snare' });
+			// Control/BGM lanes are never offered as drum targets.
+			expect(selectOptions.map((o) => o.value)).not.toContain('01');
+			expect(selectOptions.map((o) => o.value)).not.toContain('08');
 		});
 	});
 
@@ -630,7 +631,7 @@ describe('MIDI to DTX Component Rendering', () => {
 	it('performs conversion and shows download section', async () => {
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		const midiFile = drumMidiFile({ name: 'song.mid', hits: [{ tick: 0, note: 36 }] });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
@@ -642,11 +643,39 @@ describe('MIDI to DTX Component Rendering', () => {
 		expect(screen.getByText('song.dtx')).toBeInTheDocument();
 	});
 
-	it('shows error toast when conversion fails', async () => {
-		const spy = vi
-			.spyOn(DTXFile.prototype, 'parseFromMidi')
-			.mockRejectedValueOnce(new Error('bad midi'));
+	it('counts playable hits, not lane groups or tempo refs', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({
+			tempos: [
+				{ tick: 0, bpm: 140 },
+				{ tick: 1920, bpm: 180 }
+			],
+			hits: [
+				{ tick: 0, note: 36 },
+				{ tick: 480, note: 38 }
+			]
+		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		// 2 drum hits on channel 9; the channel-08 tempo ref must not count.
+		expect(screen.getByText('Converted 2 note events')).toBeInTheDocument();
+	});
+
+	it('shows nonfatal warnings for unmapped notes', async () => {
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 99 }] });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(screen.getByText(/had no lane mapping/)).toBeInTheDocument();
+	});
+
+	it('shows error toast when conversion fails', async () => {
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 		const midiFile = new File(['bad'], 'invalid.mid', { type: 'audio/midi' });
@@ -659,13 +688,12 @@ describe('MIDI to DTX Component Rendering', () => {
 				expect.objectContaining({ title: 'Conversion failed' })
 			);
 		});
-		spy.mockRestore();
 	});
 
 	it('downloads DTX file and shows success toast', async () => {
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		const midiFile = drumMidiFile({ name: 'song.mid', hits: [{ tick: 0, note: 36 }] });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
@@ -695,7 +723,7 @@ describe('MIDI to DTX Component Rendering', () => {
 	it('resets to initial state when Convert Another File button is clicked', async () => {
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		const midiFile = drumMidiFile({ name: 'song.mid', hits: [{ tick: 0, note: 36 }] });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
@@ -711,7 +739,7 @@ describe('MIDI to DTX Component Rendering', () => {
 
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
+		const midiFile = drumMidiFile({ name: 'song.mid', hits: [{ tick: 0, note: 36 }] });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
@@ -732,14 +760,14 @@ describe('MIDI to DTX Component Rendering', () => {
 		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 
-		// The mapping section is rendered when uploadedFile is set
-		// Find the first select element (for MIDI note 36 → DTX lane mapping)
+		// The mapping section is rendered when uploadedFile is set, one row per
+		// GM_IMPORT_LANE entry; each select offers the playable drum lanes.
 		const selects = container.querySelectorAll('select');
-		expect(selects.length).toBeGreaterThan(0);
+		expect(selects.length).toBe(Object.keys(GM_IMPORT_LANE).length);
 
 		const firstSelect = selects[0] as HTMLSelectElement;
-		await fireEvent.change(firstSelect, { target: { value: '02' } });
-		expect(firstSelect.value).toBe('02');
+		await fireEvent.change(firstSelect, { target: { value: '12' } });
+		expect(firstSelect.value).toBe('12');
 	});
 
 	it('clicking Choose File button triggers handleUploadClick', async () => {
@@ -752,39 +780,93 @@ describe('MIDI to DTX Component Rendering', () => {
 		clickSpy.mockRestore();
 	});
 
-	it('uses state BPM when parsed DTX bpm is falsy after conversion', async () => {
-		const parseSpy = vi.spyOn(DTXFile.prototype, 'parseFromMidi').mockResolvedValueOnce({
-			format: 0,
-			trackCount: 0,
-			ticksPerQuarter: 480,
-			tracks: []
-		} as any);
-		const convertSpy = vi
-			.spyOn(DTXFile.prototype, 'convertMidiNotesToDtx')
-			.mockReturnValueOnce({} as any);
-		const exportSpy = vi
-			.spyOn(DTXFile.prototype, 'export')
-			.mockImplementationOnce(async function (this: DTXFile) {
-				expect(this.bpm).toBe(140);
-			});
+	it('populates BPM from a 120 BPM file and keeps later tempo changes', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
 
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
-		await fireEvent.change(input, {
-			target: { files: [new File(['data'], 'test.mid', { type: 'audio/midi' })] }
+		const midiFile = drumMidiFile({
+			tempos: [
+				{ tick: 0, bpm: 120 },
+				{ tick: 1920, bpm: 180 }
+			],
+			hits: [{ tick: 0, note: 36 }]
 		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		// A pre-convert user value must not survive: detected 120 is a real
+		// tempo and seeds the editable base BPM.
 		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
-		await fireEvent.input(bpmInput, { target: { value: '140' } });
+		await fireEvent.input(bpmInput, { target: { value: '200' } });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
-		await vi.waitFor(() => {
-			expect(screen.getByText('Conversion Complete!')).toBeInTheDocument();
-		});
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(bpmInput.value).toBe('120');
+
 		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
 		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
 
-		parseSpy.mockRestore();
-		convertSpy.mockRestore();
+		const instance = exportSpy.mock.instances[0] as DTXFile;
+		expect(instance.bpm).toBe(120);
+		const controls = exportSpy.mock.calls[0][1];
+		expect(Object.values(controls?.bpmChanges ?? {})).toContain(180);
+
+		exportSpy.mockRestore();
+	});
+
+	it('lets a BPM edit override the base tempo without dropping later changes', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({
+			tempos: [
+				{ tick: 0, bpm: 140 },
+				{ tick: 1920, bpm: 180 }
+			],
+			hits: [{ tick: 0, note: 36 }]
+		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		expect(bpmInput.value).toBe('140');
+		await fireEvent.input(bpmInput, { target: { value: '160' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const instance = exportSpy.mock.instances[0] as DTXFile;
+		expect(instance.bpm).toBe(160);
+		const controls = exportSpy.mock.calls[0][1];
+		expect(Object.values(controls?.bpmChanges ?? {})).toContain(180);
+
+		exportSpy.mockRestore();
+	});
+
+	it('applies the latest lane mapping at download without reparsing', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 36 }] });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		// Remap note 36 from its GM default '13' to '12' after conversion.
+		const rowLabel = screen.getByText(/\(36\):/);
+		const select = rowLabel.parentElement?.querySelector('select') as HTMLSelectElement;
+		await fireEvent.change(select, { target: { value: '12' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const notes = exportSpy.mock.calls[0][0] ?? {};
+		expect(notes['12']).toBeDefined();
+		expect(notes['13']).toBeUndefined();
+
 		exportSpy.mockRestore();
 	});
 });

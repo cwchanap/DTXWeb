@@ -4,7 +4,15 @@
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
-	import { DTXFile, LaneMeasureNote } from '@dtx/common';
+	import {
+		DTXFile,
+		parseMidi,
+		midiToDtx,
+		GM_IMPORT_LANE,
+		PLAYABLE_DRUM_LANES,
+		laneToStaff
+	} from '@dtx/common';
+	import type { ParsedMidi, MidiToDtxResult } from '@dtx/common';
 
 	const localeMap: Record<string, string> = {
 		en: 'English',
@@ -17,23 +25,11 @@
 	let isConverted = $state(false);
 	let convertedFileName = $state<string>('');
 	let dtxFile = $state<DTXFile | null>(null);
-	let convertedNotes = $state<Record<string, LaneMeasureNote[]> | null>(null);
+	let parsedMidi = $state<ParsedMidi | null>(null);
 
-	// MIDI note to DTX lane mapping (customizable)
-	let midiToDtxMap = $state<Record<number, string>>({
-		36: '01', // Bass Drum
-		38: '02', // Snare
-		42: '03', // Closed Hi-Hat
-		46: '04', // Open Hi-Hat
-		49: '05', // Crash Cymbal
-		51: '06', // Ride Cymbal
-		45: '07', // Low Tom
-		47: '08', // Mid Tom
-		50: '09', // High Tom
-		44: '0A', // Pedal Hi-Hat
-		57: '0B', // Crash 2
-		59: '0C' // Ride 2
-	});
+	// MIDI note -> DTX lane mapping (customizable), seeded from the shared
+	// GM import aliases so extra GM notes fold into the right lanes.
+	let midiToDtxMap = $state<Record<number, string>>({ ...GM_IMPORT_LANE });
 
 	// DTX metadata settings
 	let title = $state('Converted from MIDI');
@@ -70,38 +66,61 @@
 		fileInput?.click();
 	};
 
+	// Recompute the conversion from the retained ParsedMidi and the current
+	// mapping/BPM — used by the summary (so it refreshes on edits) and by
+	// the download, so the exported file never serves a stale mapping.
+	const runConversion = (): MidiToDtxResult => {
+		if (!parsedMidi) throw new Error('No MIDI file parsed');
+		return midiToDtx(parsedMidi, { noteToLane: midiToDtxMap, bpm });
+	};
+
+	const conversion = $derived.by<MidiToDtxResult | null>(() => {
+		if (!parsedMidi || !isConverted) return null;
+		try {
+			return runConversion();
+		} catch {
+			return null;
+		}
+	});
+
+	// Actual playable drum hits: sum each grouped LaneMeasureNote's notes —
+	// not the lane/measure groups, and not the channel-08 tempo refs.
+	const playableHitCount = $derived.by(() => {
+		if (!conversion) return 0;
+		let total = 0;
+		for (const [lane, groups] of Object.entries(conversion.notes)) {
+			if (!laneToStaff(lane)) continue;
+			for (const group of groups) total += group.notes.length;
+		}
+		return total;
+	});
+
 	const handleConvert = async () => {
 		if (!uploadedFile) return;
 
 		isConverting = true;
 
 		try {
-			// Parse the MIDI file
+			// Parse once; the ParsedMidi is retained for download-time
+			// reconversion with whatever mapping the user ends on.
+			parsedMidi = parseMidi(new Uint8Array(await uploadedFile.arrayBuffer()));
+
 			dtxFile = new DTXFile();
-			const midiData = await dtxFile.parseFromMidi(uploadedFile);
+			dtxFile.title = title;
+			dtxFile.artist = artist;
+			dtxFile.level = level;
+			dtxFile.comment = comment;
 
-			const parsedDtxFile = dtxFile;
-			// Override metadata with user settings
-			parsedDtxFile.title = title;
-			parsedDtxFile.artist = artist;
-			parsedDtxFile.level = level;
-			parsedDtxFile.comment = comment;
-
-			// Override BPM if detected from MIDI
-			if (parsedDtxFile.bpm && parsedDtxFile.bpm !== 120) {
-				bpm = parsedDtxFile.bpm;
-			} else {
-				parsedDtxFile.bpm = bpm;
-			}
-
-			// Convert MIDI notes to DTX format
-			convertedNotes = parsedDtxFile.convertMidiNotesToDtx(midiData);
+			// Seed the editable base BPM with the detected initial tempo —
+			// 120 is a real value, not a missing one.
+			bpm = midiToDtx(parsedMidi, { noteToLane: midiToDtxMap }).bpm;
 
 			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
 			convertedFileName = `${baseName}.dtx`;
 			isConverting = false;
 			isConverted = true;
 		} catch (error) {
+			parsedMidi = null;
 			isConverting = false;
 			toastStore.error({
 				title: 'Conversion failed',
@@ -112,18 +131,21 @@
 	};
 
 	const handleDownload = async () => {
-		if (!dtxFile || !isConverted || !convertedNotes) return;
+		if (!dtxFile || !isConverted || !parsedMidi) return;
 
 		try {
+			// Recompute from the cached parse + latest mapping/BPM edit.
+			const result = runConversion();
+
 			// Update DTX file with current metadata
 			dtxFile.title = title;
 			dtxFile.artist = artist;
 			dtxFile.level = level;
-			dtxFile.bpm = bpm;
+			dtxFile.bpm = result.bpm;
 			dtxFile.comment = comment;
 
-			// Export DTX file with converted notes
-			await dtxFile.export(convertedNotes);
+			// Export DTX file with converted notes + tempo/meter controls
+			await dtxFile.export(result.notes, result.controls);
 
 			toastStore.success({
 				title: 'Success',
@@ -145,7 +167,7 @@
 		isConverting = false;
 		convertedFileName = '';
 		dtxFile = null;
-		convertedNotes = null;
+		parsedMidi = null;
 		title = 'Converted from MIDI';
 		artist = 'Unknown';
 		level = 5;
@@ -160,46 +182,13 @@
 		goto(resolve('/tool'));
 	};
 
-	// Get drum name from MIDI note number
-	const getDrumName = (noteNumber: number): string => {
-		const drumNames: Record<number, string> = {
-			36: 'Bass Drum',
-			38: 'Snare',
-			42: 'Closed Hi-Hat',
-			46: 'Open Hi-Hat',
-			49: 'Crash Cymbal',
-			51: 'Ride Cymbal',
-			45: 'Low Tom',
-			47: 'Mid Tom',
-			50: 'High Tom',
-			44: 'Pedal Hi-Hat',
-			57: 'Crash 2',
-			59: 'Ride 2'
-		};
-		return drumNames[noteNumber] || `Note ${noteNumber}`;
-	};
+	// Row label: the GM note's aliased lane instrument name from the shared
+	// import map (e.g. 36 -> Bass), not a second hardcoded drum table.
+	const getNoteLabel = (noteNumber: number): string =>
+		laneToStaff(GM_IMPORT_LANE[noteNumber])?.instrumentName ?? `Note ${noteNumber}`;
 
-	// Get DTX lane name
-	const getLaneName = (laneId: string): string => {
-		const laneNames: Record<string, string> = {
-			'01': 'Bass Drum',
-			'02': 'Snare',
-			'03': 'Closed Hi-Hat',
-			'04': 'Open Hi-Hat',
-			'05': 'Crash Cymbal',
-			'06': 'Ride Cymbal',
-			'07': 'Low Tom',
-			'08': 'Mid Tom',
-			'09': 'High Tom',
-			'0A': 'Pedal Hi-Hat',
-			'0B': 'Crash 2',
-			'0C': 'Ride 2'
-		};
-		return laneNames[laneId] || `Lane ${laneId}`;
-	};
-
-	// Available DTX lanes for mapping
-	const availableLanes = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '0A', '0B', '0C'];
+	const getLaneName = (laneId: string): string =>
+		laneToStaff(laneId)?.instrumentName ?? `Lane ${laneId}`;
 </script>
 
 <div class="min-h-screen" style="background: var(--music-bg-primary);">
@@ -445,7 +434,7 @@
 							{#each Object.entries(midiToDtxMap) as [midiNote] (midiNote)}
 								<div class="flex items-center space-x-3">
 									<span class="min-w-[120px] text-sm font-medium text-slate-300">
-										{getDrumName(Number(midiNote))} ({midiNote}):
+										{getNoteLabel(Number(midiNote))} ({midiNote}):
 									</span>
 									<select
 										value={midiToDtxMap[Number(midiNote)]}
@@ -456,13 +445,10 @@
 										}}
 										class="rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 									>
-										{#each availableLanes as lane (lane)}
-											<option
-												value={lane}
-												class="bg-slate-900 text-slate-200"
+										{#each PLAYABLE_DRUM_LANES as lane (lane)}
+											<option value={lane} class="bg-slate-900 text-slate-200"
+												>{lane} - {getLaneName(lane)}</option
 											>
-												{lane} - {getLaneName(lane)}
-											</option>
 										{/each}
 									</select>
 								</div>
@@ -523,13 +509,27 @@
 								</h3>
 								<p class="text-green-200">Your DTX file is ready for download</p>
 								<p class="text-sm text-green-300">{convertedFileName}</p>
-								{#if convertedNotes}
+								{#if conversion}
 									<p class="text-xs text-green-400">
-										Converted {Object.values(convertedNotes).reduce(
-											(total, measure) => total + measure.length,
-											0
-										)} note events
+										Converted {playableHitCount} note events
 									</p>
+									{#if conversion.collisions > 0}
+										<p class="text-xs text-amber-300">
+											{conversion.collisions} hit(s) dropped by 1/192-slot collisions
+										</p>
+									{/if}
+									{#if conversion.unmappedNotes > 0}
+										<p class="text-xs text-amber-300">
+											{conversion.unmappedNotes} note(s) had no lane mapping
+										</p>
+									{/if}
+									{#if conversion.warnings.length > 0}
+										<ul class="list-disc pl-5 text-left text-xs text-amber-200">
+											{#each conversion.warnings as warning (warning)}
+												<li>{warning}</li>
+											{/each}
+										</ul>
+									{/if}
 								{/if}
 							</div>
 							<div class="flex justify-center gap-3">

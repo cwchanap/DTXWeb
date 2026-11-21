@@ -163,8 +163,29 @@ export {
 	laneToStaff,
 	staffKey,
 	PLAYABLE_DRUM_LANES,
+	GM_IMPORT_LANE,
 	type DrumStaff
 } from '../../packages/common/src/lib/notation/drumMapping';
+export { groupNotesByLane } from '../../packages/common/src/lib/notation/quantize';
+// Same reason for the shared SMF parser and DTX<->MIDI converters — tool
+// pages must exercise the real implementations in tests.
+export {
+	parseMidi,
+	type MidiEvent,
+	type MidiNote,
+	type MidiTrack,
+	type MidiTempoEvent,
+	type MidiMeterEvent,
+	type ParsedMidi
+} from '../../packages/common/src/lib/midi/parser';
+export {
+	dtxToMidi,
+	midiToDtx,
+	MIDI_PPQ,
+	type DtxToMidiResult,
+	type MidiToDtxOptions,
+	type MidiToDtxResult
+} from '../../packages/common/src/lib/midi/convert';
 export { DURATION_TABLE } from '../../packages/common/src/lib/notation/model';
 // Re-export the real pure decoder so server routes importing it from the main
 // barrel keep exercising actual BOM detection in tests.

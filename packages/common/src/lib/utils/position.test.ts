@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { normalizePosition } from './position';
+import {
+	normalizePosition,
+	canonicalizeCellOffset,
+	snapCellOffsetToBarline,
+	parseNoteKey
+} from './position';
 
 describe('normalizePosition', () => {
 	it('returns 0 for offset 0', () => {
@@ -87,5 +92,77 @@ describe('normalizePosition', () => {
 		expect(normalizePosition(0.4, 1)).toBe(0);
 		expect(normalizePosition(0.6, 1)).toBe(1);
 		expect(normalizePosition(0.5, 1)).toBe(1); // 0.5 rounds up
+	});
+});
+
+describe('canonicalizeCellOffset', () => {
+	it('collapses last-ulp float noise to the exact grid fraction', () => {
+		expect(canonicalizeCellOffset(0.666666666666667)).toBe(2 / 3);
+		expect(canonicalizeCellOffset(0.6666666666666666)).toBe(2 / 3);
+	});
+
+	it('preserves positions that sit on rounding boundaries', () => {
+		// toPrecision(15) alone truncates 383/384 below the x.5 rounding
+		// edge at tick 191.5 — the grid snap restores the exact fraction.
+		expect(canonicalizeCellOffset(383 / 384)).toBe(383 / 384);
+		expect(canonicalizeCellOffset(383 / 384) * 192).toBe(191.5);
+	});
+
+	it('keeps exact grid positions unchanged', () => {
+		expect(canonicalizeCellOffset(0.25)).toBe(0.25);
+		expect(canonicalizeCellOffset(0)).toBe(0);
+		expect(canonicalizeCellOffset(1)).toBe(1);
+		expect(canonicalizeCellOffset(95 / 384)).toBe(95 / 384);
+	});
+
+	it('leaves non-grid positions as their 15-digit canonical form', () => {
+		expect(canonicalizeCellOffset(0.123456789012345)).toBe(0.123456789012345);
+	});
+});
+
+describe('snapCellOffsetToBarline', () => {
+	it('snaps float residue to the exact integer boundary', () => {
+		expect(snapCellOffsetToBarline(6.9e-18)).toBe(0);
+		expect(snapCellOffsetToBarline(0.9999999999)).toBe(1);
+		expect(snapCellOffsetToBarline(1.0000000001)).toBe(1);
+	});
+
+	it('leaves genuinely off-grid offsets alone', () => {
+		expect(snapCellOffsetToBarline(0.25)).toBe(0.25);
+		expect(snapCellOffsetToBarline(95 / 384)).toBe(95 / 384);
+	});
+});
+
+describe('parseNoteKey', () => {
+	it('parses a standard key', () => {
+		expect(parseNoteKey('note-2-0-0.25')).toEqual({
+			laneIndex: 2,
+			measure: 0,
+			cellOffset: 0.25
+		});
+	});
+
+	it('parses exponent-notation offsets that contain a dash', () => {
+		expect(parseNoteKey('note-2-0-6.9e-18')).toEqual({
+			laneIndex: 2,
+			measure: 0,
+			cellOffset: 6.9e-18
+		});
+	});
+
+	it('parses negative offsets', () => {
+		expect(parseNoteKey('note-3-1--0.5')).toEqual({
+			laneIndex: 3,
+			measure: 1,
+			cellOffset: -0.5
+		});
+	});
+
+	it('returns null for malformed keys', () => {
+		expect(parseNoteKey('')).toBeNull();
+		expect(parseNoteKey('text-2-0-0.25')).toBeNull();
+		expect(parseNoteKey('note-2-0')).toBeNull();
+		expect(parseNoteKey('note-x-0-0.25')).toBeNull();
+		expect(parseNoteKey('note-2-0-abc')).toBeNull();
 	});
 });

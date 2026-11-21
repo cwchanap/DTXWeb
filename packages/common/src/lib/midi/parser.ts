@@ -53,6 +53,8 @@ export interface MidiMeterEvent {
 	numerator: number;
 	/** Real denominator (2^encoded): a 3/4 bar reports 4, not the byte 2. */
 	denominator: number;
+	/** 32nd notes per MIDI quarter note (SMF byte 3; defaults to 8). */
+	notated32ndsPerQuarter: number;
 }
 
 export interface ParsedMidi {
@@ -226,7 +228,8 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 				meterEvents.push({
 					tick: currentTime,
 					numerator: payload[0],
-					denominator: 2 ** payload[1]
+					denominator: 2 ** payload[1],
+					notated32ndsPerQuarter: payload[3]
 				});
 			} else if (subtype === 0x2f) {
 				// End of track must be a zero-length, genuinely terminal meta

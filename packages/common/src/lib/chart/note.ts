@@ -1,4 +1,4 @@
-import { normalizePosition } from '../utils/position';
+import { canonicalizeCellOffset, normalizePosition } from '../utils/position';
 
 export class LaneMeasureNote {
 	public measure: number;
@@ -50,9 +50,11 @@ export class LaneMeasureNote {
 					position,
 					cellsPerMeasure
 				);
+				// Editor note keys embed this value textually; a canonical
+				// form keeps one key per logical position.
 				return {
 					noteID: pattern,
-					position: normalizedPosition
+					position: canonicalizeCellOffset(normalizedPosition)
 				};
 			})
 			.filter((note) => note.noteID !== '00');
@@ -160,13 +162,23 @@ export class LaneMeasureNote {
 		// Create pattern array filled with '00'
 		const pattern = new Array(resolution).fill('00');
 
-		// Place notes in the pattern
+		// Place notes in the pattern. A position a hair under the bar end
+		// rounds to index `resolution` and would otherwise vanish silently,
+		// same as the shared-cell case above — count and report the drops.
+		let dropped = 0;
 		for (const note of this.notes) {
 			const pos = note.position / this.measureLength;
 			const index = Math.round(pos * resolution);
 			if (index >= 0 && index < resolution) {
 				pattern[index] = note.noteID;
+			} else {
+				dropped++;
 			}
+		}
+		if (dropped > 0) {
+			(onWarning ?? console.warn)(
+				`toPattern: ${dropped} note(s) rounded outside the ${resolution}-cell grid and were dropped`
+			);
 		}
 
 		return pattern.join('');

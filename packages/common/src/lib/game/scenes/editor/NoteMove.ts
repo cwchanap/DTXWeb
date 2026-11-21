@@ -1,6 +1,11 @@
 import { LaneMeasureNote } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
+import {
+	canonicalizeCellOffset,
+	parseNoteKey,
+	snapCellOffsetToBarline
+} from '../../../utils/position';
 import Phaser from 'phaser';
 
 /**
@@ -154,12 +159,14 @@ export class NoteMove {
 		deleteNoteByKey: (noteKey: string) => void
 	): void {
 		// Parse the origin note (the one user clicked to drag)
-		const originParts = this.dragOriginNote.split('-');
-		if (originParts.length !== 4) return;
+		const originParsed = parseNoteKey(this.dragOriginNote);
+		if (!originParsed) return;
 
-		const originLaneIndex = parseInt(originParts[1]);
-		const originMeasure = parseInt(originParts[2]);
-		const originCellOffset = parseFloat(originParts[3]);
+		const {
+			laneIndex: originLaneIndex,
+			measure: originMeasure,
+			cellOffset: originCellOffset
+		} = originParsed;
 
 		// Calculate the movement delta from origin note to target position
 		const laneOffsetDelta = targetLaneIndex - originLaneIndex;
@@ -218,11 +225,13 @@ export class NoteMove {
 	private collectOriginalNoteIds(): Map<string, string> {
 		const originalNoteIds = new Map<string, string>();
 		this.draggedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const oldLaneIndex = parseInt(parts[1]);
-				const oldMeasure = parseInt(parts[2]);
-				const oldCellOffset = parseFloat(parts[3]);
+			const parsed = parseNoteKey(noteKey);
+			if (parsed) {
+				const {
+					laneIndex: oldLaneIndex,
+					measure: oldMeasure,
+					cellOffset: oldCellOffset
+				} = parsed;
 				const oldLaneId = this.editor.getLaneConfigs()[oldLaneIndex].id;
 
 				// Find the original noteID from the data structure
@@ -266,16 +275,24 @@ export class NoteMove {
 		}>
 	): void {
 		this.draggedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const currentLaneIndex = parseInt(parts[1]);
-				const currentMeasure = parseInt(parts[2]);
-				const currentCellOffset = parseFloat(parts[3]);
+			const parsed = parseNoteKey(noteKey);
+			if (parsed) {
+				const {
+					laneIndex: currentLaneIndex,
+					measure: currentMeasure,
+					cellOffset: currentCellOffset
+				} = parsed;
 
 				// Apply the same delta to each note to maintain relative positions
 				const newLaneIndex = currentLaneIndex + laneOffsetDelta;
 				let newMeasure = currentMeasure + measureOffsetDelta;
-				let newCellOffset = currentCellOffset + cellOffsetDelta;
+				// Canonicalize + snap float residue before it becomes a note
+				// key; raw sums can sit 1-ulp off the intended position (or
+				// land just off a barline in e-notation), evading the
+				// occupancy check below and breaking split('-') consumers.
+				let newCellOffset = snapCellOffsetToBarline(
+					canonicalizeCellOffset(currentCellOffset + cellOffsetDelta)
+				);
 
 				// Handle measure boundary crossing for cellOffset
 				// If cellOffset >= 1.0, move to next measure(s)
@@ -341,11 +358,13 @@ export class NoteMove {
 		notesToMove.forEach(
 			({ oldKey, newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
 				// Parse original position from old key
-				const oldParts = oldKey.split('-');
-				if (oldParts.length === 4) {
-					const originalLaneIndex = parseInt(oldParts[1]);
-					const originalMeasure = parseInt(oldParts[2]);
-					const originalCellOffset = parseFloat(oldParts[3]);
+				const oldParsed = parseNoteKey(oldKey);
+				if (oldParsed) {
+					const {
+						laneIndex: originalLaneIndex,
+						measure: originalMeasure,
+						cellOffset: originalCellOffset
+					} = oldParsed;
 					const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
 
 					// No need to capture original pattern data since we work with notes arrays directly
@@ -478,6 +497,9 @@ export class NoteMove {
 		noteId: string,
 		forceMeasureLength?: number
 	): boolean {
+		// One canonical stored form so the data position and the note key it
+		// produces always agree (drawNote embeds this value in the key).
+		cellOffset = canonicalizeCellOffset(cellOffset);
 		// Add to display
 		const noteAdded = this.editor.drawNote(measure, laneIndex, cellOffset, noteId);
 		if (noteAdded) {
@@ -550,11 +572,13 @@ export class NoteMove {
 				this.editor.getCellsPerMeasure();
 
 			// Calculate movement delta from origin note
-			const originParts = this.dragOriginNote.split('-');
-			if (originParts.length === 4) {
-				const originLaneIndex = parseInt(originParts[1]);
-				const originMeasure = parseInt(originParts[2]);
-				const originCellOffset = parseFloat(originParts[3]);
+			const originParsed = parseNoteKey(this.dragOriginNote);
+			if (originParsed) {
+				const {
+					laneIndex: originLaneIndex,
+					measure: originMeasure,
+					cellOffset: originCellOffset
+				} = originParsed;
 
 				const laneOffsetDelta = targetLaneIndex - originLaneIndex;
 				const measureOffsetDelta = targetMeasure - originMeasure;
@@ -562,11 +586,13 @@ export class NoteMove {
 
 				// Draw preview for each selected note at their new relative positions
 				this.draggedNotes.forEach((noteKey) => {
-					const parts = noteKey.split('-');
-					if (parts.length === 4) {
-						const currentLaneIndex = parseInt(parts[1]);
-						const currentMeasure = parseInt(parts[2]);
-						const currentCellOffset = parseFloat(parts[3]);
+					const parsed = parseNoteKey(noteKey);
+					if (parsed) {
+						const {
+							laneIndex: currentLaneIndex,
+							measure: currentMeasure,
+							cellOffset: currentCellOffset
+						} = parsed;
 
 						// Calculate new position for this note
 						const newLaneIndex = currentLaneIndex + laneOffsetDelta;

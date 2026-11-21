@@ -68,16 +68,12 @@ const evTempo = (delta: number, bpm: number): number[] => {
 	const mpq = Math.round(60000000 / bpm);
 	return [...vlq(delta), 0xff, 0x51, 0x03, (mpq >> 16) & 0xff, (mpq >> 8) & 0xff, mpq & 0xff];
 };
-const evMeter = (delta: number, numerator: number, denominatorPower: number): number[] => [
-	...vlq(delta),
-	0xff,
-	0x58,
-	0x04,
-	numerator,
-	denominatorPower,
-	24,
-	8
-];
+const evMeter = (
+	delta: number,
+	numerator: number,
+	denominatorPower: number,
+	notated32nds = 8
+): number[] => [...vlq(delta), 0xff, 0x58, 0x04, numerator, denominatorPower, 24, notated32nds];
 const evTrackName = (name: string): number[] => {
 	const bytes = Array.from(new TextEncoder().encode(name));
 	return [...vlq(0), 0xff, 0x03, ...vlq(bytes.length), ...bytes];
@@ -131,7 +127,9 @@ describe('parseMidi', () => {
 		expect(midi.totalNotes).toBe(2);
 		expect(midi.tempo).toBe(120);
 		expect(midi.tempoEvents).toEqual([{ tick: 0, microsecondsPerQuarter: 500000 }]);
-		expect(midi.meterEvents).toEqual([{ tick: 0, numerator: 4, denominator: 4 }]);
+		expect(midi.meterEvents).toEqual([
+			{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 }
+		]);
 		expect(midi.duration).toBeGreaterThan(0);
 
 		const track = midi.tracks[0];
@@ -421,8 +419,8 @@ describe('dtxToMidi', () => {
 		]);
 
 		expect(meterEventsOf(data)).toEqual([
-			{ tick: 0, numerator: 4, denominator: 4 },
-			{ tick: 3840, numerator: 3, denominator: 4 }
+			{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 },
+			{ tick: 3840, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 
 		// Absolute times never decrease, so every encoded delta was nonnegative.
@@ -585,6 +583,72 @@ describe('midiToDtx', () => {
 		const result = midiToDtx(midi);
 		expect(result.notes['12'][0].notes).toEqual([{ noteID: '01', position: 0.5 }]);
 		expect(result.controls.measureLengths?.size ?? 0).toBe(0);
+	});
+
+	it('scales bar length by the notated-32nds byte and accepts boundary changes', () => {
+		// SMF time-signature byte 4 is notated 32nds per MIDI quarter (8 by
+		// default). 6/8 with 12 per quarter spans (6/8)*(8/12) = 1/2 of 4/4:
+		// a 960-tick bar at 480 PPQ, not 1440. The 4/4 change at tick 960 is
+		// a valid boundary transition that must not be rejected as mid-bar.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evMeter(0, 6, 3, 12),
+					...evNoteOn(0, 36), // tick 0 -> bar 0 pos 0
+					...evNoteOff(60, 36),
+					...evNoteOn(420, 38), // tick 480 -> bar 0 pos 480/960 = 0.5
+					...evNoteOff(60, 38),
+					...evMeter(420, 4, 2), // tick 960 = bar 1 boundary
+					...evNoteOn(480, 42), // tick 1440 -> bar 1 pos 480/1920 = 0.25
+					...evNoteOff(60, 42),
+					...evEndOfTrack
+				]
+			])
+		);
+
+		expect(midi.meterEvents[0]).toEqual({
+			tick: 0,
+			numerator: 6,
+			denominator: 8,
+			notated32ndsPerQuarter: 12
+		});
+
+		const result = midiToDtx(midi);
+		expect(result.controls.measureLengths?.get(0)).toBe(0.5);
+		expect(result.controls.measureLengths?.get(1)).toBe(1);
+		expect(result.notes['13'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+		expect(result.notes['12'][0].notes).toEqual([{ noteID: '01', position: 0.5 }]);
+		expect(result.notes['11'][0].measure).toBe(1);
+		expect(result.notes['11'][0].notes).toEqual([{ noteID: '01', position: 0.25 }]);
+	});
+
+	it('treats equal-length signatures as real changes: off-boundary 6/8 -> 3/4 throws', () => {
+		// 6/8 and 3/4 share a 0.75 bar length but are different meters; a
+		// signature-keyed repeat filter keeps the 3/4 event reachable by the
+		// mid-bar check instead of silently absorbing it as a duplicate.
+		const midi = parseMidi(
+			buildMidi(480, [[...evMeter(0, 6, 3), ...evMeter(1920, 3, 2), ...evEndOfTrack]])
+		);
+		expect(() => midiToDtx(midi)).toThrow(/meter/i);
+	});
+
+	it('accepts an equal-length 6/8 -> 3/4 change on a bar boundary', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evMeter(0, 6, 3),
+					...evMeter(2880, 3, 2), // bar 2 boundary (bars are 1440 ticks)
+					...evNoteOn(720, 38), // tick 3600 -> bar 2 pos 0.5
+					...evNoteOff(60, 38),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.controls.measureLengths?.get(0)).toBe(0.75);
+		expect(result.controls.measureLengths?.size ?? 0).toBe(1);
+		expect(result.notes['12'][0].measure).toBe(2);
+		expect(result.notes['12'][0].notes).toEqual([{ noteID: '01', position: 0.5 }]);
 	});
 
 	it('counts same-lane same-slot collisions without aborting', () => {
@@ -1007,8 +1071,8 @@ describe('round trips', () => {
 			487, 500
 		]);
 		expect(midi.meterEvents).toEqual([
-			{ tick: 0, numerator: 4, denominator: 4 },
-			{ tick: 7680, numerator: 3, denominator: 4 }
+			{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 },
+			{ tick: 7680, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 
 		const result = midiToDtx(midi);

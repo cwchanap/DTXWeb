@@ -193,8 +193,8 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		// 4 * 896 * 7/128 = 196 ticks for the short bar, then 4/4 bars of
 		// 4 * 896 = 3584 ticks each.
 		expect(parsed.meterEvents).toEqual([
-			{ tick: 0, numerator: 7, denominator: 128 },
-			{ tick: 196, numerator: 4, denominator: 4 }
+			{ tick: 0, numerator: 7, denominator: 128, notated32ndsPerQuarter: 8 },
+			{ tick: 196, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([0, 196, 3780, 7364]);
 		expect(parsed.tracks[0].notes.every((n) => n.duration === 224)).toBe(true);
@@ -223,8 +223,8 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 			{ tick: 1920, microsecondsPerQuarter: Math.round(60000000 / 240) }
 		]);
 		expect(parsed.meterEvents).toEqual([
-			{ tick: 0, numerator: 4, denominator: 4 },
-			{ tick: 1920, numerator: 3, denominator: 4 }
+			{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 },
+			{ tick: 1920, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 		expect(parsed.tracks[0].notes.map((n) => [n.startTime, n.note])).toEqual([
 			[0, 36],
@@ -398,8 +398,8 @@ describe('DTX to MIDI to DTX round trip', () => {
 
 		// m2 starts at 3840 (two 4/4 bars) and lasts 1440 ticks.
 		expect(parsed.meterEvents).toEqual([
-			{ tick: 0, numerator: 4, denominator: 4 },
-			{ tick: 3840, numerator: 3, denominator: 4 }
+			{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 },
+			{ tick: 3840, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 		expect(parsed.tempoEvents).toEqual([
 			{ tick: 0, microsecondsPerQuarter: Math.round(60000000 / 150) },

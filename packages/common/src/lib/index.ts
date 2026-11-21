@@ -10,7 +10,12 @@ export {
 export { parseSetDef, type ParsedSetDef, type SetDefLevel } from './chart/setDef';
 
 // Export utilities
-export { normalizePosition } from './utils/position';
+export {
+	normalizePosition,
+	canonicalizeCellOffset,
+	snapCellOffsetToBarline,
+	parseNoteKey
+} from './utils/position';
 export { formatLevel, normalizeLevel } from './utils/level';
 export { normalizeAudioReference } from './audio/reference';
 

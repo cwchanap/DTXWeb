@@ -285,29 +285,35 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// Meter changes sorted by tick; a change applies from its bar onward. A
 	// zero/invalid multiplier would make a zero-length bar (bars could never
 	// advance) — the file is not convertible.
-	const merged: { tick: number; length: number }[] = [];
+	const merged: { tick: number; length: number; signature: string }[] = [];
 	for (const event of midi.meterEvents) {
-		const length = event.numerator / event.denominator;
+		// SMF's fourth time-signature byte is the notated 32nds per MIDI
+		// quarter (8 by default); a nondefault ratio rescales the real bar
+		// length, so it belongs in the meter math.
+		const length = (event.numerator / event.denominator) * (8 / event.notated32ndsPerQuarter);
 		if (!Number.isFinite(length) || length <= 0) {
 			throw new Error(
 				`Unsupported MIDI meter ${event.numerator}/${event.denominator} at tick ${event.tick}`
 			);
 		}
+		const signature = `${event.numerator}/${event.denominator}/${event.notated32ndsPerQuarter}`;
 		const last = merged[merged.length - 1];
 		if (last && last.tick === event.tick) {
 			last.length = length; // same tick: last wins
+			last.signature = signature;
 		} else {
-			merged.push({ tick: event.tick, length });
+			merged.push({ tick: event.tick, length, signature });
 		}
 	}
-	// An event equal to the effective meter changes nothing; keeping it would
-	// wrongly reject a repeated signature as a mid-bar change.
+	// An event repeating the effective signature changes nothing; filtering
+	// by signature (not bar length) keeps equal-length changes like 6/8 ->
+	// 3/4 reachable by the mid-bar boundary check instead of hiding them.
 	const meterChanges: { tick: number; length: number }[] = [];
-	let effectiveLength = 1;
+	let effectiveSignature = '4/4/8';
 	for (const change of merged) {
-		if (change.length === effectiveLength) continue;
-		meterChanges.push(change);
-		effectiveLength = change.length;
+		if (change.signature === effectiveSignature) continue;
+		meterChanges.push({ tick: change.tick, length: change.length });
+		effectiveSignature = change.signature;
 	}
 	let meterIndex = 0;
 	let currentLength = 1;

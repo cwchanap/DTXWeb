@@ -24,8 +24,8 @@ export class LaneMeasureNote {
 	/**
 	 * Normalize a position to prevent floating point precision issues
 	 */
-	private static normalizePosition(position: number): number {
-		return normalizePosition(position, 192); // Use high precision for subdivisions
+	private static normalizePosition(position: number, cellsPerMeasure: number): number {
+		return normalizePosition(position, cellsPerMeasure);
 	}
 
 	/**
@@ -38,11 +38,18 @@ export class LaneMeasureNote {
 		const patterns = pattern.match(/.{1,2}/g);
 		if (!patterns) return [];
 		const patternCount = patterns.length;
+		// Snap to the pattern's own cell spacing, not a fixed 192-slot grid:
+		// snapping to 192 merges cells a widened toPattern() wrote to keep
+		// off-grid notes distinct (e.g. cells 1 and 2 of a 384-cell pattern).
+		const cellsPerMeasure = measureLength > 0 ? patternCount / measureLength : patternCount;
 
 		return patterns
 			.map((pattern, index) => {
 				const position = (index * measureLength) / patternCount;
-				const normalizedPosition = LaneMeasureNote.normalizePosition(position);
+				const normalizedPosition = LaneMeasureNote.normalizePosition(
+					position,
+					cellsPerMeasure
+				);
 				return {
 					noteID: pattern,
 					position: normalizedPosition
@@ -136,6 +143,11 @@ export class LaneMeasureNote {
 			};
 			while (resolution < 768 && distinctCells(resolution) < this.notes.length) {
 				resolution *= 2;
+			}
+			if (distinctCells(resolution) < this.notes.length) {
+				console.warn(
+					`toPattern: ${this.notes.length - distinctCells(resolution)} note(s) share a cell at ${resolution}-cell resolution and overwrite earlier hits`
+				);
 			}
 		}
 

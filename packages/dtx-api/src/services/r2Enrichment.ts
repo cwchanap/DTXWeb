@@ -1,4 +1,5 @@
 import { decodeArrayBufferWithBomDetection, parseSetDef } from '@dtx/common/encoding';
+import { normalizeLevel } from '@dtx/common/utils/level';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
@@ -260,9 +261,14 @@ export const discoverCatalogFiles = async (
 	// them in ascending row level. Rows arrive in id (insertion) order,
 	// which is the uploader's filename order, not slot order; level is the
 	// closest difficulty signal a row carries. Index order breaks ties.
+	// Rows store the raw #DLEVEL value, whose encoding differs above and
+	// below 100 — normalize before comparing or 450 (4.50) outranks 60 (6.00).
 	const claimOrder = dtxFiles
 		.map((file, index) => ({ file, index }))
-		.sort((a, b) => a.file.level - b.file.level || a.index - b.index);
+		.sort(
+			(a, b) =>
+				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
+		);
 	for (const { file, index } of claimOrder) {
 		const setDefFile = filesByLabel.get(file.label.toLowerCase())?.shift();
 		if (setDefFile) {

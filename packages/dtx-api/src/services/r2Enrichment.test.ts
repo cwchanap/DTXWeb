@@ -1788,5 +1788,51 @@ describe('discoverCatalogFiles', () => {
 			]);
 			expect(discovery.chartsPopulated).toBe(true);
 		});
+
+		it('compares duplicate-label rows on normalized level across raw encodings', async () => {
+			// Raw #DLEVEL values mix two scales: 450 decodes to 4.50 while 60
+			// decodes to 6.00, so the 450 row is the easier chart and must
+			// claim the earlier L2 slot even though 60 < 450 numerically.
+			const bucket = {
+				...makeBucket([
+					[
+						{ key: '1004/set.def', size: 90, uploaded: new Date() },
+						{ key: '1004/extra.dtx', size: 500, uploaded: new Date() },
+						{ key: '1004/maniac.dtx', size: 700, uploaded: new Date() }
+					]
+				]),
+				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(fixtureText) }))
+			} as unknown as R2Bucket;
+
+			const discovery = await discoverCatalogFiles(
+				bucket,
+				{
+					simfileId: 1004,
+					dtxFiles: [
+						{ label: 'Basic Multi', level: 450 },
+						{ label: 'Basic Multi', level: 60 }
+					],
+					publicBaseUrl: 'https://cdn.example.test'
+				},
+				silentLogger
+			);
+
+			expect(discovery.charts).toEqual([
+				{
+					label: 'Basic Multi',
+					level: 450,
+					fileUrl: 'https://cdn.example.test/1004/extra.dtx',
+					fileSizeBytes: 500,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'Basic Multi',
+					level: 60,
+					fileUrl: 'https://cdn.example.test/1004/maniac.dtx',
+					fileSizeBytes: 700,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]);
+		});
 	});
 });

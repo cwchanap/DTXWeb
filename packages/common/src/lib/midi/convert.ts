@@ -75,14 +75,22 @@ export const dtxToMidi = (
 	const { measureLengths, measureCount } = timing;
 
 	// The shortest bar decides the division: 4 * ppq * length must reach 192
-	// ticks. SMF division is 15 bits, so an absurdly short bar still merges —
-	// capped at 0x7fff and reported below.
+	// ticks. PPQ is forced to a multiple of 32 so every supported meter
+	// (power-of-two denominators through 2^7) still spans whole ticks — a
+	// fractional bar boundary reimports as a mid-bar meter change. SMF
+	// division is 15 bits, so an absurdly short bar still merges — capped
+	// at 0x7fe0, the largest multiple of 32 under the limit, and reported.
 	let minBarLength = Infinity;
 	for (let m = 0; m < measureCount; m++) {
 		minBarLength = Math.min(minBarLength, measureLengths[m] ?? 1);
 	}
-	const ppq = Math.min(0x7fff, Math.max(MIDI_PPQ, Math.ceil(48 / Math.max(minBarLength, 1e-9))));
-	const noteDurationTicks = ppq / 4;
+	const ppq = Math.min(
+		0x7fe0,
+		Math.max(MIDI_PPQ, Math.ceil(48 / Math.max(minBarLength, 1e-9) / 32) * 32)
+	);
+	// Integer ticks only — encodeVlq truncates deltas, so a fractional release
+	// length would shave a sub-tick off every note-off after it.
+	const noteDurationTicks = Math.round(ppq / 4);
 
 	// Cumulative bar starts in MIDI ticks.
 	const measureStart: number[] = new Array(measureCount);
@@ -483,8 +491,10 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		const snappedTick =
 			barStarts[measure] +
 			position * ((barStarts[measure + 1] ?? barStarts[measure]) - barStarts[measure]);
+		// event.tick is integral; sub-hundredth-tick drift is reconstruction
+		// float dust (position * barTicks), not a real snap.
 		const drift = Math.abs(snappedTick - event.tick);
-		if (drift > 0) {
+		if (drift > 0.01) {
 			tempoSnapped++;
 			maxTempoDrift = Math.max(maxTempoDrift, drift);
 		}

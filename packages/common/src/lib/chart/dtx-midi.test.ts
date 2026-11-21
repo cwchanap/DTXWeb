@@ -167,6 +167,41 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		expect(roundTrip.notes['12'][0].notes.map((n) => n.position)).toEqual([1 / 192, 2 / 192]);
 	});
 
+	it('rounds the division to a multiple of 32 so meter changes land on integer bar ticks', () => {
+		// 7/128 bars need ceil(48/(7/128)) = 878 PPQ for the slot grid, but a
+		// 7/128 bar then spans 192.0625 ticks: the next meter change would
+		// round onto tick 192 and reimport as a mid-bar change. Rounding up
+		// to 896 (a multiple of 32) gives every supported meter whole ticks.
+		const dtx = dtxFromText(
+			[
+				'#BPM: 120',
+				'#00002: 0.0546875',
+				'#00102: 1',
+				'#00202: 1',
+				'#00302: 1',
+				'#00012: 01',
+				'#00112: 01',
+				'#00212: 01',
+				'#00312: 01'
+			].join('\r\n')
+		);
+
+		const { data } = dtxToMidi(dtx);
+		const parsed = parseMidi(data);
+
+		expect(parsed.ticksPerQuarter).toBe(896);
+		// 4 * 896 * 7/128 = 196 ticks for the short bar, then 4/4 bars.
+		expect(parsed.meterEvents).toEqual([
+			{ tick: 0, numerator: 7, denominator: 128 },
+			{ tick: 196, numerator: 4, denominator: 4 }
+		]);
+		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([0, 196, 392, 588]);
+		expect(parsed.tracks[0].notes.every((n) => n.duration === 224)).toBe(true);
+
+		// The exported file reimports without a mid-bar meter rejection.
+		expect(() => midiToDtx(parsed)).not.toThrow();
+	});
+
 	it('serializes #BPMxx tempo changes and decimal bar lengths as SMF events', () => {
 		const dtx = dtxFromText(
 			[

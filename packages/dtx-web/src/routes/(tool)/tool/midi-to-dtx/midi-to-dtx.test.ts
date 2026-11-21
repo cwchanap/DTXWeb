@@ -31,7 +31,14 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 	Popover: PopoverStub
 }));
 
-import { DTXFile, GM_IMPORT_LANE, PLAYABLE_DRUM_LANES, laneToStaff } from '@dtx/common';
+import {
+	DTXFile,
+	GM_IMPORT_LANE,
+	PLAYABLE_DRUM_LANES,
+	laneToStaff,
+	parseMidi,
+	midiToDtx
+} from '@dtx/common';
 import MidiToDtx from './+page.svelte';
 
 if (!File.prototype.arrayBuffer) {
@@ -128,57 +135,32 @@ describe('MIDI to DTX Converter Logic', () => {
 		expect(fileSizeKB).toBe('2.5');
 	});
 
-	it('should have correct default MIDI to DTX mapping', () => {
-		const dtxFile = new DTXFile();
-
-		// Create mock MIDI data with specific notes
-		const mockMidiData = {
-			format: 0,
-			trackCount: 1,
-			ticksPerQuarter: 480,
-			tracks: [
-				[
-					{
-						deltaTime: 0,
-						type: 'channel' as const,
-						command: 0x9, // Note on
-						note: 36, // Bass drum
-						velocity: 100
-					},
-					{
-						deltaTime: 240,
-						type: 'channel' as const,
-						command: 0x9, // Note on
-						note: 38, // Snare
-						velocity: 100
-					},
-					{
-						deltaTime: 240,
-						type: 'channel' as const,
-						command: 0x9, // Note on
-						note: 42, // Hi-hat
-						velocity: 100
-					}
-				]
+	it('maps GM drum notes to canonical DTX lanes via the shared converter', async () => {
+		const midiFile = drumMidiFile({
+			hits: [
+				{ tick: 0, note: 36 }, // Bass drum -> '13'
+				{ tick: 480, note: 38 }, // Snare -> '12'
+				{ tick: 960, note: 42 }, // Closed hi-hat -> '11'
+				{ tick: 1440, note: 40 }, // Electric snare alias -> '12'
+				{ tick: 1920, note: 35 } // Acoustic bass drum alias -> '13'
 			]
-		};
+		});
 
-		// Use the production mapping function
-		const convertedNotes = dtxFile.convertMidiNotesToDtx(mockMidiData);
+		const parsed = parseMidi(new Uint8Array(await midiFile.arrayBuffer()));
+		const { notes } = midiToDtx(parsed);
 
-		// Verify lane assignments
-		expect(convertedNotes['01']).toBeDefined(); // Bass drum -> lane 01
-		expect(convertedNotes['02']).toBeDefined(); // Snare -> lane 02
-		expect(convertedNotes['03']).toBeDefined(); // Hi-hat -> lane 03
-
-		// Check that the correct notes were mapped
-		const bassDrumNote = convertedNotes['01'][0]; // First LaneMeasureNote object
-		const snareNote = convertedNotes['02'][0];
-		const hihatNote = convertedNotes['03'][0];
-
-		expect(bassDrumNote.notes[0].position).toBe(0); // At beat 1
-		expect(snareNote.notes[0].position).toBe(120); // At beat 1.5 (240 ticks / 480 * 240)
-		expect(hihatNote.notes[0].position).toBe(240); // At beat 2 (480 ticks / 480 * 240)
+		// Positions quantize to 1/192 of a 4/4 bar: 480ppq ticks -> 0.25/0.5/0.75.
+		expect(notes['13'].flatMap((g) => g.notes.map((n) => [g.measure, n.position]))).toEqual([
+			[0, 0],
+			[1, 0]
+		]);
+		expect(notes['12'].flatMap((g) => g.notes.map((n) => [g.measure, n.position]))).toEqual([
+			[0, 0.25],
+			[0, 0.75]
+		]);
+		expect(notes['11'].flatMap((g) => g.notes.map((n) => [g.measure, n.position]))).toEqual([
+			[0, 0.5]
+		]);
 	});
 
 	it('should label GM notes by their aliased lane instrument name', () => {
@@ -290,79 +272,22 @@ describe('MIDI to DTX Converter Logic', () => {
 			expect(totalNotes).toBe(4); // 2 + 1 + 1 = 4 notes total
 		});
 
-		it('should handle error states correctly', async () => {
-			const dtxFile = new DTXFile();
+		it('should handle error states correctly', () => {
+			// "MThe" instead of "MThd" — the shared parser rejects malformed
+			// bytes, which the page surfaces as a conversion failure.
+			const invalidMidiData = new Uint8Array([0x4d, 0x54, 0x68, 0x65]);
 
-			// Create invalid MIDI file with wrong header
-			const invalidMidiData = new Uint8Array([0x4d, 0x54, 0x68, 0x65]); // "MThe" instead of "MThd"
-			const invalidFile = new File([invalidMidiData], 'invalid.mid', { type: 'audio/midi' });
-
-			// Test that parseFromMidi rejects with proper error
-			await expect(dtxFile.parseFromMidi(invalidFile)).rejects.toThrow();
-
-			try {
-				await dtxFile.parseFromMidi(invalidFile);
-			} catch (error) {
-				expect(error instanceof Error).toBe(true);
-				expect((error as Error).message).toBe('Invalid MIDI file: Missing header');
-			}
+			expect(() => parseMidi(invalidMidiData)).toThrow('Invalid MIDI file');
 		});
 
 		it('should extract BPM from Set Tempo meta events', async () => {
-			const dtxFile = new DTXFile();
+			const midiFile = drumMidiFile({ tempos: [{ tick: 0, bpm: 140 }] });
 
-			// Create a minimal valid MIDI file with 140 BPM tempo
-			// BPM = 60,000,000 / microseconds_per_quarter_note
-			// For 140 BPM: 60,000,000 / 140 = 428,571 microseconds
-			const microsecondsPerQuarter = Math.round(60000000 / 140); // 428571
+			const parsed = parseMidi(new Uint8Array(await midiFile.arrayBuffer()));
+			expect(parsed.tempo).toBe(140);
 
-			const midiData = new Uint8Array([
-				// Header chunk
-				0x4d,
-				0x54,
-				0x68,
-				0x64, // "MThd"
-				0x00,
-				0x00,
-				0x00,
-				0x06, // Header length: 6 bytes
-				0x00,
-				0x00, // Format type: 0
-				0x00,
-				0x01, // Track count: 1
-				0x01,
-				0xe0, // Ticks per quarter note: 480
-
-				// Track chunk
-				0x4d,
-				0x54,
-				0x72,
-				0x6b, // "MTrk"
-				0x00,
-				0x00,
-				0x00,
-				0x0b, // Track length: 11 bytes
-
-				// Set Tempo meta event (FF 51 03 + 3 bytes for microseconds)
-				0x00, // Delta time: 0
-				0xff,
-				0x51,
-				0x03, // Meta event: Set Tempo, 3 bytes
-				(microsecondsPerQuarter >> 16) & 0xff,
-				(microsecondsPerQuarter >> 8) & 0xff,
-				microsecondsPerQuarter & 0xff,
-
-				// End of track
-				0x00, // Delta time: 0
-				0xff,
-				0x2f,
-				0x00 // Meta event: End of Track
-			]);
-
-			const file = new File([midiData], 'test140bpm.mid', { type: 'audio/midi' });
-			await dtxFile.parseFromMidi(file);
-
-			expect(dtxFile.bpm).toBe(140);
+			// The tick-0 tempo seeds the converter's base #BPM.
+			expect(midiToDtx(parsed).bpm).toBe(140);
 		});
 	});
 

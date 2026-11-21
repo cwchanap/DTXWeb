@@ -122,11 +122,12 @@ test.describe('DTX to MIDI Converter Tool', () => {
 				{ tick: 2640, microsecondsPerQuarter: 333333 }
 			]);
 
-			// 4/4 -> 3/4 -> 4/4 meter changes at cumulative bar ticks.
+			// 4/4 -> 3/4 -> 4/4 meter changes at cumulative bar ticks; the
+			// exporter writes the default 8 notated 32nds per quarter.
 			expect(parsed.meterEvents).toEqual([
-				{ tick: 0, numerator: 4, denominator: 4 },
-				{ tick: 1920, numerator: 3, denominator: 4 },
-				{ tick: 3360, numerator: 4, denominator: 4 }
+				{ tick: 0, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 },
+				{ tick: 1920, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 },
+				{ tick: 3360, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 }
 			]);
 
 			// Simultaneous hits at tick 0 on canonical GM notes (42/38/36), the

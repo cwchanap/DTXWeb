@@ -200,6 +200,23 @@ describe('parseMidi', () => {
 		]);
 	});
 
+	it('pairs masses of overlapping same-pitch attacks FIFO', () => {
+		// 20k overlapping note-ons then 20k releases. FIFO pairing gives every
+		// note the same duration (COUNT); LIFO or dropped attacks would not.
+		// This is the workload that made Array.shift() pairing quadratic.
+		const COUNT = 20_000;
+		const track: number[] = [...evNoteOn(0, 38)];
+		for (let i = 1; i < COUNT; i++) track.push(...evNoteOn(1, 38));
+		for (let i = 0; i < COUNT; i++) track.push(...evNoteOff(1, 38));
+		track.push(...evEndOfTrack);
+
+		const midi = parseMidi(buildMidi(480, [track]));
+		expect(midi.totalNotes).toBe(COUNT);
+		const notes = midi.tracks[0].notes;
+		expect(notes.map((n) => n.startTime)).toEqual(Array.from({ length: COUNT }, (_, i) => i));
+		expect(notes.every((n) => n.duration === COUNT)).toBe(true);
+	});
+
 	it('skips sysex blocks safely', () => {
 		const bytes = buildMidi(480, [
 			[

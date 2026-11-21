@@ -117,7 +117,9 @@ vi.mock('$app/state', () => ({
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$env/static/public', () => ({ PUBLIC_SIMFILE_BUCKET_URL: 'http://example.com' }));
-vi.mock('$lib/toaster', () => ({ default: { success: vi.fn(), error: vi.fn() } }));
+vi.mock('$lib/toaster', () => ({
+	default: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
+}));
 
 vi.mock('$lib/services/tempChartStorage', () => ({
 	TempChartStorage: {
@@ -610,6 +612,31 @@ describe('Editor Page – functions via EditorNavigation props', () => {
 		expect(navProps?.onExportFile).toBeDefined();
 		// get(store.currentDtxFile) returns null from mock → dtxFile?.export is a no-op
 		expect(() => navProps!.onExportFile()).not.toThrow();
+	});
+
+	it('onExportFile routes export warnings to the toast sink', () => {
+		const exportMock = vi.fn().mockResolvedValue(undefined);
+		render(EditorPage, { props: { data: defaultData } });
+		const navProps = getLastMockProps<Record<string, () => void>>(
+			vi.mocked(EditorNavigationModule)
+		);
+		// exportFile calls get() twice: currentDtxFile then editorNotes.
+		vi.mocked(get)
+			.mockReturnValueOnce({ export: exportMock } as never)
+			.mockReturnValueOnce(null);
+
+		navProps!.onExportFile();
+		vi.mocked(get).mockReturnValue(null);
+
+		const controls = exportMock.mock.calls[0]?.[1] as
+			{ onWarning: (message: string) => void } | undefined;
+		expect(controls?.onWarning).toBeTypeOf('function');
+
+		controls!.onWarning('1 note(s) share a cell');
+		expect(vi.mocked(toastStore.warning)).toHaveBeenCalledWith({
+			title: 'Export warning',
+			description: '1 note(s) share a cell'
+		});
 	});
 
 	it('onNewFile prop calls newFile which invokes createNewFile', () => {

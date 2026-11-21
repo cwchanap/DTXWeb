@@ -347,22 +347,31 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	}
 
 	// Bar starts; a meter event off a computed boundary is a mid-bar change.
+	// Fractional meter spans (e.g. 5/8 at 12 notated 32nds/quarter) accumulate
+	// float error, so compare with tick tolerance and snap a matched barline
+	// to the event's exact tick instead of rejecting a valid change.
+	const TICK_EPSILON = 1e-6;
 	const barStarts = [0];
 	const barLengths: number[] = [];
 	while (barStarts[barStarts.length - 1] <= endTick || meterIndex < meterChanges.length) {
 		if (barLengths.length >= MAX_DTX_MEASURES) {
 			throw new Error(`MIDI conversion exceeds the ${MAX_DTX_MEASURES}-measure DTX range`);
 		}
-		const start = barStarts[barStarts.length - 1];
-		while (meterIndex < meterChanges.length && meterChanges[meterIndex].tick <= start) {
-			if (meterChanges[meterIndex].tick < start) {
+		let start = barStarts[barStarts.length - 1];
+		while (
+			meterIndex < meterChanges.length &&
+			meterChanges[meterIndex].tick <= start + TICK_EPSILON
+		) {
+			if (meterChanges[meterIndex].tick < start - TICK_EPSILON) {
 				throw new Error(
 					`Unsupported mid-bar meter change at tick ${meterChanges[meterIndex].tick}`
 				);
 			}
 			currentLength = meterChanges[meterIndex].length;
+			start = meterChanges[meterIndex].tick;
 			meterIndex++;
 		}
+		barStarts[barStarts.length - 1] = start;
 		barLengths.push(currentLength);
 		const next = start + 4 * ppq * currentLength;
 		// A degenerate meter (numerator/huge denominator) must still advance.

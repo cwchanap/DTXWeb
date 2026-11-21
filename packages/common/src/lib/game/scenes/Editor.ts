@@ -294,7 +294,6 @@ export class Editor extends BaseGame {
 							laneIndex: number;
 							laneId: string;
 							noteKey: string;
-							stackIndex: number;
 						}[] = [];
 						this.laneConfigs.forEach((laneConfig, noteLaneIndex) => {
 							const groups = this.notes[laneConfig.id];
@@ -317,19 +316,29 @@ export class Editor extends BaseGame {
 											noteID: n.noteID,
 											laneIndex: noteLaneIndex,
 											laneId: laneConfig.id,
-											noteKey,
-											stackIndex: this.noteManager.stackIndexOf(noteKey)
+											noteKey
 										});
 									}
 								});
 							});
 						});
 
-						// Overlapping hits resolve to the frontmost (highest drawn stack index)
+						// Overlapping hits resolve to the frontmost graphic (last
+						// drawn in the panel), not the highest stack index: a
+						// chip stacked sideways can overlap the lane beside it.
+						// Duplicate pattern lines share one key and one graphic;
+						// ties keep the first stored chip, the one drawn.
+						const drawIndex = new Map<string, number>();
+						this.panelContainer.list.forEach((child, index) => {
+							if (child.name?.startsWith('note-')) drawIndex.set(child.name, index);
+						});
 						const hit =
 							hits.length > 0
 								? hits.reduce((top, h) =>
-										h.stackIndex >= top.stackIndex ? h : top
+										(drawIndex.get(h.noteKey) ?? -1) >
+										(drawIndex.get(top.noteKey) ?? -1)
+											? h
+											: top
 									)
 								: null;
 
@@ -379,6 +388,23 @@ export class Editor extends BaseGame {
 							// Clean up empty lane entries
 							if (this.notes[hitLaneId].length === 0) {
 								delete this.notes[hitLaneId];
+							}
+							// A duplicate pattern line may still hold this key and
+							// its shared graphic was just destroyed — redraw it.
+							const survivor = this.notes[hitLaneId]
+								?.find(
+									(g) =>
+										g.measure === measureNote.measure &&
+										g.notes.some((n) => n.position === notePosition)
+								)
+								?.notes.find((n) => n.position === notePosition);
+							if (survivor) {
+								this.drawNote(
+									measureNote.measure,
+									hitLaneIndex,
+									notePosition,
+									survivor.noteID
+								);
 							}
 							this.syncNotesToStore();
 							// Note: dirty state and auto-save handled by NoteManager callback

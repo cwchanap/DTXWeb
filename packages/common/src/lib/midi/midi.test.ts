@@ -622,6 +622,32 @@ describe('midiToDtx', () => {
 		expect(result.notes['11'][0].notes).toEqual([{ noteID: '01', position: 0.25 }]);
 	});
 
+	it('accepts a meter change on a boundary accumulated from fractional spans', () => {
+		// 5/8 with 12 notated 32nds per quarter spans (5/8)*(8/12) = 5/12 of
+		// 4/4 — 800 ticks at 480 PPQ, but 4*480*5/12 accumulates a hair under
+		// 2400. The 4/4 change at tick 2400 is exactly on the third barline
+		// and must be applied, not rejected as mid-bar.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evMeter(0, 5, 3, 12),
+					...evMeter(2400, 4, 2),
+					...evNoteOn(0, 36), // tick 2400 -> bar 3 pos 0
+					...evNoteOff(60, 36),
+					...evEndOfTrack
+				]
+			])
+		);
+
+		const result = midiToDtx(midi);
+		expect(result.controls.measureLengths?.get(0)).toBeCloseTo(5 / 12);
+		// 4/4 resumes at the measure-3 barline; unchanged bars are omitted.
+		expect(result.controls.measureLengths?.get(1)).toBeUndefined();
+		expect(result.controls.measureLengths?.get(3)).toBe(1);
+		expect(result.notes['13'][0].measure).toBe(3);
+		expect(result.notes['13'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+	});
+
 	it('treats equal-length signatures as real changes: off-boundary 6/8 -> 3/4 throws', () => {
 		// 6/8 and 3/4 share a 0.75 bar length but are different meters; a
 		// signature-keyed repeat filter keeps the 3/4 event reachable by the

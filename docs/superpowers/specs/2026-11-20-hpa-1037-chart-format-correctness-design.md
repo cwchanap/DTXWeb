@@ -8,23 +8,24 @@
 ## Why this is more than MIDI channel mapping
 
 In addition to invalid drum channels and simultaneous note deltas, the shared import/export path loses chart data:
-- `LaneMeasureNote.toPattern()` falls back to *four* slots if an onset matches no grid among 4…192. Off-grid imported MIDI events can snap to the same slot and overwrite one another. Three snare hits at MIDI ticks 3, 487 and 500 in a 1920-tick bar currently become two quarter-grid hits.
+
+- `LaneMeasureNote.toPattern()` falls back to _four_ slots if an onset matches no grid among 4…192. Off-grid imported MIDI events can snap to the same slot and overwrite one another. Three snare hits at MIDI ticks 3, 487 and 500 in a 1920-tick bar currently become two quarter-grid hits.
 - `DTXFile.export()` calls `toPattern()` for **all** lanes (including channel 02 decimal bar lengths) and omits `#BPMxx` declarations. The web editor saves using the same export, so this is not only a MIDI import issue.
 - `DTXFile.parseFromText` uses `parseInt` for base BPM and matches `#BPMxx` as if it were the base `#BPM`; decimals and directive order fail.
 - `SimFile.parseFromRemoteURLWithMetadata()` still iterates L1–L5 after the server has read higher SET.def slots, so the production editor can drop L6+.
 
 ## 1. Only consolidate **converter** drum defaults
 
-Retain the correct canonical notation table in `packages/common/src/lib/notation/drumMapping.ts` and use its 12 DTX playable channels for *export* (never control/BGM channels 01/02/03/08):
+Retain the correct canonical notation table in `packages/common/src/lib/notation/drumMapping.ts` and use its 12 DTX playable channels for _export_ (never control/BGM channels 01/02/03/08):
 
-| DTX | Drum | GM export | DTX | Drum | GM export |
-| --- | --- | ---: | --- | --- | ---: |
-| 11 | Closed HH | 42 | 17 | Floor tom | 43 |
-| 12 | Snare | 38 | 18 | Open HH | 46 |
-| 13 | Bass drum | 36 | 19 | Ride | 51 |
-| 14 | High tom | 50 | 1A | Left crash | 57 |
-| 15 | Low tom | 48 | 1B | Pedal HH | 44 |
-| 16 | Crash | 49 | 1C | Left bass | 35 |
+| DTX | Drum      | GM export | DTX | Drum       | GM export |
+| --- | --------- | --------: | --- | ---------- | --------: |
+| 11  | Closed HH |        42 | 17  | Floor tom  |        43 |
+| 12  | Snare     |        38 | 18  | Open HH    |        46 |
+| 13  | Bass drum |        36 | 19  | Ride       |        51 |
+| 14  | High tom  |        50 | 1A  | Left crash |        57 |
+| 15  | Low tom   |        48 | 1B  | Pedal HH   |        44 |
+| 16  | Crash     |        49 | 1C  | Left bass  |        35 |
 
 **Import is not an inverse mapping.** Add a small `GM_IMPORT_LANE` many-to-one alias table beside the existing drum table for commonly used GM alternatives, including 35/36 → main kick `13` (not left bass `1C` by default); 37/38/40 → snare `12`; 41/43/45/47/48/50 → floor/low/high tom; 42/44/46 → HH/pedal/open HH; and 49/51/52/53/55/57/59 → appropriate crash/ride/left crash lanes. Make this the source of the editable importer page defaults. Export still uses each DTX lane's own GM note; explicitly mapped exceptions remain possible through user overrides. Unknown notes/lanes produce nonfatal diagnostics, not a middle-C placeholder or control lane.
 
@@ -56,10 +57,12 @@ No per-note velocity preservation, original sample IDs, multitrack reconstructio
 ## 4. One server-safe SET.def parser and all production callers
 
 Create pure `parseSetDef(text)` with sorted complete `{ level, label, fileName }` slots and title. Accept space/colon directives, case-insensitive keys, LF/CRLF, levels >L5, multiword labels/filenames; leave path normalization to consumers. Expose from:
+
 - **`@dtx/common/encoding`**, which has no Svelte/browser imports and is safe for dtx-api;
 - the common main barrel for web/client callers.
 
 Update **all** uses, not just three parsers:
+
 1. `SimFile.parseHeader` iterates parsed slots.
 2. `SimFile.parseFromRemoteURLWithMetadata` iterates **actual metadata keys** (not L1–L5), so the real editor loads L6+.
 3. `SimFile.getHighestLevel` chooses the highest **present** numeric slot; `generateDefFileContent` retains populated >L5 slots and existing L1–L5 defaults.

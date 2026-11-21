@@ -103,7 +103,7 @@ export class LaneMeasureNote {
 		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192];
 		// Fall back to the finest grid: a coarse default collapses off-grid
 		// notes (e.g. humanized MIDI) into shared slots and silently drops them.
-		let resolution = 192;
+		let resolution = 0;
 
 		// Find the smallest resolution that can accommodate all note positions
 		for (const res of commonResolutions) {
@@ -119,6 +119,23 @@ export class LaneMeasureNote {
 			if (canAccommodateAll) {
 				resolution = res;
 				break; // Use the first (smallest) resolution that works for all notes
+			}
+		}
+
+		// No standard grid holds every position (they sit finer than 1/192).
+		// Widen until each note keeps its own cell rather than overwriting a
+		// hit; capped so a pathological position can't allocate a huge string.
+		if (resolution === 0) {
+			resolution = 192;
+			const distinctCells = (res: number): number => {
+				const used = new Set<number>();
+				for (const note of this.notes) {
+					used.add(Math.round((note.position / this.measureLength) * res));
+				}
+				return used.size;
+			};
+			while (resolution < 768 && distinctCells(resolution) < this.notes.length) {
+				resolution *= 2;
 			}
 		}
 

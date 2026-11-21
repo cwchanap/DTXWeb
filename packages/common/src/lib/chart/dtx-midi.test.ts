@@ -143,6 +143,30 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		expect(notes.map((n) => n.note)).toEqual([42, 38, 36]);
 	});
 
+	it('raises PPQ so a short bar keeps adjacent 1/192 hits on distinct ticks', () => {
+		// A 1/16 bar holds only 120 ticks at 480 PPQ: slots 1 and 2 of the
+		// 192-slot grid would both round to tick 1 and merge on reimport.
+		const cells = new Array(192).fill('00');
+		cells[1] = '01';
+		cells[2] = '01';
+		const dtx = dtxFromText(
+			['#BPM: 120', '#00002: 0.0625', `#00012: ${cells.join('')}`].join('\r\n')
+		);
+
+		const { data, warnings } = dtxToMidi(dtx);
+		const parsed = parseMidi(data);
+
+		// 48/0.0625 = 768 PPQ -> the 1/16 bar holds exactly 192 ticks.
+		expect(parsed.ticksPerQuarter).toBe(768);
+		expect(warnings).toEqual([]);
+		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([1, 2]);
+
+		// The raised division reimports with both hits intact.
+		const roundTrip = midiToDtx(parsed);
+		expect(roundTrip.collisions).toBe(0);
+		expect(roundTrip.notes['12'][0].notes.map((n) => n.position)).toEqual([1 / 192, 2 / 192]);
+	});
+
 	it('serializes #BPMxx tempo changes and decimal bar lengths as SMF events', () => {
 		const dtx = dtxFromText(
 			[

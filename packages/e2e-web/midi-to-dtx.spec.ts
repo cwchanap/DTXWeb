@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { PAGES } from './constants';
-import { DTXFile } from '../common/src/lib/chart/dtx';
-import { GM_IMPORT_LANE, PLAYABLE_DRUM_LANES } from '../common/src/lib/notation/drumMapping';
+import { DTXFile, GM_IMPORT_LANE, PLAYABLE_DRUM_LANES } from '@dtx/common';
 import { readFileSync } from 'node:fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

@@ -253,12 +253,17 @@ export const discoverCatalogFiles = async (
 	// key to a chart whose intended file is missing — which would silently
 	// serve the wrong chart instead of the correct missing-chart null.
 	const rowsClaimedBySetDef = new Set<number>();
-	for (const [index, file] of dtxFiles.entries()) {
-		// Consume one SET.def file per matching row so that duplicate labels
-		// each claim a distinct R2 object instead of all collapsing onto the
-		// last-inserted entry. Files are accumulated in L-slot order (see
-		// parseSetDefFilesByLabel), so the first matching row gets the first
-		// slot's file, the second row gets the second, etc.
+	// Consume one SET.def file per matching row so that duplicate labels
+	// each claim a distinct R2 object instead of all collapsing onto the
+	// last-inserted entry. Files accumulate in L-slot order (see
+	// parseSetDefFilesByLabel), and slots are difficulty-ordered — so claim
+	// them in ascending row level. Rows arrive in id (insertion) order,
+	// which is the uploader's filename order, not slot order; level is the
+	// closest difficulty signal a row carries. Index order breaks ties.
+	const claimOrder = dtxFiles
+		.map((file, index) => ({ file, index }))
+		.sort((a, b) => a.file.level - b.file.level || a.index - b.index);
+	for (const { file, index } of claimOrder) {
 		const setDefFile = filesByLabel.get(file.label.toLowerCase())?.shift();
 		if (setDefFile) {
 			rowsClaimedBySetDef.add(index);

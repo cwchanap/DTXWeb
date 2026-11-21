@@ -1718,7 +1718,7 @@ describe('discoverCatalogFiles', () => {
 			});
 		});
 
-		it('pairs seeded duplicate-label rows FIFO with the fixture slots', async () => {
+		it('pairs seeded duplicate-label rows by level with the fixture slots', async () => {
 			// The decoy key sorts first alphabetically: if set.def matching
 			// silently failed, the sorted-key fallback would hand it to the
 			// first row instead of leaving it unused — making this test fail
@@ -1737,16 +1737,18 @@ describe('discoverCatalogFiles', () => {
 				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(fixtureText) }))
 			} as unknown as R2Bucket;
 
-			// Seeded insert order (seed.sql chart 1004): the two 'Basic Multi'
-			// rows must claim the L2/L3 slots in that order.
+			// Seeded insert order (seed.sql chart 1004): the level-60 'Basic
+			// Multi' row precedes the level-50 row, so row order disagrees
+			// with slot order. Claiming by level still binds L2 -> level 50
+			// and L3 -> level 60.
 			const discovery = await discoverCatalogFiles(
 				bucket,
 				{
 					simfileId: 1004,
 					dtxFiles: [
 						{ label: 'Basic Easy', level: 40 },
-						{ label: 'Basic Multi', level: 50 },
 						{ label: 'Basic Multi', level: 60 },
+						{ label: 'Basic Multi', level: 50 },
 						{ label: 'Extreme L6', level: 85 }
 					],
 					publicBaseUrl: 'https://cdn.example.test'
@@ -1764,16 +1766,16 @@ describe('discoverCatalogFiles', () => {
 				},
 				{
 					label: 'Basic Multi',
-					level: 50,
-					fileUrl: 'https://cdn.example.test/1004/extra.dtx',
-					fileSizeBytes: 500,
+					level: 60,
+					fileUrl: 'https://cdn.example.test/1004/maniac.dtx',
+					fileSizeBytes: 700,
 					fileEncoding: 'SHIFT_JIS'
 				},
 				{
 					label: 'Basic Multi',
-					level: 60,
-					fileUrl: 'https://cdn.example.test/1004/maniac.dtx',
-					fileSizeBytes: 700,
+					level: 50,
+					fileUrl: 'https://cdn.example.test/1004/extra.dtx',
+					fileSizeBytes: 500,
 					fileEncoding: 'SHIFT_JIS'
 				},
 				{

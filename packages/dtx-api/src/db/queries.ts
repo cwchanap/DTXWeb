@@ -57,9 +57,9 @@ export const getSimfile = async (
 		.limit(1);
 	if (!row) return null;
 
-	// Ascending row id = insertion order: SET.def duplicate-label pairing
-	// consumes this array FIFO (r2Enrichment filesByLabel shift()), so an
-	// explicit ORDER BY is a contract, not cosmetic.
+	// Ascending row id keeps chart order deterministic. Same-label SET.def
+	// pairing sorts by level in r2Enrichment rather than relying on this
+	// insertion order matching slot order.
 	const dtx = await orm
 		.select({
 			id: dtxFiles.id,

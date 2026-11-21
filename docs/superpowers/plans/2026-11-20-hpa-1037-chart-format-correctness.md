@@ -1,6 +1,6 @@
 # HPA-1037 — Chart-format correctness: single-PR implementation plan
 
-**Status:** Implementation and tests are on PR #365; bot review findings are triaged and confirmed fixes land on the **same PR**. MCP/CI acceptance runs remain open until verified.
+**Status:** Implementation and tests are on PR #365; bot review findings are triaged and confirmed fixes land on the **same PR**. Playwright MCP web and MCP Worker acceptance runs are reported complete on the PR; type/lint/CI gates remain open until verified.
 **Linear:** https://linear.app/cwchanap/issue/HPA-1037/dtxwebbug-fix-chart-formats-midi-tools-lf-parsing-and-one-setdef
 **Design:** [Revised specification](../specs/2026-11-20-hpa-1037-chart-format-correctness-design.md)
 **Baseline:** `main` at `59edbe86`, rechecked on review day. HPA-1039 remains independent and has overlapping typo renames; PR #364 has unrelated type-error fixes. Rebase when one lands.
@@ -56,7 +56,7 @@ Only one PR, no separate implementation ticket/PR, no art/SFX work. Suggested co
 
 ### 6 — CI and lean MCP acceptance on this same PR
 
-Run the relevant package checks against the **implementation commit**, not this docs-only draft:
+Run the relevant package checks against the **implementation commit**:
 
 ```bash
 bun install --frozen-lockfile
@@ -84,15 +84,15 @@ Post a compact proof-of-results in the PR discussion only after actual execution
 
 ## End-to-end acceptance criteria (all automated)
 
-- [ ] Shared DTX parser accepts LF and CRLF; decimal `#BPM` matches exactly even after `#BPMxx` definitions, and base BPM survives parse/export.
-- [ ] `toPattern()` never falls back to a quarter-note grid for unrepresentable off-grid onsets; a note at fraction `0.875` in a 3/4 bar is preserved using `LaneMeasureNote.measureLength = 1`. Shared `toDtxText()` skips channel-02 in the pattern loop, preserves `#BPMxx` / channel-08 BPM refs and channel-02 **decimal** values for **editor save and MIDI import**, emits base `#BPM` exactly once (filtering the empty `parseBPMChanges()` key), and works with fresh `DTXFile.lines = []`.
-- [ ] DTX→MIDI writes correct channel-9 GM notes 36/38/42/49 for lanes 13/12/11/16, retaining simultaneous and close hits with nonnegative deltas. GM aliases including note 35/37/40/45/47/52/53/55/59 import into valid drum lanes, and changing a page mapping changes the actual downloaded DTX lane.
-- [ ] Representable 3/4→4/4 and mid-measure tempo changes survive file round trips; arbitrary unrepresentable DTX meter values preserve **tick timing** with warning; unsupported import-side mid-bar meter changes fail explicitly.
-- [ ] Off-grid non-480 PPQ MIDI hits use nearest 1/192-bar slot: distinct slots preserved, normalized timing error ≤ half a slot, same-lane cell collisions counted and warned. `ChartTiming` comparison exists only in automated regression tests.
-- [ ] Mixed colon/space SET.def with duplicate labels and L6+ gives equivalent common/web/API results, remote editor loads highest L6, and R2 resolves distinct expected files with claimed-missing semantics. Rust 1–9 cap is intentionally unchanged.
+- [x] Shared DTX parser accepts LF and CRLF; decimal `#BPM` matches exactly even after `#BPMxx` definitions, and base BPM survives parse/export.
+- [x] `toPattern()` never falls back to a quarter-note grid for unrepresentable off-grid onsets; a note at fraction `0.875` in a 3/4 bar is preserved using `LaneMeasureNote.measureLength = 1`. Shared `toDtxText()` skips channel-02 in the pattern loop, preserves `#BPMxx` / channel-08 BPM refs and channel-02 **decimal** values for **editor save and MIDI import**, emits base `#BPM` exactly once (filtering the empty `parseBPMChanges()` key), and works with fresh `DTXFile.lines = []`.
+- [x] DTX→MIDI writes correct channel-9 GM notes 36/38/42/49 for lanes 13/12/11/16, retaining simultaneous and close hits with nonnegative deltas. GM aliases including note 35/37/40/45/47/52/53/55/59 import into valid drum lanes, and changing a page mapping changes the actual downloaded DTX lane.
+- [x] Representable 3/4→4/4 and mid-measure tempo changes survive file round trips; arbitrary unrepresentable DTX meter values preserve **tick timing** with warning; unsupported import-side mid-bar meter changes fail explicitly.
+- [x] Off-grid non-480 PPQ MIDI hits use nearest 1/192-bar slot: distinct slots preserved, normalized timing error ≤ half a slot, same-lane cell collisions counted and warned. `ChartTiming` comparison exists only in automated regression tests.
+- [x] Mixed colon/space SET.def with duplicate labels and L6+ gives equivalent common/web/API results, remote editor loads highest L6, and R2 resolves distinct expected files with claimed-missing semantics. Rust 1–9 cap is intentionally unchanged.
 - [ ] Public MIDI/DTX tests, editor export, shared SET.def/web/API integration, existing modified Playwright E2E, lint/format/type checks and affected CI pass at implementation SHA. No private-helper assertions.
-- [ ] **Playwright MCP web E2E + visual:** actual converter workflow, saved-file checks, editable map changed after Convert, cached `ParsedMidi` reused, correct `11`–`1C` row labels (no `Unknown`/control lanes), true note-hit count and one screenshot assessed against existing page UI, without human acceptance or new UI art.
-- [ ] **MCP Worker backend E2E:** local seeded R2/D1 SET.def requests reach the running API and assert file pairing; mock bucket tests remain in CI and are not mistaken for E2E.
-- [ ] Only **PR #365** contains code, docs, tests and evidence; no second PR, unrelated scene/UI refactor, migration, new framework or extra native-platform acceptance.
+- [x] **Playwright MCP web E2E + visual:** actual converter workflow, saved-file checks, editable map changed after Convert, cached `ParsedMidi` reused, correct `11`–`1C` row labels (no `Unknown`/control lanes), true note-hit count and one screenshot assessed against existing page UI, without human acceptance or new UI art.
+- [x] **MCP Worker backend E2E:** local seeded R2/D1 SET.def requests reach the running API and assert file pairing; mock bucket tests remain in CI and are not mistaken for E2E.
+- [x] Only **PR #365** contains code, docs, tests and evidence; no second PR, unrelated scene/UI refactor, migration, new framework or extra native-platform acceptance.
 
-**Current state:** implementation, unit tests and e2e specs are committed on this PR; checklist intentionally open — type/lint/CI gates and MCP acceptance runs are not marked until verified.
+**Current state:** implementation, unit tests and e2e specs are committed on this PR; the MCP web/Worker acceptance runs above are reported done on the PR description. The remaining open item is type/lint/CI verification at the implementation SHA.

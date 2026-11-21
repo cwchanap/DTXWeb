@@ -343,14 +343,13 @@ export class DTXFile {
 			});
 		}
 
-		// Add notes if provided
-		if (notes) {
-			const allMeasureNotes: { measure: number; laneID: string; pattern: string }[] = [];
+		const allMeasureNotes: { measure: number; laneID: string; pattern: string }[] = [];
 
-			// Collect all notes and convert to patterns. Channel 02 is a
-			// decimal bar-length channel, not a pattern channel — its parsed
-			// "notes" are garbage pairs ('0.75' -> '0.', '75') that toPattern()
-			// would corrupt; #NNN02 is emitted from the length map below.
+		// Collect all notes and convert to patterns when provided. Channel 02
+		// is a decimal bar-length channel, not a pattern channel — its parsed
+		// "notes" are garbage pairs ('0.75' -> '0.', '75') that toPattern()
+		// would corrupt; #NNN02 is emitted from the length map below.
+		if (notes) {
 			for (const [laneID, laneMeasureNotes] of Object.entries(notes)) {
 				if (laneID === '02') continue;
 				laneMeasureNotes.forEach((laneMeasureNote) => {
@@ -364,24 +363,26 @@ export class DTXFile {
 					}
 				});
 			}
-
-			const measureLengths = controls?.measureLengths ?? this.parseMeasureLengths();
-			for (const [measure, length] of measureLengths) {
-				allMeasureNotes.push({ measure, laneID: '02', pattern: `${length}` });
-			}
-
-			// Sort by measure then by lane ID for consistent output
-			allMeasureNotes.sort((a, b) => {
-				if (a.measure !== b.measure) return a.measure - b.measure;
-				return a.laneID.localeCompare(b.laneID);
-			});
-
-			// Add note lines
-			allMeasureNotes.forEach(({ measure, laneID, pattern }) => {
-				const measureStr = measure.toString().padStart(3, '0');
-				content.push(`#${measureStr}${laneID}: ${pattern}`);
-			});
 		}
+
+		// Measure lengths emit whether or not note patterns were supplied —
+		// controls-only or parsed-lines exports must not drop #NNN02.
+		const measureLengths = controls?.measureLengths ?? this.parseMeasureLengths();
+		for (const [measure, length] of measureLengths) {
+			allMeasureNotes.push({ measure, laneID: '02', pattern: `${length}` });
+		}
+
+		// Sort by measure then by lane ID for consistent output
+		allMeasureNotes.sort((a, b) => {
+			if (a.measure !== b.measure) return a.measure - b.measure;
+			return a.laneID.localeCompare(b.laneID);
+		});
+
+		// Add note lines
+		allMeasureNotes.forEach(({ measure, laneID, pattern }) => {
+			const measureStr = measure.toString().padStart(3, '0');
+			content.push(`#${measureStr}${laneID}: ${pattern}`);
+		});
 
 		return content.join('\r\n');
 	}

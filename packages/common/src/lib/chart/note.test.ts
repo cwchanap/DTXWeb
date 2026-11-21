@@ -221,6 +221,21 @@ describe('LaneMeasureNote', () => {
 			expect(reparsed.map((note) => Math.round(note.position * 192))).toEqual([0, 49, 50]);
 		});
 
+		it('should widen past 192 rather than overwrite two hits sharing a cell', () => {
+			// Positions 1/384 and 1/192 fit no standard grid. On the 192
+			// fallback both round to cell 1 — the second would silently
+			// replace the first. The 384 grid keeps them on distinct cells.
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 1 / 384 },
+				{ noteID: '02', position: 1 / 192 }
+			]);
+			const pattern = laneMeasureNote.toPattern();
+
+			expect(pattern).toHaveLength(384 * 2);
+			expect(pattern.slice(2, 4)).toBe('01'); // cell 1
+			expect(pattern.slice(4, 6)).toBe('02'); // cell 2
+		});
+
 		it('should keep a note at fraction 0.875 in a 3/4 bar', () => {
 			// MIDI-import contract: positions are [0,1) bar fractions with
 			// measureLength = 1 even for 3/4; the meter lives only in the

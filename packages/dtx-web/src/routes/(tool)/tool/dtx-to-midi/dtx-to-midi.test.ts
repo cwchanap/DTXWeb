@@ -59,12 +59,12 @@ vi.mock('@dtx/common', async () => {
 });
 
 import DtxToMidi from './+page.svelte';
+import { groupNotesByLane } from '@dtx/common';
 import {
 	DEFAULT_LANE_NOTE_MAP,
 	isValidDtxFile,
 	generateMidiFilename,
-	formatFileSizeKB,
-	groupNotesByLane
+	formatFileSizeKB
 } from './midi-helpers';
 
 describe('DTX to MIDI Converter Logic', () => {

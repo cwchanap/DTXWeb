@@ -179,6 +179,10 @@ class MidiFileBuilder {
 		options: {
 			name?: string;
 			tempo?: number;
+			tempos?: Array<{
+				tick: number;
+				bpm: number;
+			}>;
 			timeSignatures?: Array<{
 				tick: number;
 				numerator: number;
@@ -210,6 +214,7 @@ class MidiFileBuilder {
 		// with meter first at identical ticks.
 		const timedEvents: Array<
 			| { time: number; type: 'sig'; numerator: number; denominator: number }
+			| { time: number; type: 'tempo'; bpm: number }
 			| { time: number; type: 'on' | 'off'; note: number; velocity: number; channel: number }
 		> = [];
 
@@ -220,6 +225,10 @@ class MidiFileBuilder {
 				numerator: sig.numerator,
 				denominator: sig.denominator
 			});
+		}
+
+		for (const tempoChange of options.tempos ?? []) {
+			timedEvents.push({ time: tempoChange.tick, type: 'tempo', bpm: tempoChange.bpm });
 		}
 
 		for (const noteData of options.notes ?? []) {
@@ -240,9 +249,9 @@ class MidiFileBuilder {
 			});
 		}
 
-		// Meter before note events at the same tick; off before on keeps a
+		// Meter/tempo before note events at the same tick; off before on keeps a
 		// re-struck note's release ahead of its next attack.
-		const typeRank = { sig: 0, off: 1, on: 2 } as const;
+		const typeRank = { sig: 0, tempo: 1, off: 2, on: 3 } as const;
 		timedEvents.sort((a, b) => a.time - b.time || typeRank[a.type] - typeRank[b.type]);
 
 		for (const event of timedEvents) {
@@ -251,6 +260,8 @@ class MidiFileBuilder {
 				trackEvents.push(
 					...this.createTimeSignatureEvent(event.numerator, event.denominator, deltaTime)
 				);
+			} else if (event.type === 'tempo') {
+				trackEvents.push(...this.createTempoEvent(event.bpm, deltaTime));
 			} else if (event.type === 'on') {
 				trackEvents.push(
 					...this.createNoteOnEvent(event.note, event.velocity, event.channel, deltaTime)
@@ -403,6 +414,33 @@ function createTestMidiFiles(): void {
 		]
 	});
 
+	// 5. Create a drum fixture for the MIDI -> DTX converter specs: a 3/4 bar
+	//    then 4/4, a mid-bar tempo change, GM import aliases (35/40/51/53),
+	//    simultaneous cross-lane hits at tick 0, a same-lane 1/192 collision,
+	//    and a late-bar hit. All drum hits on channel 9 at 480 PPQ.
+	const drumConvertMidi = new MidiFileBuilder(0, 480);
+	drumConvertMidi.addTrack({
+		name: 'Drums',
+		tempo: 120,
+		tempos: [{ tick: 2160, bpm: 180 }], // mid-bar inside bar 1
+		timeSignatures: [
+			{ tick: 0, numerator: 3, denominator: 4 }, // bar 0: [0, 1440)
+			{ tick: 1440, numerator: 4, denominator: 4 } // bar 1: [1440, 3360)
+		],
+		notes: [
+			{ note: 36, velocity: 100, channel: 9, startTime: 0, duration: 120 }, // Bass -> 13
+			{ note: 38, velocity: 100, channel: 9, startTime: 0, duration: 120 }, // Snare -> 12
+			{ note: 42, velocity: 100, channel: 9, startTime: 0, duration: 120 }, // HHC -> 11
+			{ note: 40, velocity: 100, channel: 9, startTime: 0, duration: 120 }, // E-snare -> 12, collides
+			{ note: 53, velocity: 90, channel: 9, startTime: 240, duration: 120 }, // ride bell -> 19
+			{ note: 35, velocity: 95, channel: 9, startTime: 480, duration: 120 }, // ac. bass -> 13
+			{ note: 40, velocity: 95, channel: 9, startTime: 960, duration: 120 }, // E-snare -> 12
+			{ note: 45, velocity: 95, channel: 9, startTime: 1200, duration: 120 }, // low tom -> 15, late-bar
+			{ note: 51, velocity: 90, channel: 9, startTime: 1440, duration: 120 }, // ride -> 19, bar 1
+			{ note: 38, velocity: 95, channel: 9, startTime: 2160, duration: 120 } // snare -> 12, mid-bar
+		]
+	});
+
 	// Write files
 	const outputDir = __dirname;
 
@@ -410,6 +448,7 @@ function createTestMidiFiles(): void {
 	writeFileSync(path.join(outputDir, 'empty-sample.mid'), emptyMidi.build());
 	writeFileSync(path.join(outputDir, 'multi-track-sample.mid'), multiTrackMidi.build());
 	writeFileSync(path.join(outputDir, 'drum-off-grid.mid'), drumOffGridMidi.build());
+	writeFileSync(path.join(outputDir, 'drum-convert.mid'), drumConvertMidi.build());
 
 	// Create invalid file for error testing
 	writeFileSync(path.join(outputDir, 'invalid-file.txt'), 'This is not a DTX file.\n');
@@ -419,6 +458,7 @@ function createTestMidiFiles(): void {
 	console.log('  📄 empty-sample.mid (no notes, metadata only)');
 	console.log('  📄 multi-track-sample.mid (2 tracks with melody + bass)');
 	console.log('  📄 drum-off-grid.mid (960 PPQ drums, humanized off-grid, 4/4 -> 3/4)');
+	console.log('  📄 drum-convert.mid (3/4 -> 4/4 drums, aliases, collision, mid-bar tempo)');
 	console.log('  📄 invalid-file.txt (for error testing)\n');
 
 	// Display file information
@@ -426,12 +466,14 @@ function createTestMidiFiles(): void {
 	const emptyFile = emptyMidi.build();
 	const multiTrackFile = multiTrackMidi.build();
 	const drumOffGridFile = drumOffGridMidi.build();
+	const drumConvertFile = drumConvertMidi.build();
 
 	console.log('📊 File sizes:');
 	console.log(`  test-sample.mid: ${testFile.length} bytes`);
 	console.log(`  empty-sample.mid: ${emptyFile.length} bytes`);
 	console.log(`  multi-track-sample.mid: ${multiTrackFile.length} bytes`);
 	console.log(`  drum-off-grid.mid: ${drumOffGridFile.length} bytes`);
+	console.log(`  drum-convert.mid: ${drumConvertFile.length} bytes`);
 	console.log('\n🎯 All fixtures created successfully!');
 }
 

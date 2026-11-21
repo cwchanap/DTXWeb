@@ -1,71 +1,77 @@
-# HPA-1037 — Chart format correctness: design
+# HPA-1037 — Chart-format correctness: revised design
 
-**Status:** Proposed design; documentation-only draft PR. Implementation, test evidence, and review fixes go on **this same PR**.
+**Status:** Revised after the 2026-11-21 design review on PR #365. Documentation only; implementation, tests and fixes belong on **this same draft PR**.
 **Linear:** https://linear.app/cwchanap/issue/HPA-1037/dtxwebbug-fix-chart-formats-midi-tools-lf-parsing-and-one-setdef
-**Plan:** [2026-11-20-hpa-1037-chart-format-correctness.md](../plans/2026-11-20-hpa-1037-chart-format-correctness.md)
-**Baseline:** `main` at `59edbe86079a7dab8273a00126dbbbf16d41badf` (recheck after rebase).
+**Plan:** [Implementation plan](../plans/2026-11-20-hpa-1037-chart-format-correctness.md)
+**Baseline:** `main` at `59edbe86079a7dab8273a00126dbbbf16d41badf` (rechecked during review).
 
-## Problem and outcome
+## Why this is more than MIDI channel mapping
 
-Fix the user-visible wrong-channel/invalid MIDI conversions, LF-only DTX parsing, and conflicting SET.def interpretations without introducing another chart model or framework.
+In addition to invalid drum channels and simultaneous note deltas, the shared import/export path loses chart data:
+- `LaneMeasureNote.toPattern()` falls back to *four* slots if an onset matches no grid among 4…192. Off-grid imported MIDI events can snap to the same slot and overwrite one another. Three snare hits at MIDI ticks 3, 487 and 500 in a 1920-tick bar currently become two quarter-grid hits.
+- `DTXFile.export()` calls `toPattern()` for **all** lanes (including channel 02 decimal bar lengths) and omits `#BPMxx` declarations. The web editor saves using the same export, so this is not only a MIDI import issue.
+- `DTXFile.parseFromText` uses `parseInt` for base BPM and matches `#BPMxx` as if it were the base `#BPM`; decimals and directive order fail.
+- `SimFile.parseFromRemoteURLWithMetadata()` still iterates L1–L5 after the server has read higher SET.def slots, so the production editor can drop L6+.
 
-Current facts from main:
-- `chart/dtx.ts` maps MIDI drum notes against `01`–`0C` (DTX control/BGM channels), uses 4/4 positional ticks, serializes note-on immediately followed by note-off (negative next delta for simultaneous/nearby hits), and embeds a second MIDI reader.
-- `midi-to-dtx/+page.svelte` offers editable drum mappings but passes none into the converter. `midi-preview/+page.svelte` has a separate SMF parser.
-- `DTXFile.parseFromText` splits only on `'\r\n'`. `SimFile.parseHeader` handles only L1–L5 and truncates multiword labels/filenames; editor and API use separate, more capable SET.def readers. `SimFile.getHighestLevel` also assumes L1–L5.
-- `notation/drumMapping.ts` already has correct lane/GM/staff data; `notation/timing.ts` provides `buildChartTiming` and normalization; `notation/quantize.ts` already prepares sticky channel-02 measure lengths and handles both channel-08 and legacy channel-03 tempo changes.
-- Existing web Playwright suites: `packages/e2e-web/{dtx-to-midi,midi-to-dtx,midi-preview}.spec.ts`; existing public unit suites in common/web/API.
+## 1. Only consolidate **converter** drum defaults
 
-## 1. One playable drum-lane source of truth
+Retain the correct canonical notation table in `packages/common/src/lib/notation/drumMapping.ts` and use its 12 DTX playable channels for *export* (never control/BGM channels 01/02/03/08):
 
-Extend the existing pure `notation/drumMapping.ts` table rather than introduce a parallel registry. Keep the 12 playable DTX channels and existing notation attributes as the source for name, GM MIDI note, staff, editor color/icon frame/width; include any necessary display-order field. Control channels `01` (BGM), `02` (bar length), `03`/`08` (tempo) are **not** playable drums and are never emitted as note-ons.
-
-| DTX lane | Instrument | GM note | DTX lane | Instrument | GM note |
+| DTX | Drum | GM export | DTX | Drum | GM export |
 | --- | --- | ---: | --- | --- | ---: |
-| 11 | Closed hi-hat | 42 | 17 | Floor tom | 43 |
-| 12 | Snare | 38 | 18 | Open hi-hat | 46 |
+| 11 | Closed HH | 42 | 17 | Floor tom | 43 |
+| 12 | Snare | 38 | 18 | Open HH | 46 |
 | 13 | Bass drum | 36 | 19 | Ride | 51 |
 | 14 | High tom | 50 | 1A | Left crash | 57 |
-| 15 | Low tom | 48 | 1B | Pedal hi-hat | 44 |
+| 15 | Low tom | 48 | 1B | Pedal HH | 44 |
 | 16 | Crash | 49 | 1C | Left bass | 35 |
 
-Derive default DTX→GM and GM→DTX maps, notation lookup, Phaser lane rendering metadata, preview sprite ordering, preview audio drum inclusion, and both converter-page lane labels from this table. Keep **scene-specific presentation order and channel-01 BGM treatment** where needed; derive rather than duplicate their lane properties. Unknown/non-drum lanes are skipped with an explicit nonfatal diagnostic, never converted to note 60. Page mapping overrides remain user-editable, cloned from defaults, and passed to conversion.
+**Import is not an inverse mapping.** Add a small `GM_IMPORT_LANE` many-to-one alias table beside the existing drum table for commonly used GM alternatives, including 35/36 → main kick `13` (not left bass `1C` by default); 37/38/40 → snare `12`; 41/43/45/47/48/50 → floor/low/high tom; 42/44/46 → HH/pedal/open HH; and 49/51/52/53/55/57/59 → appropriate crash/ride/left crash lanes. Make this the source of the editable importer page defaults. Export still uses each DTX lane's own GM note; explicitly mapped exceptions remain possible through user overrides. Unknown notes/lanes produce nonfatal diagnostics, not a middle-C placeholder or control lane.
 
-Reuse `groupNotesByLane` already exported by common's notation code; remove the web duplicate. Reuse the existing common DTX filename validator; remove redundant check(s) only where semantics actually match (do not replace content validation with an extension-only check).
+**Scope cut:** Do not change `BaseGame.ts` lane colors/icon frames/widths, `Preview.ts` spritesheet order, editor scene rendering or `previewAudioEngine.ts`'s already correct audio lane set. DTX lanes are fixed; their presentation data belongs in the scenes. Keep the converter page's `.dtx`/`.txt` validation because common's broader filename validator has different semantics. Delete only the duplicated `groupNotesByLane` helper and reuse the already exported common function.
 
-## 2. One MIDI implementation in common
+## 2. Fix shared DTX parse + serialize first
 
-Put MIDI read/write and public types in `packages/common/src/lib/midi/`, exporting small public functions (for example, `parseMidi`, `dtxToMidi`, `midiToDtx`). `DTXFile` retains DTX parsing/serialization and chart metadata, **not** MIDI binary parsing or writing. Reuse/adapt the existing MIDI preview parser rather than maintain two or introduce a full conversion framework. Preserve the preview page's current track, note, tempo, duration and channel display via shared parsed data.
+- `parseFromText(text)` splits on `/\r?\n/`; base `#BPM` is matched with an exact directive boundary (not prefix matching `#BPM01`), parsed with `parseFloat` and validated as positive/finite. Per-ID BPM definitions keep their existing format.
+- `LaneMeasureNote.toPattern()` defaults to the **finest grid (192)** if no coarser grid can represent all notes. This reduces accidental loss; arbitrary humanized MIDI still requires deliberate quantization.
+- Extract a pure **`toDtxText()`** from `DTXFile.export()`; keep `export()` as its browser download wrapper. The shared serializer owns chart metadata, patterns, **`#BPMxx` definitions and channel-08 references**, and **channel-02 decimal values**. It must NEVER pass channel 02 through `toPattern()`. Preserve parsed controls on editor save, while MIDI conversion can supply new controls to the same serializer. Keep channel 01 and legacy channel 03 pattern handling where already supported. No second exporter or new chart model.
+- Add public parse/serialize and real editor export regression coverage, including exact decimal BPM and channel-02 text.
 
-**Supported input:** Standard MIDI format 0/1, PPQ ticks, delta-time VLQs, running status, note-on/note-off (including note-on velocity zero as off), tempo meta `0x51` and time-signature meta `0x58`. Handle other standard channel-message widths and bounded meta/sysex skipping without corrupting offsets; reject malformed/truncated input clearly. The parser may read multiple tracks, but DTX drum conversion flattens their absolute-time events; preserving track identity, velocities, instruments, and MIDI playback are out of scope.
+## 3. One small MIDI module and a required timing seam
 
-**DTX→MIDI timebase:** Use 480 PPQ, 0-based channel 9 (GM drums), an initial tempo event and tempo changes. Share the existing DTX timing preparation feeding `buildChartTiming` (including sticky channel 02 and legacy channel 03), extracting a tiny pure helper from notation code if necessary rather than copying the rules. Map note/control positions to absolute ticks using cumulative **4 × PPQ × measureLength** plus fraction of that measure. Emit tempo changes at their actual tick. Tempo changes affect elapsed seconds, **not** tick position; check with `ChartTiming.positionToTime`. Emit MIDI time signatures at measure-length changes when representable; 3/4 → 4/4 is the required round-trip fixture. Keep unchanged 4/4 output simple. Explicitly reject an unrepresentable arbitrary DTX bar multiplier rather than silently claim a lossless round trip.
+Move MIDI parsing/encoding to `packages/common/src/lib/midi/`; exports are small public `parseMidi`, `dtxToMidi`, `midiToDtx` functions/types. Remove MIDI-only methods from `DTXFile` and the standalone parser in `midi-preview/+page.svelte`. Start from the preview parser: it already reads header lengths and channel-message widths more correctly than the DTXFile parser. Preserve existing preview track/note/tempo/duration display. Supported input: SMF 0/1, PPQ, VLQ/running status, note-on/off (including velocity-zero off), tempo `0x51`, meter `0x58`, and properly length-bounded meta/sysex skipping; clearly reject malformed input.
 
-**MIDI→DTX timebase:** Merge input track events by absolute ticks, select drum-channel note-ons, map GM note→DTX channel using the page override, derive bar boundaries from the MIDI time signatures (4/4 default), and derive note fractions from per-bar tick lengths. Convert tempo events into base `#BPM` plus `#BPMxx` references on channel `08` and meter changes into channel `02` lines. Include this timing in actual downloaded DTX text, **not merely in ephemeral page state**. Reuse `buildChartTiming` to validate chart positions against the event tempo sequence, including mid-measure changes. Unsupported mid-bar meter changes should fail explicitly instead of shifting later notes silently. Round-trip target is the same drum lanes, hit ordering/simultaneity, absolute measure positions, and effective tempo/bar lengths, up to MIDI tick quantization (≤ one tick); original noteID/sample mappings are not carried through GM MIDI.
+**Required small extraction:** `buildTimingInput(dtx): TimingInput` from `notation/quantize.ts`. It owns the existing channel-02 sticky length expansion and normalization of channel-08 BPM + channel-03 direct-hex tempo into noncolliding synthetic IDs. Both `buildNotationChart` and `dtxToMidi` call it; `dtxToMidi` passes it to `normalizeTempoEvents`. Do not run the notation engraver in conversion or fork these rules.
 
-**Serialization:** Build an array of absolute-tick events (tempo, meter, note-off, note-on, end-of-track), sort by tick with stable tie ordering (note-off before note-on for same pitch), then encode nonnegative deltas from the **previous emitted absolute tick**. Explicit note-off durations may remain 1/16 note as existing behavior; do not let them alter following note-on deltas. Verify each note-on remains parseable, including simultaneous hits and closely spaced events. Keep existing DTX browser download wrapper while factoring a pure DTX text serialization path (or exposing an equivalent public API) so timing lines can be round-trip tested without DOM internals.
+**DTX→MIDI:** 480 PPQ; drum MIDI channel 9 (zero-based); ticks from cumulative `4 × PPQ × measureLength` and each note's bar fraction; tempo only through `0x51` messages, not tick arithmetic. Emit `0x58` when a meter is representable (required 3/4 → 4/4 fixture). For unusual DTX bar multipliers, e.g. `0.96`, **preserve absolute note ticks and warn nonfatally** when meter metadata must be approximated or omitted; do not reject an otherwise exportable chart. Reimport then guarantees hit timing but not those unsupported bar boundaries. Build absolute-tick events first, sort (control changes, note-off before same-pitch note-on at identical ticks, all simultaneities retained), then delta encode from the previously **emitted tick**, never prior note-off duration.
 
-## 3. LF/CRLF and canonical SET.def parser
+**MIDI→DTX:** Merge note-on absolute ticks from all tracks, filter MIDI drum channel 9, use import aliases/current editable override, derive bar boundaries from meter changes (4/4 default), and scale from original PPQ. Explicitly quantize positions to the nearest **1/192 of the bar**, even for off-grid/non-480 PPQ notes; count/report hits that collide on one lane/slot, and unknown/unmapped notes. Preserve effective tempo via base `#BPM`, `#BPMxx` and channel `08`; preserve representable bar lengths using decimal channel `02`, all in the **downloaded text**. Reject unsupported mid-bar meter changes instead of shifting later hits. Recompute conversion at download with the current user map (no stale state flag).
 
-- Replace `DTXFile.parseFromText` line split with `/\r?\n/`; cover LF and CRLF copies containing header, BPM map, chip definition, notes, channel 02 and 08 events.
-- Add one pure `parseSetDef(text)` in common, returning `{ title, levels: [{ level, label, fileName }] }` in numeric level order, with only complete LABEL/FILE pairs; accept space and colon delimiters, case-insensitive directives, all positive level indices, and full values containing spaces. Trim values; preserve filename content (including relative paths) at the parser boundary.
-- Refactor `SimFile.parseHeader`, the editor `+page.server.ts` loader, and API `r2Enrichment.ts` to call the shared parser. Keep their respective file access/decoding/metadata shapes. R2 boundary still normalizes slashes, handles case-insensitive keys, resolves files relative to SET.def first, honors missing/claimed files, and consumes distinct files for duplicated labels in slot order. **Do not change** the native Rust `songs.rs` parser.
-- Update `SimFile.getHighestLevel` to choose the highest parsed numeric level, not just L5. Preserve existing 1–5 default SET.def generation and include any actual levels above L5 on serialization; don't silently erase them.
-- Remove only the genuinely duplicated note-group helper and DTX-content-detection checks. Fix stale Electron source-path comments touched by this work.
+**Precision contract:** DTX-origin on-grid events survive representable DTX→MIDI→DTX without unexpected loss. MIDI-origin off-grid notes are within **half a 1/192-bar slot** unless multiple same-lane hits collide in one slot (explicit diagnostic). The old ≤one-MIDI-tick tolerance is impossible at this DTX resolution. Comparing `ChartTiming.positionToTime` against MIDI-derived seconds is a **test assertion**, not runtime validation.
 
-## Tradeoffs and non-goals
+No per-note velocity preservation, original sample IDs, multitrack reconstruction, or general-purpose complex meter engine.
 
-- Reuse current DTX parsing, timing normalization, Svelte pages, sample/notation mapping, and Playwright harness. No extra state store, new database schema, cloud infrastructure, extra PR, native feature, or backward-compatibility layer.
-- No new UI art/SFX, major layout redesign, per-note velocities, multitrack preservation, or fully general odd-meter notation engine.
-- Avoid green tests that only call private MIDI serializers; assert public binary and downloaded text behavior. No blanket deletion of unrelated tests.
+## 4. One server-safe SET.def parser and all production callers
 
-## Acceptance contract
+Create pure `parseSetDef(text)` with sorted complete `{ level, label, fileName }` slots and title. Accept space/colon directives, case-insensitive keys, LF/CRLF, levels >L5, multiword labels/filenames; leave path normalization to consumers. Expose from:
+- **`@dtx/common/encoding`**, which has no Svelte/browser imports and is safe for dtx-api;
+- the common main barrel for web/client callers.
 
-1. A chart with kick (13), snare (12), closed HH (11) and simultaneous kick+crash (16) exports readable MIDI with the exact GM drum notes on channel 9 and **all note-ons** present; a zero/negative delta is never serialized.
-2. A GM MIDI import puts hits exclusively on expected DTX channels 11–1C. Changing the importer map changes the downloaded lane, not just UI state.
-3. 3/4 → 4/4 change plus a mid-measure BPM change survive DTX→MIDI→DTX (and reparse) with hit measures/fractions within one MIDI tick and corresponding timing lines.
-4. LF and CRLF DTX fixtures parse to equivalent title, BPM, notes, chip names, and timing inputs.
-5. A mixed-colon/space SET.def with L6+, multiword labels/filenames and repeated labels is interpreted consistently by common, web editor metadata, and API R2 enrichment; one referenced chart per duplicate slot.
-6. Existing converter and preview UI semantics remain intact. One **Playwright MCP** browser run exercises conversion and reimport on the web, with a screenshot showing mapping selection, readability and absence of new visual defects; no mockup attached to Linear, so visually check against the existing page layout.
-7. A **MCP-driven backend end-to-end** request through the running local dtx-api Worker with seeded SET.def/chart R2 objects returns the correct distinct file URLs/labels; unit-only API parser tests are not sufficient. Web alone is sufficient for UI acceptance; no desktop-native acceptance needed.
-8. Common/web/API unit tests, relevant type checks, web E2E, lint/format and affected CI pass on the implementation commit. This draft contains **documentation only**; acceptance is for later implementation on **this PR**.
+Update **all** uses, not just three parsers:
+1. `SimFile.parseHeader` iterates parsed slots.
+2. `SimFile.parseFromRemoteURLWithMetadata` iterates **actual metadata keys** (not L1–L5), so the real editor loads L6+.
+3. `SimFile.getHighestLevel` chooses the highest **present** numeric slot; `generateDefFileContent` retains populated >L5 slots and existing L1–L5 defaults.
+4. Web editor `+page.server.ts` and API `r2Enrichment.ts` call the shared parser; preserve their existing shapes and I/O. In R2, keep duplicate-label queues in numeric L-slot order, sibling-directory-first and case-insensitive resolution, claimed/missing semantics, and normalized slashes.
+
+Rust desktop `songs.rs` remains untouched; it currently caps levels at **1–9**, intentionally different from common's positive level parser. Fix stale Electron path comments, but don't change unrelated file validators.
+
+## End-to-end contract and non-goals
+
+- Exports of kicks (13), snares (12), HH (11), crashes (16) have correct GM notes and all simultaneous hits with parseable nonnegative MIDI deltas.
+- On-grid representable 3/4→4/4 + mid-bar BPM changes survive file round-trips. Nonrepresentable DTX meter preserves hit ticks with a warning. Off-grid/non-480 PPQ input retains all distinct 1/192 slots and reports collision losses.
+- Editor save and MIDI import download preserve decimal base BPM, per-ID BPM and channel 02 decimal values. GM aliases and user mapping overrides change **downloaded** data.
+- LF and CRLF DTX copies match. Mixed SET.def with L6+, spaces and duplicate labels works in local SimFile, web editor metadata, **remote editor**, and API R2.
+- Focused public-API/unit/editor tests, existing converter download/reparse Playwright tests, API mock-bucket tests, and affected CI pass.
+- **Project acceptance:** one MCP-driven web conversion session with a screenshot visually checked against current UI (no Linear mockup), plus an MCP-driven live Worker/R2 request using the existing E2E seed harness. Reuse existing Playwright and local stack; no redundant harnesses, new screenshots committed to Git or human acceptance. Native verification unnecessary without native changes.
+
+No Phaser/audio/UI redesign, art/SFX, DB migrations, Cloudflare infrastructure work, backward-compatibility layer, second PR or general MIDI framework. These criteria are **not complete** on this documentation-only draft.

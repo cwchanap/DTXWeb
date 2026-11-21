@@ -14,6 +14,3 @@ export const generateMidiFilename = (filename: string): string =>
 	`${filename.replace(/\.[^/.]+$/, '')}.mid`;
 
 export const formatFileSizeKB = (bytes: number): string => (bytes / 1024).toFixed(1);
-
-// Reuse the common helper; the local duplicate is removed in Task 5b.
-export { groupNotesByLane } from '@dtx/common';

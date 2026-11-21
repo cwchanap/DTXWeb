@@ -6,7 +6,14 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync, readdirSy
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { TEST_USER_ID, CHART_A_ID, CHART_B_ID, CHART_C_ID, isAuthConfigured } from '../test-config';
+import {
+	TEST_USER_ID,
+	CHART_A_ID,
+	CHART_B_ID,
+	CHART_C_ID,
+	CHART_D_ID,
+	isAuthConfigured
+} from '../test-config';
 import { createBetterAuthSeedSql } from './seed-better-auth-user';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -27,13 +34,15 @@ const migrations = readdirSync(migrationsDir)
 	.map((name) => join(migrationsDir, name));
 const seedFile = join(here, 'seed.sql');
 const fixture = join(repoRoot, 'packages/e2e-web/fixtures/test-sample.dtx');
+const setDefFixture = join(repoRoot, 'packages/e2e-web/fixtures/mixed-set.def');
 
 // Pre-check: all required files must exist before we start, otherwise failures
 // surface as opaque Playwright "webServer timed out after 180s" errors.
 for (const [label, path] of [
 	...migrations.map((m, i) => [`D1 migration ${i + 1}`, m] as const),
 	['seed SQL', seedFile],
-	['R2 fixture (test-sample.dtx)', fixture]
+	['R2 fixture (test-sample.dtx)', fixture],
+	['R2 fixture (mixed-set.def)', setDefFixture]
 ] as const) {
 	if (!existsSync(path)) {
 		throw new Error(`[prepare-stack] missing ${label} at ${path}`);
@@ -175,6 +184,34 @@ for (const chartId of [CHART_A_ID, CHART_B_ID, CHART_C_ID]) {
 	]);
 }
 
+// Chart D: a mixed-form SET.def plus the four charts it names (including a
+// subdirectory reference), so the Worker pairs dtx_files rows by label —
+// duplicate "Basic Multi" labels included — instead of a single flat lookup.
+wrangler('put R2 object (set.def)', [
+	'r2',
+	'object',
+	'put',
+	`simfile-dtx/${CHART_D_ID}/set.def`,
+	'--local',
+	'--persist-to',
+	persist,
+	'--file',
+	setDefFixture
+]);
+for (const chartFile of ['basic.dtx', 'extra.dtx', 'maniac.dtx', 'sub/lead.dtx']) {
+	wrangler(`put R2 object (${chartFile})`, [
+		'r2',
+		'object',
+		'put',
+		`simfile-dtx/${CHART_D_ID}/${chartFile}`,
+		'--local',
+		'--persist-to',
+		persist,
+		'--file',
+		fixture
+	]);
+}
+
 console.log(
-	`[prepare-stack] seeded ${pkg} local Miniflare (charts 1001/1002/1003 + R2 ${CHART_A_ID}/${CHART_B_ID}/${CHART_C_ID}/song.dtx)`
+	`[prepare-stack] seeded ${pkg} local Miniflare (charts 1001/1002/1003/1004 + R2 ${CHART_A_ID}/${CHART_B_ID}/${CHART_C_ID}/song.dtx + ${CHART_D_ID}/set.def charts)`
 );

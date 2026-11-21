@@ -228,6 +228,81 @@ describe('DTXFile', () => {
 
 			expect(dtxFile.pathWav).toBe('drums');
 		});
+
+		it('parses LF-only line endings', async () => {
+			await dtxFile.parseFromText('#TITLE: LF Song\n#BPM: 150');
+
+			expect(dtxFile.title).toBe('LF Song');
+			expect(dtxFile.bpm).toBe(150);
+		});
+
+		it('parses LF and CRLF content identically across all parsed facets', async () => {
+			const lfContent = [
+				'#TITLE: LF Song',
+				'#ARTIST: Artist',
+				'#DLEVEL: 7',
+				'#BPM: 142.5',
+				'#BPM01: 180',
+				'#PREIMAGE: preview.jpg',
+				'#WAV01: KICK.WAV',
+				'#VOLUME01: 90',
+				'#00111: 01020000',
+				'#00202: 0.75',
+				'#00308: 01010101'
+			].join('\n');
+			const crlfContent = lfContent.replaceAll('\n', '\r\n');
+
+			const lfFile = new DTXFile();
+			await lfFile.parseFromText(lfContent);
+			const crlfFile = new DTXFile();
+			await crlfFile.parseFromText(crlfContent);
+
+			// The LF copy must actually parse — equivalence alone would also
+			// pass if both copies produced garbage.
+			expect(lfFile.title).toBe('LF Song');
+			expect(lfFile.artist).toBe('Artist');
+			expect(lfFile.level).toBe(7);
+			expect(lfFile.bpm).toBe(142.5);
+
+			expect(crlfFile.lines).toEqual(lfFile.lines);
+			expect([crlfFile.title, crlfFile.artist, crlfFile.level, crlfFile.bpm]).toEqual([
+				lfFile.title,
+				lfFile.artist,
+				lfFile.level,
+				lfFile.bpm
+			]);
+			expect(crlfFile.parseSoundChips()).toEqual(lfFile.parseSoundChips());
+			expect(crlfFile.parseNotes()).toEqual(lfFile.parseNotes());
+			expect(crlfFile.parseMeasureLengths()).toEqual(lfFile.parseMeasureLengths());
+			expect(crlfFile.parseBPMChanges()).toEqual(lfFile.parseBPMChanges());
+		});
+
+		it('parses a decimal base BPM', async () => {
+			await dtxFile.parseFromText('#BPM: 143.5');
+
+			expect(dtxFile.bpm).toBe(143.5);
+		});
+
+		it('matches the exact #BPM directive when #BPM01 appears before it', async () => {
+			await dtxFile.parseFromText('#BPM01: 200\r\n#BPM: 130.5');
+
+			expect(dtxFile.bpm).toBe(130.5);
+		});
+
+		it('does not treat a #BPMxx definition as the base BPM', async () => {
+			await dtxFile.parseFromText('#BPM01: 200');
+
+			expect(dtxFile.bpm).toBe(0);
+		});
+
+		it.each(['#BPM: -20', '#BPM: 1e999'])(
+			'rejects invalid base BPM from "%s"',
+			async (line) => {
+				await dtxFile.parseFromText(line);
+
+				expect(dtxFile.bpm).toBe(0);
+			}
+		);
 	});
 
 	describe('parseSoundChips', () => {

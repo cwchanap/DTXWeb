@@ -103,7 +103,11 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 
 	let currentTime = 0;
 	let runningStatus = 0;
-	const activeNotes = new Map<string, MidiNote>();
+	let sawEndOfTrack = false;
+	// Open note-ons per channel+pitch, oldest first. Overlapping re-attacks
+	// queue so every attack is retained; a note-off pairs FIFO with the
+	// earliest still-open attack, and offs with none pending are ignored.
+	const activeNotes = new Map<string, MidiNote[]>();
 
 	const readByte = (): number => {
 		if (offset >= trackEnd) fail('unexpected end of track');
@@ -160,20 +164,23 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 
 				const key = `${channel}-${note}`;
 				if (command === 0x90 && velocity > 0) {
-					activeNotes.set(key, {
+					const pending = activeNotes.get(key) ?? [];
+					pending.push({
 						channel,
 						note,
 						velocity,
 						startTime: currentTime,
 						duration: 0
 					});
+					activeNotes.set(key, pending);
 				} else {
-					// 0x80 or velocity-zero 0x90 closes the matching note-on.
-					const active = activeNotes.get(key);
-					if (active) {
+					// 0x80 or velocity-zero 0x90 closes the oldest matching note-on.
+					const pending = activeNotes.get(key);
+					const active = pending?.shift();
+					if (pending && active) {
 						active.duration = currentTime - active.startTime;
 						notes.push(active);
-						activeNotes.delete(key);
+						if (pending.length === 0) activeNotes.delete(key);
 					}
 				}
 			} else if (command === 0xc0) {
@@ -191,17 +198,35 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 			const payload = Array.from(data.slice(offset, offset + length));
 			offset += length;
 
-			if (subtype === 0x51 && payload.length === 3) {
-				tempoEvents.push({
-					tick: currentTime,
-					microsecondsPerQuarter: (payload[0] << 16) | (payload[1] << 8) | payload[2]
-				});
-			} else if (subtype === 0x58 && payload.length >= 2) {
+			if (subtype === 0x51) {
+				if (payload.length !== 3) {
+					fail(`tempo meta event has ${payload.length} bytes, expected 3`);
+				}
+				const microsecondsPerQuarter = (payload[0] << 16) | (payload[1] << 8) | payload[2];
+				// Zero would produce an infinite BPM downstream.
+				if (microsecondsPerQuarter === 0) {
+					fail('tempo of 0 microseconds per quarter');
+				}
+				tempoEvents.push({ tick: currentTime, microsecondsPerQuarter });
+			} else if (subtype === 0x58) {
+				if (payload.length !== 4) {
+					fail(`time signature meta event has ${payload.length} bytes, expected 4`);
+				}
 				meterEvents.push({
 					tick: currentTime,
 					numerator: payload[0],
 					denominator: 2 ** payload[1]
 				});
+			} else if (subtype === 0x2f) {
+				// End of track must be a zero-length, genuinely terminal meta
+				// event — not padding and not followed by more bytes.
+				if (payload.length !== 0) {
+					fail(`end-of-track meta event has ${payload.length} bytes, expected 0`);
+				}
+				if (offset !== trackEnd) {
+					fail('data follows the end-of-track event');
+				}
+				sawEndOfTrack = true;
 			} else if (subtype === 0x03 && trackName === undefined) {
 				trackName = new TextDecoder().decode(new Uint8Array(payload));
 			}
@@ -224,10 +249,14 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 		}
 	}
 
+	if (!sawEndOfTrack) fail('missing end-of-track meta event');
+
 	// Notes still open at track end close at the last seen tick.
-	for (const active of activeNotes.values()) {
-		active.duration = currentTime - active.startTime;
-		notes.push(active);
+	for (const pending of activeNotes.values()) {
+		for (const active of pending) {
+			active.duration = currentTime - active.startTime;
+			notes.push(active);
+		}
 	}
 	notes.sort((a, b) => a.startTime - b.startTime);
 
@@ -246,10 +275,13 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 	};
 	const readUint32 = (offset: number): number => {
 		if (offset + 4 > data.length) fail('truncated file');
+		// Chunk lengths are unsigned 32-bit; `<< 24` alone yields a signed
+		// result that would bypass the declared-extent check for lengths
+		// like 0x80000000.
 		return (
-			(data[offset] << 24) |
-			(data[offset + 1] << 16) |
-			(data[offset + 2] << 8) |
+			((data[offset] << 24) >>> 0) +
+			(data[offset + 1] << 16) +
+			(data[offset + 2] << 8) +
 			data[offset + 3]
 		);
 	};

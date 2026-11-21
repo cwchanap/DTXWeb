@@ -58,6 +58,25 @@ export {
 } from './notation/quantize';
 export { exportNotationChartToMusicXml, type MusicXmlMetadata } from './notation/musicxml';
 
+// Shared MIDI parser + DTX converters (pure; no DOM/File APIs)
+export {
+	parseMidi,
+	type MidiEvent,
+	type MidiNote,
+	type MidiTrack,
+	type MidiTempoEvent,
+	type MidiMeterEvent,
+	type ParsedMidi
+} from './midi/parser';
+export {
+	dtxToMidi,
+	midiToDtx,
+	MIDI_PPQ,
+	type DtxToMidiResult,
+	type MidiToDtxOptions,
+	type MidiToDtxResult
+} from './midi/convert';
+
 // PreviewAudioEngine lives in the `./audio` subpath export to keep the main
 // barrel free of browser-only audio modules. Re-exporting it here would pull
 // `audioDecoder` (and its top-level `new XAAudioContext()`) into every page

@@ -127,7 +127,8 @@ function verifyMidiFile(filepath: string): MidiFileInfo {
 const fixtures: MidiFileInfo[] = [
 	verifyMidiFile(path.join(__dirname, 'test-sample.mid')),
 	verifyMidiFile(path.join(__dirname, 'empty-sample.mid')),
-	verifyMidiFile(path.join(__dirname, 'multi-track-sample.mid'))
+	verifyMidiFile(path.join(__dirname, 'multi-track-sample.mid')),
+	verifyMidiFile(path.join(__dirname, 'drum-off-grid.mid'))
 ];
 
 console.log('🔍 Verifying MIDI fixtures...\n');

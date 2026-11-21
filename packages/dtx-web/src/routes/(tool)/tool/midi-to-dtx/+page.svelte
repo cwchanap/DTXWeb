@@ -36,6 +36,8 @@
 	let artist = $state('Unknown');
 	let level = $state(5);
 	let bpm = $state(120);
+	// True once the user edits the BPM field — an explicit 120 still counts.
+	let bpmTouched = $state(false);
 	let comment = $state('Converted from MIDI file');
 
 	let fileInput: HTMLInputElement;
@@ -112,8 +114,11 @@
 			dtxFile.comment = comment;
 
 			// Seed the editable base BPM with the detected initial tempo —
-			// 120 is a real value, not a missing one.
-			bpm = midiToDtx(parsedMidi, { noteToLane: midiToDtxMap }).bpm;
+			// 120 is a real value, not a missing one — unless the user
+			// already edited the field.
+			if (!bpmTouched) {
+				bpm = midiToDtx(parsedMidi, { noteToLane: midiToDtxMap }).bpm;
+			}
 
 			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
 			convertedFileName = `${baseName}.dtx`;
@@ -172,6 +177,7 @@
 		artist = 'Unknown';
 		level = 5;
 		bpm = 120;
+		bpmTouched = false;
 		comment = 'Converted from MIDI file';
 		if (fileInput) {
 			fileInput.value = '';
@@ -398,6 +404,7 @@
 									min="60"
 									max="300"
 									bind:value={bpm}
+									oninput={() => (bpmTouched = true)}
 									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>

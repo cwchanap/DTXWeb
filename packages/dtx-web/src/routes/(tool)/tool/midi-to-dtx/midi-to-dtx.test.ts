@@ -705,7 +705,7 @@ describe('MIDI to DTX Component Rendering', () => {
 		clickSpy.mockRestore();
 	});
 
-	it('populates BPM from a 120 BPM file and keeps later tempo changes', async () => {
+	it('seeds detected BPM only when the field is untouched, and keeps later tempo changes', async () => {
 		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
 
 		const { container } = render(MidiToDtx);
@@ -719,10 +719,71 @@ describe('MIDI to DTX Component Rendering', () => {
 		});
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 
-		// A pre-convert user value must not survive: detected 120 is a real
-		// tempo and seeds the editable base BPM.
+		// Field untouched: detected 120 is a real tempo and seeds the base BPM.
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		expect(bpmInput.value).toBe('120');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const instance = exportSpy.mock.instances[0] as DTXFile;
+		expect(instance.bpm).toBe(120);
+		const controls = exportSpy.mock.calls[0][1];
+		expect(Object.values(controls?.bpmChanges ?? {})).toContain(180);
+
+		exportSpy.mockRestore();
+	});
+
+	it('keeps a BPM edit made before Convert and still emits later tempo changes', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({
+			tempos: [
+				{ tick: 0, bpm: 120 },
+				{ tick: 1920, bpm: 180 }
+			],
+			hits: [{ tick: 0, note: 36 }]
+		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		// Intentional edit before Convert must survive: detected 120 must
+		// not overwrite the user's 200.
 		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
 		await fireEvent.input(bpmInput, { target: { value: '200' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(bpmInput.value).toBe('200');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const instance = exportSpy.mock.instances[0] as DTXFile;
+		expect(instance.bpm).toBe(200);
+		const controls = exportSpy.mock.calls[0][1];
+		expect(Object.values(controls?.bpmChanges ?? {})).toContain(180);
+
+		exportSpy.mockRestore();
+	});
+
+	it('keeps an explicit 120 entered before Convert when the detected BPM differs', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({
+			tempos: [{ tick: 0, bpm: 140 }],
+			hits: [{ tick: 0, note: 36 }]
+		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		// Explicitly entering the default-looking 120 is still an edit.
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		await fireEvent.input(bpmInput, { target: { value: '120' } });
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
@@ -733,8 +794,6 @@ describe('MIDI to DTX Component Rendering', () => {
 
 		const instance = exportSpy.mock.instances[0] as DTXFile;
 		expect(instance.bpm).toBe(120);
-		const controls = exportSpy.mock.calls[0][1];
-		expect(Object.values(controls?.bpmChanges ?? {})).toContain(180);
 
 		exportSpy.mockRestore();
 	});

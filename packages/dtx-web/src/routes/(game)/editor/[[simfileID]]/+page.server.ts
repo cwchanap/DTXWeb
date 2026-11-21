@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/public';
-import { decodeArrayBufferWithBomDetection } from '@dtx/common';
+import { decodeArrayBufferWithBomDetection, parseSetDef } from '@dtx/common';
 import type { PageServerLoad } from './$types';
 
 interface SimFileMetadata {
@@ -14,51 +14,6 @@ interface SimFileMetadata {
 			  }
 			| undefined;
 	};
-}
-
-async function parseDefFileContent(content: string): Promise<SimFileMetadata> {
-	const lines = content.split(/\r?\n/);
-
-	// Extract title - handle both space and colon separators
-	const titleLine = lines.find((line: string) => line.startsWith('#TITLE'));
-	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/, '').trim() : '';
-
-	// Extract level information - use regex for more robust parsing
-	const levels: SimFileMetadata['levels'] = {};
-	const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(.+)$/;
-
-	const levelData: Record<number, { label?: string; fileName?: string }> = {};
-
-	lines.forEach((line: string) => {
-		const match = line.match(levelPattern);
-		if (match) {
-			const level = parseInt(match[1], 10);
-			const type = match[2];
-			const value = match[3].trim();
-
-			if (!levelData[level]) {
-				levelData[level] = {};
-			}
-
-			if (type === 'LABEL') {
-				levelData[level].label = value;
-			} else if (type === 'FILE') {
-				levelData[level].fileName = value;
-			}
-		}
-	});
-
-	// Convert to final format, only including complete entries
-	Object.entries(levelData).forEach(([level, data]) => {
-		if (data.label && data.fileName) {
-			levels[parseInt(level, 10)] = {
-				label: data.label,
-				fileName: data.fileName
-			};
-		}
-	});
-
-	return { title, levels };
 }
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
@@ -100,8 +55,15 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 		const arrayBuffer = await res.arrayBuffer();
 		const textContent = decodeArrayBufferWithBomDetection(arrayBuffer);
 
-		// Parse the def file content
-		const metadata = await parseDefFileContent(textContent);
+		// Parse the def file content with the shared parser (space/colon
+		// directives, case-insensitive keys, slots beyond L5).
+		const parsed = parseSetDef(textContent);
+		const metadata: SimFileMetadata = {
+			title: parsed.title,
+			levels: Object.fromEntries(
+				parsed.levels.map(({ level, label, fileName }) => [level, { label, fileName }])
+			)
+		};
 
 		return {
 			simfileID,

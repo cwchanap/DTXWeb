@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
 import { decodeFileWithEncodingDetection } from './encoding-utils';
+import { parseSetDef } from './setDef';
 import { dedupedFetch } from '../utils/dedupedFetch';
 
 interface DtxLevel {
@@ -84,23 +85,26 @@ export class SimFile {
 		simFile.simFileID = simfileID;
 		simFile.title = metadata.title;
 
-		// Parse levels using provided metadata instead of fetching set.def
-		const promises = [1, 2, 3, 4, 5].map(async (level) => {
-			const levelData = metadata.levels[level];
-			if (levelData) {
-				const { label, fileName } = levelData;
-				try {
-					const response = await dedupedFetch(`${bucketUrl}/${simfileID}/${fileName}`);
-					if (!response.ok) {
-						return;
-					}
-					const file = new File([await response.blob()], fileName);
-					const dtx = new DTXFile(file, label);
-					await dtx.parse();
-					simFile.levels[level] = { label, file: dtx };
-				} catch (error) {
-					console.error(`Failed to load DTX file ${fileName}:`, error);
+		// Parse levels using provided metadata instead of fetching set.def.
+		// Iterate the actual metadata keys — server-side SET.def parsing can
+		// surface slots beyond the conventional L1–L5 range.
+		const promises = Object.entries(metadata.levels).map(async ([levelKey, levelData]) => {
+			if (!levelData) {
+				return;
+			}
+			const level = Number(levelKey);
+			const { label, fileName } = levelData;
+			try {
+				const response = await dedupedFetch(`${bucketUrl}/${simfileID}/${fileName}`);
+				if (!response.ok) {
+					return;
 				}
+				const file = new File([await response.blob()], fileName);
+				const dtx = new DTXFile(file, label);
+				await dtx.parse();
+				simFile.levels[level] = { label, file: dtx };
+			} catch (error) {
+				console.error(`Failed to load DTX file ${fileName}:`, error);
 			}
 		});
 
@@ -167,36 +171,28 @@ export class SimFile {
 
 	public async parseHeader(file: File) {
 		const content = await this.readFileWithEncoding(file);
-		const lines = content.split(/\r?\n/);
+		const parsed = parseSetDef(content);
+		this.title = parsed.title;
 
-		const title_line = lines.find((line: string) => line.startsWith('#TITLE '));
-		this.title = title_line ? title_line.split('#TITLE ')[1] : '';
-
-		const promises = [1, 2, 3, 4, 5].map(async (level) => {
-			const level_line = lines.find((line: string) => line.startsWith(`#L${level}LABEL `));
-			const file_line = lines.find((line: string) => line.startsWith(`#L${level}FILE `));
-			if (level_line && file_line) {
-				const label = level_line.split(' ')[1];
-				const file_name = file_line.split(' ')[1];
-				let file;
-				if (!this.isParseFromRemoteURL) {
-					file = this.files.find((f) => f.name === file_name);
-				} else {
-					const response = await dedupedFetch(
-						`${this.bucketUrl}/${this.simFileID}/${file_name}`
-					);
-					if (!response.ok) {
-						return;
-					}
-					file = new File([await response.blob()], file_name);
-				}
-				if (!file) {
+		const promises = parsed.levels.map(async ({ level, label, fileName }) => {
+			let file;
+			if (!this.isParseFromRemoteURL) {
+				file = this.files.find((f) => f.name === fileName);
+			} else {
+				const response = await dedupedFetch(
+					`${this.bucketUrl}/${this.simFileID}/${fileName}`
+				);
+				if (!response.ok) {
 					return;
 				}
-				const dtx = new DTXFile(file, label);
-				await dtx.parse();
-				this.levels[level] = { label, file: dtx };
+				file = new File([await response.blob()], fileName);
 			}
+			if (!file) {
+				return;
+			}
+			const dtx = new DTXFile(file, label);
+			await dtx.parse();
+			this.levels[level] = { label, file: dtx };
 		});
 
 		await Promise.all(promises);
@@ -207,8 +203,14 @@ export class SimFile {
 	}
 
 	public getHighestLevel() {
-		const highest =
-			this.levels[5] || this.levels[4] || this.levels[3] || this.levels[2] || this.levels[1];
+		// Highest populated numeric slot — not capped at L5, since remote
+		// metadata and local SET.def parsing can surface L6+ charts.
+		const highest = Object.keys(this.levels)
+			.map(Number)
+			.filter((level) => Number.isInteger(level))
+			.sort((a, b) => b - a)
+			.map((level) => this.levels[level])
+			.find((entry) => entry !== undefined);
 		if (!highest) {
 			throw new Error('No levels found');
 		}
@@ -277,6 +279,22 @@ export class SimFile {
 				lines.push(`#L${level}LABEL ${defaultLabels[level - 1]}`);
 				lines.push(`#L${level}FILE ${defaultFile}`);
 			}
+		}
+
+		// Retain populated slots beyond the conventional L1–L5 range so L6+
+		// charts survive a def round-trip. Slots whose file has no resolvable
+		// name are skipped — an orphaned label would fail the complete-pair
+		// requirement on reparse anyway.
+		const extraLevels = Object.keys(this.levels)
+			.map(Number)
+			.filter((level) => Number.isInteger(level) && level > 5)
+			.sort((a, b) => a - b);
+		for (const level of extraLevels) {
+			const levelData = this.levels[level];
+			const fileName = levelData?.file.getFileName();
+			if (!levelData || !fileName) continue;
+			lines.push(`#L${level}LABEL ${levelData.label}`);
+			lines.push(`#L${level}FILE ${fileName}`);
 		}
 
 		return lines.join('\n');

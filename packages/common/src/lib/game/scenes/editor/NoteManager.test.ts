@@ -392,6 +392,26 @@ describe('NoteManager', () => {
 			expect(noteManager.selectedNotes.size).toBe(0);
 		});
 
+		it('should delete the exact stored chip when the key carries an off-grid position', () => {
+			const laneId = 'lane1';
+			const measure = 1;
+			// 1/384 and 1/192 snap to the same 192-cell graphic slot; keys carry
+			// the exact stored position so deletion removes only the selected chip.
+			const laneMeasureNote = new LaneMeasureNote(measure, laneId, [
+				{ noteID: '01', position: 1 / 384 },
+				{ noteID: '02', position: 1 / 192 }
+			]);
+			mockEditor._getMockNotes()[laneId] = [laneMeasureNote];
+
+			const noteKey = `note-0-${measure}-${1 / 384}`;
+			mockEditor._addMockGameObject(noteKey);
+			noteManager.selectedNotes.add(noteKey);
+
+			noteManager.deleteSelectedNotes();
+
+			expect(laneMeasureNote.notes).toEqual([{ noteID: '02', position: 1 / 192 }]);
+		});
+
 		it('should record delete actions for undo functionality', () => {
 			const laneId = 'lane1';
 			const measure = 1;

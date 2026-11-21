@@ -905,6 +905,32 @@ describe('DTXFile', () => {
 			expect(text).toContain('#00012: 00000100');
 		});
 
+		it('should route merged-cell warnings to controls.onWarning instead of console.warn', () => {
+			// 0.5 and 0.5001 fit no grid as distinct cells — export must surface
+			// the data loss to the caller, not bury it in console.warn.
+			const warnings: string[] = [];
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const file = new DTXFile();
+			const text = file.toDtxText(
+				{
+					'12': [
+						new LaneMeasureNote(0, '12', [
+							{ noteID: '01', position: 0.5 },
+							{ noteID: '02', position: 0.5001 }
+						])
+					]
+				},
+				{ onWarning: (message) => warnings.push(message) }
+			);
+
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain('share a cell');
+			expect(warn).not.toHaveBeenCalled();
+			const laneLine = text.split('\r\n').find((line) => line.startsWith('#00012:'));
+			expect(laneLine).toHaveLength('#00012: '.length + 768 * 2);
+			warn.mockRestore();
+		});
+
 		it('should serialize a fresh DTXFile without controls or parsed lines', () => {
 			// lines starts as [] so the control parsers are safe to call on a
 			// file that was never parsed — no undefined.filter() crash.

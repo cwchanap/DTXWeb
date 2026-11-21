@@ -739,6 +739,9 @@ export class NoteManager {
 		const laneIndex = parseInt(parts[1]);
 		const measure = parseInt(parts[2]);
 		const cellOffset = parseFloat(parts[3]);
+		// Keys carry the exact stored position but the graphic is drawn at the
+		// 192-cell snap — bounds must reproduce that same drawn position.
+		const drawnOffset = Math.round(cellOffset * HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
 
 		// Calculate base X position (no stacking offset for performance)
 		const x =
@@ -749,7 +752,7 @@ export class NoteManager {
 		// Calculate Y position using high-resolution positioning
 		const yOffset = this.editor.getTotalMesaureOffest(measure);
 		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
-			cellOffset,
+			drawnOffset,
 			this.editor.getCellsPerMeasure()
 		);
 
@@ -796,8 +799,10 @@ export class NoteManager {
 
 		const laneIndex = parseInt(parts[1]);
 		const measure = parseInt(parts[2]);
-		const rawCellOffset = parseFloat(parts[3]);
-		const cellOffset = rawCellOffset;
+		const cellOffset = parseFloat(parts[3]);
+		// Keys carry the exact stored position but the graphic is drawn at the
+		// 192-cell snap — bounds must reproduce that same drawn position.
+		const drawnOffset = Math.round(cellOffset * HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
 
 		// Find nearby notes to determine stacking position (same logic as Editor.drawNote)
 		const nearbyNotes = this.findNearbyNotes(measure, laneIndex, cellOffset);
@@ -816,7 +821,7 @@ export class NoteManager {
 		// Calculate Y position using high-resolution positioning (same as Editor.drawNote)
 		const yOffset = this.editor.getTotalMesaureOffest(measure);
 		const { wholeCells, fractionalCell } = calculateHighResolutionPosition(
-			cellOffset,
+			drawnOffset,
 			this.editor.getCellsPerMeasure()
 		);
 

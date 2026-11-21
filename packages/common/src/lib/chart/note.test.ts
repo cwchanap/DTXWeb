@@ -260,6 +260,37 @@ describe('LaneMeasureNote', () => {
 			warn.mockRestore();
 		});
 
+		it('should warn when the per-note tolerance merges distinct positions on a standard grid', () => {
+			// 0.5 + 0.5001 both pass res-4 tolerance (2.0004 is within 0.001 of 2)
+			// yet share cell 2 — the tolerance check alone would overwrite '01'
+			// silently. The distinct-cell requirement forces widening to the cap.
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 0.5 },
+				{ noteID: '02', position: 0.5001 }
+			]);
+			const pattern = laneMeasureNote.toPattern();
+
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining('share a cell'));
+			expect(pattern).toHaveLength(768 * 2);
+			warn.mockRestore();
+		});
+
+		it('should report the merged-cell loss to an onWarning sink instead of console.warn', () => {
+			const warnings: string[] = [];
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 0.5 },
+				{ noteID: '02', position: 0.5001 }
+			]);
+			laneMeasureNote.toPattern((message) => warnings.push(message));
+
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain('share a cell');
+			expect(warn).not.toHaveBeenCalled();
+			warn.mockRestore();
+		});
+
 		it('should keep a note at fraction 0.875 in a 3/4 bar', () => {
 			// MIDI-import contract: positions are [0,1) bar fractions with
 			// measureLength = 1 even for 3/4; the meter lives only in the

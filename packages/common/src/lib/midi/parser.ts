@@ -92,6 +92,12 @@ interface RawTrack {
 	meterEvents: MidiMeterEvent[];
 }
 
+/** FIFO of open note-ons; `head` advances on dequeue so removal is O(1). */
+interface PendingNotes {
+	items: MidiNote[];
+	head: number;
+}
+
 const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrack => {
 	const events: MidiEvent[] = [];
 	const notes: MidiNote[] = [];
@@ -107,7 +113,9 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 	// Open note-ons per channel+pitch, oldest first. Overlapping re-attacks
 	// queue so every attack is retained; a note-off pairs FIFO with the
 	// earliest still-open attack, and offs with none pending are ignored.
-	const activeNotes = new Map<string, MidiNote[]>();
+	// The head index keeps dequeue O(1) — Array.shift() is O(n) per release
+	// and made massed overlapping attacks quadratic.
+	const activeNotes = new Map<string, PendingNotes>();
 
 	const readByte = (): number => {
 		if (offset >= trackEnd) fail('unexpected end of track');
@@ -164,8 +172,8 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 
 				const key = `${channel}-${note}`;
 				if (command === 0x90 && velocity > 0) {
-					const pending = activeNotes.get(key) ?? [];
-					pending.push({
+					const pending = activeNotes.get(key) ?? { items: [], head: 0 };
+					pending.items.push({
 						channel,
 						note,
 						velocity,
@@ -176,11 +184,14 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 				} else {
 					// 0x80 or velocity-zero 0x90 closes the oldest matching note-on.
 					const pending = activeNotes.get(key);
-					const active = pending?.shift();
+					const active =
+						pending && pending.head < pending.items.length
+							? pending.items[pending.head++]
+							: undefined;
 					if (pending && active) {
 						active.duration = currentTime - active.startTime;
 						notes.push(active);
-						if (pending.length === 0) activeNotes.delete(key);
+						if (pending.head === pending.items.length) activeNotes.delete(key);
 					}
 				}
 			} else if (command === 0xc0) {
@@ -253,7 +264,8 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 
 	// Notes still open at track end close at the last seen tick.
 	for (const pending of activeNotes.values()) {
-		for (const active of pending) {
+		for (let i = pending.head; i < pending.items.length; i++) {
+			const active = pending.items[i];
 			active.duration = currentTime - active.startTime;
 			notes.push(active);
 		}

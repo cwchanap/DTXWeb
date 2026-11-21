@@ -1571,6 +1571,86 @@ describe('Editor Scene', () => {
 			syncNotesToStoreSpy.mockRestore();
 		});
 
+		it('should delete the front-drawn chip when a stacked note overlaps the next lane', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+
+			// A stacked HH (lane 2, stack 2) is shifted into the next lane and
+			// overlaps a closed HH drawn later (stack 0). The click resolves to
+			// the later-drawn graphic, not the higher stack index.
+			const coveredLaneId = '18';
+			const coveredGroup = new LaneMeasureNote(
+				0,
+				coveredLaneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			const frontLaneId = '11';
+			const frontGroup = new LaneMeasureNote(
+				0,
+				frontLaneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = {
+				[coveredLaneId]: [coveredGroup],
+				[frontLaneId]: [frontGroup]
+			};
+
+			const coveredKey = 'note-2-0-0.25';
+			const frontKey = 'note-3-0-0.25';
+			const coveredNote = { destroy: vi.fn(), name: coveredKey };
+			const frontNote = { destroy: vi.fn(), name: frontKey };
+			const list = [coveredNote, frontNote];
+			editorScene['panelContainer'] = {
+				y: 0,
+				list,
+				getAll: vi.fn().mockReturnValue(list),
+				getByName: vi.fn((name: string) => list.find((n) => n.name === name) ?? null)
+			} as any;
+			editorScene['noteManager'].setStackIndex(coveredKey, 2);
+			editorScene['noteManager'].setStackIndex(frontKey, 0);
+			vi.spyOn(editorScene['noteManager'], 'calculateNoteBounds').mockImplementation(
+				(key) =>
+					({
+						x: key === frontKey ? 110 : 100,
+						y: 500,
+						width: 40,
+						height: 20
+					}) as any
+			);
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// Both mocked rects contain (120, 510).
+			const mockPointer = { x: 120, y: 510, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(frontGroup.notes).toHaveLength(0);
+			expect(coveredGroup.notes).toEqual([{ noteID: '01', position: 0.25 }]);
+			expect(frontNote.destroy).toHaveBeenCalled();
+			expect(coveredNote.destroy).not.toHaveBeenCalled();
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
 		it('should delete from the owning group when duplicate pattern lines share a lane/measure', () => {
 			editorScene.create();
 			editorScene['isEditing'] = true;
@@ -1621,6 +1701,79 @@ describe('Editor Scene', () => {
 
 			handlePointerDownSpy.mockRestore();
 			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should delete the drawn chip when duplicate pattern lines share one position', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+
+			// Two pattern lines put a chip at the same lane/measure/offset.
+			// Only one graphic exists (keyed by that offset) and drawNote
+			// drew the first group's chip, so deletion must remove that chip,
+			// not the hidden second one.
+			const laneId = '18';
+			const drawnGroup = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			const hiddenGroup = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '02', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [drawnGroup, hiddenGroup] };
+
+			const noteKey = 'note-2-0-0.25';
+			const mockNote = { destroy: vi.fn(), name: noteKey };
+			const list = [mockNote];
+			editorScene['panelContainer'] = {
+				y: 0,
+				list,
+				getAll: vi.fn().mockReturnValue(list),
+				getByName: vi.fn((name: string) => list.find((n) => n.name === name) ?? null)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+			// The surviving hidden chip must get its own graphic redrawn.
+			const drawNoteSpy = vi.spyOn(editorScene, 'drawNote').mockReturnValue(true);
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(recordDeleteActionSpy).toHaveBeenCalledWith([
+				expect.objectContaining({ noteId: '01', laneId, measure: 0, cellOffset: 0.25 })
+			]);
+			expect(drawnGroup.notes).toHaveLength(0);
+			expect(hiddenGroup.notes).toEqual([{ noteID: '02', position: 0.25 }]);
+			expect(editorScene['notes'][laneId]).toEqual([hiddenGroup]);
+			expect(drawNoteSpy).toHaveBeenCalledWith(0, 2, 0.25, '02');
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+			drawNoteSpy.mockRestore();
 		});
 
 		it('should not delete or record undo on right-click of empty space near a chip', () => {

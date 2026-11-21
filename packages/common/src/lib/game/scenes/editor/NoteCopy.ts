@@ -77,7 +77,7 @@ export class NoteCopy {
 			if (parts.length === 4) {
 				const laneIndex = parseInt(parts[1]);
 				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]); // This is already normalized from note key
+				const cellOffset = parseFloat(parts[3]); // Exact stored position from note key
 				const laneId = editor.getLaneConfigs()[laneIndex].id;
 
 				// Find the note data in the editor's data structure
@@ -98,7 +98,7 @@ export class NoteCopy {
 								noteKey,
 								laneIndex,
 								measure,
-								cellOffset, // Keep the normalized position from note key
+								cellOffset, // Keep the exact position from note key
 								laneId,
 								noteId: noteChip.noteID,
 								relativeLaneIndex: laneIndex - referenceLaneIndex,
@@ -163,7 +163,7 @@ export class NoteCopy {
 				if (parts.length === 4) {
 					const laneIndex = parseInt(parts[1]);
 					const measure = parseInt(parts[2]);
-					const cellOffset = parseFloat(parts[3]); // This is already normalized from note key
+					const cellOffset = parseFloat(parts[3]); // Exact stored position from note key
 					const laneId = editor.getLaneConfigs()[laneIndex].id;
 
 					// Find the note data in the editor's data structure
@@ -184,7 +184,7 @@ export class NoteCopy {
 									noteKey,
 									laneIndex,
 									measure,
-									cellOffset, // Use the normalized position from note key (same as noteChip.position)
+									cellOffset, // Use the exact position from note key (same as noteChip.position)
 									laneId,
 									noteId: noteChip.noteID,
 									measureLength: existingNote.measureLength

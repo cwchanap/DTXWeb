@@ -102,7 +102,7 @@ export class LaneMeasureNote {
 	/**
 	 * Convert notes back to DTX pattern string (reverse of parseFromPattern)
 	 */
-	toPattern(): string {
+	toPattern(onWarning?: (message: string) => void): string {
 		if (this.notes.length === 0) return '';
 
 		// Determine the pattern resolution based on the most precise position
@@ -114,16 +114,22 @@ export class LaneMeasureNote {
 
 		// Find the smallest resolution that can accommodate all note positions
 		for (const res of commonResolutions) {
+			const used = new Set<number>();
 			let canAccommodateAll = true;
 			for (const note of this.notes) {
 				const pos = note.position / this.measureLength;
+				const cell = Math.round(pos * res);
 				// Check if this resolution can represent this position precisely
-				if (Math.abs(pos * res - Math.round(pos * res)) >= 0.001) {
+				if (Math.abs(pos * res - cell) >= 0.001) {
 					canAccommodateAll = false;
 					break;
 				}
+				used.add(cell);
 			}
-			if (canAccommodateAll) {
+			// The tolerance alone can still merge distinct positions into one
+			// cell (e.g. 0.5 and 0.5001 at res 4) and silently overwrite a hit —
+			// a viable grid must give every note its own cell.
+			if (canAccommodateAll && used.size === this.notes.length) {
 				resolution = res;
 				break; // Use the first (smallest) resolution that works for all notes
 			}
@@ -145,7 +151,7 @@ export class LaneMeasureNote {
 				resolution *= 2;
 			}
 			if (distinctCells(resolution) < this.notes.length) {
-				console.warn(
+				(onWarning ?? console.warn)(
 					`toPattern: ${this.notes.length - distinctCells(resolution)} note(s) share a cell at ${resolution}-cell resolution and overwrite earlier hits`
 				);
 			}

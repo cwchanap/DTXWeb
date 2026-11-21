@@ -156,8 +156,14 @@
 			dtxFile.bpm = result.bpm;
 			dtxFile.comment = comment;
 
-			// Export DTX file with converted notes + tempo/meter controls
-			await dtxFile.export(result.notes, result.controls);
+			// Export DTX file with converted notes + tempo/meter controls.
+			// Surface pattern-cell collisions (merged notes) to the user rather
+			// than leaving them in console.warn.
+			await dtxFile.export(result.notes, {
+				...result.controls,
+				onWarning: (message) =>
+					toastStore.warning({ title: 'Export warning', description: message })
+			});
 
 			toastStore.success({
 				title: 'Success',

@@ -275,98 +275,77 @@ export class Editor extends BaseGame {
 
 					// Check if it's a right-click (pointer.rightButtonDown())
 					if (pointer.rightButtonDown()) {
-						// Check if there's a note at this position
-						const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
-						const existingNote = this.panelContainer.getByName(noteKey);
-						if (existingNote) {
-							const laneId = this.laneConfigs[laneIndex].id;
+						const laneId = this.laneConfigs[laneIndex].id;
 
-							// Find the note data before deleting it for undo functionality
-							let deletedNoteData: DeletedNoteData | null = null;
-							if (laneId in this.notes) {
-								const existingLaneMeasureNote = this.notes[laneId].find(
-									(note) =>
-										note.measure === measure &&
-										note.notes.some(
-											(n) => Math.abs(n.position - cellOffset) < 0.001
-										)
-								);
+						// Resolve the stored note nearest the click. Note graphics
+						// are keyed by exact position, so the grid-snapped offset
+						// can't look up off-grid notes directly — resolve through
+						// the data by drawn (normalized) position instead.
+						const measureNote =
+							laneId in this.notes
+								? this.notes[laneId].find((note) => note.measure === measure)
+								: undefined;
+						const noteChip = measureNote?.notes
+							.filter(
+								(n) =>
+									Math.abs(
+										this.normalizePosition(n.position) - positionInMeasure
+									) <
+									1 / this.cellsPerMeasure
+							)
+							.sort(
+								(a, b) =>
+									Math.abs(
+										this.normalizePosition(a.position) - positionInMeasure
+									) -
+									Math.abs(this.normalizePosition(b.position) - positionInMeasure)
+							)[0];
 
-								if (existingLaneMeasureNote) {
-									const noteChip = existingLaneMeasureNote.notes.find(
-										(n) => Math.abs(n.position - cellOffset) < 0.001
-									);
-
-									if (noteChip) {
-										deletedNoteData = {
-											noteKey,
-											laneIndex,
-											measure,
-											cellOffset,
-											laneId,
-											noteId: noteChip.noteID,
-											measureLength: existingLaneMeasureNote.measureLength
-										};
-									}
-								}
-							}
+						if (measureNote && noteChip) {
+							const notePosition = noteChip.position;
+							const noteKey = `note-${laneIndex}-${measure}-${notePosition}`;
 
 							// Record undo action before deleting
-							if (deletedNoteData) {
-								this.noteManager.recordDeleteAction([deletedNoteData]);
-							}
+							const deletedNoteData: DeletedNoteData = {
+								noteKey,
+								laneIndex,
+								measure,
+								cellOffset: notePosition,
+								laneId,
+								noteId: noteChip.noteID,
+								measureLength: measureNote.measureLength
+							};
+							this.noteManager.recordDeleteAction([deletedNoteData]);
 
-							// Remove the note graphics from the display
-							const noteGraphics = this.panelContainer.getByName(noteKey);
-							if (noteGraphics) {
-								noteGraphics.destroy();
-							}
+							// Remove the note graphics and text from the display
+							this.panelContainer.getByName(noteKey)?.destroy();
+							const textKey = `text-${laneIndex}-${measure}-${notePosition}`;
+							this.panelContainer.getByName(textKey)?.destroy();
 
-							// Remove the note text from the display
-							const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
-							const noteText = this.panelContainer.getByName(textKey);
-							if (noteText) {
-								noteText.destroy();
-							}
-
-							// Remove the note from this.notes
-							if (laneId in this.notes) {
-								// Find the LaneMeasureNote that contains this note
-								const measureNote = this.notes[laneId].find(
-									(note) =>
-										note.measure === measure &&
-										note.notes.some(
-											(n) => Math.abs(n.position - cellOffset) < 0.001
-										)
+							// Remove the specific note from the notes array
+							// Check if the instance has the new method (backward compatibility)
+							if (typeof measureNote.removeNote === 'function') {
+								measureNote.removeNote(notePosition);
+							} else {
+								// Fallback: manually remove from notes array for old instances
+								measureNote.notes = measureNote.notes.filter(
+									(note) => note.position !== notePosition
 								);
-
-								if (measureNote) {
-									// Remove the specific note from the notes array
-									// Check if the instance has the new method (backward compatibility)
-									if (typeof measureNote.removeNote === 'function') {
-										measureNote.removeNote(cellOffset);
-									} else {
-										// Fallback: manually remove from notes array for old instances
-										measureNote.notes = measureNote.notes.filter(
-											(note) => note.position !== cellOffset
-										);
-									}
-
-									// If the measure is now empty, remove the entire LaneMeasureNote
-									if (measureNote.notes.length === 0) {
-										this.notes[laneId] = this.notes[laneId].filter(
-											(note) => note !== measureNote
-										);
-									}
-								}
-
-								// Clean up empty lane entries
-								if (this.notes[laneId].length === 0) {
-									delete this.notes[laneId];
-								}
-								this.syncNotesToStore();
-								// Note: dirty state and auto-save handled by NoteManager callback
 							}
+
+							// If the measure is now empty, remove the entire LaneMeasureNote
+							if (measureNote.notes.length === 0) {
+								this.notes[laneId] = this.notes[laneId].filter(
+									(note) => note !== measureNote
+								);
+							}
+
+							// Clean up empty lane entries
+							if (this.notes[laneId].length === 0) {
+								delete this.notes[laneId];
+							}
+							this.syncNotesToStore();
+							// Note: dirty state and auto-save handled by NoteManager callback
 						}
 					} else {
 						// Left-click: Add a note using the shared addNoteToEditor method
@@ -737,18 +716,16 @@ export class Editor extends BaseGame {
 	 * This makes it obvious when multiple notes are positioned close together
 	 */
 	drawNote(measure: number, laneIndex: number, cellOffset: number, noteId: string): boolean {
-		// Normalize the position to prevent floating point precision issues
+		// Grid normalization is for placement only. Graphics keep the exact
+		// stored position in their key so off-grid notes that share a grid
+		// cell stay individually selectable/deletable.
 		const normalizedCellOffset = this.normalizePosition(cellOffset);
 
 		const laneConfig = this.laneConfigs[laneIndex];
 		if (!laneConfig) return false;
 
 		// Find nearby notes in the same lane and measure to determine stacking
-		const nearbyNotes = this.noteManager.findNearbyNotes(
-			measure,
-			laneIndex,
-			normalizedCellOffset
-		);
+		const nearbyNotes = this.noteManager.findNearbyNotes(measure, laneIndex, cellOffset);
 		const stackIndex = nearbyNotes.length; // Current note's position in the stack
 
 		// Calculate base position
@@ -782,7 +759,7 @@ export class Editor extends BaseGame {
 		const noteWidth = this.cellWidth - this.cellMargin * 2;
 		const noteHeight = this.noteSize - this.cellMargin * 2;
 
-		const noteKey = `note-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
 		const existingNote = this.panelContainer.getByName(noteKey);
 
 		if (existingNote) {
@@ -819,7 +796,7 @@ export class Editor extends BaseGame {
 			})
 			.setOrigin(0.5);
 
-		const textKey = `text-${laneIndex}-${measure}-${normalizedCellOffset}`;
+		const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
 		text.setName(textKey);
 		this.panelContainer.add(text);
 

@@ -1191,6 +1191,17 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
 
+			// Right-click resolves through stored notes (y=500 → positionInMeasure
+			// 0.25 in measure 0, lane 2 → lane '18').
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
 			const mockNote = { destroy: vi.fn() };
 			editorScene['panelContainer'] = {
 				y: 0,
@@ -1414,6 +1425,114 @@ describe('Editor Scene', () => {
 
 			handlePointerDownSpy.mockRestore();
 			recordDeleteActionSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should delete the stored off-grid note when right-clicking its drawn position', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			// A widened-pattern position (95/384) is stored exactly but drawn at
+			// the 192-grid snap 0.25 — the old 0.001-tolerance lookup missed it.
+			const offGrid = 95 / 384;
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: offGrid }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			const mockNote = { destroy: vi.fn(), name: `note-2-0-${offGrid}` };
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// y=500 → clickY=100 → positionInMeasure=0.25, the note's drawn cell
+			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(laneMeasureNote.notes).toHaveLength(0);
+			expect(recordDeleteActionSpy).toHaveBeenCalledWith([
+				expect.objectContaining({ cellOffset: offGrid, laneId, measure: 0 })
+			]);
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should delete only the resolved chip when same-lane notes share a grid cell', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+
+			// 1/384 and 1/192 snap to the same 192 cell and stack visually. The
+			// exact-position key must remove only the resolved chip, not whichever
+			// stored note happens to sit at the normalized offset.
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[
+					{ noteID: '01', position: 1 / 384 },
+					{ noteID: '02', position: 1 / 192 }
+				],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			editorScene['panelContainer'] = {
+				y: 0,
+				getByName: vi.fn().mockReturnValue(null)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// y=598 → clickY=2 → positionInMeasure=0.005, inside the shared cell
+			const mockPointer = { x: 100, y: 598, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			// The nearest stored chip (1/384) is removed; the other survives.
+			expect(laneMeasureNote.notes).toEqual([{ noteID: '02', position: 1 / 192 }]);
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
 			syncNotesToStoreSpy.mockRestore();
 		});
 	});
@@ -2055,6 +2174,15 @@ describe('Editor Scene', () => {
 			// This exercises the fractionalCell if-block (lines 743-746)
 			const result = editorScene.drawNote(0, 0, 1 / 12, '01');
 			expect(result).toBe(true);
+		});
+
+		it('should draw same-cell off-grid notes as distinct graphics', () => {
+			// 1/384 and 1/192 snap to the same 192-cell slot for placement, but
+			// graphics are keyed by exact position so both notes stay
+			// individually selectable instead of collapsing into one key.
+			expect(editorScene.drawNote(0, 0, 1 / 384, '01')).toBe(true);
+			expect(editorScene.drawNote(0, 0, 1 / 192, '02')).toBe(true);
+			expect(mockPanelContainer.add).toHaveBeenCalledTimes(4);
 		});
 	});
 

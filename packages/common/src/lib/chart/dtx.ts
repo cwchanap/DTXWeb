@@ -12,6 +12,8 @@ export interface DtxExportControls {
 	bpmChanges?: Record<string, number>;
 	/** Channel-02 bar lengths: measure index -> decimal multiplier of 4/4. */
 	measureLengths?: Map<number, number>;
+	/** Receives nonfatal serialization warnings (e.g. merged note cells). Defaults to console.warn. */
+	onWarning?: (message: string) => void;
 }
 
 export class SoundChip {
@@ -353,7 +355,7 @@ export class DTXFile {
 			for (const [laneID, laneMeasureNotes] of Object.entries(notes)) {
 				if (laneID === '02') continue;
 				laneMeasureNotes.forEach((laneMeasureNote) => {
-					const pattern = laneMeasureNote.toPattern();
+					const pattern = laneMeasureNote.toPattern(controls?.onWarning);
 					if (pattern) {
 						allMeasureNotes.push({
 							measure: laneMeasureNote.measure,

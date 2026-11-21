@@ -234,6 +234,30 @@ describe('LaneMeasureNote', () => {
 			expect(pattern).toHaveLength(384 * 2);
 			expect(pattern.slice(2, 4)).toBe('01'); // cell 1
 			expect(pattern.slice(4, 6)).toBe('02'); // cell 2
+
+			// Reimport keeps the widened cells distinct instead of snapping
+			// back onto the 192 grid.
+			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
+				{ noteID: '01', position: 1 / 384 },
+				{ noteID: '02', position: 1 / 192 }
+			]);
+		});
+
+		it('should warn when hits still share a cell at the 768-cell cap', () => {
+			// 0.5 + 1/2048 sits off every standard grid (it lands 0.002 cells
+			// from a boundary even at 4), yet rounds onto the same cell as 0.5
+			// at all of 192/384/768 — no allowed grid can keep them apart.
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 0.5 },
+				{ noteID: '02', position: 0.5 + 1 / 2048 }
+			]);
+			const pattern = laneMeasureNote.toPattern();
+
+			expect(warn).toHaveBeenCalledWith(expect.stringContaining('share a cell'));
+			expect(pattern).toHaveLength(768 * 2);
+			expect(pattern.slice(768, 770)).toBe('02'); // last note wins cell 384
+			warn.mockRestore();
 		});
 
 		it('should keep a note at fraction 0.875 in a 3/4 bar', () => {

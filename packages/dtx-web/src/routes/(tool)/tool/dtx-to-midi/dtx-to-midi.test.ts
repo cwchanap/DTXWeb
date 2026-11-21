@@ -274,11 +274,11 @@ describe('DTX to MIDI Component Rendering', () => {
 		const dtxFile = new File(['#TITLE: Test\r\n'], 'song.dtx', { type: 'text/plain' });
 		await fireEvent.change(input, { target: { files: [dtxFile] } });
 
-		expect(screen.getByText('Bass')).toBeInTheDocument();
-		expect(screen.getByText('Snare')).toBeInTheDocument();
-		expect(screen.getByText('Closed Hi-Hat')).toBeInTheDocument();
-		expect(screen.getByText('Left Crash')).toBeInTheDocument();
-		expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
+		expect(screen.getByText('Bass')).toBeTruthy();
+		expect(screen.getByText('Snare')).toBeTruthy();
+		expect(screen.getByText('Closed Hi-Hat')).toBeTruthy();
+		expect(screen.getByText('Left Crash')).toBeTruthy();
+		expect(screen.queryByText('Unknown')).toBeNull();
 		// Lane ids are the real playable lanes, not the legacy 01-0C aliases.
 		expect(container.querySelector('#lane-13')).not.toBeNull();
 		expect(container.querySelector('#lane-01')).toBeNull();
@@ -299,7 +299,7 @@ describe('DTX to MIDI Component Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Download MIDI File' }));
 
 		await vi.waitFor(() => {
-			expect(screen.getByText(/lane 99 has no GM note/i)).toBeInTheDocument();
+			expect(screen.getByText(/lane 99 has no GM note/i)).toBeTruthy();
 		});
 	});
 

@@ -586,7 +586,7 @@ describe('MIDI to DTX Component Rendering', () => {
 
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
 		// 2 drum hits on channel 9; the channel-08 tempo ref must not count.
-		expect(screen.getByText('Converted 2 note events')).toBeInTheDocument();
+		expect(screen.getByText('Converted 2 note events')).toBeTruthy();
 	});
 
 	it('shows nonfatal warnings for unmapped notes', async () => {
@@ -597,7 +597,7 @@ describe('MIDI to DTX Component Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
-		expect(screen.getByText(/had no lane mapping/)).toBeInTheDocument();
+		expect(screen.getByText(/had no lane mapping/)).toBeTruthy();
 	});
 
 	it('shows error toast when conversion fails', async () => {

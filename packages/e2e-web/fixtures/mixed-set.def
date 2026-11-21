@@ -1,11 +1,10 @@
-#SET TITLE: E2E Mixed Set
+#TITLE: E2E Mixed Set
 
-L1.Label: Basic Easy
-L1.File basic.dtx
-L2.Label  Basic Multi
-L2.File: extra.dtx
-L3.Label: Basic Multi
-L3.File maniac.dtx
-L6.Label Extreme L6
-L6.File: sub/lead.dtx
-L6.LEVEL 85
+#L1LABEL: Basic Easy
+#L1FILE basic.dtx
+#L2LABEL  Basic Multi
+#L2FILE: extra.dtx
+#L3LABEL: Basic Multi
+#L3FILE maniac.dtx
+#L6LABEL Extreme L6
+#L6FILE: sub/lead.dtx

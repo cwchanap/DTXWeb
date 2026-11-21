@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
 	enrichFiles,
 	enrichHasUploadedFiles,
@@ -7,6 +9,7 @@ import {
 	batchDiscoverCatalogFiles,
 	discoverCatalogFiles
 } from './r2Enrichment';
+import { parseSetDef } from '@dtx/common/encoding';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import type { WorkerLogger } from '../lib/workerLogger';
 import { workerLogger } from '../lib/workerLogger';
@@ -1681,5 +1684,107 @@ describe('discoverCatalogFiles', () => {
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
+	});
+
+	describe('e2e mixed-set.def fixture', () => {
+		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
+		// backs the chart-1004 catalog-pairing spec. It must stay valid
+		// SET.def for the shared parser — mixed colon/whitespace directive
+		// forms, a duplicate label, an >L5 slot and a subdirectory file.
+		const fixtureText = readFileSync(
+			join(
+				__dirname,
+				'..',
+				'..',
+				'..',
+				'..',
+				'packages',
+				'e2e-web',
+				'fixtures',
+				'mixed-set.def'
+			),
+			'utf-8'
+		);
+
+		it('parses through the shared parser to the seeded label/file pairs', () => {
+			expect(parseSetDef(fixtureText)).toEqual({
+				title: 'E2E Mixed Set',
+				levels: [
+					{ level: 1, label: 'Basic Easy', fileName: 'basic.dtx' },
+					{ level: 2, label: 'Basic Multi', fileName: 'extra.dtx' },
+					{ level: 3, label: 'Basic Multi', fileName: 'maniac.dtx' },
+					{ level: 6, label: 'Extreme L6', fileName: 'sub/lead.dtx' }
+				]
+			});
+		});
+
+		it('pairs seeded duplicate-label rows FIFO with the fixture slots', async () => {
+			// The decoy key sorts first alphabetically: if set.def matching
+			// silently failed, the sorted-key fallback would hand it to the
+			// first row instead of leaving it unused — making this test fail
+			// rather than pass by coincidence.
+			const bucket = {
+				...makeBucket([
+					[
+						{ key: '1004/set.def', size: 90, uploaded: new Date() },
+						{ key: '1004/aaa-decoy.dtx', size: 50, uploaded: new Date() },
+						{ key: '1004/basic.dtx', size: 300, uploaded: new Date() },
+						{ key: '1004/extra.dtx', size: 500, uploaded: new Date() },
+						{ key: '1004/maniac.dtx', size: 700, uploaded: new Date() },
+						{ key: '1004/sub/lead.dtx', size: 900, uploaded: new Date() }
+					]
+				]),
+				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(fixtureText) }))
+			} as unknown as R2Bucket;
+
+			// Seeded insert order (seed.sql chart 1004): the two 'Basic Multi'
+			// rows must claim the L2/L3 slots in that order.
+			const discovery = await discoverCatalogFiles(
+				bucket,
+				{
+					simfileId: 1004,
+					dtxFiles: [
+						{ label: 'Basic Easy', level: 40 },
+						{ label: 'Basic Multi', level: 50 },
+						{ label: 'Basic Multi', level: 60 },
+						{ label: 'Extreme L6', level: 85 }
+					],
+					publicBaseUrl: 'https://cdn.example.test'
+				},
+				silentLogger
+			);
+
+			expect(discovery.charts).toEqual([
+				{
+					label: 'Basic Easy',
+					level: 40,
+					fileUrl: 'https://cdn.example.test/1004/basic.dtx',
+					fileSizeBytes: 300,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'Basic Multi',
+					level: 50,
+					fileUrl: 'https://cdn.example.test/1004/extra.dtx',
+					fileSizeBytes: 500,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'Basic Multi',
+					level: 60,
+					fileUrl: 'https://cdn.example.test/1004/maniac.dtx',
+					fileSizeBytes: 700,
+					fileEncoding: 'SHIFT_JIS'
+				},
+				{
+					label: 'Extreme L6',
+					level: 85,
+					fileUrl: 'https://cdn.example.test/1004/sub/lead.dtx',
+					fileSizeBytes: 900,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]);
+			expect(discovery.chartsPopulated).toBe(true);
+		});
 	});
 });

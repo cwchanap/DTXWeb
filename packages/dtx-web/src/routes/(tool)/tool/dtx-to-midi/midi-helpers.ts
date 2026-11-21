@@ -1,19 +1,11 @@
-import type { LaneMeasureNote } from '@dtx/common';
+import { PLAYABLE_DRUM_LANES, laneToStaff } from '@dtx/common';
 
-export const DEFAULT_LANE_NOTE_MAP: Record<string, number> = {
-	'01': 36, // Bass Drum
-	'02': 38, // Snare
-	'03': 42, // Closed Hi-Hat
-	'04': 46, // Open Hi-Hat
-	'05': 49, // Crash Cymbal
-	'06': 51, // Ride Cymbal
-	'07': 45, // Low Tom
-	'08': 47, // Mid Tom
-	'09': 50, // High Tom
-	'0A': 44, // Pedal Hi-Hat
-	'0B': 57, // Crash 2
-	'0C': 59 // Ride 2
-};
+// Editable lane -> GM note seed, built from the shared drum map so the
+// playable 11-1C lanes carry their canonical GM notes (not the stale
+// 01-0C aliases).
+export const DEFAULT_LANE_NOTE_MAP: Record<string, number> = Object.fromEntries(
+	PLAYABLE_DRUM_LANES.map((lane) => [lane, laneToStaff(lane)?.midi ?? 0])
+);
 
 export const isValidDtxFile = (file: File): boolean =>
 	file.name.toLowerCase().endsWith('.dtx') || file.name.toLowerCase().endsWith('.txt');
@@ -23,13 +15,5 @@ export const generateMidiFilename = (filename: string): string =>
 
 export const formatFileSizeKB = (bytes: number): string => (bytes / 1024).toFixed(1);
 
-export const groupNotesByLane = (notes: LaneMeasureNote[]): Record<string, LaneMeasureNote[]> => {
-	const notesByLane: Record<string, LaneMeasureNote[]> = {};
-	notes.forEach((note) => {
-		if (!notesByLane[note.laneID]) {
-			notesByLane[note.laneID] = [];
-		}
-		notesByLane[note.laneID].push(note);
-	});
-	return notesByLane;
-};
+// Reuse the common helper; the local duplicate is removed in Task 5b.
+export { groupNotesByLane } from '@dtx/common';

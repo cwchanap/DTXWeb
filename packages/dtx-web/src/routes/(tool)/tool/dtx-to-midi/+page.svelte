@@ -4,13 +4,12 @@
 	import { locale, locales } from 'svelte-i18n';
 	import { Popover } from '@skeletonlabs/skeleton-svelte';
 	import toastStore from '$lib/toaster';
-	import { DTXFile } from '@dtx/common';
+	import { DTXFile, dtxToMidi, laneToStaff } from '@dtx/common';
 	import {
 		DEFAULT_LANE_NOTE_MAP,
 		isValidDtxFile,
 		generateMidiFilename,
-		formatFileSizeKB,
-		groupNotesByLane
+		formatFileSizeKB
 	} from './midi-helpers';
 
 	const localeMap: Record<string, string> = {
@@ -24,6 +23,7 @@
 	let isConverted = $state(false);
 	let convertedFileName = $state<string>('');
 	let dtxFile = $state<DTXFile | null>(null);
+	let exportWarnings = $state<string[]>([]);
 
 	// Default lane to MIDI note mapping (General MIDI drum map)
 	let laneNoteMap = $state<Record<string, number>>({ ...DEFAULT_LANE_NOTE_MAP });
@@ -78,14 +78,13 @@
 		if (!dtxFile || !isConverted) return;
 
 		try {
-			// Parse notes from DTX file and convert to MIDI
-			const notesByLane = groupNotesByLane(dtxFile.parseNotes());
-
-			// Export to MIDI using our custom converter
-			const midiData = dtxFile.exportToMidi(notesByLane, laneNoteMap);
+			// Convert with the shared converter; the editable laneNoteMap
+			// overrides the canonical GM notes per lane.
+			const { data, warnings } = dtxToMidi(dtxFile, laneNoteMap);
+			exportWarnings = warnings;
 
 			// Create blob and download
-			const blob = new Blob([midiData], { type: 'audio/midi' });
+			const blob = new Blob([data], { type: 'audio/midi' });
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
@@ -115,6 +114,7 @@
 		isConverting = false;
 		convertedFileName = '';
 		dtxFile = null;
+		exportWarnings = [];
 		if (fileInput) {
 			fileInput.value = '';
 		}
@@ -314,11 +314,7 @@
 										class="w-16 rounded border border-purple-500/30 bg-slate-800/50 px-2 py-1 text-sm text-slate-200 focus:border-purple-400 focus:ring-1 focus:ring-purple-400 focus:outline-none"
 									/>
 									<span class="text-xs text-slate-400">
-										{#if lane === '01'}Bass Drum{:else if lane === '02'}Snare{:else if lane === '03'}Closed
-											Hi-Hat{:else if lane === '04'}Open Hi-Hat{:else if lane === '05'}Crash{:else if lane === '06'}Ride{:else if lane === '07'}Low
-											Tom{:else if lane === '08'}Mid Tom{:else if lane === '09'}High
-											Tom{:else if lane === '0A'}Pedal Hi-Hat{:else if lane === '0B'}Crash
-											2{:else if lane === '0C'}Ride 2{:else}Unknown{/if}
+										{laneToStaff(lane)?.instrumentName ?? 'Unknown'}
 									</span>
 								</div>
 							{/each}
@@ -378,6 +374,20 @@
 								</h3>
 								<p class="text-slate-200">Your MIDI file is ready for download</p>
 								<p class="text-sm text-slate-300">{convertedFileName}</p>
+								{#if exportWarnings.length > 0}
+									<div
+										class="rounded-lg border border-amber-500/40 bg-amber-900/20 p-3 text-left"
+									>
+										<p class="text-sm font-medium text-amber-300">
+											Conversion warnings
+										</p>
+										<ul class="list-disc pl-5 text-xs text-amber-200">
+											{#each exportWarnings as warning (warning)}
+												<li>{warning}</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
 							</div>
 							<div class="flex justify-center gap-3">
 								<button

@@ -802,6 +802,111 @@ describe('DTXFile', () => {
 			// The download property should be set after createElement returns the mock element
 			expect(createElementCall).toBeTruthy();
 		});
+
+		it('should preserve decimal BPM, #BPMxx definitions and channel-02 lengths on editor save', async () => {
+			// Simulates the editor save path: parse a file, group notes by lane
+			// (as handleNoteImport does), then export. The parsed controls —
+			// decimal base BPM, #BPMxx definitions and channel-02 bar lengths —
+			// must survive the round-trip as text, not as regenerated patterns.
+			const source = [
+				'#TITLE: Save Test',
+				'#ARTIST: Tester',
+				'#DLEVEL: 55',
+				'#BPM: 145.5',
+				'#BPM01: 200',
+				'#WAV01: kick.wav',
+				'#00102: 0.75',
+				'#00108: 0100',
+				'#00111: 01000000',
+				'#00112: 00020000'
+			].join('\r\n');
+
+			const sourceFile = new DTXFile(source);
+			await sourceFile.parse();
+			sourceFile.parseSoundChips();
+
+			const notesRecord: Record<string, LaneMeasureNote[]> = {};
+			for (const laneNote of sourceFile.parseNotes()) {
+				(notesRecord[laneNote.laneID] ??= []).push(laneNote);
+			}
+			// Channel 02 was parsed as a note lane — export must not pattern it.
+			expect(notesRecord['02']).toBeDefined();
+
+			await sourceFile.export(notesRecord);
+			const content = getCapturedBlobContent();
+			const lines = content.split('\r\n');
+
+			expect(content).toContain('#BPM: 145.5');
+			expect(content).toContain('#BPM01: 200');
+			// Channel 02 stays a decimal line — never the corrupted
+			// pattern artifact the old writer produced from '0.75'.
+			expect(content).toContain('#00102: 0.75');
+			expect(content).not.toContain('0.007500');
+			expect(lines.filter((line) => /^#\d{3}02:/.test(line))).toHaveLength(1);
+			// Exactly one base #BPM line.
+			expect(lines.filter((line) => line.startsWith('#BPM:'))).toHaveLength(1);
+			// Channel-08 BPM reference and playable lanes survive as patterns.
+			expect(content).toContain('#00108: 0100');
+			expect(content).toContain('#00111: 01000000');
+			expect(content).toContain('#00112: 00020000');
+
+			// Reparse the exported text: every control survives intact.
+			const reparsed = new DTXFile(content);
+			await reparsed.parse();
+			expect(reparsed.bpm).toBe(145.5);
+			expect(reparsed.parseBPMChanges()).toEqual({ '': 145.5, '01': 200 });
+			expect(reparsed.parseMeasureLengths()).toEqual(new Map([[1, 0.75]]));
+			const reNotes = reparsed.parseNotes();
+			expect(reNotes.filter((note) => note.laneID === '08')[0].notes).toEqual([
+				{ noteID: '01', position: 0 }
+			]);
+		});
+	});
+
+	describe('toDtxText', () => {
+		it('should serialize explicit MIDI-import controls on a fresh DTXFile', () => {
+			const file = new DTXFile();
+			file.title = 'MIDI Import';
+			file.artist = 'Converter';
+			file.level = 40;
+			file.bpm = 120;
+
+			const notes = {
+				'12': [new LaneMeasureNote(0, '12', [{ noteID: '01', position: 0.5 }])],
+				// A channel-02 lane in the notes map is ignored — bar lengths
+				// come only from the supplied control map.
+				'02': [new LaneMeasureNote(0, '02', [{ noteID: '99', position: 0 }])]
+			};
+
+			const text = file.toDtxText(notes, {
+				bpmChanges: { '': 999, '01': 177.5 },
+				measureLengths: new Map([[1, 0.75]])
+			});
+			const lines = text.split('\r\n');
+
+			// Base BPM comes from this.bpm, never the '' control key.
+			expect(text).toContain('#BPM: 120');
+			expect(lines.filter((line) => line.startsWith('#BPM:'))).toHaveLength(1);
+			expect(text).toContain('#BPM01: 177.5');
+			// Supplied measure lengths become decimal channel-02 lines.
+			expect(text).toContain('#00102: 0.75');
+			expect(text).not.toContain('#00002:');
+			expect(text).toContain('#00012: 00000100');
+		});
+
+		it('should serialize a fresh DTXFile without controls or parsed lines', () => {
+			// lines starts as [] so the control parsers are safe to call on a
+			// file that was never parsed — no undefined.filter() crash.
+			const file = new DTXFile();
+			const text = file.toDtxText({
+				'12': [new LaneMeasureNote(0, '12', [{ noteID: '01', position: 0 }])]
+			});
+
+			expect(text).toContain('#BPM: 120');
+			expect(text).not.toContain('#BPM01');
+			expect(text).not.toMatch(/#\d{3}02:/);
+			expect(text).toContain('#00012: 01000000');
+		});
 	});
 
 	describe('parse', () => {

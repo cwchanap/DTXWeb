@@ -202,6 +202,44 @@ describe('LaneMeasureNote', () => {
 			// Should only include the first note
 			expect(pattern).toBe('01000000');
 		});
+
+		it('should use 192 slots for off-grid positions instead of quarter-note fallback', () => {
+			// Three snare hits at MIDI ticks 3, 487, 500 of a 1920-tick bar:
+			// none lands on a coarser grid. A coarse fallback collapses them
+			// into shared slots and silently drops notes.
+			const notes = [3, 487, 500].map((tick, index) => ({
+				noteID: `0${index + 1}`,
+				position: tick / 1920
+			}));
+			const laneMeasureNote = new LaneMeasureNote(0, '12', notes, 1);
+			const pattern = laneMeasureNote.toPattern();
+
+			expect(pattern).toHaveLength(192 * 2);
+			const reparsed = LaneMeasureNote.parseFromPattern(pattern);
+			expect(reparsed).toHaveLength(3);
+			// Each hit keeps its own 1/192 slot (nearest-slot rounding).
+			expect(reparsed.map((note) => Math.round(note.position * 192))).toEqual([0, 49, 50]);
+		});
+
+		it('should keep a note at fraction 0.875 in a 3/4 bar', () => {
+			// MIDI-import contract: positions are [0,1) bar fractions with
+			// measureLength = 1 even for 3/4; the meter lives only in the
+			// channel-02 decimal map. A quarter-note fallback would round the
+			// index out of bounds and drop the last-quarter hit.
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				'12',
+				[{ noteID: '02', position: 0.875 }],
+				1
+			);
+			const pattern = laneMeasureNote.toPattern();
+
+			// 0.875 = 7/8 fits the 8-slot grid exactly — no 192 fallback needed.
+			expect(pattern).toHaveLength(8 * 2);
+			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
+				{ noteID: '02', position: 0.875 }
+			]);
+		});
 	});
 
 	describe('getSubdivisionLevel', () => {

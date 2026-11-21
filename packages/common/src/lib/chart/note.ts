@@ -101,7 +101,9 @@ export class LaneMeasureNote {
 		// Determine the pattern resolution based on the most precise position
 		// Include common subdivision levels: 4, 8, 12, 16, 24, 32, 48, 64, 96, 192
 		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192];
-		let resolution = 4; // Default to 4 subdivisions per measure
+		// Fall back to the finest grid: a coarse default collapses off-grid
+		// notes (e.g. humanized MIDI) into shared slots and silently drops them.
+		let resolution = 192;
 
 		// Find the smallest resolution that can accommodate all note positions
 		for (const res of commonResolutions) {

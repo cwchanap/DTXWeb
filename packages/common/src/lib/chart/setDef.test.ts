@@ -78,6 +78,20 @@ describe('parseSetDef', () => {
 		expect(result.levels).toEqual([]);
 	});
 
+	it('treats a colon surrounded by whitespace as blank, not as the value', () => {
+		// `#L1FILE :   ` must not capture ':' as the filename — a bogus claimed
+		// filename makes catalog discovery skip its fallback for the row.
+		const result = parseSetDef('#L1LABEL BASIC\n#L1FILE :   \n#L2LABEL ADV\n#L2FILE:adv.dtx\n');
+
+		expect(result.levels).toEqual([{ level: 2, label: 'ADV', fileName: 'adv.dtx' }]);
+	});
+
+	it('keeps a populated value when a blank colon duplicate follows', () => {
+		const result = parseSetDef('#L1LABEL BASIC\n#L1FILE bas.dtx\n#L1FILE : \n');
+
+		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'bas.dtx' }]);
+	});
+
 	it('ignores non-positive level slots', () => {
 		const result = parseSetDef(
 			'#L0LABEL GHOST\n#L0FILE ghost.dtx\n#L1LABEL BASIC\n#L1FILE bas.dtx\n'

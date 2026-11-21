@@ -434,6 +434,17 @@ describe('DTXFile', () => {
 			expect(bpmChanges['02']).toBeUndefined();
 			expect(bpmChanges['03']).toBe(140.5);
 		});
+
+		it('ignores #BPM-prefixed headers that are not exactly #BPM or #BPMxx', () => {
+			// `#BPM01_EXTRA` used to have its ID truncated via slice(4, 6),
+			// overwriting the real `#BPM01` definition that channel-08 refs use.
+			dtxFile.lines = ['#BPM01: 140.5', '#BPM01_EXTRA: 240'];
+
+			const bpmChanges = dtxFile.parseBPMChanges();
+
+			expect(bpmChanges['01']).toBe(140.5);
+			expect(Object.keys(bpmChanges)).toEqual(['01']);
+		});
 	});
 
 	describe('parseNotes', () => {

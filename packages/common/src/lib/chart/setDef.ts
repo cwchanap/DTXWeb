@@ -10,7 +10,10 @@ export interface ParsedSetDef {
 }
 
 const titlePattern = /^#TITLE(?:\s*:\s*|\s+|$)/i;
-const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(\S.*)$/i;
+// The space-only separator must not retry a colon that the colon branch
+// already rejected (e.g. `#L1FILE :   `): `\s+` would otherwise consume the
+// spaces before ':' and capture the colon itself as the value.
+const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
 
 /**
  * Pure SET.def parser shared by the local SimFile parser, the web editor's

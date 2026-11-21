@@ -177,17 +177,20 @@ export class SimFile {
 		this.title = parsed.title;
 
 		const promises = parsed.levels.map(async ({ level, label, fileName }) => {
+			// SET.def written on Windows uses `\` separators and `.\` / `./`
+			// prefixes; File names and R2 keys use `/` paths without them.
+			const normalizedFileName = fileName.replaceAll('\\', '/').replace(/^(\.\/)+/, '');
 			let file;
 			if (!this.isParseFromRemoteURL) {
-				file = this.files.find((f) => f.name === fileName);
+				file = this.files.find((f) => f.name === normalizedFileName);
 			} else {
 				const response = await dedupedFetch(
-					`${this.bucketUrl}/${this.simFileID}/${fileName}`
+					`${this.bucketUrl}/${this.simFileID}/${normalizedFileName}`
 				);
 				if (!response.ok) {
 					return;
 				}
-				file = new File([await response.blob()], fileName);
+				file = new File([await response.blob()], normalizedFileName);
 			}
 			if (!file) {
 				return;

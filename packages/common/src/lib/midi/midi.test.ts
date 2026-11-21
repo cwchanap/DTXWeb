@@ -568,6 +568,25 @@ describe('midiToDtx', () => {
 		expect(() => midiToDtx(midi)).toThrow(/meter/i);
 	});
 
+	it('ignores meter events that repeat the effective signature', () => {
+		// Some exporters re-emit the time signature every bar; a redundant
+		// 4/4 mid-bar is a no-op, not a mid-bar change.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evMeter(0, 4, 2),
+					...evMeter(960, 4, 2),
+					...evNoteOn(0, 38),
+					...evNoteOff(60, 38),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['12'][0].notes).toEqual([{ noteID: '01', position: 0.5 }]);
+		expect(result.controls.measureLengths?.size ?? 0).toBe(0);
+	});
+
 	it('counts same-lane same-slot collisions without aborting', () => {
 		// slot = 10 ticks at 480 PPQ 4/4: ticks 480 and 483 both land on slot 48.
 		const midi = parseMidi(

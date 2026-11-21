@@ -1,6 +1,6 @@
 # HPA-1037 — Chart-format correctness: single-PR implementation plan
 
-**Status:** Revised from PR #365 review on 2026-11-21; still **docs only**. Execute all code, tests, review fixes and acceptance on this **same PR**.
+**Status:** Implementation and tests are on PR #365; bot review findings are triaged and confirmed fixes land on the **same PR**. MCP/CI acceptance runs remain open until verified.
 **Linear:** https://linear.app/cwchanap/issue/HPA-1037/dtxwebbug-fix-chart-formats-midi-tools-lf-parsing-and-one-setdef
 **Design:** [Revised specification](../specs/2026-11-20-hpa-1037-chart-format-correctness-design.md)
 **Baseline:** `main` at `59edbe86`, rechecked on review day. HPA-1039 remains independent and has overlapping typo renames; PR #364 has unrelated type-error fixes. Rebase when one lands.
@@ -95,4 +95,4 @@ Post a compact proof-of-results in the PR discussion only after actual execution
 - [ ] **MCP Worker backend E2E:** local seeded R2/D1 SET.def requests reach the running API and assert file pairing; mock bucket tests remain in CI and are not mistaken for E2E.
 - [ ] Only **PR #365** contains code, docs, tests and evidence; no second PR, unrelated scene/UI refactor, migration, new framework or extra native-platform acceptance.
 
-**Current state:** checklist intentionally open; documentation review addressed, but implementation/tests/MCP runs have not yet been performed.
+**Current state:** implementation, unit tests and e2e specs are committed on this PR; checklist intentionally open — type/lint/CI gates and MCP acceptance runs are not marked until verified.

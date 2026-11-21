@@ -328,8 +328,10 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 
 		const raw = parseTrack(data, offset, offset + trackLength);
 		tracks.push(raw.track);
-		tempoEvents.push(...raw.tempoEvents);
-		meterEvents.push(...raw.meterEvents);
+		// Spread-into-push would pass every element as a call argument; a
+		// track with enough meta events overflows the engine's argument limit.
+		for (const event of raw.tempoEvents) tempoEvents.push(event);
+		for (const event of raw.meterEvents) meterEvents.push(event);
 		offset = raw.nextOffset;
 	}
 

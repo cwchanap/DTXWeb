@@ -52,6 +52,9 @@
 		) {
 			uploadedFile = file;
 			isConverted = false;
+			// A new file gets a fresh detected BPM — the previous file's
+			// "user edited" flag must not carry over.
+			bpmTouched = false;
 			// Set default title from filename
 			title = file.name.replace(/\.[^/.]+$/, '');
 		} else if (file) {
@@ -113,12 +116,16 @@
 			dtxFile.level = level;
 			dtxFile.comment = comment;
 
-			// Seed the editable base BPM with the detected initial tempo —
-			// 120 is a real value, not a missing one — unless the user
-			// already edited the field.
-			if (!bpmTouched) {
-				bpm = midiToDtx(parsedMidi, { noteToLane: midiToDtxMap }).bpm;
-			}
+			// Run the conversion once here so unsupported input (e.g.
+			// mid-bar meter changes) fails at Convert rather than later at
+			// Download. A user-edited BPM overrides the detected tempo;
+			// otherwise the detected value seeds the field — 120 is a real
+			// value, not a missing one.
+			const result = midiToDtx(parsedMidi, {
+				noteToLane: midiToDtxMap,
+				bpm: bpmTouched ? bpm : undefined
+			});
+			if (!bpmTouched) bpm = result.bpm;
 
 			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
 			convertedFileName = `${baseName}.dtx`;

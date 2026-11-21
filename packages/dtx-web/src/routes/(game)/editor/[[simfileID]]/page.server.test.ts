@@ -151,6 +151,37 @@ describe('editor/[[simfileID]]/+page.server load', () => {
 		expect(result.metadata?.title).toBe('Colon Title');
 	});
 
+	it('returns levels beyond L5 in the metadata', async () => {
+		const defContent =
+			'#TITLE Deep Song\n#L1LABEL BASIC\n#L1FILE bas.dtx\n#L6LABEL MANIAC\n#L6FILE maniac.dtx\n';
+		const buffer = new TextEncoder().encode(defContent).buffer;
+		const fetchSpy = vi.fn().mockResolvedValue(arrayBufferResponse(buffer));
+		const result = requirePageLoadResult(
+			await callLoad('deep', fetchSpy as unknown as typeof fetch)
+		);
+		expect(result.metadata?.levels[6]).toEqual({ label: 'MANIAC', fileName: 'maniac.dtx' });
+	});
+
+	it('parses level directives case-insensitively', async () => {
+		const defContent = '#l1label basic\n#l1file bas.dtx\n';
+		const buffer = new TextEncoder().encode(defContent).buffer;
+		const fetchSpy = vi.fn().mockResolvedValue(arrayBufferResponse(buffer));
+		const result = requirePageLoadResult(
+			await callLoad('lower', fetchSpy as unknown as typeof fetch)
+		);
+		expect(result.metadata?.levels[1]).toEqual({ label: 'basic', fileName: 'bas.dtx' });
+	});
+
+	it('preserves multiword labels in the metadata', async () => {
+		const defContent = '#L1LABEL Basic Plus\n#L1FILE bas.dtx\n';
+		const buffer = new TextEncoder().encode(defContent).buffer;
+		const fetchSpy = vi.fn().mockResolvedValue(arrayBufferResponse(buffer));
+		const result = requirePageLoadResult(
+			await callLoad('multi', fetchSpy as unknown as typeof fetch)
+		);
+		expect(result.metadata?.levels[1]?.label).toBe('Basic Plus');
+	});
+
 	it('preserves colons inside the title itself', async () => {
 		const defContent = '#TITLE: Re: Zero\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
 		const buffer = new TextEncoder().encode(defContent).buffer;

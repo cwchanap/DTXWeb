@@ -1,4 +1,4 @@
-import { decodeArrayBufferWithBomDetection } from '@dtx/common/encoding';
+import { decodeArrayBufferWithBomDetection, parseSetDef } from '@dtx/common/encoding';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
@@ -77,51 +77,32 @@ const MAX_CONCURRENT_R2_LIST = 4;
 const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
 
 const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
-	const entries = new Map<string, { label?: string; file?: string }>();
-	// Match the separator accepted by the editor loader at
-	// packages/dtx-web/src/routes/(game)/editor/[[simfileID]]/+page.server.ts
-	// so set.def files written with the colon form (#L1LABEL: BASIC) are
-	// parsed the same way here as they are in the editor.
-	const levelLinePattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+)(.+)$/i;
-	for (const line of setDefText.split(/\r?\n/)) {
-		const match = line.match(levelLinePattern);
-		if (!match) continue;
-		const [, level, kind, value] = match;
-		const entry = entries.get(level) ?? {};
-		if (kind.toUpperCase() === 'LABEL') {
-			entry.label = value.trim();
-		} else {
-			// Store the raw normalized filename only. Path resolution is
-			// deferred to the caller (discoverCatalogFiles), which has
-			// access to the R2 object map and can try the set.def's
-			// directory first with a simfile-root fallback. This matches
-			// the DTX convention — confirmed by the desktop parser at
-			// packages/dtx-desktop/src/main/simfile-service.ts which reads
-			// set.def and .dtx files from the SAME folder — that #LxFILE
-			// references are relative to the set.def's directory, not the
-			// simfile root.
-			entry.file = normalizeSetDefValue(value);
-		}
-		entries.set(level, entry);
-	}
-
 	// A single label can legitimately appear on multiple L-slots (e.g. two
 	// charts both labelled "BASIC"). Collecting an array per label — rather
 	// than a single value keyed by label alone — preserves every distinct
 	// file so the consumer can assign one file per matching DB row instead
 	// of overwriting earlier entries and silently collapsing two rows onto
-	// the same R2 object. The `entries` map is keyed by L-slot and iterated
-	// in insertion order (L1 before L2 …), so the array stays in slot order.
+	// the same R2 object. parseSetDef returns slots sorted by numeric level,
+	// so each array stays in L-slot order (L1 before L2 …) regardless of the
+	// line order inside set.def.
 	const filesByLabel = new Map<string, string[]>();
-	for (const entry of entries.values()) {
-		if (entry.label && entry.file) {
-			const key = entry.label.toLowerCase();
-			const list = filesByLabel.get(key);
-			if (list) {
-				list.push(entry.file);
-			} else {
-				filesByLabel.set(key, [entry.file]);
-			}
+	for (const { label, fileName } of parseSetDef(setDefText).levels) {
+		// Store the raw normalized filename only. Path resolution is
+		// deferred to the caller (discoverCatalogFiles), which has
+		// access to the R2 object map and can try the set.def's
+		// directory first with a simfile-root fallback. This matches
+		// the DTX convention — confirmed by the desktop parser at
+		// packages/dtx-desktop/src-tauri/src/songs.rs (read_set_def_labels),
+		// which reads set.def and .dtx files from the SAME folder — that
+		// #LxFILE references are relative to the set.def's directory, not
+		// the simfile root.
+		const file = normalizeSetDefValue(fileName);
+		const key = label.toLowerCase();
+		const list = filesByLabel.get(key);
+		if (list) {
+			list.push(file);
+		} else {
+			filesByLabel.set(key, [file]);
 		}
 	}
 	return filesByLabel;
@@ -138,10 +119,11 @@ const readSetDefFilesByLabel = async (
 		const object = await bucket.get(setDefKey);
 		if (!object) return new Map();
 		// Decode with BOM detection: set.def files in this app are routinely
-		// written as UTF-16LE with BOM (see packages/dtx-desktop/src/main/index.ts)
-		// or UTF-8 with BOM. The default R2 text() path decodes as UTF-8 and
+		// written as UTF-16LE with BOM (see write_utf16le_with_bom in
+		// packages/dtx-desktop/src-tauri/src/songs.rs) or UTF-8 with BOM.
+		// The default R2 text() path decodes as UTF-8 and
 		// would either garble UTF-16LE content or leave a BOM on the first
-		// directive, causing the regex match to miss and silently fall back to
+		// directive, making it unparseable and silently falling back to
 		// sorted-key pairing.
 		const setDefText = decodeArrayBufferWithBomDetection(await object.arrayBuffer());
 		return parseSetDefFilesByLabel(setDefText);

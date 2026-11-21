@@ -14,7 +14,7 @@ import type {
 import type { D1Database } from '@cloudflare/workers-types';
 import { toSimfileWithDtx } from './types';
 import { drizzle, type DrizzleD1Database } from 'drizzle-orm/d1';
-import { type SQL, and, count as countRows, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { type SQL, and, asc, count as countRows, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { dtxFiles, simfiles, userProfiles } from './schema';
 
 const drizzleSchema = {
@@ -57,6 +57,9 @@ export const getSimfile = async (
 		.limit(1);
 	if (!row) return null;
 
+	// Ascending row id = insertion order: SET.def duplicate-label pairing
+	// consumes this array FIFO (r2Enrichment filesByLabel shift()), so an
+	// explicit ORDER BY is a contract, not cosmetic.
 	const dtx = await orm
 		.select({
 			id: dtxFiles.id,
@@ -64,7 +67,8 @@ export const getSimfile = async (
 			label: dtxFiles.label
 		})
 		.from(dtxFiles)
-		.where(eq(dtxFiles.simfileId, id));
+		.where(eq(dtxFiles.simfileId, id))
+		.orderBy(asc(dtxFiles.id));
 
 	return toSimfileWithDtx(row, dtx);
 };
@@ -198,6 +202,8 @@ export const listSimfiles = async (
 	}
 
 	const ids = rows.map((r) => r.id);
+	// Same insertion-order contract as getSimfile for duplicate-label
+	// SET.def pairing within each simfile's group.
 	const dtxRows = await orm
 		.select({
 			simfile_id: dtxFiles.simfileId,
@@ -206,7 +212,8 @@ export const listSimfiles = async (
 			label: dtxFiles.label
 		})
 		.from(dtxFiles)
-		.where(inArray(dtxFiles.simfileId, ids));
+		.where(inArray(dtxFiles.simfileId, ids))
+		.orderBy(asc(dtxFiles.id));
 
 	const dtxMap = new Map<number, { id?: number; level: number; label: string }[]>();
 	for (const d of dtxRows) {
@@ -784,7 +791,7 @@ export const listUserScoredSimfiles = async (
 
 	const { results: dtxRows } = await db
 		.prepare(
-			`SELECT id, label, level, simfile_id FROM dtx_files WHERE simfile_id IN (${placeholders})`
+			`SELECT id, label, level, simfile_id FROM dtx_files WHERE simfile_id IN (${placeholders}) ORDER BY id ASC`
 		)
 		.bind(...pageIds)
 		.all<DtxFileRow>();

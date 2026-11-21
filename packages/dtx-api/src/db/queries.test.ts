@@ -5,6 +5,7 @@ import { toSimfileWithDtx } from './types';
 import { simfiles, dtxFiles, userProfiles, chartScores, scores } from './schema';
 import { getTableConfig } from 'drizzle-orm/sqlite-core';
 import { drizzle } from 'drizzle-orm/d1';
+import { asc } from 'drizzle-orm';
 import {
 	createDrizzleDb,
 	escapeLikePattern,
@@ -478,6 +479,28 @@ describe('getSimfile', () => {
 });
 
 describe('getSimfile chart id', () => {
+	it('orders dtx_files by ascending row id so duplicate-label pairing is deterministic', async () => {
+		// Duplicate-label SET.def pairing consumes rows FIFO in the order
+		// returned here. Without ORDER BY the association between a row and
+		// its set.def slot is unspecified; ascending row id = insert order.
+		mockDrizzleDb.select.mockClear();
+		drizzleSelectResults.length = 0;
+		drizzleSelectResults.push(
+			[baseSimfileRow],
+			[
+				{ id: 11, label: 'Basic', level: 50 },
+				{ id: 12, label: 'Basic', level: 60 }
+			]
+		);
+
+		await getSimfile({} as unknown as D1Database, 1);
+
+		const dtxQuery = (
+			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> } }[]
+		)[1]?.value;
+		expect(dtxQuery.orderBy).toHaveBeenCalledWith(asc(dtxFiles.id));
+	});
+
 	it('includes the dtx_files id in the joined result', async () => {
 		mockDrizzleDb.select.mockClear();
 		drizzleSelectResults.push([baseSimfileRow]); // simfile select
@@ -562,6 +585,27 @@ describe('listSimfiles', () => {
 			count: 0
 		});
 		expect(mockDrizzleDb.select).toHaveBeenCalledTimes(2);
+	});
+
+	it('orders the batched dtx_files select by ascending row id', async () => {
+		// Same contract as getSimfile: per-simfile FIFO duplicate-label
+		// pairing depends on a stable row order across the batched fetch.
+		drizzleSelectResults.push(
+			[{ cnt: 1 }],
+			[baseSimfileRow],
+			[
+				{ simfile_id: 1, id: 11, label: 'Basic', level: 50 },
+				{ simfile_id: 1, id: 12, label: 'Basic', level: 60 }
+			]
+		);
+		const db = createMockDb();
+
+		await listSimfiles(db as unknown as D1Database, {});
+
+		const dtxQuery = (
+			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> } }[]
+		)[2]?.value;
+		expect(dtxQuery.orderBy).toHaveBeenCalledWith(asc(dtxFiles.id));
 	});
 
 	it('returns public-safe fields when publishedOnly is true', async () => {
@@ -1852,6 +1896,25 @@ describe('listUserScoredSimfiles', () => {
 		expect(result.count).toBe(1);
 		expect(result.data[0].id).toBe(42);
 		expect(result.data[0].dtx_files).toEqual([{ id: 10, level: 5, label: 'BASIC' }]);
+	});
+
+	it('orders the batched dtx_files query by ascending row id', async () => {
+		// Scored-simfiles dtxFiles feed the same SET.def duplicate-label
+		// pairing; the raw SQL must carry the same stable ordering contract.
+		const db = createMockDb((sql: string) => {
+			if (sql.includes('COUNT(DISTINCT')) return createMockStmt({ cnt: 1 });
+			if (sql.includes('GROUP BY')) return createMockStmt(null, [{ simfile_id: 42 }]);
+			if (sql.includes('FROM simfiles'))
+				return createMockStmt(null, [{ ...baseSimfileRow, id: 42 }]);
+			return createMockStmt(null, [{ id: 10, label: 'BASIC', level: 5, simfile_id: 42 }]);
+		});
+
+		await listUserScoredSimfiles(db as unknown as D1Database, { userId: 'u1' });
+
+		const dtxSql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls
+			.map((call) => call[0] as string)
+			.find((sql) => sql.includes('FROM dtx_files'));
+		expect(dtxSql).toContain('ORDER BY id');
 	});
 
 	it('clamps an out-of-range page to 1, returning a full page instead of an empty one', async () => {

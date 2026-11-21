@@ -91,7 +91,7 @@ export async function decodeFileWithSpecificEncoding(
  * `text()` path always decodes as UTF-8 and would either garble UTF-16LE
  * content or leave a BOM character on the first directive. set.def files in
  * this app are routinely written as UTF-16LE with BOM
- * (see `packages/dtx-desktop/src/main/index.ts`).
+ * (see `write_utf16le_with_bom` in `packages/dtx-desktop/src-tauri/src/songs.rs`).
  *
  * @param buffer - Raw bytes (typically from `R2Object.arrayBuffer()`)
  * @returns Decoded string with BOM character stripped if present

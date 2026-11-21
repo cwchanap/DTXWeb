@@ -34,34 +34,37 @@ vi.mock('@skeletonlabs/skeleton-svelte', () => ({
 // Hoisted controllable mocks for DTXFile methods
 const parseMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const parseNotesMock = vi.hoisted(() => vi.fn().mockReturnValue([]));
-const exportToMidiMock = vi.hoisted(() =>
-	vi.fn().mockReturnValue(new Uint8Array([0x4d, 0x54, 0x68, 0x64]))
-);
 
-vi.mock('@dtx/common', () => ({
-	DTXFile: vi.fn().mockImplementation(function (this: any) {
-		// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
-		Object.assign(this, {
-			parse: parseMock,
-			parseNotes: parseNotesMock,
-			exportToMidi: exportToMidiMock,
-			level: 1,
-			artist: 'Mock Artist',
-			bpm: 120,
-			title: 'Mock Title',
-			comment: 'Mock Comment'
-		});
-	})
-}));
+vi.mock('@dtx/common', async () => {
+	// Reuse the shared mock so the real parseMidi/dtxToMidi/laneToStaff/
+	// groupNotesByLane implementations stay exercised; only DTXFile is stubbed.
+	const shared = await import('../../../../../../../__mocks__/@dtx/common');
+	return {
+		...shared,
+		DTXFile: vi.fn().mockImplementation(function (this: any) {
+			// ponytail: vitest 4+ constructable-mock rule — `new DTXFile()`
+			Object.assign(this, {
+				parse: parseMock,
+				parseNotes: parseNotesMock,
+				parseBPMChanges: vi.fn().mockReturnValue({}),
+				parseMeasureLengths: vi.fn().mockReturnValue(new Map()),
+				level: 1,
+				artist: 'Mock Artist',
+				bpm: 120,
+				title: 'Mock Title',
+				comment: 'Mock Comment'
+			});
+		})
+	};
+});
 
-import { DTXFile } from '@dtx/common';
 import DtxToMidi from './+page.svelte';
+import { groupNotesByLane } from '@dtx/common';
 import {
 	DEFAULT_LANE_NOTE_MAP,
 	isValidDtxFile,
 	generateMidiFilename,
-	formatFileSizeKB,
-	groupNotesByLane
+	formatFileSizeKB
 } from './midi-helpers';
 
 describe('DTX to MIDI Converter Logic', () => {
@@ -107,31 +110,17 @@ describe('DTX to MIDI Converter Logic', () => {
 		expect(groupNotesByLane([])).toEqual({});
 	});
 
-	it('DEFAULT_LANE_NOTE_MAP contains all 12 General MIDI drum lanes', () => {
-		expect(DEFAULT_LANE_NOTE_MAP['01']).toBe(36); // Bass Drum
-		expect(DEFAULT_LANE_NOTE_MAP['02']).toBe(38); // Snare
-		expect(DEFAULT_LANE_NOTE_MAP['03']).toBe(42); // Closed Hi-Hat
-		expect(DEFAULT_LANE_NOTE_MAP['0A']).toBe(44); // Pedal Hi-Hat
-		expect(DEFAULT_LANE_NOTE_MAP['0B']).toBe(57); // Crash 2
-		expect(DEFAULT_LANE_NOTE_MAP['0C']).toBe(59); // Ride 2
+	it('DEFAULT_LANE_NOTE_MAP is seeded from the playable drum lanes', () => {
+		expect(DEFAULT_LANE_NOTE_MAP['13']).toBe(36); // Bass Drum
+		expect(DEFAULT_LANE_NOTE_MAP['12']).toBe(38); // Snare
+		expect(DEFAULT_LANE_NOTE_MAP['11']).toBe(42); // Closed Hi-Hat
+		expect(DEFAULT_LANE_NOTE_MAP['18']).toBe(46); // Open Hi-Hat
+		expect(DEFAULT_LANE_NOTE_MAP['1B']).toBe(44); // Pedal Hi-Hat
+		expect(DEFAULT_LANE_NOTE_MAP['1A']).toBe(57); // Left Crash
+		expect(DEFAULT_LANE_NOTE_MAP['19']).toBe(51); // Ride
 		expect(Object.keys(DEFAULT_LANE_NOTE_MAP)).toHaveLength(12);
-	});
-
-	it('exportToMidi is called with grouped notes and lane map', () => {
-		const dtxFile = new DTXFile();
-		const notes = [
-			{ measure: 1, laneID: '01', notes: ['01', '00'] },
-			{ measure: 1, laneID: '02', notes: ['00', '02'] }
-		] as any[];
-		parseNotesMock.mockReturnValueOnce(notes);
-
-		const notesByLane = groupNotesByLane(dtxFile.parseNotes());
-
-		dtxFile.exportToMidi(notesByLane, DEFAULT_LANE_NOTE_MAP);
-
-		expect(exportToMidiMock).toHaveBeenCalledWith(notesByLane, DEFAULT_LANE_NOTE_MAP);
-		expect(notesByLane['01']).toHaveLength(1);
-		expect(notesByLane['02']).toHaveLength(1);
+		expect(DEFAULT_LANE_NOTE_MAP['01']).toBeUndefined(); // BGM lane is not a drum
+		expect(DEFAULT_LANE_NOTE_MAP['08']).toBeUndefined(); // tempo lane is not a drum
 	});
 });
 
@@ -259,7 +248,7 @@ describe('DTX to MIDI Component Rendering', () => {
 	});
 
 	it('shows error toast when download fails', async () => {
-		exportToMidiMock.mockImplementationOnce(() => {
+		parseNotesMock.mockImplementationOnce(() => {
 			throw new Error('export error');
 		});
 
@@ -276,6 +265,41 @@ describe('DTX to MIDI Component Rendering', () => {
 			expect(toastMock.error).toHaveBeenCalledWith(
 				expect.objectContaining({ title: 'Download failed' })
 			);
+		});
+	});
+
+	it('labels mapping rows with staff instrument names, never Unknown', async () => {
+		const { container } = render(DtxToMidi);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const dtxFile = new File(['#TITLE: Test\r\n'], 'song.dtx', { type: 'text/plain' });
+		await fireEvent.change(input, { target: { files: [dtxFile] } });
+
+		expect(screen.getByText('Bass')).toBeTruthy();
+		expect(screen.getByText('Snare')).toBeTruthy();
+		expect(screen.getByText('Closed Hi-Hat')).toBeTruthy();
+		expect(screen.getByText('Left Crash')).toBeTruthy();
+		expect(screen.queryByText('Unknown')).toBeNull();
+		// Lane ids are the real playable lanes, not the legacy 01-0C aliases.
+		expect(container.querySelector('#lane-13')).not.toBeNull();
+		expect(container.querySelector('#lane-01')).toBeNull();
+	});
+
+	it('shows nonfatal conversion warnings after download', async () => {
+		parseNotesMock.mockReturnValue([
+			{ measure: 0, laneID: '99', notes: [{ noteID: '01', position: 0 }], measureLength: 1 }
+		]);
+
+		const { container } = render(DtxToMidi);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const dtxFile = new File(['content'], 'song.dtx', { type: 'text/plain' });
+		await fireEvent.change(input, { target: { files: [dtxFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download MIDI File' }));
+
+		await vi.waitFor(() => {
+			expect(screen.getByText(/lane 99 has no GM note/i)).toBeTruthy();
 		});
 	});
 

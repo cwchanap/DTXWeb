@@ -1,12 +1,13 @@
 // Reexport your entry components here
 export { SimFile } from './chart/simFile';
-export { DTXFile, SoundChip } from './chart/dtx';
+export { DTXFile, SoundChip, type DtxExportControls } from './chart/dtx';
 export { LaneMeasureNote } from './chart/note';
 export {
 	decodeFileWithEncodingDetection,
 	decodeFileWithSpecificEncoding,
 	decodeArrayBufferWithBomDetection
 } from './chart/encoding-utils';
+export { parseSetDef, type ParsedSetDef, type SetDefLevel } from './chart/setDef';
 
 // Export utilities
 export { normalizePosition } from './utils/position';
@@ -30,7 +31,13 @@ export type { IFileProvider } from './services/fileProvider';
 export { setFileProvider, getFileProvider } from './services/fileProvider';
 
 // Notation model (pure; safe for SSR — no Phaser/Svelte)
-export { laneToStaff, staffKey, PLAYABLE_DRUM_LANES, type DrumStaff } from './notation/drumMapping';
+export {
+	laneToStaff,
+	staffKey,
+	PLAYABLE_DRUM_LANES,
+	GM_IMPORT_LANE,
+	type DrumStaff
+} from './notation/drumMapping';
 export {
 	TICKS_PER_WHOLE,
 	DURATION_TABLE,
@@ -46,9 +53,29 @@ export {
 	ticksToDurations,
 	quantizeMeasure,
 	groupNotesByLane,
-	buildNotationChart
+	buildNotationChart,
+	buildTimingInput
 } from './notation/quantize';
 export { exportNotationChartToMusicXml, type MusicXmlMetadata } from './notation/musicxml';
+
+// Shared MIDI parser + DTX converters (pure; no DOM/File APIs)
+export {
+	parseMidi,
+	type MidiEvent,
+	type MidiNote,
+	type MidiTrack,
+	type MidiTempoEvent,
+	type MidiMeterEvent,
+	type ParsedMidi
+} from './midi/parser';
+export {
+	dtxToMidi,
+	midiToDtx,
+	MIDI_PPQ,
+	type DtxToMidiResult,
+	type MidiToDtxOptions,
+	type MidiToDtxResult
+} from './midi/convert';
 
 // PreviewAudioEngine lives in the `./audio` subpath export to keep the main
 // barrel free of browser-only audio modules. Re-exporting it here would pull

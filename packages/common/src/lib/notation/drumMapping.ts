@@ -74,3 +74,35 @@ export const PLAYABLE_DRUM_LANES: string[] = Object.keys(LANE_TO_STAFF);
 
 export const laneToStaff = (laneId: string): DrumStaff | undefined =>
 	LANE_TO_STAFF[laneId.toUpperCase()];
+
+/**
+ * GM drum note -> DTX lane for MIDI import. Many-to-one and deliberately not
+ * the inverse of the export table: common GM alternatives fold into the
+ * nearest canonical lane (both kicks -> '13', rim/e-snare -> '12', extra
+ * toms -> '17'/'15', china/splash/ride-bell/ride-2 -> '1A'/'16'/'19'). Notes
+ * absent here are unmapped — importers report them as diagnostics rather
+ * than guessing a lane. These are defaults; user overrides stay possible.
+ */
+export const GM_IMPORT_LANE: Record<number, string> = {
+	35: '13', // acoustic bass drum -> main kick, not left bass '1C'
+	36: '13',
+	37: '12', // side stick
+	38: '12',
+	40: '12', // electric snare
+	41: '17', // low floor tom
+	42: '11',
+	43: '17', // high floor tom
+	44: '1B',
+	45: '15', // low tom
+	46: '18',
+	47: '15', // low-mid tom
+	48: '15',
+	49: '16',
+	50: '14',
+	51: '19',
+	52: '1A', // chinese cymbal
+	53: '19', // ride bell
+	55: '16', // splash cymbal
+	57: '1A',
+	59: '19' // ride cymbal 2
+};

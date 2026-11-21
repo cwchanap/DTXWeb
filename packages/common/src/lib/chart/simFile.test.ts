@@ -101,6 +101,66 @@ describe('SimFile', () => {
 			expect(simFile.levels[3]).toBeDefined();
 			expect(simFile.levels[2]).toBeUndefined();
 		});
+
+		it('parses colon-separated def directives', async () => {
+			const defContent = '#TITLE: Colon Song\n#L1LABEL: BASIC\n#L1FILE: bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.title).toBe('Colon Song');
+			expect(simFile.levels[1]?.label).toBe('BASIC');
+		});
+
+		it('preserves multiword labels from the def file', async () => {
+			const defContent = '#L1LABEL Basic Plus\n#L1FILE bas.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx'], 'bas.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[1]?.label).toBe('Basic Plus');
+		});
+
+		it('parses levels beyond L5 from the def file', async () => {
+			const defContent = '#L6LABEL MANIAC\n#L6FILE maniac.dtx\n';
+			const defFile = new File([defContent], 'set.def');
+			const dtxFile = new File(['dtx'], 'maniac.dtx');
+			const simFile = new SimFile([defFile, dtxFile]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[6]?.label).toBe('MANIAC');
+		});
+
+		it('parses a UTF-16LE-with-BOM def file whose directives are lowercase', async () => {
+			// parseSetDef is case-insensitive, but the encoding validation
+			// callback required uppercase '#TITLE'/'#L1…' — a lowercase UTF-16LE
+			// file failed every encoding heuristic and fell back to UTF-8
+			// garbage, yielding an empty title and no levels.
+			const text =
+				'#title Lowercase Song\n#l1label Basic\n#l1file bas.dtx\n' +
+				'#l6label Maniac\n#l6file man.dtx\n';
+			const bytes = [0xff, 0xfe]; // UTF-16LE BOM
+			for (let i = 0; i < text.length; i++) {
+				bytes.push(text.charCodeAt(i) & 0xff, (text.charCodeAt(i) >> 8) & 0xff);
+			}
+			const defFile = new File([new Uint8Array(bytes)], 'set.def');
+			const simFile = new SimFile([
+				defFile,
+				new File(['dtx'], 'bas.dtx'),
+				new File(['dtx'], 'man.dtx')
+			]);
+
+			await simFile.parse();
+
+			expect(simFile.title).toBe('Lowercase Song');
+			expect(simFile.levels[1]?.label).toBe('Basic');
+			expect(simFile.levels[6]?.label).toBe('Maniac');
+		});
 	});
 
 	describe('parse', () => {
@@ -182,6 +242,17 @@ describe('SimFile', () => {
 			simFile.levels[5] = { label: 'REAL', file: mockDTX5 };
 
 			expect(simFile.getHighestLevel()).toBe(mockDTX5); // Level 5 has priority over 1
+		});
+
+		it('should return a level beyond L5 when it is the highest present', () => {
+			const simFile = new SimFile([]);
+			const mockDTX1 = { parse: vi.fn() } as any;
+			const mockDTX6 = { parse: vi.fn() } as any;
+
+			simFile.levels[1] = { label: 'BASIC', file: mockDTX1 };
+			simFile.levels[6] = { label: 'MANIAC', file: mockDTX6 };
+
+			expect(simFile.getHighestLevel()).toBe(mockDTX6);
 		});
 
 		it('should fallback to lower levels when higher ones unavailable', () => {
@@ -497,6 +568,42 @@ describe('SimFile', () => {
 			expect(simFile.levels[2]).toBeUndefined();
 		});
 
+		it('loads levels beyond L5 from server-provided metadata', async () => {
+			const dtxBlob = new Blob(['dtx content']);
+			const fetchSpy = vi.fn().mockResolvedValue({
+				ok: true,
+				blob: () => Promise.resolve(dtxBlob),
+				clone() {
+					return this;
+				}
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const metadata = {
+				title: 'Deep Song',
+				levels: {
+					1: { label: 'BASIC', fileName: 'bas.dtx' },
+					6: { label: 'MANIAC', fileName: 'maniac.dtx' }
+				}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-l6',
+				'https://example.com',
+				metadata
+			);
+
+			// The remote editor must actually reach the L6 chart, not just
+			// have the server parse it.
+			expect(simFile.levels[6]?.label).toBe('MANIAC');
+			expect(fetchSpy).toHaveBeenCalledWith(
+				'https://example.com/sim-l6/maniac.dtx',
+				undefined
+			);
+			expect(simFile.getHighestLevel()).toBe(simFile.levels[6]?.file);
+		});
+
 		it('skips levels where fetch response is not ok', async () => {
 			vi.stubGlobal(
 				'fetch',
@@ -766,6 +873,22 @@ describe('SimFile', () => {
 
 			expect(content).toContain('#L2LABEL ADVANCED');
 			expect(content).toContain('#L2FILE adv.dtx');
+		});
+
+		it('retains populated levels beyond L5 alongside the L1-L5 defaults', () => {
+			const simFile = new SimFile([]);
+			const mockDTX = {
+				parse: vi.fn(),
+				getFileName: vi.fn().mockReturnValue('maniac.dtx')
+			} as any;
+			simFile.levels[6] = { label: 'MANIAC', file: mockDTX };
+
+			const content = simFile.generateDefFileContent();
+
+			expect(content).toContain('#L1FILE bas.dtx');
+			expect(content).toContain('#L5FILE real.dtx');
+			expect(content).toContain('#L6LABEL MANIAC');
+			expect(content).toContain('#L6FILE maniac.dtx');
 		});
 	});
 });

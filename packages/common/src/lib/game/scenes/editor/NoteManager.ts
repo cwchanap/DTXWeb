@@ -7,6 +7,7 @@ import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
 } from '../../utils/notePositioning';
+import { parseNoteKey } from '../../../utils/position';
 
 /**
  * Manages all note-related operations in the DTX editor including:
@@ -24,6 +25,11 @@ export class NoteManager {
 	// Selection state
 	public selectedNotes: Set<string> = new Set();
 	private selectionOverlays: Map<string, Phaser.GameObjects.Graphics> = new Map();
+
+	// Draw-time stacking order per note key. Recounting nearby notes after
+	// the whole stack exists can't reconstruct which chip is frontmost, so
+	// Editor.drawNote records the index it drew with.
+	private stackIndexes: Map<string, number> = new Map();
 
 	// Debounce for keyboard shortcuts
 	private lastKeyboardAction = 0;
@@ -380,12 +386,9 @@ export class NoteManager {
 
 		this.selectedNotes.forEach((noteKey) => {
 			// Parse the note key to get the position info: "note-{laneIndex}-{measure}-{cellOffset}"
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const rawCellOffset = parseFloat(parts[3]);
-				const cellOffset = rawCellOffset;
+			const parsed = parseNoteKey(noteKey);
+			if (parsed) {
+				const { laneIndex, measure, cellOffset } = parsed;
 				const laneId = this.editor.getLaneConfigs()[laneIndex].id;
 
 				// Find the note data before deleting it
@@ -449,8 +452,12 @@ export class NoteManager {
 		// Find and update the LaneMeasureNote in the current data structure
 		const notes = this.editor.getNotes();
 		if (deletedNoteData.laneId in notes) {
+			// Duplicate pattern lines can create several groups for one
+			// lane/measure — match the group that actually holds the note.
 			const measureNote = notes[deletedNoteData.laneId].find(
-				(note) => note.measure === deletedNoteData.measure
+				(note) =>
+					note.measure === deletedNoteData.measure &&
+					note.notes.some((n) => n.position === deletedNoteData.cellOffset)
 			);
 
 			if (measureNote) {
@@ -483,21 +490,19 @@ export class NoteManager {
 	/**
 	 * Helper method to clean up visual elements for a note
 	 */
-	private cleanupNoteVisuals(noteKey: string): void {
+	public cleanupNoteVisuals(noteKey: string): void {
 		// Remove the note graphics from the display
 		const noteGraphics = this.editor.getPanelContainer().getByName(noteKey);
 		if (noteGraphics) {
 			noteGraphics.destroy();
 		}
 
-		// Remove the note text from the display
-		const keyParts = noteKey.split('-');
-		if (keyParts.length === 4) {
-			const textKey = `text-${keyParts[1]}-${keyParts[2]}-${keyParts[3]}`;
-			const noteText = this.editor.getPanelContainer().getByName(textKey);
-			if (noteText) {
-				noteText.destroy();
-			}
+		// Remove the note text from the display; the text key shares the
+		// note key's lane/measure/offset suffix.
+		const textKey = `text-${noteKey.slice(5)}`;
+		const noteText = this.editor.getPanelContainer().getByName(textKey);
+		if (noteText) {
+			noteText.destroy();
 		}
 
 		// Remove selection overlay using stored reference
@@ -506,6 +511,8 @@ export class NoteManager {
 			overlay.destroy();
 			this.selectionOverlays.delete(noteKey);
 		}
+
+		this.stackIndexes.delete(noteKey);
 	}
 
 	/**
@@ -515,13 +522,9 @@ export class NoteManager {
 		this.cleanupNoteVisuals(noteKey);
 
 		// Parse the note key to get the position info
-		const parts = noteKey.split('-');
-		if (parts.length === 4) {
-			const laneIndex = parseInt(parts[1]);
-			const measure = parseInt(parts[2]);
-			const rawCellOffset = parseFloat(parts[3]);
-			// Use the raw position for now to debug
-			const cellOffset = rawCellOffset;
+		const parsed = parseNoteKey(noteKey);
+		if (parsed) {
+			const { laneIndex, measure, cellOffset } = parsed;
 			const laneId = this.editor.getLaneConfigs()[laneIndex].id;
 
 			// Remove the specific note from this.notes
@@ -733,12 +736,10 @@ export class NoteManager {
 	 */
 	private calculateSimplifiedNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
 		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
-		const parts = noteKey.split('-');
-		if (parts.length !== 4) return null;
+		const parsed = parseNoteKey(noteKey);
+		if (!parsed) return null;
 
-		const laneIndex = parseInt(parts[1]);
-		const measure = parseInt(parts[2]);
-		const cellOffset = parseFloat(parts[3]);
+		const { laneIndex, measure, cellOffset } = parsed;
 		// Keys carry the exact stored position but the graphic is drawn at the
 		// 192-cell snap — bounds must reproduce that same drawn position.
 		const drawnOffset = Math.round(cellOffset * HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
@@ -788,25 +789,42 @@ export class NoteManager {
 	}
 
 	/**
+	 * Record the stacking order a note was drawn with (Editor.drawNote).
+	 */
+	public setStackIndex(noteKey: string, stackIndex: number): void {
+		this.stackIndexes.set(noteKey, stackIndex);
+	}
+
+	/**
+	 * The note's drawn stacking order: the index recorded at draw time, or a
+	 * nearby-note recount for graphics drawn without one (e.g. test mocks).
+	 */
+	public stackIndexOf(noteKey: string): number {
+		const recorded = this.stackIndexes.get(noteKey);
+		if (recorded !== undefined) return recorded;
+		const parsed = parseNoteKey(noteKey);
+		if (!parsed) return 0;
+		return this.findNearbyNotes(parsed.measure, parsed.laneIndex, parsed.cellOffset).length;
+	}
+
+	/**
 	 * Calculate the bounds of a note based on its key, including visual stacking offset
 	 */
 	public calculateNoteBounds(noteKey: string): Phaser.Geom.Rectangle | null {
 		// Parse note key to get position info: "note-{laneIndex}-{measure}-{cellOffset}"
-		const parts = noteKey.split('-');
-		if (parts.length !== 4) {
+		const parsed = parseNoteKey(noteKey);
+		if (!parsed) {
 			return null;
 		}
 
-		const laneIndex = parseInt(parts[1]);
-		const measure = parseInt(parts[2]);
-		const cellOffset = parseFloat(parts[3]);
+		const { laneIndex, measure, cellOffset } = parsed;
 		// Keys carry the exact stored position but the graphic is drawn at the
 		// 192-cell snap — bounds must reproduce that same drawn position.
 		const drawnOffset = Math.round(cellOffset * HIGH_RESOLUTION_CELLS) / HIGH_RESOLUTION_CELLS;
 
-		// Find nearby notes to determine stacking position (same logic as Editor.drawNote)
-		const nearbyNotes = this.findNearbyNotes(measure, laneIndex, cellOffset);
-		const stackIndex = nearbyNotes.length;
+		// The drawn stack index is authoritative: every stacked note counts
+		// the others near it, so a recount can't tell frontmost from hidden.
+		const stackIndex = this.stackIndexOf(noteKey);
 
 		// Calculate base X position
 		const baseX =
@@ -873,12 +891,14 @@ export class NoteManager {
 			if (!noteName || !noteName.startsWith('note-')) continue;
 
 			// Parse note key: note-laneIndex-measure-cellOffset
-			const parts = noteName.split('-');
-			if (parts.length !== 4) continue;
+			const parsed = parseNoteKey(noteName);
+			if (!parsed) continue;
 
-			const noteLaneIndex = parseInt(parts[1]);
-			const noteMeasure = parseInt(parts[2]);
-			const noteCellOffset = parseFloat(parts[3]);
+			const {
+				laneIndex: noteLaneIndex,
+				measure: noteMeasure,
+				cellOffset: noteCellOffset
+			} = parsed;
 
 			// Check if it's in the same lane and measure, and within threshold
 			if (
@@ -931,27 +951,17 @@ export class NoteManager {
 
 		// Second pass: Only calculate precise stacking for notes that were actually hit
 		for (const note of potentialNotes) {
-			const parts = note.name.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
-
-				// Now calculate precise bounds with stacking for hit notes only
-				const preciseBounds = this.calculateNoteBounds(note.name);
-				if (preciseBounds) {
-					// Double-check with precise bounds
-					if (
-						pointer.x >= preciseBounds.x &&
-						pointer.x <= preciseBounds.x + preciseBounds.width &&
-						pointer.y >= preciseBounds.y &&
-						pointer.y <= preciseBounds.y + preciseBounds.height
-					) {
-						// Calculate stack index for this note
-						const nearbyNotes = this.findNearbyNotes(measure, laneIndex, cellOffset);
-						const stackIndex = nearbyNotes.length;
-						clickedNotes.push({ note, stackIndex });
-					}
+			// Now calculate precise bounds with stacking for hit notes only
+			const preciseBounds = this.calculateNoteBounds(note.name);
+			if (preciseBounds) {
+				// Double-check with precise bounds
+				if (
+					pointer.x >= preciseBounds.x &&
+					pointer.x <= preciseBounds.x + preciseBounds.width &&
+					pointer.y >= preciseBounds.y &&
+					pointer.y <= preciseBounds.y + preciseBounds.height
+				) {
+					clickedNotes.push({ note, stackIndex: this.stackIndexOf(note.name) });
 				}
 			}
 		}
@@ -990,11 +1000,9 @@ export class NoteManager {
 		let referenceCellOffset = Number.MAX_SAFE_INTEGER;
 
 		noteKeys.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]);
+			const parsed = parseNoteKey(noteKey);
+			if (parsed) {
+				const { laneIndex, measure, cellOffset } = parsed;
 
 				// Priority: 1) smallest measure, 2) smallest cellOffset, 3) rightmost lane (highest lane index)
 				if (

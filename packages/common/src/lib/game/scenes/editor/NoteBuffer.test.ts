@@ -17,7 +17,12 @@ import type { NoteMove } from './NoteMove';
 
 // Mock the normalizePosition utility
 vi.mock('../../../utils/position', () => ({
-	normalizePosition: vi.fn((cellOffset: number) => cellOffset)
+	normalizePosition: vi.fn((cellOffset: number) => cellOffset),
+	canonicalizeCellOffset: vi.fn((cellOffset: number) => Number(cellOffset.toPrecision(15))),
+	snapCellOffsetToBarline: vi.fn((cellOffset: number) => {
+		const rounded = Math.round(cellOffset);
+		return Math.abs(cellOffset - rounded) < 1e-9 ? rounded + 0 : cellOffset;
+	})
 }));
 
 // Mock note graphics interface

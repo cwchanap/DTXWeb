@@ -1149,6 +1149,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 			editorScene['panelContainer'] = {
 				y: 0,
 				getByName: vi.fn().mockReturnValue(null)
@@ -1190,9 +1191,10 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
-			// Right-click resolves through stored notes (y=500 → positionInMeasure
-			// 0.25 in measure 0, lane 2 → lane '18').
+			// Right-click hit-tests the drawn rect: the note at lane 2/measure
+			// 0/offset 0.25 draws at x [102,148], y [477,498].
 			const laneId = '18';
 			const laneMeasureNote = new LaneMeasureNote(
 				0,
@@ -1202,9 +1204,11 @@ describe('Editor Scene', () => {
 			);
 			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
 
-			const mockNote = { destroy: vi.fn() };
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
 			editorScene['panelContainer'] = {
 				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
 				getByName: vi.fn().mockReturnValue(mockNote)
 			} as any;
 
@@ -1220,7 +1224,9 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			// x=110/y=490 land inside the drawn rect; the anchor at y=500 is
+			// 2px below the chip's bottom edge.
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
 			expect(mockNote.destroy).toHaveBeenCalled();
@@ -1236,6 +1242,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
 			const handlePointerDownSpy = vi
 				.spyOn(editorScene['noteManager'], 'handlePointerDown')
@@ -1279,6 +1286,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
 			// Use a plain object without removeNote to cover the fallback path (lines 220-223)
 			const laneId = editorScene.getLaneConfigs()[2].id;
@@ -1294,6 +1302,8 @@ describe('Editor Scene', () => {
 			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
 			editorScene['panelContainer'] = {
 				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
 				getByName: vi.fn().mockReturnValue(mockNote)
 			} as any;
 
@@ -1312,7 +1322,8 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			// Inside the drawn rect x [102,148], y [477,498].
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
 			// Note should be removed via the fallback filter path
@@ -1330,6 +1341,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
 			// laneIndex=2 → laneId='18', measure=0, cellOffset=0.25
 			const laneId = '18';
@@ -1344,6 +1356,8 @@ describe('Editor Scene', () => {
 			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
 			editorScene['panelContainer'] = {
 				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
 				getByName: vi.fn().mockReturnValue(mockNote)
 			} as any;
 
@@ -1362,8 +1376,9 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			// x=100 → laneIndex=2, y=500 → clickY=100, measure=0, cellOffset=0.25
-			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			// x=110 → laneIndex=2 and inside the drawn rect x [102,148],
+			// y [477,498] for the offset-0.25 chip.
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
 			expect(recordDeleteActionSpy).toHaveBeenCalledWith(
@@ -1384,6 +1399,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
 			// laneIndex=2 → laneId='18', measure=0, cellOffset=0.25
 			const laneId = '18';
@@ -1398,6 +1414,8 @@ describe('Editor Scene', () => {
 			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
 			editorScene['panelContainer'] = {
 				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
 				getByName: vi.fn().mockReturnValue(mockNote)
 			} as any;
 
@@ -1416,7 +1434,7 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
 			// After deletion, the lane entry should be removed since it's the last note
@@ -1435,6 +1453,7 @@ describe('Editor Scene', () => {
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
 			// A widened-pattern position (95/384) is stored exactly but drawn at
 			// the 192-grid snap 0.25 — the old 0.001-tolerance lookup missed it.
@@ -1451,6 +1470,8 @@ describe('Editor Scene', () => {
 			const mockNote = { destroy: vi.fn(), name: `note-2-0-${offGrid}` };
 			editorScene['panelContainer'] = {
 				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
 				getByName: vi.fn().mockReturnValue(mockNote)
 			} as any;
 
@@ -1469,8 +1490,9 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			// y=500 → clickY=100 → positionInMeasure=0.25, the note's drawn cell
-			const mockPointer = { x: 100, y: 500, rightButtonDown: vi.fn().mockReturnValue(true) };
+			// x=110/y=490 hit the drawn rect (drawn offset 0.25 → x [102,148],
+			// y [477,498]); bounds resolve to the exact stored position.
+			const mockPointer = { x: 110, y: 490, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
 			expect(laneMeasureNote.notes).toHaveLength(0);
@@ -1484,17 +1506,19 @@ describe('Editor Scene', () => {
 			syncNotesToStoreSpy.mockRestore();
 		});
 
-		it('should delete only the resolved chip when same-lane notes share a grid cell', () => {
+		it('should delete the frontmost chip when same-lane notes share a grid cell', () => {
 			editorScene.create();
 			editorScene['isEditing'] = true;
 
 			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
 			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
 			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
 
-			// 1/384 and 1/192 snap to the same 192 cell and stack visually. The
-			// exact-position key must remove only the resolved chip, not whichever
-			// stored note happens to sit at the normalized offset.
+			// 1/384 and 1/192 snap to the same 192 cell and stack visually.
+			// Both drawn rects overlap, so the click resolves to the chip
+			// drawn on top (highest recorded stack index), not an arbitrary
+			// stored note near the anchor.
 			const laneId = '18';
 			const laneMeasureNote = new LaneMeasureNote(
 				0,
@@ -1507,9 +1531,70 @@ describe('Editor Scene', () => {
 			);
 			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
 
+			const backKey = `note-2-0-${1 / 384}`;
+			const frontKey = `note-2-0-${1 / 192}`;
+			const backNote = { destroy: vi.fn(), name: backKey };
+			const frontNote = { destroy: vi.fn(), name: frontKey };
+			const list = [backNote, frontNote];
 			editorScene['panelContainer'] = {
 				y: 0,
-				getByName: vi.fn().mockReturnValue(null)
+				list,
+				getAll: vi.fn().mockReturnValue(list),
+				getByName: vi.fn((name: string) => list.find((n) => n.name === name) ?? null)
+			} as any;
+			editorScene['noteManager'].setStackIndex(backKey, 0);
+			editorScene['noteManager'].setStackIndex(frontKey, 1);
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// Both rects span y [574.9, 595.9]; x [102,148] / [105,151].
+			const mockPointer = { x: 110, y: 590, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			// The stacked (front) chip is removed; the hidden one survives.
+			expect(laneMeasureNote.notes).toEqual([{ noteID: '01', position: 1 / 384 }]);
+			expect(frontNote.destroy).toHaveBeenCalled();
+			expect(backNote.destroy).not.toHaveBeenCalled();
+			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should delete from the owning group when duplicate pattern lines share a lane/measure', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+
+			// Duplicate #NNN18 lines produce one group per pattern line for the
+			// same lane/measure; deletion must remove the chip from the group
+			// that actually owns it, not just the first group found.
+			const laneId = '18';
+			const groupA = new LaneMeasureNote(0, laneId, [{ noteID: '01', position: 0.25 }], 1);
+			const groupB = new LaneMeasureNote(0, laneId, [{ noteID: '01', position: 0.5 }], 1);
+			editorScene['notes'] = { [laneId]: [groupA, groupB] };
+
+			const noteB = { destroy: vi.fn(), name: 'note-2-0-0.5' };
+			const list = [{ destroy: vi.fn(), name: 'note-2-0-0.25' }, noteB];
+			editorScene['panelContainer'] = {
+				y: 0,
+				list,
+				getAll: vi.fn().mockReturnValue(list),
+				getByName: vi.fn((name: string) => list.find((n) => n.name === name) ?? null)
 			} as any;
 
 			const handlePointerDownSpy = vi
@@ -1524,15 +1609,72 @@ describe('Editor Scene', () => {
 				(call) => call[0] === 'pointerdown'
 			)?.[1];
 
-			// y=598 → clickY=2 → positionInMeasure=0.005, inside the shared cell
-			const mockPointer = { x: 100, y: 598, rightButtonDown: vi.fn().mockReturnValue(true) };
+			// Offset 0.5 draws at y [377,398]; x [102,148].
+			const mockPointer = { x: 110, y: 390, rightButtonDown: vi.fn().mockReturnValue(true) };
 			pointerdownHandler?.(mockPointer);
 
-			// The nearest stored chip (1/384) is removed; the other survives.
-			expect(laneMeasureNote.notes).toEqual([{ noteID: '02', position: 1 / 192 }]);
+			expect(groupB.notes).toHaveLength(0);
+			expect(groupA.notes).toEqual([{ noteID: '01', position: 0.25 }]);
+			// The emptied group is pruned; the surviving one remains.
+			expect(editorScene['notes'][laneId]).toEqual([groupA]);
 			expect(syncNotesToStoreSpy).toHaveBeenCalled();
 
 			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
+		it('should not delete or record undo on right-click of empty space near a chip', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
+			editorScene['panelContainer'] = {
+				y: 0,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const recordDeleteActionSpy = vi
+				.spyOn(editorScene['noteManager'], 'recordDeleteAction')
+				.mockImplementation(() => {});
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// The chip spans y [477,498]; y=550 is empty grid space below it.
+			const mockPointer = { x: 110, y: 550, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(laneMeasureNote.notes).toEqual([{ noteID: '01', position: 0.25 }]);
+			expect(mockNote.destroy).not.toHaveBeenCalled();
+			expect(recordDeleteActionSpy).not.toHaveBeenCalled();
+			expect(syncNotesToStoreSpy).not.toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			recordDeleteActionSpy.mockRestore();
 			syncNotesToStoreSpy.mockRestore();
 		});
 	});

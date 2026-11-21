@@ -275,52 +275,88 @@ export class Editor extends BaseGame {
 
 					// Check if it's a right-click (pointer.rightButtonDown())
 					if (pointer.rightButtonDown()) {
-						const laneId = this.laneConfigs[laneIndex].id;
+						// Hit-test the drawn rectangles rather than distance to
+						// a timing anchor: the graphic sits above its anchor, so
+						// anchor distance can pick an adjacent chip or delete
+						// from empty space. Scanning every stored note — not
+						// just the clicked measure's first group — also reaches
+						// notes that share a lane/measure across duplicate
+						// pattern lines.
+						const drawn = new Set(
+							this.panelContainer.list
+								.filter((child) => child.name?.startsWith('note-'))
+								.map((child) => child.name)
+						);
+						const hits: {
+							group: LaneMeasureNote;
+							position: number;
+							noteID: string;
+							laneIndex: number;
+							laneId: string;
+							noteKey: string;
+							stackIndex: number;
+						}[] = [];
+						this.laneConfigs.forEach((laneConfig, noteLaneIndex) => {
+							const groups = this.notes[laneConfig.id];
+							if (!groups) return;
+							groups.forEach((group) => {
+								group.notes.forEach((n) => {
+									const noteKey = `note-${noteLaneIndex}-${group.measure}-${n.position}`;
+									if (!drawn.has(noteKey)) return;
+									const bounds = this.noteManager.calculateNoteBounds(noteKey);
+									if (
+										bounds &&
+										pointer.x >= bounds.x &&
+										pointer.x <= bounds.x + bounds.width &&
+										pointer.y >= bounds.y &&
+										pointer.y <= bounds.y + bounds.height
+									) {
+										hits.push({
+											group,
+											position: n.position,
+											noteID: n.noteID,
+											laneIndex: noteLaneIndex,
+											laneId: laneConfig.id,
+											noteKey,
+											stackIndex: this.noteManager.stackIndexOf(noteKey)
+										});
+									}
+								});
+							});
+						});
 
-						// Resolve the stored note nearest the click. Note graphics
-						// are keyed by exact position, so the grid-snapped offset
-						// can't look up off-grid notes directly — resolve through
-						// the data by drawn (normalized) position instead.
-						const measureNote =
-							laneId in this.notes
-								? this.notes[laneId].find((note) => note.measure === measure)
-								: undefined;
-						const noteChip = measureNote?.notes
-							.filter(
-								(n) =>
-									Math.abs(
-										this.normalizePosition(n.position) - positionInMeasure
-									) <
-									1 / this.cellsPerMeasure
-							)
-							.sort(
-								(a, b) =>
-									Math.abs(
-										this.normalizePosition(a.position) - positionInMeasure
-									) -
-									Math.abs(this.normalizePosition(b.position) - positionInMeasure)
-							)[0];
+						// Overlapping hits resolve to the frontmost (highest drawn stack index)
+						const hit =
+							hits.length > 0
+								? hits.reduce((top, h) =>
+										h.stackIndex >= top.stackIndex ? h : top
+									)
+								: null;
 
-						if (measureNote && noteChip) {
-							const notePosition = noteChip.position;
-							const noteKey = `note-${laneIndex}-${measure}-${notePosition}`;
+						if (hit) {
+							const {
+								group: measureNote,
+								position: notePosition,
+								noteID,
+								laneIndex: hitLaneIndex,
+								laneId: hitLaneId,
+								noteKey
+							} = hit;
 
 							// Record undo action before deleting
 							const deletedNoteData: DeletedNoteData = {
 								noteKey,
-								laneIndex,
-								measure,
+								laneIndex: hitLaneIndex,
+								measure: measureNote.measure,
 								cellOffset: notePosition,
-								laneId,
-								noteId: noteChip.noteID,
+								laneId: hitLaneId,
+								noteId: noteID,
 								measureLength: measureNote.measureLength
 							};
 							this.noteManager.recordDeleteAction([deletedNoteData]);
 
-							// Remove the note graphics and text from the display
-							this.panelContainer.getByName(noteKey)?.destroy();
-							const textKey = `text-${laneIndex}-${measure}-${notePosition}`;
-							this.panelContainer.getByName(textKey)?.destroy();
+							// Remove the note graphics, text, and selection overlay
+							this.noteManager.cleanupNoteVisuals(noteKey);
 
 							// Remove the specific note from the notes array
 							// Check if the instance has the new method (backward compatibility)
@@ -335,14 +371,14 @@ export class Editor extends BaseGame {
 
 							// If the measure is now empty, remove the entire LaneMeasureNote
 							if (measureNote.notes.length === 0) {
-								this.notes[laneId] = this.notes[laneId].filter(
+								this.notes[hitLaneId] = this.notes[hitLaneId].filter(
 									(note) => note !== measureNote
 								);
 							}
 
 							// Clean up empty lane entries
-							if (this.notes[laneId].length === 0) {
-								delete this.notes[laneId];
+							if (this.notes[hitLaneId].length === 0) {
+								delete this.notes[hitLaneId];
 							}
 							this.syncNotesToStore();
 							// Note: dirty state and auto-save handled by NoteManager callback
@@ -785,6 +821,7 @@ export class Editor extends BaseGame {
 
 		graphics.setName(noteKey);
 		this.panelContainer.add(graphics);
+		this.noteManager.setStackIndex(noteKey, stackIndex);
 
 		// Add text label
 		const text = this.add

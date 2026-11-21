@@ -1,5 +1,10 @@
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
+import {
+	canonicalizeCellOffset,
+	parseNoteKey,
+	snapCellOffsetToBarline
+} from '../../../utils/position';
 
 /**
  * Represents a copied note with its position and properties
@@ -73,11 +78,9 @@ export class NoteCopy {
 
 		// Second pass: collect note data with relative positions
 		selectedNotes.forEach((noteKey) => {
-			const parts = noteKey.split('-');
-			if (parts.length === 4) {
-				const laneIndex = parseInt(parts[1]);
-				const measure = parseInt(parts[2]);
-				const cellOffset = parseFloat(parts[3]); // Exact stored position from note key
+			const parsed = parseNoteKey(noteKey);
+			if (parsed) {
+				const { laneIndex, measure, cellOffset } = parsed; // Exact stored position from note key
 				const laneId = editor.getLaneConfigs()[laneIndex].id;
 
 				// Find the note data in the editor's data structure
@@ -159,11 +162,9 @@ export class NoteCopy {
 
 			// Gather note data before deletion
 			selectedNotes.forEach((noteKey) => {
-				const parts = noteKey.split('-');
-				if (parts.length === 4) {
-					const laneIndex = parseInt(parts[1]);
-					const measure = parseInt(parts[2]);
-					const cellOffset = parseFloat(parts[3]); // Exact stored position from note key
+				const parsed = parseNoteKey(noteKey);
+				if (parsed) {
+					const { laneIndex, measure, cellOffset } = parsed; // Exact stored position from note key
 					const laneId = editor.getLaneConfigs()[laneIndex].id;
 
 					// Find the note data in the editor's data structure
@@ -245,7 +246,12 @@ export class NoteCopy {
 		this.copiedNotes.forEach((copiedNote) => {
 			const newLaneIndex = targetLaneIndex + copiedNote.relativeLaneIndex;
 			let newMeasure = targetMeasure + copiedNote.relativeMeasure;
-			let newCellOffset = targetCellOffset + copiedNote.relativeCellOffset;
+			// Canonicalize + snap float residue so the destination key matches
+			// the stored position of a note already there; a raw sum 1-ulp off
+			// evades the getByName check and pastes a duplicate hit.
+			let newCellOffset = snapCellOffsetToBarline(
+				canonicalizeCellOffset(targetCellOffset + copiedNote.relativeCellOffset)
+			);
 
 			// Handle measure boundary crossing for cellOffset
 			while (newCellOffset >= 1.0) {
@@ -256,9 +262,6 @@ export class NoteCopy {
 				newCellOffset += 1.0;
 				newMeasure -= 1;
 			}
-
-			// Keep the exact calculated position to preserve high-resolution positioning
-			// No normalization needed as the relative offsets preserve the original precision
 
 			// Validate target position
 			if (

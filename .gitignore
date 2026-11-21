@@ -49,3 +49,4 @@ coverage/
 
 # Auto-generated Svelte type declarations
 **/*.svelte.d.ts
+**/.svelte-kit/

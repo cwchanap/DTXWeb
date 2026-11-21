@@ -104,12 +104,16 @@ test.describe('MIDI Preview Tool', () => {
 			);
 
 			// Track card mirrors the parsed track: name, note count, channels and
-			// computed note range.
+			// computed note range. Scoped to the card — the success toast also
+			// contains "${n} notes" and would trip strict mode.
 			const track = expected.tracks[0];
+			const trackCard = page
+				.locator('div.rounded-lg')
+				.filter({ has: page.getByRole('heading', { name: `Track 1 - ${track.name}` }) });
+			await expect(trackCard).toBeVisible();
 			await expect(
-				page.getByRole('heading', { name: `Track 1 - ${track.name}` })
+				trackCard.getByText(`${track.notes.length} notes`, { exact: true })
 			).toBeVisible();
-			await expect(page.getByText(`${track.notes.length} notes`)).toBeVisible();
 			await expect(detailValue(page, 'Channels')).toHaveText(
 				Array.from(track.channels)
 					.sort((a, b) => a - b)

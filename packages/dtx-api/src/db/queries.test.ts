@@ -496,7 +496,7 @@ describe('getSimfile chart id', () => {
 		await getSimfile({} as unknown as D1Database, 1);
 
 		const dtxQuery = (
-			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> }[] }
+			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> } }[]
 		)[1]?.value;
 		expect(dtxQuery.orderBy).toHaveBeenCalledWith(asc(dtxFiles.id));
 	});
@@ -603,7 +603,7 @@ describe('listSimfiles', () => {
 		await listSimfiles(db as unknown as D1Database, {});
 
 		const dtxQuery = (
-			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> }[] }
+			mockDrizzleDb.select.mock.results as { value: { orderBy: ReturnType<typeof vi.fn> } }[]
 		)[2]?.value;
 		expect(dtxQuery.orderBy).toHaveBeenCalledWith(asc(dtxFiles.id));
 	});

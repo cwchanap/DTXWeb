@@ -162,7 +162,8 @@ vi.mock('$app/navigation', () => ({
 vi.mock('$lib/toaster', () => ({
 	default: {
 		success: vi.fn(),
-		error: vi.fn()
+		error: vi.fn(),
+		warning: vi.fn()
 	}
 }));
 

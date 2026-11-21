@@ -91,7 +91,10 @@
 	function exportFile() {
 		const dtxFile = get(store.currentDtxFile);
 		const notes = get(store.editorNotes);
-		dtxFile?.export(notes);
+		dtxFile?.export(notes, {
+			onWarning: (message) =>
+				toastStore.warning({ title: 'Export warning', description: message })
+		});
 	}
 
 	function importFile() {

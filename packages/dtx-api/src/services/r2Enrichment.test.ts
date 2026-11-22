@@ -2562,6 +2562,51 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers a rated nested set.def sibling over an unrated root chart sharing its stem', async () => {
+		// Same layout as the root-preference test with the ratings swapped:
+		// the nested sibling of the leftover ref carries #DLEVEL 60, while
+		// the root same-stem copy probes #DLEVEL 0. parse_dtx_folder skips
+		// unrated charts, so the root copy can never be a row's source —
+		// the set.def sibling keeps the claim.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 200, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

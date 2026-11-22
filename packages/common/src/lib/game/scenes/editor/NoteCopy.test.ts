@@ -365,6 +365,39 @@ describe('NoteCopy', () => {
 			);
 		});
 
+		it('should canonicalize the offset after wrapping across a barline', () => {
+			// Reference (lane 1) at 0, other (lane 0) at 7/12. Pasting at 0.75
+			// sums the other note to 1.3333333333333335, which wraps to
+			// 0.33333333333333326 unless the residue is canonicalized again.
+			vi.mocked(mockEditor.getNotes).mockReturnValue({
+				lane1: [new LaneMeasureNote(1, 'lane1', [{ noteID: '11', position: 7 / 12 }])],
+				lane2: [new LaneMeasureNote(1, 'lane2', [{ noteID: '12', position: 0 }])]
+			});
+			noteCopy.copyNotes(new Set(['note-0-1-0.5833333333333334', 'note-1-1-0']), mockEditor);
+			const recordPasteAction = vi.fn();
+
+			noteCopy.pasteNotes(1, 4, 0.75, mockEditor, recordPasteAction);
+
+			// The stored key must match what addNoteToEditor records so undo
+			// can delete the pasted chip by the same key.
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				5,
+				0,
+				0.3333333333333333,
+				'lane1',
+				'11'
+			);
+			expect(recordPasteAction).toHaveBeenCalledWith(
+				expect.arrayContaining([
+					expect.objectContaining({
+						noteKey: 'note-0-5-0.3333333333333333',
+						cellOffset: 0.3333333333333333,
+						noteId: '11'
+					})
+				])
+			);
+		});
+
 		it('should validate target positions and skip invalid ones', () => {
 			// Try to paste at an invalid lane
 			const result = noteCopy.pasteNotes(10, 2, 0, mockEditor); // Lane 10 doesn't exist

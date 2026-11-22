@@ -386,6 +386,35 @@ describe('NoteMove', () => {
 			expect(mockRecordMoveAction).toHaveBeenCalled();
 		});
 
+		it('should canonicalize the offset after wrapping across a barline', () => {
+			// Moving 7/12 from 0.75 wraps to 0.33333333333333326 unless the
+			// subtraction residue is canonicalized; the recorded new key
+			// must match the stored position so undoMove can delete it.
+			const notesToMove: Array<{ newKey: string }> = [];
+			const noteMoveInternals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<Record<string, unknown>>
+				) => void;
+			};
+			noteMoveInternals.draggedNotes = new Set(['note-1-1-0.75']);
+
+			noteMoveInternals.calculateNewPositions(
+				0,
+				0,
+				7 / 12,
+				new Map([['note-1-1-0.75', '12']]),
+				notesToMove as Array<Record<string, unknown>>
+			);
+
+			expect(notesToMove).toHaveLength(1);
+			expect(notesToMove[0].newKey).toBe('note-1-2-0.3333333333333333');
+		});
+
 		it('should allow move when existing note at target position is part of dragged set', () => {
 			// Origin at note-0-1-0, also dragging note-0-1-0.5
 			// Target: measure 1, cellOffset 0.5 → origin moves to where note-0-1-0.5 is

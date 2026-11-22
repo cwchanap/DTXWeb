@@ -34,6 +34,7 @@ interface MockNoteGraphics {
 interface MockEditor {
 	notes: Record<string, LaneMeasureNote[]>;
 	selectedNotes: Set<string>;
+	getNotes: () => Record<string, LaneMeasureNote[]>;
 	getCellsPerMeasure: () => number;
 	drawNote: (measure: number, laneIndex: number, cellOffset: number, noteId: string) => boolean;
 	clearSelection: () => void;
@@ -84,6 +85,7 @@ describe('NoteBuffer', () => {
 		mockEditor = {
 			notes: {},
 			selectedNotes: new Set<string>(),
+			getNotes: () => mockEditor.notes,
 			getCellsPerMeasure: vi.fn().mockReturnValue(16),
 			drawNote: vi.fn().mockReturnValue(true),
 			clearSelection: vi.fn(),
@@ -338,6 +340,61 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.selectedNotes.has('test-note-1')).toBe(true);
 			expect(mockEditor.selectedNotes.has('test-note-2')).toBe(true);
 			// Note: Highlighting is now handled internally by NoteManager, no explicit highlighting call needed
+		});
+
+		it('should restore a deleted chip when another pattern line owns the shared graphic key', () => {
+			// Duplicate pattern lines share one note-{lane}-{measure}-{offset}
+			// key: drawNote refuses the second chip, so addNoteToEditor must
+			// not be the only path that writes the restored chip.
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+
+			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			const groups = mockEditor.notes['lane1'];
+			expect(groups.some((group) => group.notes.some((chip) => chip.noteID === '12'))).toBe(
+				true
+			);
+			expect(
+				groups.some((group) =>
+					group.notes.some((chip) => chip.noteID === '11' && chip.position === 0.5)
+				)
+			).toBe(true);
+		});
+
+		it('should restore a chip into its pattern line when that line still exists', () => {
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }]),
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '13', position: 0.25 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+
+			noteBuffer.recordAction('delete', [mockDeletedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const groups = mockEditor.notes['lane1'];
+			expect(groups).toHaveLength(2);
+			expect(groups[1].notes).toContainEqual({ noteID: '11', position: 0.5 });
+		});
+
+		it('should restore a cut chip when another pattern line owns the shared graphic key', () => {
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+
+			noteBuffer.recordAction('cut', [mockDeletedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(
+				mockEditor.notes['lane1'].some((group) =>
+					group.notes.some((chip) => chip.noteID === '11' && chip.position === 0.5)
+				)
+			).toBe(true);
 		});
 	});
 

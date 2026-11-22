@@ -294,17 +294,20 @@ export class NoteMove {
 					canonicalizeCellOffset(currentCellOffset + cellOffsetDelta)
 				);
 
-				// Handle measure boundary crossing for cellOffset
+				// Handle measure boundary crossing for cellOffset.
 				// If cellOffset >= 1.0, move to next measure(s)
-				// If cellOffset < 0.0, move to previous measure(s)
+				// If cellOffset < 0.0, move to previous measure(s).
+				// Canonicalize after each subtraction: wrapping can leave
+				// float residue that no longer matches the stored key.
 				while (newCellOffset >= 1.0) {
-					newCellOffset -= 1.0;
 					newMeasure += 1;
+					newCellOffset = canonicalizeCellOffset(newCellOffset - 1.0);
 				}
 				while (newCellOffset < 0.0) {
-					newCellOffset += 1.0;
 					newMeasure -= 1;
+					newCellOffset = canonicalizeCellOffset(newCellOffset + 1.0);
 				}
+				newCellOffset = snapCellOffsetToBarline(newCellOffset);
 
 				// Validate new position
 				if (

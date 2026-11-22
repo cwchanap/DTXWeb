@@ -2567,18 +2567,23 @@ describe('discoverCatalogFiles', () => {
 		// the nested sibling of the leftover ref carries #DLEVEL 60, while
 		// the root same-stem copy probes #DLEVEL 0. parse_dtx_folder skips
 		// unrated charts, so the root copy can never be a row's source —
-		// the set.def sibling keeps the claim.
+		// the set.def sibling keeps the claim. The unclaimed ZEN row still
+		// needs the sorted fallback, and the zero-probed root must not be
+		// in it: 42/solo.dtx sorts before 42/zen.dtx, so a leaked unrated
+		// root would bind ZEN to a chart no row can own.
 		const chartBodies: Record<string, string> = {
 			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
 			'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
-			'42/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n'
+			'42/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/zen.dtx': '#TITLE: Zen\n#DLEVEL: 80\n'
 		};
 		const bucket = {
 			...makeBucket([
 				[
 					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
 					{ key: '42/extras/solo.dtx', size: 300, uploaded: new Date() },
-					{ key: '42/solo.dtx', size: 200, uploaded: new Date() }
+					{ key: '42/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/zen.dtx', size: 400, uploaded: new Date() }
 				]
 			]),
 			get: vi.fn(async (key: string) => ({
@@ -2590,7 +2595,10 @@ describe('discoverCatalogFiles', () => {
 			bucket,
 			{
 				simfileId: 42,
-				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'ZEN', level: 80 }
+				],
 				publicBaseUrl: 'https://cdn.example.test'
 			},
 			silentLogger
@@ -2602,6 +2610,13 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'ZEN',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/zen.dtx',
+				fileSizeBytes: 400,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

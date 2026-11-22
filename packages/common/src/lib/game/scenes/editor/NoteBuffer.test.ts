@@ -720,6 +720,30 @@ describe('NoteBuffer', () => {
 			expect(deleteNoteByKeySpy).not.toHaveBeenCalled();
 		});
 
+		it('should restore a moved chip when another pattern line owns the source graphic', () => {
+			// The survivor chip still owns the shared note-0-1-0.5 graphic, so
+			// drawNote refuses the restore; the chip must go back into the data
+			// directly, like undoDelete and undoCut already do.
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+
+			noteBuffer.recordAction('move', [mockMovedNoteData]);
+			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(result).toBe(true);
+			const groups = mockEditor.notes['lane1'];
+			expect(
+				groups.some((group) =>
+					group.notes.some((chip) => chip.noteID === '11' && chip.position === 0.5)
+				)
+			).toBe(true);
+			expect(groups.some((group) => group.notes.some((chip) => chip.noteID === '12'))).toBe(
+				true
+			);
+		});
+
 		it('should throw when undoMove is called but noteMove is not set', () => {
 			const moveAction: MoveUndoAction = {
 				type: 'move',

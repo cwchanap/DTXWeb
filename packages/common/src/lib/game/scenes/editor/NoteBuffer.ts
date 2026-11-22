@@ -316,7 +316,7 @@ export class NoteBuffer {
 
 			// Use the exact original position without normalization to preserve high-resolution positioning
 			// The originalCellOffset was already properly positioned when the note was originally created
-			this.noteMove!.addNoteToEditor(
+			const restored = this.noteMove!.addNoteToEditor(
 				originalMeasure,
 				originalLaneIndex,
 				originalCellOffset,
@@ -324,6 +324,17 @@ export class NoteBuffer {
 				noteId,
 				1
 			);
+			// A duplicate pattern line's chip may still own the source cell's
+			// graphic; write the chip back to the data alongside it.
+			if (!restored && editor.getByName(movedNote.originalNoteKey)) {
+				this.restoreChipData(editor, {
+					measure: originalMeasure,
+					cellOffset: originalCellOffset,
+					laneId: originalLaneId,
+					noteId,
+					measureLength: 1
+				});
+			}
 		});
 
 		// Select all restored notes at their original positions

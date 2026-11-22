@@ -83,18 +83,19 @@ export class NoteCopy {
 				const { laneIndex, measure, cellOffset } = parsed; // Exact stored position from note key
 				const laneId = editor.getLaneConfigs()[laneIndex].id;
 
-				// Find the note data in the editor's data structure
+				// Find the note data in the editor's data structure. Match the
+				// exact stored position like deleteNoteByKey does: duplicate
+				// pattern lines can hold chips closer than any tolerance, and a
+				// fuzzy match can resolve a different line's chip.
 				if (laneId in notes) {
 					const existingNote = notes[laneId].find(
 						(note) =>
 							note.measure === measure &&
-							note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.0001)
+							note.notes.some((n) => n.position === cellOffset)
 					);
 
 					if (existingNote) {
-						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - cellOffset) < 0.0001
-						);
+						const noteChip = existingNote.notes.find((n) => n.position === cellOffset);
 
 						if (noteChip) {
 							notesToCopy.push({
@@ -167,17 +168,18 @@ export class NoteCopy {
 					const { laneIndex, measure, cellOffset } = parsed; // Exact stored position from note key
 					const laneId = editor.getLaneConfigs()[laneIndex].id;
 
-					// Find the note data in the editor's data structure
+					// Find the note data in the editor's data structure (exact
+					// match, same as copyNotes above)
 					if (laneId in notes) {
 						const existingNote = notes[laneId].find(
 							(note) =>
 								note.measure === measure &&
-								note.notes.some((n) => Math.abs(n.position - cellOffset) < 0.0001)
+								note.notes.some((n) => n.position === cellOffset)
 						);
 
 						if (existingNote) {
 							const noteChip = existingNote.notes.find(
-								(n) => Math.abs(n.position - cellOffset) < 0.0001
+								(n) => n.position === cellOffset
 							);
 
 							if (noteChip) {

@@ -3,6 +3,7 @@ import { NoteMove } from './NoteMove';
 import type { Editor } from '../Editor';
 // import type { MovedNoteData } from './NoteBuffer';
 import { LaneMeasureNote } from '../../../chart/note';
+import { canonicalizeCellOffset } from '../../../utils/position';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
 const createMockGraphics = (): Phaser.GameObjects.Graphics =>
@@ -452,6 +453,74 @@ describe('NoteMove', () => {
 			expect(noteMove.isCurrentlyDragging).toBe(false);
 			expect(mockRecordMoveAction).toHaveBeenCalled();
 			expect(mockEditor.drawNote).toHaveBeenCalled();
+		});
+
+		it('should resolve the chip at the exact key position when another line sits within the old tolerance', () => {
+			// Duplicate pattern lines keep distinct positions closer than the
+			// old 0.001 fuzzy lookup: 145/576 and 97/384 are ~0.00087 apart.
+			// A tolerance find lands on whichever group sorts first, recording
+			// a noteID that deleteNoteByKey (exact match) never removes.
+			const posA = canonicalizeCellOffset(145 / 576);
+			const posB = canonicalizeCellOffset(97 / 384);
+			expect(Math.abs(posA - posB)).toBeLessThan(0.001);
+
+			const lineA = new LaneMeasureNote(1, 'lane1', [{ noteID: '01', position: posA }]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '02', position: posB }]);
+			mockEditor._setMockNotes({ lane1: [lineA, lineB] });
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				collectOriginalNoteIds: () => Map<string, string>;
+			};
+			const key = `note-0-1-${posB}`;
+			internals.draggedNotes = new Set([key]);
+
+			expect(internals.collectOriginalNoteIds().get(key)).toBe('02');
+		});
+
+		it('should refuse a destination whose dragged graphic leaves a survivor chip', () => {
+			// Two pattern lines share cell 0.5: '02' is dragged away but '03'
+			// keeps the graphic alive, so '01'@0 moving there would be deleted
+			// at its source and then refused by drawNote.
+			const lineA = new LaneMeasureNote(1, 'lane1', [{ noteID: '01', position: 0 }]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '02', position: 0.5 }]);
+			const lineC = new LaneMeasureNote(1, 'lane1', [{ noteID: '03', position: 0.5 }]);
+			mockEditor._setMockNotes({ lane1: [lineA, lineB, lineC] });
+			mockEditor._addMockGameObject('note-0-1-0.5');
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.5']);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, 0.5, new Map(), notesToMove);
+
+			expect(notesToMove.map((n) => n.oldKey)).toEqual(['note-0-1-0.5']);
+			expect(notesToMove[0].newKey).toBe('note-0-2-0');
+		});
+
+		it('should not record a move whose destination placement failed', () => {
+			const selectedNotes = new Set(['note-0-1-0']);
+			const deleteNoteByKey = vi.fn();
+			mockEditor.drawNote.mockReturnValue(false);
+
+			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
+			mockEditor._setMockNotes({ lane1: [new LaneMeasureNote(1, 'lane1', lane1Notes)] });
+
+			const pointer = createMockPointer(150, 50);
+			noteMove.startDrag(pointer, 'note-0-1-0', selectedNotes);
+			noteMove.completeDrag(selectedNotes, vi.fn(), vi.fn(), deleteNoteByKey);
+
+			expect(deleteNoteByKey).toHaveBeenCalledWith('note-0-1-0');
+			expect(mockRecordMoveAction).not.toHaveBeenCalled();
 		});
 	});
 

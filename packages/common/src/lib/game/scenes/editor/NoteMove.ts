@@ -366,18 +366,30 @@ export class NoteMove {
 		// A move onto a dragged destination only lands when that note actually
 		// vacates. If its own move was refused (survivor chip, bounds, occupied
 		// target), the incoming placement fails after the source was deleted
-		// and the chip is lost — so propagate the refusal to a fixpoint.
+		// and the chip is lost — so propagate the refusal. Follow each
+		// dependency edge once: dependents[occupantKey] holds the sources
+		// waiting on that dragged cell, and a refusal cascades down its chain.
 		const movable = new Map(candidates.map((candidate) => [candidate.oldKey, candidate]));
-		let changed = true;
-		while (changed) {
-			changed = false;
-			draggedDeps.forEach((oldKey) => {
-				const candidate = movable.get(oldKey);
-				if (candidate && !movable.has(candidate.newKey)) {
-					movable.delete(oldKey);
-					changed = true;
+		const dependents = new Map<string, string[]>();
+		const blocked: string[] = [];
+		draggedDeps.forEach((oldKey) => {
+			const candidate = movable.get(oldKey);
+			if (!candidate) return;
+			if (movable.has(candidate.newKey)) {
+				const waiters = dependents.get(candidate.newKey);
+				if (waiters) {
+					waiters.push(oldKey);
+				} else {
+					dependents.set(candidate.newKey, [oldKey]);
 				}
-			});
+			} else {
+				blocked.push(oldKey);
+			}
+		});
+		while (blocked.length > 0) {
+			const oldKey = blocked.pop()!;
+			movable.delete(oldKey);
+			dependents.get(oldKey)?.forEach((dep) => blocked.push(dep));
 		}
 
 		// Two sources can canonicalize onto one destination key; only the

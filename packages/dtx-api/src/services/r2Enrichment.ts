@@ -520,11 +520,20 @@ export const discoverCatalogFiles = async (
 									.replace(/\.dtx$/i, '')
 									.toLowerCase() === stem
 						);
-						if (
-							rootCandidate &&
-							(await probeChartHeaderLevel(bucket, rootCandidate.key, logger))
-						) {
-							claimObject = rootCandidate;
+						if (rootCandidate) {
+							const rootLevel = await probeChartHeaderLevel(
+								bucket,
+								rootCandidate.key,
+								logger
+							);
+							if (rootLevel === 0) {
+								// Explicitly unrated — no row can own it, so it must
+								// not stay in the sorted fallback where it could
+								// displace another row's rated chart.
+								usedDtxKeys.add(rootCandidate.key);
+							} else if (rootLevel !== undefined) {
+								claimObject = rootCandidate;
+							}
 						}
 					}
 					rowsClaimedBySetDef.add(stemRowIndexes[0]);

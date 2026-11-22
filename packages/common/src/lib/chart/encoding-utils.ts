@@ -84,8 +84,8 @@ export async function decodeFileWithSpecificEncoding(
 }
 
 /**
- * Detects BOM (UTF-16LE or UTF-8) in an ArrayBuffer and decodes accordingly,
- * stripping the BOM character from the result.
+ * Detects BOM (UTF-16LE, UTF-16BE or UTF-8) in an ArrayBuffer and decodes
+ * accordingly, stripping the BOM character from the result.
  *
  * Used for raw byte sources (e.g. `R2Object.arrayBuffer()`) where the default
  * `text()` path always decodes as UTF-8 and would either garble UTF-16LE
@@ -103,6 +103,10 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 	if (uint8[0] === 0xff && uint8[1] === 0xfe) {
 		// UTF-16LE BOM
 		text = new TextDecoder('utf-16le').decode(buffer);
+	} else if (uint8[0] === 0xfe && uint8[1] === 0xff) {
+		// UTF-16BE BOM — the desktop uploader's decode_bom recognizes it
+		// too, so a BOM'd UTF-16BE chart can be a cataloged row's source.
+		text = new TextDecoder('utf-16be').decode(buffer);
 	} else if (uint8[0] === 0xef && uint8[1] === 0xbb && uint8[2] === 0xbf) {
 		// UTF-8 BOM
 		text = new TextDecoder('utf-8').decode(buffer);

@@ -44,6 +44,16 @@ const encodeUtf16LeWithBom = (text: string): ArrayBuffer => {
 	return new Uint8Array([0xff, 0xfe, ...utf16Bytes]).buffer;
 };
 
+const encodeUtf16BeWithBom = (text: string): ArrayBuffer => {
+	const utf16Bytes = new Uint8Array(text.length * 2);
+	for (let i = 0; i < text.length; i++) {
+		const codeUnit = text.charCodeAt(i);
+		utf16Bytes[i * 2] = (codeUnit >> 8) & 0xff;
+		utf16Bytes[i * 2 + 1] = codeUnit & 0xff;
+	}
+	return new Uint8Array([0xfe, 0xff, ...utf16Bytes]).buffer;
+};
+
 const makeBucket = (
 	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date }>>
 ): R2Bucket => {
@@ -2675,6 +2685,67 @@ describe('discoverCatalogFiles', () => {
 				level: 80,
 				fileUrl: 'https://cdn.example.test/42/zen.dtx',
 				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('prefers a rated UTF-16BE root chart over a nested set.def sibling sharing its stem', async () => {
+		// Same layout as the root-preference test, but the root same-stem
+		// copy is UTF-16BE — an encoding the desktop uploader's decode_bom
+		// catalogs (songs.rs decode_bom handles FE FF). A probe that reads
+		// it as UTF-8 finds no #DLEVEL and misjudges the chart as unrated:
+		// the nested sibling then steals the SOLO row and the rated root
+		// copy is dropped from the sorted fallback.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/zen.dtx': '#TITLE: Zen\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/zen.dtx', size: 200, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () =>
+					key === '42/solo.dtx'
+						? encodeUtf16BeWithBom(chartBodies[key] ?? '')
+						: encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'ZEN', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'ZEN',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/zen.dtx',
+				fileSizeBytes: 200,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

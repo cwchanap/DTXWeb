@@ -253,15 +253,19 @@ export class NoteCopy {
 				canonicalizeCellOffset(targetCellOffset + copiedNote.relativeCellOffset)
 			);
 
-			// Handle measure boundary crossing for cellOffset
+			// Handle measure boundary crossing for cellOffset. Canonicalize
+			// after each subtraction: wrapping can leave float residue
+			// (1.333-1 → 0.33333333333333326) that no longer matches the
+			// stored key produced by addNoteToEditor.
 			while (newCellOffset >= 1.0) {
-				newCellOffset -= 1.0;
 				newMeasure += 1;
+				newCellOffset = canonicalizeCellOffset(newCellOffset - 1.0);
 			}
 			while (newCellOffset < 0.0) {
-				newCellOffset += 1.0;
 				newMeasure -= 1;
+				newCellOffset = canonicalizeCellOffset(newCellOffset + 1.0);
 			}
+			newCellOffset = snapCellOffsetToBarline(newCellOffset);
 
 			// Validate target position
 			if (

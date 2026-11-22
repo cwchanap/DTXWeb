@@ -1,3 +1,4 @@
+import { LaneMeasureNote } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -205,7 +206,7 @@ export class NoteBuffer {
 
 			// Use the exact stored position without normalization to preserve high-resolution positioning
 			// The cellOffset was already properly positioned when the note was originally created
-			this.noteMove!.addNoteToEditor(
+			const restored = this.noteMove!.addNoteToEditor(
 				measure,
 				laneIndex,
 				cellOffset,
@@ -213,10 +214,43 @@ export class NoteBuffer {
 				noteId,
 				measureLength
 			);
+			if (!restored && editor.getByName(deletedNote.noteKey)) {
+				this.restoreChipData(editor, deletedNote);
+			}
 		});
 
 		// Select all restored notes
 		this.selectRestoredNotes(deletedNotes, editor);
+	}
+
+	/**
+	 * Restore a chip to the data structure when another duplicate pattern
+	 * line still owns the shared graphic key. addNoteToEditor skips the
+	 * data write when drawNote fails, so the chip would otherwise be lost.
+	 */
+	private restoreChipData(
+		editor: Editor,
+		note: {
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			noteId: string;
+			measureLength?: number;
+		}
+	): void {
+		const groups = (editor.getNotes()[note.laneId] ??= []);
+		const target = groups.find(
+			(group) =>
+				group.measure === note.measure &&
+				!group.notes.some((chip) => chip.position === note.cellOffset)
+		);
+		if (target) {
+			target.addNote(note.noteId, note.cellOffset);
+			return;
+		}
+		const group = new LaneMeasureNote(note.measure, note.laneId, [], note.measureLength ?? 1);
+		group.addNote(note.noteId, note.cellOffset);
+		groups.push(group);
 	}
 
 	/**
@@ -339,7 +373,7 @@ export class NoteBuffer {
 
 			// Use the stored normalized position (no need to normalize again)
 			// since we already stored the actual position from the data structure
-			this.noteMove!.addNoteToEditor(
+			const restored = this.noteMove!.addNoteToEditor(
 				measure,
 				laneIndex,
 				cellOffset,
@@ -347,6 +381,9 @@ export class NoteBuffer {
 				noteId,
 				measureLength
 			);
+			if (!restored && editor.getByName(cutNote.noteKey)) {
+				this.restoreChipData(editor, cutNote);
+			}
 		});
 
 		// Select all restored notes

@@ -751,6 +751,60 @@ describe('discoverCatalogFiles', () => {
 		expect(discovery.chartsPopulated).toBe(true);
 	});
 
+	it('strips ./ and .\\ prefixes from set.def file references before matching R2 keys', async () => {
+		// Windows-authored SET.def references like `.\basic.dtx` normalize
+		// to `./basic.dtx` after backslash conversion; without stripping the
+		// `./` prefix the candidate key becomes `42/./basic.dtx`, which never
+		// matches the stored `42/basic.dtx` — and because the row is claimed
+		// by set.def, the sorted-key fallback is suppressed and fileUrl is
+		// null even though the chart exists.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/sub/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE .\\basic.dtx\n#L2LABEL ADVANCED\n#L2FILE .\\sub\\advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/sub/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged assets under `assets/`.
 		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists

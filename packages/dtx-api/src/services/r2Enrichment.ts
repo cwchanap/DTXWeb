@@ -1,4 +1,8 @@
-import { decodeArrayBufferWithBomDetection, parseSetDef } from '@dtx/common/encoding';
+import {
+	decodeArrayBufferWithBomDetection,
+	parseSetDef,
+	normalizeSetDefFileName
+} from '@dtx/common/encoding';
 import { normalizeLevel } from '@dtx/common';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
@@ -75,8 +79,6 @@ export type CatalogDiscoveryOptions = {
  */
 const MAX_CONCURRENT_R2_LIST = 4;
 
-const normalizeSetDefValue = (value: string): string => value.trim().replaceAll('\\', '/');
-
 const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
 	// A single label can legitimately appear on multiple L-slots (e.g. two
 	// charts both labelled "BASIC"). Collecting an array per label — rather
@@ -97,7 +99,7 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
 		// which reads set.def and .dtx files from the SAME folder — that
 		// #LxFILE references are relative to the set.def's directory, not
 		// the simfile root.
-		const file = normalizeSetDefValue(fileName);
+		const file = normalizeSetDefFileName(fileName);
 		const key = label.toLowerCase();
 		const list = filesByLabel.get(key);
 		if (list) {

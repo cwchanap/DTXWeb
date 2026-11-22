@@ -57,3 +57,11 @@ export const parseSetDef = (text: string): ParsedSetDef => {
 
 	return { title, levels };
 };
+
+/**
+ * Resolve an #LxFILE reference to the form File names and R2 object keys
+ * use: SET.def files written on Windows carry `\` separators and `.\` /
+ * `./` prefixes, which must be stripped before key or filename matching.
+ */
+export const normalizeSetDefFileName = (fileName: string): string =>
+	fileName.replaceAll('\\', '/').replace(/^(\.\/)+/, '');

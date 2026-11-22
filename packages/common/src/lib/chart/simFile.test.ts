@@ -622,6 +622,44 @@ describe('SimFile', () => {
 			expect(simFile.getHighestLevel()).toBe(simFile.levels[6]?.file);
 		});
 
+		it('normalizes Windows-style fileName prefixes before fetching', async () => {
+			// Server metadata passes parseSetDef's verbatim fileName through;
+			// a Windows-authored `.\bas.dtx` would otherwise fetch
+			// `…/sim-007/.\bas.dtx` and 404 on a level that exists.
+			const dtxBlob = new Blob(['dtx content']);
+			const fetchSpy = vi.fn().mockResolvedValue({
+				ok: true,
+				blob: () => Promise.resolve(dtxBlob),
+				clone() {
+					return this;
+				}
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const metadata = {
+				title: 'Windows Song',
+				levels: {
+					1: { label: 'BASIC', fileName: '.\\bas.dtx' },
+					6: { label: 'MANIAC', fileName: './sub/maniac.dtx' }
+				}
+			};
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'sim-007',
+				'https://example.com',
+				metadata
+			);
+
+			expect(fetchSpy).toHaveBeenCalledWith('https://example.com/sim-007/bas.dtx', undefined);
+			expect(fetchSpy).toHaveBeenCalledWith(
+				'https://example.com/sim-007/sub/maniac.dtx',
+				undefined
+			);
+			expect(simFile.levels[1]?.label).toBe('BASIC');
+			expect(simFile.levels[6]?.label).toBe('MANIAC');
+		});
+
 		it('skips levels where fetch response is not ok', async () => {
 			vi.stubGlobal(
 				'fetch',

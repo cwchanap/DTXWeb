@@ -13,7 +13,7 @@ import {
 import { LaneMeasureNote } from '../../../chart/note';
 import { normalizePosition } from '../../../utils/position';
 import type { Editor } from '../Editor';
-import type { NoteMove } from './NoteMove';
+import { NoteMove } from './NoteMove';
 
 // Mock the normalizePosition utility
 vi.mock('../../../utils/position', () => ({
@@ -1010,6 +1010,23 @@ describe('NoteBuffer', () => {
 				'11',
 				1
 			);
+		});
+
+		it('should restore a cut chip without overwriting a same-position chip in another pattern line', () => {
+			// A real cut destroys the shared graphic, so drawNote succeeds and
+			// the data write must not replace the chip that survived the cut.
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }])
+			];
+			mockEditor.drawNote.mockReturnValue(true);
+			noteBuffer.setNoteMove(new NoteMove(mockEditor as unknown as Editor, vi.fn()));
+
+			noteBuffer.recordAction('cut', [mockDeletedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const chips = mockEditor.notes['lane1'].flatMap((group) => group.notes);
+			expect(chips).toContainEqual({ noteID: '11', position: 0.5 });
+			expect(chips).toContainEqual({ noteID: '12', position: 0.5 });
 		});
 
 		it('should handle cut undo when NoteMove is not set', () => {

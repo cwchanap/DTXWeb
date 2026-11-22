@@ -513,7 +513,15 @@ export class NoteMove {
 			}
 
 			// Check if a LaneMeasureNote already exists for this measure/lane
-			const existingMeasureNote = notes[laneId].find((note) => note.measure === measure);
+			// that does not already hold a chip at this position. A duplicate
+			// pattern line may share the position, and overwriting it would
+			// silently drop that line's chip (e.g. undoing a cut/delete after
+			// another line survived).
+			const existingMeasureNote = notes[laneId].find(
+				(note) =>
+					note.measure === measure &&
+					!note.notes.some((chip) => chip.position === cellOffset)
+			);
 
 			if (existingMeasureNote) {
 				// Add note to existing measure using the notes array

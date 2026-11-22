@@ -15,15 +15,17 @@ export function normalizePosition(cellOffset: number, cellsPerMeasure: number = 
  * 0.666666666666667 from paste/move arithmetic) must produce one note key
  * and one stored position — without this, the same logical hit duplicates.
  *
- * After 15-significant-digit rounding, a value within 1e-9 of a 768-cell
- * grid fraction snaps to that exact fraction: every editor-grid and
- * widened-pattern position is a multiple of 1/768, so this restores the
- * exact double (e.g. 383/384 stays the value that rounds to the barline)
- * instead of leaving the canonical form a hair below it.
+ * After 15-significant-digit rounding, a value within 1e-9 of a 2304-cell
+ * grid fraction snaps to that exact fraction: 2304 is the LCM of every
+ * grid a stored position can sit on (the pattern resolutions 4…576 plus
+ * the widened 384/768 fallbacks and editor 192), so this restores the
+ * exact double (e.g. 383/384 stays the value that rounds to the barline,
+ * or 1/576 after copy/move arithmetic leaves ulp residue) instead of
+ * leaving the canonical form a hair off it.
  */
 export const canonicalizeCellOffset = (cellOffset: number): number => {
 	const canonical = Number(cellOffset.toPrecision(15));
-	const grid = Math.round(canonical * 768) / 768;
+	const grid = Math.round(canonical * 2304) / 2304;
 	return Math.abs(canonical - grid) < 1e-9 ? grid : canonical;
 };
 

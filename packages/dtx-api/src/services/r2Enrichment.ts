@@ -79,6 +79,15 @@ export type CatalogDiscoveryOptions = {
  */
 const MAX_CONCURRENT_R2_LIST = 4;
 
+/**
+ * Only the chart header is probed for #DLEVEL, so same-label pairing
+ * downloads the head of each candidate instead of the whole body —
+ * preview-only resolutions otherwise pay full chart downloads for
+ * rows they never serve. A #DLEVEL beyond the window leaves the ref
+ * unprobed, which the claim loop already tolerates.
+ */
+const CHART_LEVEL_PROBE_BYTES = 16 * 1024;
+
 type SetDefFileRef = {
 	file: string;
 	/**
@@ -134,18 +143,27 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[
 };
 
 /**
- * Extract a chart file's raw #DLEVEL value. Mirrors the local parser's
- * `remove_prefix('#DLEVEL')` semantics in SimFile.parseFromText
- * (chart/dtx.ts): the line starts with '#DLEVEL', the value follows the
- * first colon, parseInt. Returns undefined when the header or its value
- * is absent so the caller can keep slot order for unreadable charts.
+ * Extract a chart file's raw #DLEVEL value. Mirrors the desktop uploader's
+ * `directive_value('#DLEVEL')` + `parse_number` in
+ * packages/dtx-desktop/src-tauri/src/songs.rs — the same parse that produced
+ * each row's stored level: leading whitespace allowed, directive name
+ * case-insensitive and ending at a `:` or whitespace separator, and the
+ * value keeps fractions (`4.5`). Returns undefined when the header or its
+ * value is absent so the caller can keep slot order for unreadable charts.
  */
 const extractChartRawLevel = (text: string): number | undefined => {
-	const dlevelLine = text.split(/\r?\n/).find((line) => line.startsWith('#DLEVEL'));
+	const dlevelLine = text
+		.split(/\r?\n/)
+		.map((line) => line.trimStart())
+		.find((line) => /^#DLEVEL[\s:]/i.test(line));
 	if (!dlevelLine) return undefined;
-	const colonIndex = dlevelLine.indexOf(':');
-	if (colonIndex === -1) return undefined;
-	const raw = parseInt(dlevelLine.slice(colonIndex + 1).trim(), 10);
+	// The separator is a single character — ':' or one whitespace — so the
+	// value always starts at directive length + 1.
+	const token = dlevelLine
+		.slice('#DLEVEL'.length + 1)
+		.trimStart()
+		.match(/^[0-9.+-]*/)?.[0];
+	const raw = token ? Number(token) : NaN;
 	return Number.isNaN(raw) ? undefined : raw;
 };
 
@@ -329,18 +347,29 @@ export const discoverCatalogFiles = async (
 	// same normalized scale. Files that can't be resolved, fetched, or
 	// parsed carry no probed level — the claim loop treats them as
 	// possible matches only after exact-level matches fail.
+	const rowCountByLabel = new Map<string, number>();
+	for (const file of dtxFiles) {
+		const label = file.label.toLowerCase();
+		rowCountByLabel.set(label, (rowCountByLabel.get(label) ?? 0) + 1);
+	}
 	const fileLevelByRef = new Map<SetDefFileRef, number>();
-	const labelsWithRows = new Set(dtxFiles.map((file) => file.label.toLowerCase()));
 	const levelProbes: Promise<void>[] = [];
 	for (const [label, refs] of filesByLabel) {
-		if (refs.length < 2 || !labelsWithRows.has(label)) continue;
+		const rows = rowCountByLabel.get(label) ?? 0;
+		// Probe only ambiguous groups: one row claiming its label's single
+		// reference is already deterministic. Ambiguity needs either side
+		// to multiply — multiple refs, or multiple rows sharing one
+		// remaining ref (e.g. a directory placeholder removed the other).
+		if (rows === 0 || (rows === 1 && refs.length === 1)) continue;
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
 			levelProbes.push(
 				(async () => {
 					try {
-						const body = await bucket.get(object.key);
+						const body = await bucket.get(object.key, {
+							range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
+						});
 						const rawLevel = body
 							? extractChartRawLevel(
 									decodeArrayBufferWithBomDetection(await body.arrayBuffer())
@@ -381,20 +410,39 @@ export const discoverCatalogFiles = async (
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
 	for (const { file, index } of claimOrder) {
-		const refs = filesByLabel.get(file.label.toLowerCase());
+		const label = file.label.toLowerCase();
+		const refs = filesByLabel.get(label);
 		if (!refs?.length) continue;
-		rowsClaimedBySetDef.add(index);
 		const rowLevel = normalizeLevel(file.level);
 		let refIndex = refs.findIndex((ref) => fileLevelByRef.get(ref) === rowLevel);
 		if (refIndex === -1) {
 			refIndex = refs.findIndex((ref) => !fileLevelByRef.has(ref));
-			if (refIndex === -1) refIndex = 0;
+			if (refIndex === -1) {
+				// A single-row label still claims its named file even when
+				// the embedded level disagrees — SET.def is authoritative
+				// for that row's chart. With multiple rows the remaining
+				// refs provably belong to a different row, so claiming one
+				// would swap charts; this row falls through to the sorted
+				// fallback instead.
+				if ((rowCountByLabel.get(label) ?? 0) !== 1) continue;
+				refIndex = 0;
+			}
 		}
+		rowsClaimedBySetDef.add(index);
 		const [setDefRef] = refs.splice(refIndex, 1);
 		const matchedObject = resolveSetDefObject(setDefRef);
 		if (matchedObject) {
 			matchedKeysByRowIndex.set(index, matchedObject.key);
 			usedDtxKeys.add(matchedObject.key);
+		}
+	}
+	// Unclaimed refs (surplus files, or probed levels matching no remaining
+	// row) still name charts under a set.def label — reserve their objects
+	// so the sorted fallback cannot bind them to an unrelated row.
+	for (const refs of filesByLabel.values()) {
+		for (const ref of refs) {
+			const object = resolveSetDefObject(ref);
+			if (object) usedDtxKeys.add(object.key);
 		}
 	}
 

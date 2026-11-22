@@ -535,6 +535,21 @@ describe('NoteMove', () => {
 			const addedChip = realNote.notes.find((n) => n.position === 0.5);
 			expect(addedChip).toBeDefined();
 		});
+
+		it('should keep a same-position chip in another pattern line instead of overwriting it', () => {
+			const lineA = new LaneMeasureNote(1, 'lane1', [{ noteID: '11', position: 0.5 }]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }]);
+			mockEditor._setMockNotes({ lane1: [lineA, lineB] });
+			mockEditor.drawNote.mockReturnValue(true);
+
+			noteMove.addNoteToEditor(1, 0, 0.5, 'lane1', '13');
+
+			const groups = mockEditor._getMockNotes().lane1;
+			expect(groups).toHaveLength(3);
+			expect(groups[0].notes).toContainEqual({ noteID: '11', position: 0.5 });
+			expect(groups[1].notes).toContainEqual({ noteID: '12', position: 0.5 });
+			expect(groups[2].notes).toContainEqual({ noteID: '13', position: 0.5 });
+		});
 	});
 
 	describe('updateSelectionAfterMove with Graphics instances', () => {

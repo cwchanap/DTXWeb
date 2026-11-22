@@ -2325,6 +2325,51 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('keeps a nested leftover ref reserved when a top-level chart shares its stem', async () => {
+		// The uploader only catalogs top-level .dtx files, so a nested
+		// leftover object that shares a row's stem is never that row's
+		// chart — 42/extras/solo.dtx must not displace 42/solo.dtx. The
+		// nested object stays reserved and the row binds its real file
+		// through the sorted fallback.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXTRA\n#L1FILE extras/solo.dtx\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/extras/solo.dtx': '#TITLE: Extra\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

@@ -2462,6 +2462,106 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('does not bind a probed zero-level leftover ref beside a nested set.def', async () => {
+		// Same ambiguous-label probe as the root-layout test, but the song
+		// folder sits under 42/song/: the nested set.def's leftover
+		// solo.dtx probes at #DLEVEL 0 and must stay reserved rather than
+		// matching the unclaimed SOLO row by stem.
+		const chartBodies: Record<string, string> = {
+			'42/song/set.def':
+				'#L1LABEL BASIC\n#L1FILE ./solo.dtx\n#L2LABEL BASIC\n#L2FILE basic.dtx\n',
+			'42/song/solo.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+			'42/song/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/song/solo.dtx', size: 100, uploaded: new Date() },
+					{ key: '42/song/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'SOLO', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/song/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('prefers an unused root chart over a nested set.def sibling sharing its stem', async () => {
+		// The only set.def is nested (42/extras/) and labels ./solo.dtx
+		// EXTRA, so resolution finds 42/extras/solo.dtx first. The SOLO
+		// row's real chart is the root 42/solo.dtx the uploader cataloged —
+		// the nested copy must not steal the row, even though its #DLEVEL
+		// 0 went unprobed (no EXTRA rows exist to trigger levelProbes).
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

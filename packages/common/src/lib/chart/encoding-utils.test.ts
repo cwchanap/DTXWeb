@@ -523,6 +523,20 @@ describe('encoding-utils', () => {
 			expect(decoded.charCodeAt(0)).not.toBe(0xfeff);
 		});
 
+		it('decodes UTF-16BE BOM and strips the BOM character', () => {
+			const text = '#TITLE UTF16BE BOM\n#L1LABEL BASIC\n#L1FILE bas.dtx\n';
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				const codeUnit = text.charCodeAt(i);
+				utf16Bytes[i * 2] = (codeUnit >> 8) & 0xff;
+				utf16Bytes[i * 2 + 1] = codeUnit & 0xff;
+			}
+			const buffer = new Uint8Array([0xfe, 0xff, ...utf16Bytes]).buffer;
+			const decoded = decodeArrayBufferWithBomDetection(buffer);
+			expect(decoded).toBe(text);
+			expect(decoded.charCodeAt(0)).not.toBe(0xfeff);
+		});
+
 		it('returns empty string for empty buffer', () => {
 			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
 		});

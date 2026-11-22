@@ -115,6 +115,17 @@ describe('canonicalizeCellOffset', () => {
 		expect(canonicalizeCellOffset(95 / 384)).toBe(95 / 384);
 	});
 
+	it('snaps 288/576-grid residue left by copy/move arithmetic to the exact fraction', () => {
+		// Copying 145/576 relative to a 0.25 reference and pasting at 0
+		// computes the destination a few ulps off the stored 1/576
+		// position — a 768-only snap left it uncanonicalized, so the
+		// exact-key occupancy check missed and pasted a duplicate chip.
+		const residue = canonicalizeCellOffset(145 / 576) - 0.25;
+		expect(canonicalizeCellOffset(0 + residue)).toBe(1 / 576);
+		expect(canonicalizeCellOffset(0.00173611111111099)).toBe(1 / 576);
+		expect(canonicalizeCellOffset(1 / 288)).toBe(1 / 288);
+	});
+
 	it('leaves non-grid positions as their 15-digit canonical form', () => {
 		expect(canonicalizeCellOffset(0.123456789012345)).toBe(0.123456789012345);
 	});

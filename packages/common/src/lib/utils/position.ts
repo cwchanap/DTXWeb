@@ -21,30 +21,30 @@ export function normalizePosition(cellOffset: number, cellsPerMeasure: number = 
  * exact double (e.g. 383/384 stays the value that rounds to the barline)
  * instead of leaving the canonical form a hair below it.
  */
-export function canonicalizeCellOffset(cellOffset: number): number {
+export const canonicalizeCellOffset = (cellOffset: number): number => {
 	const canonical = Number(cellOffset.toPrecision(15));
 	const grid = Math.round(canonical * 768) / 768;
 	return Math.abs(canonical - grid) < 1e-9 ? grid : canonical;
-}
+};
 
 /**
  * Snap an offset within float-residue distance of a barline onto the
  * boundary exactly, so delta arithmetic that meant "the next measure's
  * first cell" stores 0/1 rather than 6.9e-18-style noise.
  */
-export function snapCellOffsetToBarline(cellOffset: number): number {
+export const snapCellOffsetToBarline = (cellOffset: number): number => {
 	const rounded = Math.round(cellOffset);
 	return Math.abs(cellOffset - rounded) < 1e-9 ? rounded + 0 : cellOffset;
-}
+};
 
 /**
  * Parse a "note-{laneIndex}-{measure}-{cellOffset}" key. The offset is
  * everything after the third dash so exponent-notation offsets like
  * 6.9e-18 can't corrupt the split. Returns null for malformed keys.
  */
-export function parseNoteKey(
+export const parseNoteKey = (
 	noteKey: string
-): { laneIndex: number; measure: number; cellOffset: number } | null {
+): { laneIndex: number; measure: number; cellOffset: number } | null => {
 	const parts = noteKey.split('-');
 	if (parts.length < 4 || parts[0] !== 'note') return null;
 	const laneIndex = parseInt(parts[1]);
@@ -54,4 +54,4 @@ export function parseNoteKey(
 		return null;
 	}
 	return { laneIndex, measure, cellOffset };
-}
+};

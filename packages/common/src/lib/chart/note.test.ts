@@ -580,6 +580,23 @@ describe('LaneMeasureNote', () => {
 
 			expect(resultPattern).toBe(originalPattern);
 		});
+
+		it.each([288, 576])(
+			'should maintain %i-cell triplet pattern integrity in roundtrip',
+			(cells) => {
+				const patternParts = new Array(cells).fill('00');
+				patternParts[1] = '01';
+				patternParts[100] = '02';
+				patternParts[cells - 1] = '03';
+				const originalPattern = patternParts.join('');
+
+				const notes = LaneMeasureNote.parseFromPattern(originalPattern);
+				const laneMeasureNote = new LaneMeasureNote(0, 'LC', notes);
+				const resultPattern = laneMeasureNote.toPattern();
+
+				expect(resultPattern).toBe(originalPattern);
+			}
+		);
 	});
 
 	describe('parseFromPattern and toPattern roundtrip', () => {

@@ -7,7 +7,7 @@ import {
 	calculateHighResolutionPosition,
 	HIGH_RESOLUTION_CELLS
 } from '../../utils/notePositioning';
-import { parseNoteKey } from '../../../utils/position';
+import { canonicalizeCellOffset, parseNoteKey } from '../../../utils/position';
 
 /**
  * Manages all note-related operations in the DTX editor including:
@@ -311,6 +311,22 @@ export class NoteManager {
 	}
 
 	/**
+	 * Record a note-added action for undo functionality
+	 */
+	private recordAddAction(
+		addedNotes: Array<{
+			noteKey: string;
+			laneIndex: number;
+			measure: number;
+			cellOffset: number;
+			laneId: string;
+			noteId: string;
+		}>
+	): void {
+		this.noteBuffer.recordAction('add', addedNotes);
+	}
+
+	/**
 	 * Handle pointer down events for note operations
 	 */
 	handlePointerDown(pointer: Phaser.Input.Pointer): boolean {
@@ -485,6 +501,36 @@ export class NoteManager {
 				}
 			}
 		}
+
+		this.redrawSurvivingNote(
+			deletedNoteData.laneId,
+			deletedNoteData.laneIndex,
+			deletedNoteData.measure,
+			deletedNoteData.cellOffset
+		);
+	}
+
+	/**
+	 * Redraw the shared graphic when another duplicate pattern line still
+	 * holds a chip at the position that was just removed.
+	 */
+	private redrawSurvivingNote(
+		laneId: string,
+		laneIndex: number,
+		measure: number,
+		cellOffset: number
+	): void {
+		const survivor = this.editor
+			.getNotes()
+			[laneId]?.find(
+				(group) =>
+					group.measure === measure &&
+					group.notes.some((note) => note.position === cellOffset)
+			)
+			?.notes.find((note) => note.position === cellOffset);
+		if (survivor) {
+			this.editor.drawNote(measure, laneIndex, cellOffset, survivor.noteID);
+		}
 	}
 
 	/**
@@ -560,6 +606,8 @@ export class NoteManager {
 					}
 				}
 			}
+
+			this.redrawSurvivingNote(laneId, laneIndex, measure, cellOffset);
 		}
 	}
 
@@ -1166,6 +1214,17 @@ export class NoteManager {
 			noteId
 		);
 		if (result) {
+			const storedOffset = canonicalizeCellOffset(cellOffset);
+			this.recordAddAction([
+				{
+					noteKey: `note-${laneIndex}-${measure}-${storedOffset}`,
+					laneIndex,
+					measure,
+					cellOffset: storedOffset,
+					laneId,
+					noteId
+				}
+			]);
 			// Notify that notes have been modified
 			this.notifyNotesModified();
 		}

@@ -308,9 +308,11 @@ export const groupNotesByLane = (notes: LaneMeasureNote[]): Record<string, LaneM
  * alone does not expose measure lengths, so consumers that need bar
  * boundaries (MIDI export) must go through this rather than the ChartTiming.
  */
-export const buildTimingInput = (dtx: DTXFile): TimingInput => {
-	const flat = dtx.parseNotes();
-	const notesByLane = groupNotesByLane(flat);
+export const buildTimingInput = (
+	dtx: DTXFile,
+	flat = dtx.parseNotes(),
+	notesByLane = groupNotesByLane(flat)
+): TimingInput => {
 	const bpmValueMap = dtx.parseBPMChanges();
 
 	const measureCount = flat.reduce((max, n) => Math.max(max, n.measure), 0) + 1;
@@ -375,7 +377,7 @@ export const buildNotationChart = (
 } => {
 	const flat = dtx.parseNotes();
 	const notesByLane = groupNotesByLane(flat);
-	const timingInput = buildTimingInput(dtx);
+	const timingInput = buildTimingInput(dtx, flat, notesByLane);
 	const { measureLengths, measureCount } = timingInput;
 
 	// Group notes by measure once (O(n)) instead of re-filtering the whole list

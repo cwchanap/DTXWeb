@@ -338,10 +338,9 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// Reject early using the fewest bars possible (every bar at the largest
 	// meter); the in-loop bound below still catches files where smaller
 	// meters later push the real count over the limit.
-	const maxBarLength = Math.max(
-		currentLength,
-		...meterChanges.slice(meterIndex).map((c) => c.length)
-	);
+	const maxBarLength = meterChanges
+		.slice(meterIndex)
+		.reduce((max, change) => Math.max(max, change.length), currentLength);
 	if (endTick / (4 * ppq * maxBarLength) > MAX_DTX_MEASURES) {
 		throw new Error(`MIDI conversion exceeds the ${MAX_DTX_MEASURES}-measure DTX range`);
 	}

@@ -263,14 +263,14 @@ describe('NoteBuffer', () => {
 			);
 		});
 
-		it('should handle add/move actions (not implemented)', () => {
-			// The 'add' action type is not implemented, so we skip this test
-			// noteBuffer.recordAction('add', [mockDeletedNoteData]);
+		it('should undo an add action by deleting the inserted notes', () => {
+			noteBuffer.recordAction('add', [mockDeletedNoteData]);
 
 			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
-			expect(result).toBe(false);
-			expect(noteBuffer.getHistoryLength()).toBe(0); // Action is still removed
+			expect(result).toBe(true);
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('test-note-1');
+			expect(noteBuffer.getHistoryLength()).toBe(0);
 		});
 
 		it('should restore action to history if undo fails', () => {

@@ -79,7 +79,20 @@ export type CatalogDiscoveryOptions = {
  */
 const MAX_CONCURRENT_R2_LIST = 4;
 
-const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
+type SetDefFileRef = {
+	file: string;
+	/**
+	 * True when the raw #LxFILE value carried an explicit `./` or `.\`
+	 * current-directory prefix. Normalization strips that prefix, so
+	 * without this marker `./42/basic.dtx` becomes indistinguishable
+	 * from the already-prefixed bucket key `42/basic.dtx` — yet the two
+	 * resolve differently when the first path segment equals the
+	 * simfile id (`42/` + `42/basic.dtx` = `42/42/basic.dtx`).
+	 */
+	explicitlyRelative: boolean;
+};
+
+const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[]> => {
 	// A single label can legitimately appear on multiple L-slots (e.g. two
 	// charts both labelled "BASIC"). Collecting an array per label — rather
 	// than a single value keyed by label alone — preserves every distinct
@@ -88,24 +101,27 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, string[]> => {
 	// the same R2 object. parseSetDef returns slots sorted by numeric level,
 	// so each array stays in L-slot order (L1 before L2 …) regardless of the
 	// line order inside set.def.
-	const filesByLabel = new Map<string, string[]>();
+	const filesByLabel = new Map<string, SetDefFileRef[]>();
 	for (const { label, fileName } of parseSetDef(setDefText).levels) {
-		// Store the raw normalized filename only. Path resolution is
-		// deferred to the caller (discoverCatalogFiles), which has
-		// access to the R2 object map and can try the set.def's
+		// Store the normalized filename plus the explicit-relative marker.
+		// Path resolution is deferred to the caller (discoverCatalogFiles),
+		// which has access to the R2 object map and can try the set.def's
 		// directory first with a simfile-root fallback. This matches
 		// the DTX convention — confirmed by the desktop parser at
 		// packages/dtx-desktop/src-tauri/src/songs.rs (read_set_def_labels),
 		// which reads set.def and .dtx files from the SAME folder — that
 		// #LxFILE references are relative to the set.def's directory, not
 		// the simfile root.
-		const file = normalizeSetDefFileName(fileName);
+		const ref: SetDefFileRef = {
+			file: normalizeSetDefFileName(fileName),
+			explicitlyRelative: /^\.[\\/]/.test(fileName)
+		};
 		const key = label.toLowerCase();
 		const list = filesByLabel.get(key);
 		if (list) {
-			list.push(file);
+			list.push(ref);
 		} else {
-			filesByLabel.set(key, [file]);
+			filesByLabel.set(key, [ref]);
 		}
 	}
 	return filesByLabel;
@@ -115,7 +131,7 @@ const readSetDefFilesByLabel = async (
 	bucket: R2Bucket,
 	setDefKey: string | undefined,
 	logger: WorkerLogger
-): Promise<Map<string, string[]>> => {
+): Promise<Map<string, SetDefFileRef[]>> => {
 	if (!setDefKey) return new Map();
 
 	try {
@@ -238,7 +254,7 @@ export const discoverCatalogFiles = async (
 	const filesByLabel =
 		dtxFiles.length > 0
 			? await readSetDefFilesByLabel(bucket, setDefKey, logger)
-			: new Map<string, string[]>();
+			: new Map<string, SetDefFileRef[]>();
 	// Derive the directory that contains the selected set.def so relative
 	// #LxFILE references resolve against it (e.g. 42/song/basic.dtx when
 	// set.def is 42/song/set.def) instead of always the simfile root.
@@ -272,24 +288,28 @@ export const discoverCatalogFiles = async (
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
 	for (const { file, index } of claimOrder) {
-		const setDefFile = filesByLabel.get(file.label.toLowerCase())?.shift();
-		if (setDefFile) {
+		const setDefRef = filesByLabel.get(file.label.toLowerCase())?.shift();
+		if (setDefRef) {
 			rowsClaimedBySetDef.add(index);
 			// Resolve relative #LxFILE references: absolute paths (already
 			// include the simfile id) are kept as-is; relative names are
 			// resolved against the set.def's directory first, then the
 			// simfile root prefix as a fallback for legacy flat uploads
 			// where chart files live at the root despite a nested set.def.
+			// An explicit `./`/`.\` prefix forces the relative branch even
+			// when the normalized name collides with the id prefix —
+			// `./42/basic.dtx` means `42/42/basic.dtx`, not `42/basic.dtx`.
 			// Exact match first; fall back to a case-insensitive lookup so
 			// that SET.DEF references like BASIC.DTX still resolve when the
 			// R2 key is basic.dtx. Without these fallbacks the row is marked
 			// as claimed-but-missing, which surfaces as an INTERNAL error
 			// via requireCatalogChart even though the chart object exists.
-			const candidates = setDefFile.startsWith(prefix)
-				? [setDefFile]
-				: setDefBaseDir === prefix
-					? [`${prefix}${setDefFile}`]
-					: [`${setDefBaseDir}${setDefFile}`, `${prefix}${setDefFile}`];
+			const candidates =
+				!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix)
+					? [setDefRef.file]
+					: setDefBaseDir === prefix
+						? [`${prefix}${setDefRef.file}`]
+						: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
 			for (const candidateKey of candidates) {
 				const exactObject = objectsByKey.get(candidateKey);
 				const matchedObject =

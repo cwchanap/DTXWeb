@@ -623,9 +623,12 @@ describe('SimFile', () => {
 		});
 
 		it('normalizes Windows-style fileName prefixes before fetching', async () => {
-			// Server metadata passes parseSetDef's verbatim fileName through;
-			// a Windows-authored `.\bas.dtx` would otherwise fetch
-			// `…/sim-007/.\bas.dtx` and 404 on a level that exists.
+			// Server metadata passes parseSetDef's verbatim fileName through.
+			// Browsers already normalize `\` and `./` inside HTTPS URLs, so
+			// the fetch itself would resolve either way — what actually
+			// depends on normalizeSetDefFileName is the File name retained
+			// on DTXFile (getFileName feeds the editor title and
+			// generateDefFileContent's `#LxFILE` output).
 			const dtxBlob = new Blob(['dtx content']);
 			const fetchSpy = vi.fn().mockResolvedValue({
 				ok: true,
@@ -658,6 +661,8 @@ describe('SimFile', () => {
 			);
 			expect(simFile.levels[1]?.label).toBe('BASIC');
 			expect(simFile.levels[6]?.label).toBe('MANIAC');
+			expect(simFile.levels[1]?.file.getFileName()).toBe('bas.dtx');
+			expect(simFile.levels[6]?.file.getFileName()).toBe('sub/maniac.dtx');
 		});
 
 		it('skips levels where fetch response is not ok', async () => {

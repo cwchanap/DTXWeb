@@ -805,6 +805,61 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('resolves ./<id>/ set.def references relative to the set.def directory, not as bucket keys', async () => {
+		// `.\42\basic.dtx` is explicitly relative: it points inside a `42/`
+		// subfolder next to set.def, at `42/42/basic.dtx`. Normalization
+		// strips the `.\` marker, so the name collides with the
+		// already-prefixed-key shortcut — without preserving the marker the
+		// row binds the root-level `42/basic.dtx` decoy instead. A bare
+		// `42/advanced.dtx` (no `./`) still takes the already-prefixed path.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/42/basic.dtx', size: 700, uploaded: new Date() },
+					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer(
+						'#L1LABEL BASIC\n#L1FILE .\\42\\basic.dtx\n#L2LABEL ADVANCED\n#L2FILE 42/advanced.dtx\n'
+					)
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/42/basic.dtx',
+				fileSizeBytes: 700,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/advanced.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged assets under `assets/`.
 		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists

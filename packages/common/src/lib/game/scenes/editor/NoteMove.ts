@@ -281,6 +281,10 @@ export class NoteMove {
 			originalNoteId: string;
 		}>
 	): void {
+		const candidates: typeof notesToMove = [];
+		// Moves whose placement depends on a dragged destination vacating.
+		const draggedDeps = new Set<string>();
+
 		this.draggedNotes.forEach((noteKey) => {
 			const parsed = parseNoteKey(noteKey);
 			if (parsed) {
@@ -335,12 +339,14 @@ export class NoteMove {
 					// removing the dragged chip redraws the survivor's graphic under
 					// the same key, so the incoming chip is refused after its source
 					// was already deleted.
+					const destIsDragged =
+						!!existingNote && this.draggedNotes.has(existingNote.name);
 					if (
 						!existingNote ||
-						(this.draggedNotes.has(existingNote.name) &&
+						(destIsDragged &&
 							!this.hasSurvivingChip(newLaneIndex, newMeasure, newCellOffset))
 					) {
-						notesToMove.push({
+						candidates.push({
 							oldKey: noteKey,
 							newKey,
 							laneIndex: newLaneIndex,
@@ -349,8 +355,38 @@ export class NoteMove {
 							laneId: this.editor.getLaneConfigs()[newLaneIndex].id,
 							originalNoteId: originalNoteIds.get(noteKey) || '01'
 						});
+						if (destIsDragged) {
+							draggedDeps.add(noteKey);
+						}
 					}
 				}
+			}
+		});
+
+		// A move onto a dragged destination only lands when that note actually
+		// vacates. If its own move was refused (survivor chip, bounds, occupied
+		// target), the incoming placement fails after the source was deleted
+		// and the chip is lost — so propagate the refusal to a fixpoint.
+		const movable = new Map(candidates.map((candidate) => [candidate.oldKey, candidate]));
+		let changed = true;
+		while (changed) {
+			changed = false;
+			draggedDeps.forEach((oldKey) => {
+				const candidate = movable.get(oldKey);
+				if (candidate && !movable.has(candidate.newKey)) {
+					movable.delete(oldKey);
+					changed = true;
+				}
+			});
+		}
+
+		// Two sources can canonicalize onto one destination key; only the
+		// first placement would succeed.
+		const claimed = new Set<string>();
+		movable.forEach((candidate) => {
+			if (!claimed.has(candidate.newKey)) {
+				claimed.add(candidate.newKey);
+				notesToMove.push(candidate);
 			}
 		});
 	}

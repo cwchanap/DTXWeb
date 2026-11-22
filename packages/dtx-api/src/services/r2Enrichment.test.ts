@@ -2370,6 +2370,98 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('binds a leftover set.def ref beside a nested set.def by filename stem', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/song/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/song/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/song/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/song/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not bind a probed zero-level leftover ref by filename stem', async () => {
+		// #L1LABEL BASIC shares the label with #L2LABEL BASIC, so levelProbes
+		// reads both headers and records 0 for solo.dtx. parse_dtx_folder
+		// skips #DLEVEL 0 files, so solo.dtx must stay reserved rather than
+		// matching an unclaimed SOLO row by stem.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n#L2LABEL BASIC\n#L2FILE basic.dtx\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 100, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'SOLO', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

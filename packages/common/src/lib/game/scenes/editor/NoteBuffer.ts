@@ -20,12 +20,20 @@ export interface PasteUndoAction {
 	data: PastedNoteData[];
 }
 
+export interface AddUndoAction {
+	type: 'add';
+	// Undoing an add deletes the inserted chips, so it needs the same fields
+	// as undoing a paste.
+	data: PastedNoteData[];
+}
+
 export interface CutUndoAction {
 	type: 'cut';
 	data: CutNoteData[];
 }
 
-export type AnyUndoAction = UndoAction | MoveUndoAction | PasteUndoAction | CutUndoAction;
+export type AnyUndoAction =
+	UndoAction | MoveUndoAction | PasteUndoAction | AddUndoAction | CutUndoAction;
 
 /**
  * Interface for storing deleted note data for restoration
@@ -119,9 +127,10 @@ export class NoteBuffer {
 	recordAction(type: 'delete', data: DeletedNoteData[]): void;
 	recordAction(type: 'move', data: MovedNoteData[]): void;
 	recordAction(type: 'paste', data: PastedNoteData[]): void;
+	recordAction(type: 'add', data: PastedNoteData[]): void;
 	recordAction(type: 'cut', data: CutNoteData[]): void;
 	recordAction(
-		type: 'delete' | 'move' | 'paste' | 'cut',
+		type: 'delete' | 'move' | 'paste' | 'add' | 'cut',
 		data: DeletedNoteData[] | MovedNoteData[] | PastedNoteData[] | CutNoteData[]
 	): void {
 		if (!data || data.length === 0) {
@@ -133,7 +142,7 @@ export class NoteBuffer {
 			this.undoHistory.push({ type, data: [...(data as DeletedNoteData[])] });
 		} else if (type === 'move') {
 			this.undoHistory.push({ type, data: [...(data as MovedNoteData[])] });
-		} else if (type === 'paste') {
+		} else if (type === 'paste' || type === 'add') {
 			this.undoHistory.push({ type, data: [...(data as PastedNoteData[])] });
 		} else if (type === 'cut') {
 			this.undoHistory.push({ type, data: [...(data as CutNoteData[])] });
@@ -169,6 +178,11 @@ export class NoteBuffer {
 					this.undoMove(lastAction.data, editor);
 					return true;
 				case 'paste':
+					this.undoPaste(lastAction.data, editor);
+					return true;
+				case 'add':
+					// Undoing an add is the same as undoing a paste: delete the
+					// chips the insert created.
 					this.undoPaste(lastAction.data, editor);
 					return true;
 				case 'cut':

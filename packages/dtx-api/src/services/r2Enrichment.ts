@@ -1,5 +1,5 @@
 import { decodeArrayBufferWithBomDetection, parseSetDef } from '@dtx/common/encoding';
-import { normalizeLevel } from '@dtx/common/utils/level';
+import { normalizeLevel } from '@dtx/common';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {

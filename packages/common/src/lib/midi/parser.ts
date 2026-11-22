@@ -142,13 +142,17 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 		const deltaTime = readVlq();
 		currentTime += deltaTime;
 
-		let status = data[offset];
+		// A track can end right after a delta-time; read the status through
+		// the bounds check so it reports the malformed file instead of
+		// dereferencing past the track.
+		let status = readByte();
 		if (status < 0x80) {
 			// Data byte where a status should be: only legal as running status.
 			if (runningStatus === 0) fail('data byte without running status');
+			// The channel-message reader must consume this data byte, so step
+			// back to it and reuse the running status.
+			offset--;
 			status = runningStatus;
-		} else {
-			offset++;
 		}
 
 		if (status >= 0x80 && status < 0xf0) {

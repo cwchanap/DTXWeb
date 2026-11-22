@@ -102,9 +102,15 @@ const createMockEditor = () => {
 		getByName: vi.fn((name: string) => {
 			return mockGameObjects.find((obj) => obj.name === name) || null;
 		}),
+		deleteNoteByKey: vi.fn(),
+		clearSelection: vi.fn(),
+		selectedNotes: new Set<string>(),
 		highlightSelectedNote: vi.fn()
 	};
 };
+
+const allChips = (editor: ReturnType<typeof createMockEditor>) =>
+	Object.values(editor.getNotes()).flatMap((groups) => groups.flatMap((group) => group.notes));
 
 describe('NoteManager', () => {
 	let noteManager: NoteManager;
@@ -254,6 +260,33 @@ describe('NoteManager', () => {
 
 			// Verify the game object's destroy method was called
 			expect(mockGameObject.destroy).toHaveBeenCalledTimes(1);
+		});
+
+		it('should redraw the shared graphic when another pattern line keeps the deleted cell', () => {
+			mockEditor._setMockNotes({
+				lane1: [
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '01', position: 0.5 }]),
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '02', position: 0.5 }])
+				]
+			});
+			noteManager.selectedNotes.add('note-0-0-0.5');
+
+			noteManager.deleteSelectedNotes();
+
+			expect(mockEditor.drawNote).toHaveBeenCalledWith(0, 0, 0.5, '02');
+		});
+
+		it('should redraw the shared graphic after deleteNoteByKey (cut/move paths)', () => {
+			mockEditor._setMockNotes({
+				lane1: [
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '01', position: 0.5 }]),
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '02', position: 0.5 }])
+				]
+			});
+
+			noteManager.deleteNoteByKey('note-0-0-0.5');
+
+			expect(mockEditor.drawNote).toHaveBeenCalledWith(0, 0, 0.5, '02');
 		});
 
 		it('should create note correctly for testing', () => {
@@ -992,6 +1025,24 @@ describe('NoteManager', () => {
 
 			expect(undoSpy).toHaveBeenCalledWith(expect.anything());
 		});
+
+		it('should undo the click-add before restoring a delete at the same cell', () => {
+			mockEditor.deleteNoteByKey.mockImplementation((noteKey) =>
+				noteManager.deleteNoteByKey(noteKey)
+			);
+			mockEditor._addMockNote('lane1', 0, 0.5, '11');
+			noteManager.selectedNotes.add('note-0-0-0.5');
+			noteManager.deleteSelectedNotes();
+
+			noteManager.addNoteToEditor(0, 0, 0.5, 'lane1', '01');
+			noteManager.undoLastAction();
+
+			expect(allChips(mockEditor)).toHaveLength(0);
+
+			noteManager.undoLastAction();
+
+			expect(allChips(mockEditor)).toEqual([{ noteID: '11', position: 0.5 }]);
+		});
 	});
 
 	describe('addNoteToEditor', () => {
@@ -1006,6 +1057,21 @@ describe('NoteManager', () => {
 			expect(result).toBe(true);
 			expect(addNoteToEditorSpy).toHaveBeenCalledWith(0, 1, 0.25, 'lane1', '01');
 			expect(notifyModifiedSpy).toHaveBeenCalled();
+			expect(noteManager['noteBuffer'].getHistory()).toEqual([
+				{
+					type: 'add',
+					data: [
+						{
+							noteKey: 'note-1-0-0.25',
+							laneIndex: 1,
+							measure: 0,
+							cellOffset: 0.25,
+							laneId: 'lane1',
+							noteId: '01'
+						}
+					]
+				}
+			]);
 
 			addNoteToEditorSpy.mockRestore();
 			notifyModifiedSpy.mockRestore();

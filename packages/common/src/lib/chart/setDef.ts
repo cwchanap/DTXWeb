@@ -25,7 +25,7 @@ const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
  * Only complete label+file pairs on positive numeric slots are returned,
  * sorted by level — slots above the conventional L1–L5 range are kept.
  */
-export function parseSetDef(text: string): ParsedSetDef {
+export const parseSetDef = (text: string): ParsedSetDef => {
 	const lines = text.split(/\r?\n/);
 
 	const titleLine = lines.find((line) => titlePattern.test(line));
@@ -56,4 +56,4 @@ export function parseSetDef(text: string): ParsedSetDef {
 	levels.sort((a, b) => a.level - b.level);
 
 	return { title, levels };
-}
+};

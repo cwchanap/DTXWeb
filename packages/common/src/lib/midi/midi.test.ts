@@ -376,6 +376,12 @@ describe('parseMidi', () => {
 				expect(() => parseMidi(bytes)).toThrow();
 			});
 		}
+
+		it('reports a track that ends right after a delta-time as invalid input', () => {
+			const bytes = buildMidi(480, [[...vlq(10)]]);
+
+			expect(() => parseMidi(bytes)).toThrow('Invalid MIDI file: unexpected end of track');
+		});
 	});
 });
 

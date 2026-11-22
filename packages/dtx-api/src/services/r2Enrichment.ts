@@ -167,6 +167,41 @@ const extractChartRawLevel = (text: string): number | undefined => {
 	return Number.isNaN(raw) ? undefined : raw;
 };
 
+/**
+ * Download a chart's head window and return its #DLEVEL on the normalized
+ * scale. Returns undefined when the object cannot be fetched or its header
+ * carries no parseable #DLEVEL — an explicit `#DLEVEL 0` returns 0, so
+ * callers can still tell "probed unrated" apart from "unprobed".
+ */
+const probeChartHeaderLevel = async (
+	bucket: R2Bucket,
+	key: string,
+	logger: WorkerLogger
+): Promise<number | undefined> => {
+	try {
+		const body = await bucket.get(key, {
+			range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
+		});
+		const buffer = body ? await body.arrayBuffer() : undefined;
+		let head = buffer ? decodeArrayBufferWithBomDetection(buffer) : '';
+		if (buffer && buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
+			// A full window means the file may continue past it —
+			// the last line can be cut mid-value (`#DLEVEL: 45` of a
+			// truncated `455` reads as level 4.50, not 4.55). Drop
+			// the partial line instead of trusting a truncated header.
+			head = head.slice(0, head.lastIndexOf('\n') + 1);
+		}
+		const rawLevel = body ? extractChartRawLevel(head) : undefined;
+		return rawLevel === undefined ? undefined : normalizeLevel(rawLevel);
+	} catch (err) {
+		logger.warn('chart header level probe failed; treating chart as unprobed', {
+			key,
+			error: err instanceof Error ? err.message : String(err)
+		});
+		return undefined;
+	}
+};
+
 const readSetDefFilesByLabel = async (
 	bucket: R2Bucket,
 	setDefKey: string | undefined,
@@ -370,28 +405,9 @@ export const discoverCatalogFiles = async (
 			if (!object) continue;
 			levelProbes.push(
 				(async () => {
-					try {
-						const body = await bucket.get(object.key, {
-							range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
-						});
-						const buffer = body ? await body.arrayBuffer() : undefined;
-						let head = buffer ? decodeArrayBufferWithBomDetection(buffer) : '';
-						if (buffer && buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
-							// A full window means the file may continue past it —
-							// the last line can be cut mid-value (`#DLEVEL: 45` of a
-							// truncated `455` reads as level 4.50, not 4.55). Drop
-							// the partial line instead of trusting a truncated header.
-							head = head.slice(0, head.lastIndexOf('\n') + 1);
-						}
-						const rawLevel = body ? extractChartRawLevel(head) : undefined;
-						if (rawLevel !== undefined) {
-							fileLevelByRef.set(ref, normalizeLevel(rawLevel));
-						}
-					} catch (err) {
-						logger.warn('set.def chart level probe failed; keeping slot order', {
-							key: object.key,
-							error: err instanceof Error ? err.message : String(err)
-						});
+					const level = await probeChartHeaderLevel(bucket, object.key, logger);
+					if (level !== undefined) {
+						fileLevelByRef.set(ref, level);
 					}
 				})()
 			);
@@ -471,7 +487,10 @@ export const discoverCatalogFiles = async (
 	// beside a nested set.def but an unused root chart carries the same
 	// stem, the root file wins the row: stem labels catalog the
 	// uploader's song-folder file, not a stray copy that merely borrowed
-	// the leftover ref's filename.
+	// the leftover ref's filename. That preference holds only when the
+	// root copy probes as a rated chart — an unrated (#DLEVEL 0 or
+	// absent) same-stem file can never be a row's source, so it must not
+	// displace the set.def sibling.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
@@ -491,16 +510,23 @@ export const discoverCatalogFiles = async (
 					}
 				});
 				if (stemRowIndexes.length === 1) {
-					const claimObject = isTopLevelR2Key(object.key, prefix)
-						? object
-						: (dtxObjects.find(
-								(candidate) =>
-									isTopLevelR2Key(candidate.key, prefix) &&
-									!usedDtxKeys.has(candidate.key) &&
-									r2FileName(candidate.key)
-										.replace(/\.dtx$/i, '')
-										.toLowerCase() === stem
-							) ?? object);
+					let claimObject = object;
+					if (!isTopLevelR2Key(object.key, prefix)) {
+						const rootCandidate = dtxObjects.find(
+							(candidate) =>
+								isTopLevelR2Key(candidate.key, prefix) &&
+								!usedDtxKeys.has(candidate.key) &&
+								r2FileName(candidate.key)
+									.replace(/\.dtx$/i, '')
+									.toLowerCase() === stem
+						);
+						if (
+							rootCandidate &&
+							(await probeChartHeaderLevel(bucket, rootCandidate.key, logger))
+						) {
+							claimObject = rootCandidate;
+						}
+					}
 					rowsClaimedBySetDef.add(stemRowIndexes[0]);
 					matchedKeysByRowIndex.set(stemRowIndexes[0], claimObject.key);
 					usedDtxKeys.add(claimObject.key);

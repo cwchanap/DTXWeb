@@ -467,7 +467,11 @@ export const discoverCatalogFiles = async (
 	// simfile root or beside the selected set.def — a deeper nested file
 	// sharing the basename (extras/solo.dtx next to solo.dtx) is never a
 	// row's chart — and is skipped when the probed #DLEVEL is zero, since
-	// unrated charts never produce rows.
+	// unrated charts never produce rows. When the resolved object sits
+	// beside a nested set.def but an unused root chart carries the same
+	// stem, the root file wins the row: stem labels catalog the
+	// uploader's song-folder file, not a stray copy that merely borrowed
+	// the leftover ref's filename.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
@@ -487,8 +491,19 @@ export const discoverCatalogFiles = async (
 					}
 				});
 				if (stemRowIndexes.length === 1) {
+					const claimObject = isTopLevelR2Key(object.key, prefix)
+						? object
+						: (dtxObjects.find(
+								(candidate) =>
+									isTopLevelR2Key(candidate.key, prefix) &&
+									!usedDtxKeys.has(candidate.key) &&
+									r2FileName(candidate.key)
+										.replace(/\.dtx$/i, '')
+										.toLowerCase() === stem
+							) ?? object);
 					rowsClaimedBySetDef.add(stemRowIndexes[0]);
-					matchedKeysByRowIndex.set(stemRowIndexes[0], object.key);
+					matchedKeysByRowIndex.set(stemRowIndexes[0], claimObject.key);
+					usedDtxKeys.add(claimObject.key);
 				}
 			}
 			usedDtxKeys.add(object.key);

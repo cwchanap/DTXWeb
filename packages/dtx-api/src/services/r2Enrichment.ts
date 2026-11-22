@@ -374,11 +374,16 @@ export const discoverCatalogFiles = async (
 						const body = await bucket.get(object.key, {
 							range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
 						});
-						const rawLevel = body
-							? extractChartRawLevel(
-									decodeArrayBufferWithBomDetection(await body.arrayBuffer())
-								)
-							: undefined;
+						const buffer = body ? await body.arrayBuffer() : undefined;
+						let head = buffer ? decodeArrayBufferWithBomDetection(buffer) : '';
+						if (buffer && buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
+							// A full window means the file may continue past it —
+							// the last line can be cut mid-value (`#DLEVEL: 45` of a
+							// truncated `455` reads as level 4.50, not 4.55). Drop
+							// the partial line instead of trusting a truncated header.
+							head = head.slice(0, head.lastIndexOf('\n') + 1);
+						}
+						const rawLevel = body ? extractChartRawLevel(head) : undefined;
 						if (rawLevel !== undefined) {
 							fileLevelByRef.set(ref, normalizeLevel(rawLevel));
 						}
@@ -424,6 +429,12 @@ export const discoverCatalogFiles = async (
 			refIndex = refs.findIndex((ref) => {
 				const probed = fileLevelByRef.get(ref);
 				if (probed === undefined) return true;
+				// A probed level of zero names a chart the uploader never
+				// catalogued — parse_dtx_folder skips #DLEVEL 0 — so no row
+				// can own it. Left in refs it stays reserved; a non-exact
+				// claim must not let it displace an unlisted file that is
+				// a row's real chart.
+				if (probed === 0) return false;
 				const levels = rowLevelsByLabel.get(label);
 				for (const level of levels ?? []) {
 					if (level === probed && level !== rowLevel) return false;
@@ -446,11 +457,31 @@ export const discoverCatalogFiles = async (
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
 	// reserve their objects so the sorted fallback cannot bind them to
-	// an unrelated row.
+	// an unrelated row. One exception: a leftover object can be an
+	// unclaimed row's own file. The desktop keys its SET.def label lookup
+	// by the raw #LxFILE value, so a `./` or subdirectory prefix misses
+	// and the row stores the filename stem instead (fallback_level_label:
+	// SOLO for solo.dtx). A unique unclaimed row whose label equals the
+	// resolved file's stem takes the object; ambiguity keeps the file
+	// reserved.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
-			if (object) usedDtxKeys.add(object.key);
+			if (!object) continue;
+			const stem = r2FileName(object.key)
+				.replace(/\.dtx$/i, '')
+				.toLowerCase();
+			const stemRowIndexes: number[] = [];
+			dtxFiles.forEach((file, index) => {
+				if (!rowsClaimedBySetDef.has(index) && file.label.toLowerCase() === stem) {
+					stemRowIndexes.push(index);
+				}
+			});
+			if (stemRowIndexes.length === 1) {
+				rowsClaimedBySetDef.add(stemRowIndexes[0]);
+				matchedKeysByRowIndex.set(stemRowIndexes[0], object.key);
+			}
+			usedDtxKeys.add(object.key);
 		}
 	}
 

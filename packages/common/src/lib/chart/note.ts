@@ -109,10 +109,11 @@ export class LaneMeasureNote {
 
 		// Determine the pattern resolution based on the most precise position
 		// Include common subdivision levels: 4, 8, 12, 16, 24, 32, 48, 64, 96, 192.
-		// 288 and 576 are the triplet-oriented grids that would otherwise be
-		// rewritten onto the nearest power-of-two fallback (192/384/768),
-		// shifting every hit on those grids by a fraction of a cell.
-		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192, 288, 576];
+		// 288/576 are the triplet-oriented grids and 384/768 the widened
+		// power-of-two grids toPattern() itself emits — without them an
+		// exact-resolution search misses the grid a chart already sits on
+		// and the fallback rewrites untouched hits by a fraction of a cell.
+		const commonResolutions = [4, 8, 12, 16, 24, 32, 48, 64, 96, 192, 288, 384, 576, 768];
 		// Fall back to the finest grid: a coarse default collapses off-grid
 		// notes (e.g. humanized MIDI) into shared slots and silently drops them.
 		let resolution = 0;

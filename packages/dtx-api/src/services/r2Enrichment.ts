@@ -169,30 +169,35 @@ const extractChartRawLevel = (text: string): number | undefined => {
 
 /**
  * Download a chart's head window and return its #DLEVEL on the normalized
- * scale. Returns undefined when the object cannot be fetched or its header
- * carries no parseable #DLEVEL — an explicit `#DLEVEL 0` returns 0, so
- * callers can still tell "probed unrated" apart from "unprobed".
+ * scale. Returns null when the header was read but carries no parseable
+ * #DLEVEL — parse_dtx_folder catalogs only non-zero-rated charts, so such
+ * a file can never be a row's source, the same as an explicit `#DLEVEL 0`
+ * (which returns 0). Returns undefined only when the object cannot be
+ * fetched, so callers can still tell "probed unrated" apart from
+ * "unprobed". A #DLEVEL below the probe window reads as unrated — the
+ * same false negative the claim loop already tolerates as unprobed.
  */
 const probeChartHeaderLevel = async (
 	bucket: R2Bucket,
 	key: string,
 	logger: WorkerLogger
-): Promise<number | undefined> => {
+): Promise<number | null | undefined> => {
 	try {
 		const body = await bucket.get(key, {
 			range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
 		});
-		const buffer = body ? await body.arrayBuffer() : undefined;
-		let head = buffer ? decodeArrayBufferWithBomDetection(buffer) : '';
-		if (buffer && buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
+		if (!body) return undefined;
+		const buffer = await body.arrayBuffer();
+		let head = decodeArrayBufferWithBomDetection(buffer);
+		if (buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
 			// A full window means the file may continue past it —
 			// the last line can be cut mid-value (`#DLEVEL: 45` of a
 			// truncated `455` reads as level 4.50, not 4.55). Drop
 			// the partial line instead of trusting a truncated header.
 			head = head.slice(0, head.lastIndexOf('\n') + 1);
 		}
-		const rawLevel = body ? extractChartRawLevel(head) : undefined;
-		return rawLevel === undefined ? undefined : normalizeLevel(rawLevel);
+		const rawLevel = extractChartRawLevel(head);
+		return rawLevel === undefined ? null : normalizeLevel(rawLevel);
 	} catch (err) {
 		logger.warn('chart header level probe failed; treating chart as unprobed', {
 			key,
@@ -406,7 +411,7 @@ export const discoverCatalogFiles = async (
 			levelProbes.push(
 				(async () => {
 					const level = await probeChartHeaderLevel(bucket, object.key, logger);
-					if (level !== undefined) {
+					if (typeof level === 'number') {
 						fileLevelByRef.set(ref, level);
 					}
 				})()
@@ -526,10 +531,13 @@ export const discoverCatalogFiles = async (
 								rootCandidate.key,
 								logger
 							);
-							if (rootLevel === 0) {
-								// Explicitly unrated — no row can own it, so it must
-								// not stay in the sorted fallback where it could
-								// displace another row's rated chart.
+							if (rootLevel === 0 || rootLevel === null) {
+								// Unrated — explicit #DLEVEL 0 or no parseable
+								// #DLEVEL in the probe window — so no row can own
+								// it, and it must not stay in the sorted fallback
+								// where it could displace another row's rated
+								// chart. A genuinely unfetched copy (undefined)
+								// stays claimable since nothing is proven.
 								usedDtxKeys.add(rootCandidate.key);
 							} else if (rootLevel !== undefined) {
 								claimObject = rootCandidate;

@@ -2622,6 +2622,64 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('keeps a root chart whose header omits #DLEVEL out of the sorted fallback', async () => {
+		// Same layout as the zero-rated root test, but the root same-stem
+		// copy carries no #DLEVEL at all. parse_dtx_folder only catalogs
+		// charts whose level parses non-zero, so an unrated copy — absent
+		// directive or explicit 0 — can never be a row's source. It still
+		// sorts before 42/zen.dtx and would bind the ZEN row if it leaked
+		// into the fallback pool.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/solo.dtx': '#TITLE: Copy\n',
+			'42/zen.dtx': '#TITLE: Zen\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/zen.dtx', size: 400, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'ZEN', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'ZEN',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/zen.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

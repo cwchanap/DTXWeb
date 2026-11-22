@@ -223,8 +223,8 @@ describe('LaneMeasureNote', () => {
 		});
 
 		it('should widen past 192 rather than overwrite two hits sharing a cell', () => {
-			// Positions 1/384 and 1/192 fit no standard grid. On the 192
-			// fallback both round to cell 1 — the second would silently
+			// Positions 1/384 and 1/192 fit no coarser standard grid. On the
+			// 192 fallback both round to cell 1 — the second would silently
 			// replace the first. The 384 grid keeps them on distinct cells.
 			const laneMeasureNote = new LaneMeasureNote(0, '12', [
 				{ noteID: '01', position: 1 / 384 },
@@ -242,6 +242,27 @@ describe('LaneMeasureNote', () => {
 			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
 				{ noteID: '01', position: Number((1 / 384).toPrecision(15)) },
 				{ noteID: '02', position: Number((1 / 192).toPrecision(15)) }
+			]);
+		});
+
+		it('should keep an untouched hit on its widened grid when another is removed', () => {
+			// Reproduced from PR #365 review: a 384-cell pattern round-trips,
+			// but deleting one hit re-serialized the survivor on the 192
+			// fallback because 384/768 were absent from commonResolutions —
+			// 1/384 silently moved to 1/192 on save.
+			const cells = new Array(384).fill('00');
+			cells[1] = '01';
+			cells[2] = '02';
+			const notes = LaneMeasureNote.parseFromPattern(cells.join('')).filter(
+				(note) => note.noteID !== '02'
+			);
+			const laneMeasureNote = new LaneMeasureNote(0, '12', notes);
+			const result = laneMeasureNote.toPattern();
+
+			expect(result).toHaveLength(384 * 2);
+			expect(result.slice(2, 4)).toBe('01');
+			expect(LaneMeasureNote.parseFromPattern(result)).toEqual([
+				{ noteID: '01', position: Number((1 / 384).toPrecision(15)) }
 			]);
 		});
 

@@ -2013,17 +2013,19 @@ describe('discoverCatalogFiles', () => {
 		// against every row means the file's header disagrees with the
 		// upload metadata, not that the file belongs elsewhere. Only a
 		// probed level equal to a DIFFERENT row's level disqualifies.
+		// L-slot order deliberately runs against alphabetical filename
+		// order so the assertions cannot pass on a sorted implementation.
 		const chartBodies: Record<string, string> = {
-			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
-			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 5\n',
-			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 5\n'
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE z.dtx\n#L2LABEL BASIC\n#L2FILE a.dtx\n',
+			'42/z.dtx': '#TITLE: Song\n#DLEVEL: 5\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 5\n'
 		};
 		const bucket = {
 			...makeBucket([
 				[
 					{ key: '42/set.def', size: 90, uploaded: new Date() },
 					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
-					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+					{ key: '42/z.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
 			get: vi.fn(async (key: string) => ({
@@ -2048,15 +2050,15 @@ describe('discoverCatalogFiles', () => {
 			{
 				label: 'Basic',
 				level: 40,
-				fileUrl: 'https://cdn.example.test/42/a.dtx',
-				fileSizeBytes: 300,
+				fileUrl: 'https://cdn.example.test/42/z.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			},
 			{
 				label: 'Basic',
 				level: 80,
-				fileUrl: 'https://cdn.example.test/42/b.dtx',
-				fileSizeBytes: 500,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
@@ -2112,6 +2114,212 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/b.dtx',
 				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not let a zero-rated set.def file displace an unlisted rated chart', async () => {
+		// parse_dtx_folder skips #DLEVEL 0 files, so no row owns the
+		// placeholder. The non-exact claim must leave it reserved rather
+		// than bind it over the row's real (unlisted) file.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE placeholder.dtx\n#L2LABEL BASIC\n#L2FILE hard.dtx\n',
+			'42/placeholder.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+			'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/hard.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'BASIC', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/hard.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('treats a probe-window-truncated #DLEVEL line as unprobed', async () => {
+		// a.dtx's header is cut mid-value at the 16 KiB window end:
+		// '#DLEVEL: 45' of a full '455' reads as level 4.50 — row-45's
+		// level — so the truncated probe would disqualify a.dtx for its
+		// own row and let row-45 steal it. Dropping the partial line
+		// leaves a.dtx unprobed so slot order keeps each row's file.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
+			'42/a.dtx': `${'#TITLE: ' + 'x'.repeat(16364)}\n#DLEVEL: 455\n#BPM: 120\n`,
+			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 450\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 16396, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return { arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer) };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'BASIC', level: 45 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 16396,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 45,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('binds a leftover set.def ref to an unclaimed row by filename stem', async () => {
+		// The desktop keys its SET.def label lookup by the raw #LxFILE
+		// value, so './solo.dtx' misses the actual filename 'solo.dtx' and
+		// the row stores the stem label SOLO. The API normalizes the
+		// prefix away, so the ref resolves but no row owns label BASIC —
+		// reserving the object hid the row's own chart from preview.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('keeps a leftover set.def ref reserved when its stem matches multiple rows', async () => {
+		// Two unclaimed rows can share the stem label — the leftover
+		// object could belong to either, so reserving it beats guessing.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 40 },
+					{ label: 'SOLO', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 40,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'SOLO',
+				level: 80,
+				fileUrl: null,
+				fileSizeBytes: null,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

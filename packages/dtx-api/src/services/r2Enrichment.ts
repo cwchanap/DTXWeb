@@ -463,16 +463,20 @@ export const discoverCatalogFiles = async (
 	// and the row stores the filename stem instead (fallback_level_label:
 	// SOLO for solo.dtx). A unique unclaimed row whose label equals the
 	// resolved file's stem takes the object; ambiguity keeps the file
-	// reserved. The stem claim is limited to top-level objects, the only
-	// files the uploader catalogs — a nested file sharing the basename
-	// (extras/solo.dtx next to solo.dtx) is never a row's chart — and is
-	// skipped when the probed #DLEVEL is zero, since unrated charts never
-	// produce rows.
+	// reserved. The stem claim is limited to objects directly at the
+	// simfile root or beside the selected set.def — a deeper nested file
+	// sharing the basename (extras/solo.dtx next to solo.dtx) is never a
+	// row's chart — and is skipped when the probed #DLEVEL is zero, since
+	// unrated charts never produce rows.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
-			if (isTopLevelR2Key(object.key, prefix) && fileLevelByRef.get(ref) !== 0) {
+			if (
+				(isTopLevelR2Key(object.key, prefix) ||
+					isTopLevelR2Key(object.key, setDefBaseDir)) &&
+				fileLevelByRef.get(ref) !== 0
+			) {
 				const stem = r2FileName(object.key)
 					.replace(/\.dtx$/i, '')
 					.toLowerCase();

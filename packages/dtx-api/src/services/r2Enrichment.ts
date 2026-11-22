@@ -463,23 +463,29 @@ export const discoverCatalogFiles = async (
 	// and the row stores the filename stem instead (fallback_level_label:
 	// SOLO for solo.dtx). A unique unclaimed row whose label equals the
 	// resolved file's stem takes the object; ambiguity keeps the file
-	// reserved.
+	// reserved. The stem claim is limited to top-level objects, the only
+	// files the uploader catalogs — a nested file sharing the basename
+	// (extras/solo.dtx next to solo.dtx) is never a row's chart — and is
+	// skipped when the probed #DLEVEL is zero, since unrated charts never
+	// produce rows.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
-			const stem = r2FileName(object.key)
-				.replace(/\.dtx$/i, '')
-				.toLowerCase();
-			const stemRowIndexes: number[] = [];
-			dtxFiles.forEach((file, index) => {
-				if (!rowsClaimedBySetDef.has(index) && file.label.toLowerCase() === stem) {
-					stemRowIndexes.push(index);
+			if (isTopLevelR2Key(object.key, prefix) && fileLevelByRef.get(ref) !== 0) {
+				const stem = r2FileName(object.key)
+					.replace(/\.dtx$/i, '')
+					.toLowerCase();
+				const stemRowIndexes: number[] = [];
+				dtxFiles.forEach((file, index) => {
+					if (!rowsClaimedBySetDef.has(index) && file.label.toLowerCase() === stem) {
+						stemRowIndexes.push(index);
+					}
+				});
+				if (stemRowIndexes.length === 1) {
+					rowsClaimedBySetDef.add(stemRowIndexes[0]);
+					matchedKeysByRowIndex.set(stemRowIndexes[0], object.key);
 				}
-			});
-			if (stemRowIndexes.length === 1) {
-				rowsClaimedBySetDef.add(stemRowIndexes[0]);
-				matchedKeysByRowIndex.set(stemRowIndexes[0], object.key);
 			}
 			usedDtxKeys.add(object.key);
 		}

@@ -266,6 +266,22 @@ describe('LaneMeasureNote', () => {
 			]);
 		});
 
+		it('should export a lone hit at 1/768 on the 768-cell grid without a collision', () => {
+			// The grid-limit case: a single off-grid hit at the finest standard
+			// resolution must come from the exact-resolution search, not the
+			// widening fallback — and round-trips back to the same position.
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 1 / 768 }
+			]);
+			const pattern = laneMeasureNote.toPattern();
+
+			expect(pattern).toHaveLength(768 * 2);
+			expect(pattern.slice(2, 4)).toBe('01'); // cell 1
+			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
+				{ noteID: '01', position: Number((1 / 768).toPrecision(15)) }
+			]);
+		});
+
 		it('should warn when hits still share a cell at the 768-cell cap', () => {
 			// 0.5 + 1/2048 sits off every standard grid (it lands 0.002 cells
 			// from a boundary even at 4), yet rounds onto the same cell as 0.5

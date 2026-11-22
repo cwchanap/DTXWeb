@@ -1795,6 +1795,160 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('lets the sorted-key fallback bind charts for directory-only #LxFILE references', async () => {
+		// `#L1FILE ./` / `.\` normalize to no filename — claiming the row
+		// would suppress the fallback even though unclaimed charts exist.
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/aaa.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/bbb.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () =>
+					encodeToBuffer('#L1LABEL BASIC\n#L1FILE ./\n#L2LABEL ADV\n#L2FILE .\\\n')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 1 },
+					{ label: 'Adv', level: 2 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 1,
+				fileUrl: 'https://cdn.example.test/42/aaa.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Adv',
+				level: 2,
+				fileUrl: 'https://cdn.example.test/42/bbb.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('pairs duplicate-label rows by the referenced charts #DLEVEL, not slot order', async () => {
+		// L1 holds the HARDER chart: nothing enforces ascending #DLEVEL
+		// across slots, so pairing must use each referenced chart's own
+		// #DLEVEL — identical metadata means that file is the row's chart.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		// Rows arrive in uploader (filename) order — a.dtx's row first.
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 80 },
+					{ label: 'Basic', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('binds a duplicate-label row to its own missing file instead of stealing a higher-level one', async () => {
+		// L2's chart is absent from R2, so its level is unprobable. The
+		// level-40 row must still claim it (fileUrl null) rather than
+		// taking the level-80 row's existing a.dtx and leaving that row
+		// wrongly chart-less.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 80 },
+					{ label: 'Basic', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 40,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

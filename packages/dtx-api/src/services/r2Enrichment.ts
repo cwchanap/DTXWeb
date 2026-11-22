@@ -116,6 +116,12 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[
 			file: normalizeSetDefFileName(fileName),
 			explicitlyRelative: /^\.[\\/]/.test(fileName)
 		};
+		// A directory-only reference (`#L1FILE ./`, `.\`, `.`) normalizes to
+		// no usable filename — it can never match an R2 object. Skipping it
+		// keeps the row unclaimed so the sorted-key fallback can still bind
+		// a real chart instead of being suppressed by a claim that cannot
+		// resolve.
+		if (!ref.file || /^[./]+$/.test(ref.file)) continue;
 		const key = label.toLowerCase();
 		const list = filesByLabel.get(key);
 		if (list) {
@@ -125,6 +131,22 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[
 		}
 	}
 	return filesByLabel;
+};
+
+/**
+ * Extract a chart file's raw #DLEVEL value. Mirrors the local parser's
+ * `remove_prefix('#DLEVEL')` semantics in SimFile.parseFromText
+ * (chart/dtx.ts): the line starts with '#DLEVEL', the value follows the
+ * first colon, parseInt. Returns undefined when the header or its value
+ * is absent so the caller can keep slot order for unreadable charts.
+ */
+const extractChartRawLevel = (text: string): number | undefined => {
+	const dlevelLine = text.split(/\r?\n/).find((line) => line.startsWith('#DLEVEL'));
+	if (!dlevelLine) return undefined;
+	const colonIndex = dlevelLine.indexOf(':');
+	if (colonIndex === -1) return undefined;
+	const raw = parseInt(dlevelLine.slice(colonIndex + 1).trim(), 10);
+	return Number.isNaN(raw) ? undefined : raw;
 };
 
 const readSetDefFilesByLabel = async (
@@ -272,15 +294,86 @@ export const discoverCatalogFiles = async (
 	// key to a chart whose intended file is missing — which would silently
 	// serve the wrong chart instead of the correct missing-chart null.
 	const rowsClaimedBySetDef = new Set<number>();
+	// Resolve a SET.def file reference to an R2 object. Absolute paths
+	// (already include the simfile id) are kept as-is; relative names are
+	// resolved against the set.def's directory first, then the simfile
+	// root prefix as a fallback for legacy flat uploads where chart files
+	// live at the root despite a nested set.def. An explicit `./`/`.\`
+	// prefix forces the relative branch even when the normalized name
+	// collides with the id prefix — `./42/basic.dtx` means
+	// `42/42/basic.dtx`, not `42/basic.dtx`. Exact match first; fall back
+	// to a case-insensitive lookup so that SET.DEF references like
+	// BASIC.DTX still resolve when the R2 key is basic.dtx. Without these
+	// fallbacks the row is marked as claimed-but-missing, which surfaces
+	// as an INTERNAL error via requireCatalogChart even though the chart
+	// object exists.
+	const resolveSetDefObject = (setDefRef: SetDefFileRef): R2ObjectMeta | undefined => {
+		const candidates =
+			!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix)
+				? [setDefRef.file]
+				: setDefBaseDir === prefix
+					? [`${prefix}${setDefRef.file}`]
+					: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
+		for (const candidateKey of candidates) {
+			const matchedObject =
+				objectsByKey.get(candidateKey) ?? objectsByKeyLower.get(candidateKey.toLowerCase());
+			if (matchedObject) return matchedObject;
+		}
+		return undefined;
+	};
+
+	// A repeated label yields multiple candidate files, but nothing
+	// enforces ascending #DLEVEL across L-slots — slot order is not a
+	// difficulty signal. Each row's level IS its own chart's #DLEVEL, so
+	// probe the referenced charts' headers and match rows to files on the
+	// same normalized scale. Files that can't be resolved, fetched, or
+	// parsed carry no probed level — the claim loop treats them as
+	// possible matches only after exact-level matches fail.
+	const fileLevelByRef = new Map<SetDefFileRef, number>();
+	const labelsWithRows = new Set(dtxFiles.map((file) => file.label.toLowerCase()));
+	const levelProbes: Promise<void>[] = [];
+	for (const [label, refs] of filesByLabel) {
+		if (refs.length < 2 || !labelsWithRows.has(label)) continue;
+		for (const ref of refs) {
+			const object = resolveSetDefObject(ref);
+			if (!object) continue;
+			levelProbes.push(
+				(async () => {
+					try {
+						const body = await bucket.get(object.key);
+						const rawLevel = body
+							? extractChartRawLevel(
+									decodeArrayBufferWithBomDetection(await body.arrayBuffer())
+								)
+							: undefined;
+						if (rawLevel !== undefined) {
+							fileLevelByRef.set(ref, normalizeLevel(rawLevel));
+						}
+					} catch (err) {
+						logger.warn('set.def chart level probe failed; keeping slot order', {
+							key: object.key,
+							error: err instanceof Error ? err.message : String(err)
+						});
+					}
+				})()
+			);
+		}
+	}
+	await Promise.all(levelProbes);
+
 	// Consume one SET.def file per matching row so that duplicate labels
 	// each claim a distinct R2 object instead of all collapsing onto the
-	// last-inserted entry. Files accumulate in L-slot order (see
-	// parseSetDefFilesByLabel), and slots are difficulty-ordered — so claim
-	// them in ascending row level. Rows arrive in id (insertion) order,
-	// which is the uploader's filename order, not slot order; level is the
-	// closest difficulty signal a row carries. Index order breaks ties.
-	// Rows store the raw #DLEVEL value, whose encoding differs above and
-	// below 100 — normalize before comparing or 450 (4.50) outranks 60 (6.00).
+	// last-inserted entry. Rows arrive in id (insertion) order — the
+	// uploader's filename order, not slot order — so they claim in
+	// ascending normalized level (rows store the raw #DLEVEL value, whose
+	// encoding differs above and below 100 — normalize before comparing
+	// or 450 (4.50) outranks 60 (6.00)); index order breaks ties for the
+	// genuinely ambiguous equal-level case. Each row prefers the file
+	// whose probed #DLEVEL equals its own — identical metadata means that
+	// file IS the row's chart. Failing that, a file with no probed level
+	// (unreadable or missing — possibly the row's own chart) is taken
+	// before one whose level provably differs; with no probed levels at
+	// all this degenerates to first-in-slot-order, the prior behavior.
 	const claimOrder = dtxFiles
 		.map((file, index) => ({ file, index }))
 		.sort(
@@ -288,38 +381,20 @@ export const discoverCatalogFiles = async (
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
 	for (const { file, index } of claimOrder) {
-		const setDefRef = filesByLabel.get(file.label.toLowerCase())?.shift();
-		if (setDefRef) {
-			rowsClaimedBySetDef.add(index);
-			// Resolve relative #LxFILE references: absolute paths (already
-			// include the simfile id) are kept as-is; relative names are
-			// resolved against the set.def's directory first, then the
-			// simfile root prefix as a fallback for legacy flat uploads
-			// where chart files live at the root despite a nested set.def.
-			// An explicit `./`/`.\` prefix forces the relative branch even
-			// when the normalized name collides with the id prefix —
-			// `./42/basic.dtx` means `42/42/basic.dtx`, not `42/basic.dtx`.
-			// Exact match first; fall back to a case-insensitive lookup so
-			// that SET.DEF references like BASIC.DTX still resolve when the
-			// R2 key is basic.dtx. Without these fallbacks the row is marked
-			// as claimed-but-missing, which surfaces as an INTERNAL error
-			// via requireCatalogChart even though the chart object exists.
-			const candidates =
-				!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix)
-					? [setDefRef.file]
-					: setDefBaseDir === prefix
-						? [`${prefix}${setDefRef.file}`]
-						: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
-			for (const candidateKey of candidates) {
-				const exactObject = objectsByKey.get(candidateKey);
-				const matchedObject =
-					exactObject ?? objectsByKeyLower.get(candidateKey.toLowerCase());
-				if (matchedObject) {
-					matchedKeysByRowIndex.set(index, matchedObject.key);
-					usedDtxKeys.add(matchedObject.key);
-					break;
-				}
-			}
+		const refs = filesByLabel.get(file.label.toLowerCase());
+		if (!refs?.length) continue;
+		rowsClaimedBySetDef.add(index);
+		const rowLevel = normalizeLevel(file.level);
+		let refIndex = refs.findIndex((ref) => fileLevelByRef.get(ref) === rowLevel);
+		if (refIndex === -1) {
+			refIndex = refs.findIndex((ref) => !fileLevelByRef.has(ref));
+			if (refIndex === -1) refIndex = 0;
+		}
+		const [setDefRef] = refs.splice(refIndex, 1);
+		const matchedObject = resolveSetDefObject(setDefRef);
+		if (matchedObject) {
+			matchedKeysByRowIndex.set(index, matchedObject.key);
+			usedDtxKeys.add(matchedObject.key);
 		}
 	}
 

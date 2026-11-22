@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSetDef } from './setDef';
+import { parseSetDef, normalizeSetDefFileName } from './setDef';
 
 describe('parseSetDef', () => {
 	it('parses title and levels from space-separated directives', () => {
@@ -108,5 +108,15 @@ describe('parseSetDef', () => {
 		const result = parseSetDef('#L1LABEL BASIC\n#L1FILE .\\dir\\bas.dtx\n');
 
 		expect(result.levels[0]?.fileName).toBe('.\\dir\\bas.dtx');
+	});
+});
+
+describe('normalizeSetDefFileName', () => {
+	it('converts backslash separators and strips leading ./ and .\\ prefixes', () => {
+		expect(normalizeSetDefFileName('.\\dir\\bas.dtx')).toBe('dir/bas.dtx');
+		expect(normalizeSetDefFileName('.\\bas.dtx')).toBe('bas.dtx');
+		expect(normalizeSetDefFileName('./bas.dtx')).toBe('bas.dtx');
+		expect(normalizeSetDefFileName('././bas.dtx')).toBe('bas.dtx');
+		expect(normalizeSetDefFileName('dir/sub/bas.dtx')).toBe('dir/sub/bas.dtx');
 	});
 });

@@ -1,7 +1,7 @@
 import JSZip from 'jszip';
 import { DTXFile } from './dtx';
 import { decodeFileWithEncodingDetection } from './encoding-utils';
-import { parseSetDef } from './setDef';
+import { parseSetDef, normalizeSetDefFileName } from './setDef';
 import { dedupedFetch } from '../utils/dedupedFetch';
 
 interface DtxLevel {
@@ -95,11 +95,16 @@ export class SimFile {
 			const level = Number(levelKey);
 			const { label, fileName } = levelData;
 			try {
-				const response = await dedupedFetch(`${bucketUrl}/${simfileID}/${fileName}`);
+				// Server-provided fileName is verbatim SET.def text; normalize
+				// the same way parseHeader does or `.\name.dtx` fetches 404.
+				const normalizedFileName = normalizeSetDefFileName(fileName);
+				const response = await dedupedFetch(
+					`${bucketUrl}/${simfileID}/${normalizedFileName}`
+				);
 				if (!response.ok) {
 					return;
 				}
-				const file = new File([await response.blob()], fileName);
+				const file = new File([await response.blob()], normalizedFileName);
 				const dtx = new DTXFile(file, label);
 				await dtx.parse();
 				simFile.levels[level] = { label, file: dtx };
@@ -179,7 +184,7 @@ export class SimFile {
 		const promises = parsed.levels.map(async ({ level, label, fileName }) => {
 			// SET.def written on Windows uses `\` separators and `.\` / `./`
 			// prefixes; File names and R2 keys use `/` paths without them.
-			const normalizedFileName = fileName.replaceAll('\\', '/').replace(/^(\.\/)+/, '');
+			const normalizedFileName = normalizeSetDefFileName(fileName);
 			let file;
 			if (!this.isParseFromRemoteURL) {
 				file = this.files.find((f) => f.name === normalizedFileName);

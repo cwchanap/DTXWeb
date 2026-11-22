@@ -7,4 +7,9 @@ export {
 	decodeFileWithSpecificEncoding,
 	decodeArrayBufferWithBomDetection
 } from './chart/encoding-utils';
-export { parseSetDef, type ParsedSetDef, type SetDefLevel } from './chart/setDef';
+export {
+	parseSetDef,
+	normalizeSetDefFileName,
+	type ParsedSetDef,
+	type SetDefLevel
+} from './chart/setDef';

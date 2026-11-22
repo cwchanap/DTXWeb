@@ -507,6 +507,40 @@ describe('NoteMove', () => {
 			expect(notesToMove[0].newKey).toBe('note-0-2-0');
 		});
 
+		it('should refuse a move chained behind a blocked dragged destination', () => {
+			// Chain 0→0.25→0.5 where a duplicate line keeps a chip at 0.5:
+			// the 0.25 move is refused by the survivor check, so 0→0.25 must
+			// be refused too — its destination stays occupied and the deleted
+			// source chip would be lost.
+			const lineA = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '01', position: 0 },
+				{ noteID: '02', position: 0.25 },
+				{ noteID: '03', position: 0.5 }
+			]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '04', position: 0.5 }]);
+			mockEditor._setMockNotes({ lane1: [lineA, lineB] });
+			mockEditor._addMockGameObject('note-0-1-0.25');
+			mockEditor._addMockGameObject('note-0-1-0.5');
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.25', 'note-0-1-0.5']);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, 0.25, new Map(), notesToMove);
+
+			expect(notesToMove.map((n) => n.oldKey)).toEqual(['note-0-1-0.5']);
+			expect(notesToMove[0].newKey).toBe('note-0-1-0.75');
+		});
+
 		it('should not record a move whose destination placement failed', () => {
 			const selectedNotes = new Set(['note-0-1-0']);
 			const deleteNoteByKey = vi.fn();

@@ -2007,6 +2007,61 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('keeps slot-order claiming when probed levels match no row in the label', async () => {
+		// Fixture files whose embedded #DLEVEL agrees with no stored row
+		// level still carry the SET.def label→file binding — a mismatch
+		// against every row means the file's header disagrees with the
+		// upload metadata, not that the file belongs elsewhere. Only a
+		// probed level equal to a DIFFERENT row's level disqualifies.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 5\n',
+			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 5\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 40 },
+					{ label: 'Basic', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 40,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('pairs same-label charts whose #DLEVEL uses whitespace separators or fractions', async () => {
 		// The desktop uploader's directive_value accepts `#DLEVEL 60` as
 		// well as `#DLEVEL: 4.5` and keeps the fraction — the rows store

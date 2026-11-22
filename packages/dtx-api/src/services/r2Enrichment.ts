@@ -348,9 +348,13 @@ export const discoverCatalogFiles = async (
 	// parsed carry no probed level — the claim loop treats them as
 	// possible matches only after exact-level matches fail.
 	const rowCountByLabel = new Map<string, number>();
+	const rowLevelsByLabel = new Map<string, Set<number>>();
 	for (const file of dtxFiles) {
 		const label = file.label.toLowerCase();
 		rowCountByLabel.set(label, (rowCountByLabel.get(label) ?? 0) + 1);
+		let levels = rowLevelsByLabel.get(label);
+		if (!levels) rowLevelsByLabel.set(label, (levels = new Set()));
+		levels.add(normalizeLevel(file.level));
 	}
 	const fileLevelByRef = new Map<SetDefFileRef, number>();
 	const levelProbes: Promise<void>[] = [];
@@ -399,10 +403,11 @@ export const discoverCatalogFiles = async (
 	// or 450 (4.50) outranks 60 (6.00)); index order breaks ties for the
 	// genuinely ambiguous equal-level case. Each row prefers the file
 	// whose probed #DLEVEL equals its own — identical metadata means that
-	// file IS the row's chart. Failing that, a file with no probed level
-	// (unreadable or missing — possibly the row's own chart) is taken
-	// before one whose level provably differs; with no probed levels at
-	// all this degenerates to first-in-slot-order, the prior behavior.
+	// file IS the row's chart. Failing that it takes the first ref it
+	// could still own: a probed level disqualifies only when it equals a
+	// DIFFERENT row's level in this label — provably that row's chart —
+	// while a header matching no row just disagrees with the upload
+	// metadata and SET.def still names the file for the slot.
 	const claimOrder = dtxFiles
 		.map((file, index) => ({ file, index }))
 		.sort(
@@ -416,17 +421,19 @@ export const discoverCatalogFiles = async (
 		const rowLevel = normalizeLevel(file.level);
 		let refIndex = refs.findIndex((ref) => fileLevelByRef.get(ref) === rowLevel);
 		if (refIndex === -1) {
-			refIndex = refs.findIndex((ref) => !fileLevelByRef.has(ref));
-			if (refIndex === -1) {
-				// A single-row label still claims its named file even when
-				// the embedded level disagrees — SET.def is authoritative
-				// for that row's chart. With multiple rows the remaining
-				// refs provably belong to a different row, so claiming one
-				// would swap charts; this row falls through to the sorted
-				// fallback instead.
-				if ((rowCountByLabel.get(label) ?? 0) !== 1) continue;
-				refIndex = 0;
-			}
+			refIndex = refs.findIndex((ref) => {
+				const probed = fileLevelByRef.get(ref);
+				if (probed === undefined) return true;
+				const levels = rowLevelsByLabel.get(label);
+				for (const level of levels ?? []) {
+					if (level === probed && level !== rowLevel) return false;
+				}
+				return true;
+			});
+			// Every remaining ref is provably another row's chart — leave
+			// them for their true rows and let this row fall through to
+			// the sorted fallback.
+			if (refIndex === -1) continue;
 		}
 		rowsClaimedBySetDef.add(index);
 		const [setDefRef] = refs.splice(refIndex, 1);
@@ -436,9 +443,10 @@ export const discoverCatalogFiles = async (
 			usedDtxKeys.add(matchedObject.key);
 		}
 	}
-	// Unclaimed refs (surplus files, or probed levels matching no remaining
-	// row) still name charts under a set.def label — reserve their objects
-	// so the sorted fallback cannot bind them to an unrelated row.
+	// Unclaimed refs (surplus files, or provably another row's chart that
+	// was never claimed) still name charts under a set.def label —
+	// reserve their objects so the sorted fallback cannot bind them to
+	// an unrelated row.
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);

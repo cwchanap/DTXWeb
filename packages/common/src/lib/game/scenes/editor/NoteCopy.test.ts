@@ -212,6 +212,22 @@ describe('NoteCopy', () => {
 			// The important thing is the logic works - debug logs show correct selection
 			expect(result).toBeDefined();
 		});
+
+		it('should copy the chip at the exact key position when another line sits within tolerance', () => {
+			// Duplicate pattern lines can hold chips closer than the old 0.0001
+			// fuzzy lookup, which resolved whichever group sorted first.
+			const lineA = new LaneMeasureNote(1, 'lane1', [{ noteID: '01', position: 0.5 }]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '02', position: 0.50005 }]);
+			vi.mocked(mockEditor.getNotes).mockReturnValue({ lane1: [lineA, lineB] });
+
+			const result = noteCopy.copyNotes(new Set(['note-0-1-0.50005']), mockEditor);
+
+			expect(result).toBe(true);
+			const { copiedNotes } = noteCopy as unknown as {
+				copiedNotes: { noteId: string }[];
+			};
+			expect(copiedNotes[0].noteId).toBe('02');
+		});
 	});
 
 	describe('pasteNotes', () => {
@@ -603,6 +619,27 @@ describe('NoteCopy', () => {
 
 			expect(result).toBe(false);
 			expect(mockDeleteNoteByKey).not.toHaveBeenCalled();
+		});
+
+		it('should cut the chip at the exact key position when another line sits within tolerance', () => {
+			// Same near-position pair as the copyNotes case: the recorded undo
+			// data must name the chip deleteNoteByKey actually removes.
+			const lineA = new LaneMeasureNote(1, 'lane1', [{ noteID: '01', position: 0.5 }]);
+			const lineB = new LaneMeasureNote(1, 'lane1', [{ noteID: '02', position: 0.50005 }]);
+			vi.mocked(mockEditor.getNotes).mockReturnValue({ lane1: [lineA, lineB] });
+
+			const recordCutAction = vi.fn();
+			const result = noteCopy.cutNotes(
+				new Set(['note-0-1-0.50005']),
+				mockEditor,
+				vi.fn(),
+				recordCutAction
+			);
+
+			expect(result).toBe(true);
+			expect(recordCutAction).toHaveBeenCalledWith([
+				expect.objectContaining({ noteId: '02', cellOffset: 0.50005 })
+			]);
 		});
 	});
 

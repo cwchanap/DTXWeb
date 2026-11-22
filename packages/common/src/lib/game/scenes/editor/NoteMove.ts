@@ -200,13 +200,16 @@ export class NoteMove {
 			// Prepare move data for undo functionality before making any changes
 			const moveData = this.prepareMoveData(notesToMove);
 
-			// Record the move action for undo functionality
-			if (moveData.length > 0) {
-				this.recordMoveAction(moveData);
-			}
-
 			// Execute the note moving operations
 			const { movedNotes, unmovableNotes } = this.performMove(notesToMove, deleteNoteByKey);
+
+			// Record only the moves that landed: an entry for a failed
+			// placement would make undo delete whatever graphic now owns the
+			// destination key.
+			if (movedNotes.length > 0) {
+				const landed = new Set(movedNotes);
+				this.recordMoveAction(moveData.filter((data) => landed.has(data.newNoteKey)));
+			}
 
 			// Update selection to include both moved and unmoved notes
 			this.updateSelectionAfterMove(
@@ -234,17 +237,21 @@ export class NoteMove {
 				} = parsed;
 				const oldLaneId = this.editor.getLaneConfigs()[oldLaneIndex].id;
 
-				// Find the original noteID from the data structure
+				// Find the original noteID from the data structure. Match the
+				// exact stored position like deleteNoteByKey does: duplicate
+				// pattern lines can hold chips closer than any tolerance, and a
+				// fuzzy match can resolve a different line's chip than the one
+				// the delete will remove.
 				const notes = this.editor.getNotes();
 				if (oldLaneId in notes) {
 					const existingNote = notes[oldLaneId].find(
 						(note) =>
 							note.measure === oldMeasure &&
-							note.notes.some((n) => Math.abs(n.position - oldCellOffset) < 0.001)
+							note.notes.some((n) => n.position === oldCellOffset)
 					);
 					if (existingNote) {
 						const noteChip = existingNote.notes.find(
-							(n) => Math.abs(n.position - oldCellOffset) < 0.001
+							(n) => n.position === oldCellOffset
 						);
 						if (noteChip) {
 							originalNoteIds.set(noteKey, noteChip.noteID);
@@ -321,12 +328,17 @@ export class NoteMove {
 					const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
 					const existingNote = this.editor.getPanelContainer().getByName(newKey);
 
-					// Only move if target position is empty or we're moving to same position
-					// Also check if the existing note is one of the notes we're moving (to allow swapping within selection)
+					// Only move if target position is empty or its graphic belongs to
+					// a note we are moving (covers same-position drops and swaps
+					// within the selection). A dragged destination still blocks the
+					// move when another pattern line keeps a chip at the same cell:
+					// removing the dragged chip redraws the survivor's graphic under
+					// the same key, so the incoming chip is refused after its source
+					// was already deleted.
 					if (
 						!existingNote ||
-						newKey === noteKey ||
-						this.draggedNotes.has(existingNote.name)
+						(this.draggedNotes.has(existingNote.name) &&
+							!this.hasSurvivingChip(newLaneIndex, newMeasure, newCellOffset))
 					) {
 						notesToMove.push({
 							oldKey: noteKey,
@@ -341,6 +353,21 @@ export class NoteMove {
 				}
 			}
 		});
+	}
+
+	/**
+	 * Whether more than one chip sits at a cell across duplicate pattern
+	 * lines. The dragged chip removes only one, so a survivor keeps the
+	 * cell's graphic alive under the same key.
+	 */
+	private hasSurvivingChip(laneIndex: number, measure: number, cellOffset: number): boolean {
+		const laneId = this.editor.getLaneConfigs()[laneIndex].id;
+		let chips = 0;
+		for (const group of this.editor.getNotes()[laneId] ?? []) {
+			if (group.measure !== measure) continue;
+			chips += group.notes.filter((chip) => chip.position === cellOffset).length;
+		}
+		return chips > 1;
 	}
 
 	/**

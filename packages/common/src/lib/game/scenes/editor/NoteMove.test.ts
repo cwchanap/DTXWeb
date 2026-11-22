@@ -541,6 +541,40 @@ describe('NoteMove', () => {
 			expect(notesToMove[0].newKey).toBe('note-0-1-0.75');
 		});
 
+		it('should cascade a refusal through a chain of dragged destinations', () => {
+			// 0→0.25→0.5→0.75 where an unselected chip keeps 0.75: the 0.5
+			// move is refused outright, and the refusal must propagate back
+			// through both dragged dependents — a single-hop check would
+			// still schedule 0→0.25 after 0.25→0.5 is refused.
+			const lineA = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '01', position: 0 },
+				{ noteID: '02', position: 0.25 },
+				{ noteID: '03', position: 0.5 },
+				{ noteID: '04', position: 0.75 }
+			]);
+			mockEditor._setMockNotes({ lane1: [lineA] });
+			mockEditor._addMockGameObject('note-0-1-0.25');
+			mockEditor._addMockGameObject('note-0-1-0.5');
+			mockEditor._addMockGameObject('note-0-1-0.75');
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.25', 'note-0-1-0.5']);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, 0.25, new Map(), notesToMove);
+
+			expect(notesToMove).toEqual([]);
+		});
+
 		it('should not record a move whose destination placement failed', () => {
 			const selectedNotes = new Set(['note-0-1-0']);
 			const deleteNoteByKey = vi.fn();

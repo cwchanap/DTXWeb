@@ -3101,6 +3101,51 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('keeps a set.def claim when a blank #DLEVEL precedes the rating', async () => {
+		// parse_dtx_metadata keeps scanning for the first parseable
+		// #DLEVEL — a blank directive leaves the level unset rather than
+		// making the chart unrated. A probe that stops at the blank
+		// directive reports unrated, disqualifies the ref, and the
+		// fallback hands the row an unlisted chart instead.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE chart01.dtx\n',
+			'42/chart01.dtx': '#TITLE: Song\n#DLEVEL:\n#DLEVEL: 60\n',
+			'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 85\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/chart01.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/chart01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

@@ -157,23 +157,26 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[
  * packages/dtx-desktop/src-tauri/src/songs.rs — the same parse that produced
  * each row's stored level: leading whitespace allowed, directive name
  * case-insensitive and ending at a `:` or whitespace separator, and the
- * value keeps fractions (`4.5`). Returns undefined when the header or its
- * value is absent so the caller can keep slot order for unreadable charts.
+ * value keeps fractions (`4.5`). parse_dtx_metadata keeps scanning until a
+ * directive parses — a blank or malformed #DLEVEL leaves the level unset
+ * rather than shadowing a later valid one — so the first PARSEABLE
+ * directive wins, not the first directive. Returns undefined when no
+ * directive parses so the caller can keep slot order for unreadable charts.
  */
 const extractChartRawLevel = (text: string): number | undefined => {
-	const dlevelLine = text
-		.split(/\r?\n/)
-		.map((line) => line.trimStart())
-		.find((line) => /^#DLEVEL[\s:]/i.test(line));
-	if (!dlevelLine) return undefined;
-	// The separator is a single character — ':' or one whitespace — so the
-	// value always starts at directive length + 1.
-	const token = dlevelLine
-		.slice('#DLEVEL'.length + 1)
-		.trimStart()
-		.match(/^[0-9.+-]*/)?.[0];
-	const raw = token ? Number(token) : NaN;
-	return Number.isNaN(raw) ? undefined : raw;
+	for (const line of text.split(/\r?\n/)) {
+		const trimmed = line.trimStart();
+		if (!/^#DLEVEL[\s:]/i.test(trimmed)) continue;
+		// The separator is a single character — ':' or one whitespace —
+		// so the value always starts at directive length + 1.
+		const token = trimmed
+			.slice('#DLEVEL'.length + 1)
+			.trimStart()
+			.match(/^[0-9.+-]*/)?.[0];
+		const raw = token ? Number(token) : NaN;
+		if (!Number.isNaN(raw)) return raw;
+	}
+	return undefined;
 };
 
 /**

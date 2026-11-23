@@ -441,8 +441,12 @@ export const discoverCatalogFiles = async (
 			levelProbes.push(
 				(async () => {
 					const level = await probeChartHeaderLevel(bucket, object.key, logger);
-					if (typeof level === 'number') {
-						fileLevelByRef.set(ref, level);
+					// A complete read with no #DLEVEL (null) proves the chart is
+					// unrated — record it as 0 so the claim loop disqualifies it
+					// the same as an explicit `#DLEVEL 0`. Only an unprobed
+					// result (undefined) stays out of the map.
+					if (level !== undefined) {
+						fileLevelByRef.set(ref, level ?? 0);
 					}
 				})()
 			);
@@ -481,10 +485,10 @@ export const discoverCatalogFiles = async (
 				const probed = fileLevelByRef.get(ref);
 				if (probed === undefined) return true;
 				// A probed level of zero names a chart the uploader never
-				// catalogued — parse_dtx_folder skips #DLEVEL 0 — so no row
-				// can own it. Left in refs it stays reserved; a non-exact
-				// claim must not let it displace an unlisted file that is
-				// a row's real chart.
+				// catalogued — parse_dtx_folder skips unrated charts
+				// (#DLEVEL 0 or absent) — so no row can own it. Left in
+				// refs it stays reserved; a non-exact claim must not let
+				// it displace an unlisted file that is a row's real chart.
 				if (probed === 0) return false;
 				const levels = rowLevelsByLabel.get(label);
 				for (const level of levels ?? []) {
@@ -589,6 +593,42 @@ export const discoverCatalogFiles = async (
 			}
 			usedDtxKeys.add(object.key);
 		}
+	}
+
+	// Bind still-unclaimed rows to a unique unused chart whose filename
+	// stem equals the row label — parse_dtx_folder catalogs unlisted
+	// charts under their stem, so a one-to-one stem match is the row's
+	// own file, not a positional guess. The same root-or-set.def-sibling
+	// scope as the leftover-ref stem claim applies: deeper nested files
+	// are never a row's chart. Stems or labels shared by more than one
+	// candidate stay ambiguous and fall through to the sorted fallback,
+	// whose level/filename pairing can otherwise swap difficulties when
+	// the two orders disagree.
+	const unusedKeysByStem = new Map<string, string[]>();
+	for (const key of dtxObjectKeys) {
+		if (usedDtxKeys.has(key)) continue;
+		if (!isTopLevelR2Key(key, prefix) && !isTopLevelR2Key(key, setDefBaseDir)) continue;
+		const stem = r2FileName(key)
+			.replace(/\.dtx$/i, '')
+			.toLowerCase();
+		const keys = unusedKeysByStem.get(stem);
+		if (keys) keys.push(key);
+		else unusedKeysByStem.set(stem, [key]);
+	}
+	const unclaimedRowsByLabel = new Map<string, number[]>();
+	dtxFiles.forEach((file, index) => {
+		if (rowsClaimedBySetDef.has(index)) return;
+		const label = file.label.toLowerCase();
+		const rows = unclaimedRowsByLabel.get(label);
+		if (rows) rows.push(index);
+		else unclaimedRowsByLabel.set(label, [index]);
+	});
+	for (const [stem, keys] of unusedKeysByStem) {
+		const rows = unclaimedRowsByLabel.get(stem);
+		if (keys.length !== 1 || rows?.length !== 1) continue;
+		rowsClaimedBySetDef.add(rows[0]);
+		matchedKeysByRowIndex.set(rows[0], keys[0]);
+		usedDtxKeys.add(keys[0]);
 	}
 
 	const fallbackRows = dtxFiles

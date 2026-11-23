@@ -3552,15 +3552,16 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
-	it('reserves an unlisted rated chart instead of binding it positionally', async () => {
-		// 01.dtx is the EXPERT row's chart via set.def. 02.dtx probes 4.50 —
-		// a level no unclaimed row holds — so it is provably nobody's chart
-		// and must be reserved: if it leaked into the positional pairing it
-		// would bind the NOVICE row ahead of the unprobed 03.dtx.
+	it('reserves a proven-unrated chart instead of binding it positionally', async () => {
+		// 01.dtx is the EXPERT row's chart via set.def. 02.dtx is a complete
+		// read with no #DLEVEL — provably unrated, so it can never be a
+		// row's source and must be reserved: if it leaked into the
+		// positional pairing it would bind the NOVICE row ahead of the
+		// unprobed 03.dtx.
 		const chartBodies: Record<string, string> = {
 			'42/set.def': '#L1LABEL EXPERT\n#L1FILE 01.dtx\n',
 			'42/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
-			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 450\n'
+			'42/02.dtx': '#TITLE: Song\n'
 		};
 		const bucket = {
 			...makeBucket([

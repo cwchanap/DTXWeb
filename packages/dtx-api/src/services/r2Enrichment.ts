@@ -670,9 +670,11 @@ export const discoverCatalogFiles = async (
 	// probed level equals its own — identical metadata means that file
 	// IS the row's chart. A proven-unrated object (explicit #DLEVEL 0 or
 	// a complete-read miss) is reserved — parse_dtx_folder never
-	// cataloged it — and a probed level no unclaimed row shares proves
-	// the object is nobody's chart, so it is reserved too rather than
-	// left to bind positionally. Unprobed keys stay positional.
+	// cataloged it. A probed key still unused after exact matching only
+	// disagrees with the upload metadata — like the set.def claim loop,
+	// a level disqualifies a file only when it names a DIFFERENT row's
+	// chart — so it stays positional rather than being reserved.
+	// Unprobed keys stay positional too.
 	const fallbackRows = dtxFiles
 		.map((file, index) => ({ file, index }))
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
@@ -703,9 +705,6 @@ export const discoverCatalogFiles = async (
 			if (!key) continue;
 			rowsClaimedBySetDef.add(row.index);
 			matchedKeysByRowIndex.set(row.index, key);
-			usedDtxKeys.add(key);
-		}
-		for (const key of probedLevelByKey.keys()) {
 			usedDtxKeys.add(key);
 		}
 	}

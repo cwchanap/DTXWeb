@@ -3610,4 +3610,173 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('pairs remaining rows positionally in the uploader’s case-sensitive filename order', async () => {
+		// Catalog rows arrive in files.sort() order — Rust's case-sensitive
+		// path sort puts 'Expert.dtx' before 'basic.dtx'. Pairing that row
+		// order with locale-collated keys ('basic.dtx' first) swaps the
+		// previews. SET.def named the rows at catalog time but was not
+		// uploaded, and the replacement charts' ratings match no row, so
+		// nothing but the uploader's filename order can pair them.
+		const chartBodies: Record<string, string> = {
+			'42/Expert.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/Expert.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// Row insertion order reproduces the uploader's: Expert.dtx
+				// was cataloged first (HARD), basic.dtx second (EASY).
+				dtxFiles: [
+					{ label: 'HARD', level: 80 },
+					{ label: 'EASY', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'HARD',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/Expert.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'EASY',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('claims a re-rated chart by its filename stem when the rating names no row', async () => {
+		// Replacement uploads keep filenames while their new #DLEVEL values
+		// identify no catalog row — the stem match is still each row's own
+		// file. Rejecting it leaves Basic to bind Zeta.dtx positionally:
+		// 'Zeta.dtx' sorts between 'Expert.dtx' and 'basic.dtx' under the
+		// uploader's case-sensitive order.
+		const chartBodies: Record<string, string> = {
+			'42/Expert.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/Expert.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/Zeta.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => {
+				if (key === '42/Zeta.dtx') throw new Error('transient R2 error');
+				return { arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '') };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Expert', level: 80 },
+					{ label: 'Basic', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/Expert.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('keeps filename order among probed and unprobed keys for equal-rated rows', async () => {
+		// Both rows rate 6.00. 01.dtx's #DLEVEL sits beyond the 16 KiB
+		// probe window so it stays unprobed; 02.dtx probes 60. The first
+		// row consuming the probed key leaves 01.dtx to bind the second
+		// row positionally — a swap. Equal-rated rows are
+		// indistinguishable by rating, so each takes the earliest
+		// still-plausible key in uploader filename order instead.
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': `${'#TITLE: ' + 'x'.repeat(16390)}\n#DLEVEL: 60\n`,
+			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 16420, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return { arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer) };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// Uploader order: 01.dtx cataloged first as Basic, 02.dtx
+				// second as Expert — both rated 6.00 (raw 60).
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Expert', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 16420,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

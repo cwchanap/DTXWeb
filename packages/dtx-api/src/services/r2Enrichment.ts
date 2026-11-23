@@ -335,9 +335,15 @@ export const discoverCatalogFiles = async (
 	const downloadObject = topLevelDownloadObject ?? nestedAudioObjects[0];
 	const downloadUrl = downloadObject ? toPublicR2Url(publicBaseUrl, downloadObject.key) : null;
 
+	// Sort chart keys in the uploader's filename order: read_top_level_files
+	// uses Rust's case-sensitive path sort (songs.rs), which is what
+	// produced the catalog rows' id order — code-unit comparison
+	// reproduces that row↔file correspondence. Locale collation does
+	// not: it places 'basic.dtx' before 'Expert.dtx' while the uploader
+	// kept 'Expert.dtx' first, so pairing the two orders swaps previews.
 	const dtxObjects = objects
 		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
-		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => a.key.localeCompare(b.key));
+		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 	const dtxObjectKeys = dtxObjects.map((obj: R2ObjectMeta) => obj.key);
 	const usedDtxKeys = new Set<string>();
 
@@ -608,17 +614,21 @@ export const discoverCatalogFiles = async (
 	// stem equals the row label — parse_dtx_folder catalogs unlisted
 	// charts under their stem, so a one-to-one stem match is likely the
 	// row's own file, not a positional guess. Likely, not provably: the
-	// stem match claims the row only when the candidate's probed #DLEVEL
+	// stem match claims the row when the candidate's probed #DLEVEL
 	// equals the row's level on the normalized scale — the same identity
-	// check the set.def claim loop applies to named refs. A confirmed
-	// unrated candidate (explicit #DLEVEL 0 or a complete-read miss)
-	// never produced a row, so it is reserved rather than left for the
-	// positional fallback to bind to an unrelated row. The same
-	// root-or-set.def-sibling scope as the leftover-ref stem claim
-	// applies: deeper nested files are never a row's chart. Stems or
-	// labels shared by more than one candidate stay ambiguous and fall
-	// through to the sorted fallback, whose level/filename pairing can
-	// otherwise swap difficulties when the two orders disagree.
+	// check the set.def claim loop applies to named refs — OR when its
+	// rating names no catalog row at all: the uploader replaces charts
+	// in place, so a re-rated file keeps its filename while its stored
+	// row level stays stale, and only a rating identifying a DIFFERENT
+	// row disproves the name match. A confirmed unrated candidate
+	// (explicit #DLEVEL 0 or a complete-read miss) never produced a row,
+	// so it is reserved rather than left for the positional fallback to
+	// bind to an unrelated row. The same root-or-set.def-sibling scope
+	// as the leftover-ref stem claim applies: deeper nested files are
+	// never a row's chart. Stems or labels shared by more than one
+	// candidate stay ambiguous and fall through to the sorted fallback,
+	// whose level/filename pairing can otherwise swap difficulties when
+	// the two orders disagree.
 	const unusedKeysByStem = new Map<string, string[]>();
 	for (const key of dtxObjectKeys) {
 		if (usedDtxKeys.has(key)) continue;
@@ -638,6 +648,10 @@ export const discoverCatalogFiles = async (
 		if (rows) rows.push(index);
 		else unclaimedRowsByLabel.set(label, [index]);
 	});
+	// A probed rating equal to a DIFFERENT row's level names that row's
+	// chart — the same disqualification the set.def claim loop applies —
+	// so the file must not claim this row on its stem alone.
+	const allRowLevels = new Set(dtxFiles.map((file) => normalizeLevel(file.level)));
 	for (const [stem, keys] of unusedKeysByStem) {
 		const rows = unclaimedRowsByLabel.get(stem);
 		if (keys.length !== 1 || rows?.length !== 1) continue;
@@ -650,7 +664,9 @@ export const discoverCatalogFiles = async (
 			CHART_LEVEL_DEEP_PROBE_BYTES
 		);
 		const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
-		if (rowLevel !== 0 && probed === rowLevel) {
+		const namesDifferentRow =
+			typeof probed === 'number' && probed !== rowLevel && allRowLevels.has(probed);
+		if (rowLevel !== 0 && typeof probed === 'number' && probed !== 0 && !namesDifferentRow) {
 			rowsClaimedBySetDef.add(rows[0]);
 			matchedKeysByRowIndex.set(rows[0], keys[0]);
 			usedDtxKeys.add(keys[0]);
@@ -696,16 +712,36 @@ export const discoverCatalogFiles = async (
 				probedLevelByKey.set(key, level);
 			})
 		);
-		for (const row of fallbackRows) {
-			const rowLevel = normalizeLevel(row.file.level);
-			const key = dtxObjectKeys.find(
-				(candidate) =>
-					!usedDtxKeys.has(candidate) && probedLevelByKey.get(candidate) === rowLevel
-			);
-			if (!key) continue;
-			rowsClaimedBySetDef.add(row.index);
-			matchedKeysByRowIndex.set(row.index, key);
-			usedDtxKeys.add(key);
+		// Rows sharing a normalized level are indistinguishable by rating
+		// alone, so within an equal-rated group an unprobed key is as
+		// plausible a match as a probed one. Each row takes the earliest
+		// still-plausible key in uploader filename order — otherwise the
+		// first row consumes a probed key that positionally belongs to a
+		// later row and the skipped unprobed key binds the wrong row.
+		// A uniquely-rated row still requires an exact probed match;
+		// unprobed keys stay positional there.
+		for (let groupStart = 0; groupStart < fallbackRows.length;) {
+			const groupLevel = normalizeLevel(fallbackRows[groupStart].file.level);
+			let groupEnd = groupStart + 1;
+			while (
+				groupEnd < fallbackRows.length &&
+				normalizeLevel(fallbackRows[groupEnd].file.level) === groupLevel
+			) {
+				groupEnd += 1;
+			}
+			const ambiguous = groupEnd - groupStart > 1;
+			for (const row of fallbackRows.slice(groupStart, groupEnd)) {
+				const key = dtxObjectKeys.find((candidate) => {
+					if (usedDtxKeys.has(candidate)) return false;
+					const probed = probedLevelByKey.get(candidate);
+					return probed === groupLevel || (ambiguous && probed === undefined);
+				});
+				if (!key) continue;
+				rowsClaimedBySetDef.add(row.index);
+				matchedKeysByRowIndex.set(row.index, key);
+				usedDtxKeys.add(key);
+			}
+			groupStart = groupEnd;
 		}
 	}
 

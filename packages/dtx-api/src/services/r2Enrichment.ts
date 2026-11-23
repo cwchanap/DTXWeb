@@ -176,20 +176,25 @@ const extractChartRawLevel = (text: string): number | undefined => {
  * fetched, so callers can still tell "probed unrated" apart from
  * "unprobed". A #DLEVEL below the probe window reads as unrated — the
  * same false negative the claim loop already tolerates as unprobed.
+ * Pass maxBytes = null to fetch the whole object instead: only a
+ * complete read proves "no #DLEVEL anywhere", which a caller that
+ * disqualifies a chart on an unrated probe needs.
  */
 const probeChartHeaderLevel = async (
 	bucket: R2Bucket,
 	key: string,
-	logger: WorkerLogger
+	logger: WorkerLogger,
+	maxBytes: number | null = CHART_LEVEL_PROBE_BYTES
 ): Promise<number | null | undefined> => {
 	try {
-		const body = await bucket.get(key, {
-			range: { offset: 0, length: CHART_LEVEL_PROBE_BYTES }
-		});
+		const body =
+			maxBytes === null
+				? await bucket.get(key)
+				: await bucket.get(key, { range: { offset: 0, length: maxBytes } });
 		if (!body) return undefined;
 		const buffer = await body.arrayBuffer();
 		let head = decodeArrayBufferWithBomDetection(buffer);
-		if (buffer.byteLength === CHART_LEVEL_PROBE_BYTES) {
+		if (maxBytes !== null && buffer.byteLength === maxBytes) {
 			// A full window means the file may continue past it —
 			// the last line can be cut mid-value (`#DLEVEL: 45` of a
 			// truncated `455` reads as level 4.50, not 4.55). Drop
@@ -526,14 +531,19 @@ export const discoverCatalogFiles = async (
 									.toLowerCase() === stem
 						);
 						if (rootCandidate) {
+							// Read the whole object, not the probe window:
+							// a #DLEVEL deeper than 16 KiB is still a valid
+							// rating, and only a complete miss proves the root
+							// copy unrated.
 							const rootLevel = await probeChartHeaderLevel(
 								bucket,
 								rootCandidate.key,
-								logger
+								logger,
+								null
 							);
 							if (rootLevel === 0 || rootLevel === null) {
-								// Unrated — explicit #DLEVEL 0 or no parseable
-								// #DLEVEL in the probe window — so no row can own
+								// Unrated — explicit #DLEVEL 0 or no #DLEVEL in
+								// the whole file — so no row can own
 								// it, and it must not stay in the sorted fallback
 								// where it could displace another row's rated
 								// chart. A genuinely unfetched copy (undefined)

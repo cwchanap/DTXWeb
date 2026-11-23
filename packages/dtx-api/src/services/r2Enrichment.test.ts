@@ -2751,6 +2751,62 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers a root chart whose #DLEVEL sits beyond the probe window over a nested set.def sibling', async () => {
+		// Same root-vs-nested stem layout as the root-preference tests,
+		// but the root chart's #DLEVEL sits past the 16-KiB probe window
+		// behind a long header. A bounded probe sees no level and
+		// misjudges the chart as unrated — reserving the row's real chart
+		// and letting the nested sibling steal the claim. Only a complete
+		// read can prove "no #DLEVEL anywhere".
+		const chartBodies: Record<string, string> = {
+			'42/song/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/song/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': `#TITLE: Song\n#COMMENT ${'x'.repeat(16400)}\n#DLEVEL: 60\n`
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/song/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 17000, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(
+				async (key: string, options?: { range?: { offset: number; length: number } }) => {
+					const full = encodeToBuffer(chartBodies[key] ?? '');
+					const range = options?.range;
+					return {
+						arrayBuffer: async () =>
+							range ? full.slice(range.offset, range.offset + range.length) : full
+					};
+				}
+			)
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		// The ambiguous root candidate gets a full read, not the bounded
+		// probe window that would miss its #DLEVEL.
+		expect(bucket.get).toHaveBeenCalledWith('42/solo.dtx');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 17000,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

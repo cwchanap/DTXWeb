@@ -74,19 +74,81 @@ export const dtxToMidi = (
 	const timing = buildTimingInput(dtx);
 	const { measureLengths, measureCount } = timing;
 
-	// The shortest bar decides the division: 4 * ppq * length must reach 192
-	// ticks. PPQ is forced to a multiple of 32 so every supported meter
-	// (power-of-two denominators through 2^7) still spans whole ticks — a
-	// fractional bar boundary reimports as a mid-bar meter change. SMF
-	// division is 15 bits, so an absurdly short bar still merges — capped
-	// at 0x7fe0, the largest multiple of 32 under the limit, and reported.
+	const events: PendingEvent[] = [];
+	let seq = 0;
+	const warnings: string[] = [];
+	const warned = new Set<string>();
+
+	// Resolve each lane-measure's MIDI note once: the emission loop and the
+	// division floor both need to know which same-note onsets actually emit.
+	const emissionGroups: { lm: LaneMeasureNote; noteNumber: number }[] = [];
+	const onsetFractions = new Map<string, { measure: number; fractions: number[] }>();
+	for (const lm of dtx.parseNotes()) {
+		const lane = lm.laneID.toUpperCase();
+		if (NON_DRUM_LANES.has(lane)) continue;
+		if (lm.measure < 0 || lm.measure >= measureCount) continue;
+		// A non-positive measureLength would produce non-finite ticks.
+		if (!Number.isFinite(lm.measureLength) || lm.measureLength <= 0) continue;
+		const noteNumber = laneNoteMap[lane] ?? laneNoteMap[lm.laneID] ?? laneToStaff(lane)?.midi;
+		if (noteNumber === undefined) {
+			const key = `lane-${lane}`;
+			if (!warned.has(key)) {
+				warned.add(key);
+				warnings.push(`lane ${lane} has no GM note; ${lm.notes.length} hit(s) skipped`);
+			}
+			continue;
+		}
+		// Overrides can carry non-note values; 128+ or NaN would emit a byte
+		// the parser itself rejects (or a silent note 0).
+		if (!Number.isInteger(noteNumber) || noteNumber < 0 || noteNumber > 127) {
+			const key = `note-${lane}`;
+			if (!warned.has(key)) {
+				warned.add(key);
+				warnings.push(`lane ${lane} maps to invalid MIDI note ${noteNumber}; hits skipped`);
+			}
+			continue;
+		}
+		emissionGroups.push({ lm, noteNumber });
+		const groupKey = `${noteNumber}|${lm.measure}`;
+		const group = onsetFractions.get(groupKey) ?? { measure: lm.measure, fractions: [] };
+		for (const note of lm.notes) {
+			if (note.noteID !== '00') group.fractions.push(note.position / lm.measureLength);
+		}
+		onsetFractions.set(groupKey, group);
+	}
+
+	// Two things decide the division: every bar still needs 192 ticks for
+	// the DTX slot grid, and every emitted same-note onset needs its own
+	// tick — widened 384/768-cell patterns space hits finer than 1/192.
+	// Each group's tightest spacing sets its own floor (ticks scale with
+	// the bar length), with barline sentinels covering hits a hair off the
+	// measure edge. PPQ is forced to a multiple of 32 so every supported
+	// meter (power-of-two denominators through 2^7) still spans whole
+	// ticks — a fractional bar boundary reimports as a mid-bar meter
+	// change. SMF division is 15 bits, so an absurdly tight grid still
+	// merges — capped at 0x7fe0, the largest multiple of 32 under the
+	// limit, and reported.
 	let minBarLength = Infinity;
 	for (let m = 0; m < measureCount; m++) {
 		minBarLength = Math.min(minBarLength, measureLengths[m] ?? 1);
 	}
+	let onsetPpq = 0;
+	for (const { measure, fractions } of onsetFractions.values()) {
+		const barLength = measureLengths[measure] ?? 1;
+		const distinct = [...new Set(fractions), 0, 1].sort((a, b) => a - b);
+		for (let i = 1; i < distinct.length; i++) {
+			const gap = distinct[i] - distinct[i - 1];
+			if (gap > 0) {
+				onsetPpq = Math.max(onsetPpq, 1 / (4 * Math.max(barLength, 1e-9) * gap));
+			}
+		}
+	}
 	const ppq = Math.min(
 		0x7fe0,
-		Math.max(MIDI_PPQ, Math.ceil(48 / Math.max(minBarLength, 1e-9) / 32) * 32)
+		Math.max(
+			MIDI_PPQ,
+			Math.ceil(Math.max(48 / Math.max(minBarLength, 1e-9), onsetPpq) / 32) * 32
+		)
 	);
 	// Integer ticks only — encodeVlq truncates deltas, so a fractional release
 	// length would shave a sub-tick off every note-off after it.
@@ -102,14 +164,14 @@ export const dtxToMidi = (
 	const tickInMeasure = (measure: number, fraction: number): number =>
 		measureStart[measure] + fraction * 4 * ppq * (measureLengths[measure] ?? 1);
 
-	const events: PendingEvent[] = [];
-	let seq = 0;
-	const warnings: string[] = [];
-	const warned = new Set<string>();
-
 	if (4 * ppq * minBarLength < 192) {
 		warnings.push(
 			'the shortest bar cannot hold all 192 DTX slots at the MIDI PPQ limit; adjacent hits may merge'
+		);
+	}
+	if (onsetPpq > ppq) {
+		warnings.push(
+			'some hits are spaced closer than the MIDI PPQ limit separates; distinct onsets may merge'
 		);
 	}
 
@@ -171,31 +233,7 @@ export const dtxToMidi = (
 		});
 	}
 
-	for (const lm of dtx.parseNotes()) {
-		const lane = lm.laneID.toUpperCase();
-		if (NON_DRUM_LANES.has(lane)) continue;
-		if (lm.measure < 0 || lm.measure >= measureCount) continue;
-		// A non-positive measureLength would produce non-finite ticks.
-		if (!Number.isFinite(lm.measureLength) || lm.measureLength <= 0) continue;
-		const noteNumber = laneNoteMap[lane] ?? laneNoteMap[lm.laneID] ?? laneToStaff(lane)?.midi;
-		if (noteNumber === undefined) {
-			const key = `lane-${lane}`;
-			if (!warned.has(key)) {
-				warned.add(key);
-				warnings.push(`lane ${lane} has no GM note; ${lm.notes.length} hit(s) skipped`);
-			}
-			continue;
-		}
-		// Overrides can carry non-note values; 128+ or NaN would emit a byte
-		// the parser itself rejects (or a silent note 0).
-		if (!Number.isInteger(noteNumber) || noteNumber < 0 || noteNumber > 127) {
-			const key = `note-${lane}`;
-			if (!warned.has(key)) {
-				warned.add(key);
-				warnings.push(`lane ${lane} maps to invalid MIDI note ${noteNumber}; hits skipped`);
-			}
-			continue;
-		}
+	for (const { lm, noteNumber } of emissionGroups) {
 		for (const note of lm.notes) {
 			if (note.noteID === '00') continue;
 			const tick = Math.round(tickInMeasure(lm.measure, note.position / lm.measureLength));

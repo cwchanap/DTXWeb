@@ -167,6 +167,44 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		expect(roundTrip.notes['12'][0].notes.map((n) => n.position)).toEqual([1 / 192, 2 / 192]);
 	});
 
+	it('raises PPQ so widened-grid hits in a short bar keep distinct ticks', () => {
+		// toPattern() can emit 768-cell patterns; in a 1/4 bar at 480 PPQ
+		// cells 1 and 2 both round onto tick 1 and merge on reimport.
+		const cells = new Array(768).fill('00');
+		cells[1] = '01';
+		cells[2] = '01';
+		const dtx = dtxFromText(
+			['#BPM: 120', '#00002: 0.25', `#00013: ${cells.join('')}`].join('\r\n')
+		);
+
+		const { data, warnings } = dtxToMidi(dtx);
+		const parsed = parseMidi(data);
+
+		// The tightest same-note spacing (1/768 of a 1/4 bar) needs
+		// 1/(4 * 0.25 * 1/768) = 768 PPQ — each cell gets its own tick.
+		expect(parsed.ticksPerQuarter).toBe(768);
+		expect(warnings).toEqual([]);
+		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([1, 2]);
+
+		const roundTrip = midiToDtx(parsed);
+		expect(roundTrip.collisions).toBe(0);
+		expect(roundTrip.notes['13'][0].notes).toHaveLength(2);
+	});
+
+	it('warns when hits sit closer than the 15-bit PPQ limit separates', () => {
+		// Adjacent 768-cell hits in a 1/256 bar would need 49152 PPQ — past
+		// the 0x7fe0 cap — so the export reports that onsets may merge.
+		const cells = new Array(768).fill('00');
+		cells[1] = '01';
+		cells[2] = '01';
+		const dtx = dtxFromText(
+			['#BPM: 120', '#00002: 0.00390625', `#00013: ${cells.join('')}`].join('\r\n')
+		);
+
+		const { warnings } = dtxToMidi(dtx);
+		expect(warnings.some((w) => w.includes('spaced closer'))).toBe(true);
+	});
+
 	it('rounds the division to a multiple of 32 so meter changes land on integer bar ticks', () => {
 		// 7/128 bars need ceil(48/(7/128)) = 878 PPQ for the slot grid, but a
 		// 7/128 bar then spans 192.0625 ticks: the next meter change would

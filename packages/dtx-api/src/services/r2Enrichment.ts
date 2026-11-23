@@ -206,6 +206,12 @@ const probeChartHeaderLevel = async (
 		const buffer = await body.arrayBuffer();
 		const truncated = buffer.byteLength > maxBytes;
 		let head = decodeArrayBufferWithBomDetection(buffer);
+		// NUL characters in the decoded header mean the bytes are an
+		// encoding the decoder could not place — undecodable, not unrated.
+		// Reporting unprobed keeps the caller from reserving the object as
+		// a proven rating-less chart (or pairing it positionally off a
+		// rating nobody read).
+		if (head.includes('\u0000')) return undefined;
 		if (truncated) {
 			// A full window means the file may continue past it —
 			// the last line can be cut mid-value (`#DLEVEL: 45` of a
@@ -655,21 +661,66 @@ export const discoverCatalogFiles = async (
 		// nothing either way — leave the row and the key to the fallback.
 	}
 
-	// Pair remaining rows with remaining keys in difficulty order so the
-	// positional pairing does not swap charts. Compare on the normalized
-	// scale like claimOrder — the raw column mixes encodings, so raw
-	// 60 < 450 sorts the 6.00 chart below the 4.50 one.
+	// Content-verify the remaining charts before pairing positionally:
+	// filename order is not a difficulty signal (numbered exports like
+	// 01.dtx/02.dtx can rate 6.00 then 4.50 on the normalized scale), so
+	// pairing sorted rows with sorted keys swaps charts whenever the two
+	// orders disagree. Probe each remaining object's #DLEVEL like the
+	// set.def claim loop does: each row takes the first unused key whose
+	// probed level equals its own — identical metadata means that file
+	// IS the row's chart. A proven-unrated object (explicit #DLEVEL 0 or
+	// a complete-read miss) is reserved — parse_dtx_folder never
+	// cataloged it — and a probed level no unclaimed row shares proves
+	// the object is nobody's chart, so it is reserved too rather than
+	// left to bind positionally. Unprobed keys stay positional.
 	const fallbackRows = dtxFiles
 		.map((file, index) => ({ file, index }))
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort(
 			(a, b) =>
-				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) ||
-				a.file.label.localeCompare(b.file.label) ||
-				a.index - b.index
+				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
+	const probedLevelByKey = new Map<string, number>();
+	if (fallbackRows.length > 0) {
+		await Promise.all(
+			dtxObjectKeys.map(async (key) => {
+				if (usedDtxKeys.has(key)) return;
+				const level = await probeChartHeaderLevel(bucket, key, logger);
+				if (level === undefined) return;
+				if (level === null || level === 0) {
+					usedDtxKeys.add(key);
+					return;
+				}
+				probedLevelByKey.set(key, level);
+			})
+		);
+		for (const row of fallbackRows) {
+			const rowLevel = normalizeLevel(row.file.level);
+			const key = dtxObjectKeys.find(
+				(candidate) =>
+					!usedDtxKeys.has(candidate) && probedLevelByKey.get(candidate) === rowLevel
+			);
+			if (!key) continue;
+			rowsClaimedBySetDef.add(row.index);
+			matchedKeysByRowIndex.set(row.index, key);
+			usedDtxKeys.add(key);
+		}
+		for (const key of probedLevelByKey.keys()) {
+			usedDtxKeys.add(key);
+		}
+	}
+
+	// What remains is genuinely positional: rows arrive in id order —
+	// the uploader's filename order (parse_dtx_folder emits rows in
+	// files.sort() order) — so pair remaining rows in row order with
+	// remaining keys in key order, reproducing the uploader's own
+	// row↔file correspondence instead of assuming filenames sort by
+	// difficulty.
+	const positionalRows = fallbackRows
+		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
+		.sort((a, b) => a.index - b.index);
 	const fallbackKeys = dtxObjectKeys.filter((key) => !usedDtxKeys.has(key));
-	for (const [fallbackIndex, row] of fallbackRows.entries()) {
+	for (const [fallbackIndex, row] of positionalRows.entries()) {
 		const key = fallbackKeys[fallbackIndex];
 		if (key) {
 			matchedKeysByRowIndex.set(row.index, key);

@@ -88,6 +88,15 @@ const MAX_CONCURRENT_R2_LIST = 4;
  */
 const CHART_LEVEL_PROBE_BYTES = 16 * 1024;
 
+/**
+ * The ambiguous root stem-claim reads deeper than the pairing window —
+ * a #DLEVEL behind a long #WAV/comment header is still a valid rating —
+ * but stays bounded: uploads allow 50 MiB per file and batches run four
+ * deep, so an unbounded read could buffer hundreds of MiB into one
+ * isolate. A miss past this window reports unprobed, not unrated.
+ */
+const CHART_LEVEL_DEEP_PROBE_BYTES = 1024 * 1024;
+
 type SetDefFileRef = {
 	file: string;
 	/**
@@ -169,32 +178,32 @@ const extractChartRawLevel = (text: string): number | undefined => {
 
 /**
  * Download a chart's head window and return its #DLEVEL on the normalized
- * scale. Returns null when the header was read but carries no parseable
- * #DLEVEL — parse_dtx_folder catalogs only non-zero-rated charts, so such
- * a file can never be a row's source, the same as an explicit `#DLEVEL 0`
- * (which returns 0). Returns undefined only when the object cannot be
- * fetched, so callers can still tell "probed unrated" apart from
- * "unprobed". A #DLEVEL below the probe window reads as unrated — the
- * same false negative the claim loop already tolerates as unprobed.
- * Pass maxBytes = null to fetch the whole object instead: only a
- * complete read proves "no #DLEVEL anywhere", which a caller that
- * disqualifies a chart on an unrated probe needs.
+ * scale. Returns null when the whole object was read but carries no
+ * parseable #DLEVEL — parse_dtx_folder catalogs only non-zero-rated
+ * charts, so such a file can never be a row's source, the same as an
+ * explicit `#DLEVEL 0` (which returns 0). Returns undefined when the
+ * object cannot be fetched OR the window cut the file short — a
+ * truncated window cannot prove "no #DLEVEL anywhere", so a miss there
+ * is unprobed rather than unrated.
  */
 const probeChartHeaderLevel = async (
 	bucket: R2Bucket,
 	key: string,
 	logger: WorkerLogger,
-	maxBytes: number | null = CHART_LEVEL_PROBE_BYTES
+	maxBytes: number = CHART_LEVEL_PROBE_BYTES
 ): Promise<number | null | undefined> => {
 	try {
-		const body =
-			maxBytes === null
-				? await bucket.get(key)
-				: await bucket.get(key, { range: { offset: 0, length: maxBytes } });
+		// Request one byte past the window: a short reply means EOF was
+		// reached and the scan was complete, while a full reply proves
+		// the file continues and a miss is only "unprobed".
+		const body = await bucket.get(key, {
+			range: { offset: 0, length: maxBytes + 1 }
+		});
 		if (!body) return undefined;
 		const buffer = await body.arrayBuffer();
+		const truncated = buffer.byteLength > maxBytes;
 		let head = decodeArrayBufferWithBomDetection(buffer);
-		if (maxBytes !== null && buffer.byteLength === maxBytes) {
+		if (truncated) {
 			// A full window means the file may continue past it —
 			// the last line can be cut mid-value (`#DLEVEL: 45` of a
 			// truncated `455` reads as level 4.50, not 4.55). Drop
@@ -202,7 +211,8 @@ const probeChartHeaderLevel = async (
 			head = head.slice(0, head.lastIndexOf('\n') + 1);
 		}
 		const rawLevel = extractChartRawLevel(head);
-		return rawLevel === undefined ? null : normalizeLevel(rawLevel);
+		if (rawLevel === undefined) return truncated ? undefined : null;
+		return normalizeLevel(rawLevel);
 	} catch (err) {
 		logger.warn('chart header level probe failed; treating chart as unprobed', {
 			key,
@@ -531,15 +541,16 @@ export const discoverCatalogFiles = async (
 									.toLowerCase() === stem
 						);
 						if (rootCandidate) {
-							// Read the whole object, not the probe window:
-							// a #DLEVEL deeper than 16 KiB is still a valid
-							// rating, and only a complete miss proves the root
-							// copy unrated.
+							// Read deeper than the pairing window: a
+							// #DLEVEL behind a long header is still a
+							// valid rating. A file outgrowing the window
+							// reports unprobed and keeps its claim — only
+							// a complete miss proves the root copy unrated.
 							const rootLevel = await probeChartHeaderLevel(
 								bucket,
 								rootCandidate.key,
 								logger,
-								null
+								CHART_LEVEL_DEEP_PROBE_BYTES
 							);
 							if (rootLevel === 0 || rootLevel === null) {
 								// Unrated — explicit #DLEVEL 0 or no #DLEVEL in

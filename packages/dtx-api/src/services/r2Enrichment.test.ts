@@ -1995,9 +1995,10 @@ describe('discoverCatalogFiles', () => {
 			silentLogger
 		);
 
-		// The probe is a bounded header read, not a full-body download.
+		// The probe is a bounded header read, not a full-body download —
+		// it asks for one byte past the window to detect EOF.
 		expect(bucket.get).toHaveBeenCalledWith('42/hard.dtx', {
-			range: { offset: 0, length: 16384 }
+			range: { offset: 0, length: 16385 }
 		});
 		expect(discovery.charts).toEqual([
 			{
@@ -2793,15 +2794,76 @@ describe('discoverCatalogFiles', () => {
 			silentLogger
 		);
 
-		// The ambiguous root candidate gets a full read, not the bounded
-		// probe window that would miss its #DLEVEL.
-		expect(bucket.get).toHaveBeenCalledWith('42/solo.dtx');
+		// The ambiguous root candidate gets the deep bounded read that
+		// reaches past the 16-KiB pairing window to its #DLEVEL.
+		expect(bucket.get).toHaveBeenCalledWith('42/solo.dtx', {
+			range: { offset: 0, length: 1024 * 1024 + 1 }
+		});
 		expect(discovery.charts).toEqual([
 			{
 				label: 'SOLO',
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/solo.dtx',
 				fileSizeBytes: 17000,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('never buffers a multi-MiB root stem-claim candidate whole', async () => {
+		// Same root-vs-nested layout, but the root chart is 1.5 MiB and its
+		// #DLEVEL sits past the deep window: the probe reports unprobed
+		// rather than downloading the whole object, so the rated root
+		// neither displaces nor is reserved — the nested sibling keeps the
+		// row and the root stays claimable for the fallback.
+		const rootBody = `#TITLE: Song\n#COMMENT ${'x'.repeat(1530000)}\n#DLEVEL: 60\n`;
+		const chartBodies: Record<string, string> = {
+			'42/song/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/song/solo.dtx': '#TITLE: Copy\n#DLEVEL: 60\n',
+			'42/solo.dtx': rootBody
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/song/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: rootBody.length, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(
+				async (key: string, options?: { range?: { offset: number; length: number } }) => {
+					const full = encodeToBuffer(chartBodies[key] ?? '');
+					const range = options?.range;
+					return {
+						arrayBuffer: async () =>
+							range ? full.slice(range.offset, range.offset + range.length) : full
+					};
+				}
+			)
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		// The read stays bounded by the deep window even though the object
+		// is larger — no unbounded get() of an owner-uploaded file.
+		expect(vi.mocked(bucket.get)).toHaveBeenCalledWith('42/solo.dtx', {
+			range: { offset: 0, length: 1024 * 1024 + 1 }
+		});
+		expect(vi.mocked(bucket.get)).not.toHaveBeenCalledWith('42/solo.dtx');
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/song/solo.dtx',
+				fileSizeBytes: 300,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

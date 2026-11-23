@@ -600,13 +600,19 @@ export const discoverCatalogFiles = async (
 
 	// Bind still-unclaimed rows to a unique unused chart whose filename
 	// stem equals the row label — parse_dtx_folder catalogs unlisted
-	// charts under their stem, so a one-to-one stem match is the row's
-	// own file, not a positional guess. The same root-or-set.def-sibling
-	// scope as the leftover-ref stem claim applies: deeper nested files
-	// are never a row's chart. Stems or labels shared by more than one
-	// candidate stay ambiguous and fall through to the sorted fallback,
-	// whose level/filename pairing can otherwise swap difficulties when
-	// the two orders disagree.
+	// charts under their stem, so a one-to-one stem match is likely the
+	// row's own file, not a positional guess. Likely, not provably: the
+	// stem match claims the row only when the candidate's probed #DLEVEL
+	// equals the row's level on the normalized scale — the same identity
+	// check the set.def claim loop applies to named refs. A confirmed
+	// unrated candidate (explicit #DLEVEL 0 or a complete-read miss)
+	// never produced a row, so it is reserved rather than left for the
+	// positional fallback to bind to an unrelated row. The same
+	// root-or-set.def-sibling scope as the leftover-ref stem claim
+	// applies: deeper nested files are never a row's chart. Stems or
+	// labels shared by more than one candidate stay ambiguous and fall
+	// through to the sorted fallback, whose level/filename pairing can
+	// otherwise swap difficulties when the two orders disagree.
 	const unusedKeysByStem = new Map<string, string[]>();
 	for (const key of dtxObjectKeys) {
 		if (usedDtxKeys.has(key)) continue;
@@ -629,9 +635,24 @@ export const discoverCatalogFiles = async (
 	for (const [stem, keys] of unusedKeysByStem) {
 		const rows = unclaimedRowsByLabel.get(stem);
 		if (keys.length !== 1 || rows?.length !== 1) continue;
-		rowsClaimedBySetDef.add(rows[0]);
-		matchedKeysByRowIndex.set(rows[0], keys[0]);
-		usedDtxKeys.add(keys[0]);
+		// Read deeper than the pairing window like the root stem-claim
+		// path — a #DLEVEL behind a long header is still a valid rating.
+		const probed = await probeChartHeaderLevel(
+			bucket,
+			keys[0],
+			logger,
+			CHART_LEVEL_DEEP_PROBE_BYTES
+		);
+		const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
+		if (rowLevel !== 0 && probed === rowLevel) {
+			rowsClaimedBySetDef.add(rows[0]);
+			matchedKeysByRowIndex.set(rows[0], keys[0]);
+			usedDtxKeys.add(keys[0]);
+		} else if (probed === 0 || probed === null) {
+			usedDtxKeys.add(keys[0]);
+		}
+		// An unprobed read or a rating that names a different chart proves
+		// nothing either way — leave the row and the key to the fallback.
 	}
 
 	const fallbackRows = dtxFiles

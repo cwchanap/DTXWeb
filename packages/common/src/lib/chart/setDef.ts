@@ -18,15 +18,18 @@ const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
 /**
  * Pure SET.def parser shared by the local SimFile parser, the web editor's
  * server-side metadata load, and the dtx-api R2 catalog matcher. Accepts both
- * space and colon directive separators, case-insensitive keys, and LF or CRLF
- * line endings. Labels and file names are captured whole (multiword values,
- * subdirectories); path normalization is left to consumers.
+ * space and colon directive separators, case-insensitive keys, LF or CRLF
+ * line endings, and leading whitespace before a directive — the desktop
+ * uploader's parse_set_def_labels trims each line before matching, so an
+ * indented directive still produced a row label at upload time. Labels and
+ * file names are captured whole (multiword values, subdirectories); path
+ * normalization is left to consumers.
  *
  * Only complete label+file pairs on positive numeric slots are returned,
  * sorted by level — slots above the conventional L1–L5 range are kept.
  */
 export const parseSetDef = (text: string): ParsedSetDef => {
-	const lines = text.split(/\r?\n/);
+	const lines = text.split(/\r?\n/).map((line) => line.trimStart());
 
 	const titleLine = lines.find((line) => titlePattern.test(line));
 	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/i, '').trim() : '';

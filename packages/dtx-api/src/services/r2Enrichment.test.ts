@@ -1984,6 +1984,7 @@ describe('discoverCatalogFiles', () => {
 		// basic.dtx instead of claiming hard.dtx and forcing a swap.
 		const chartBodies: Record<string, string> = {
 			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./\n#L2LABEL BASIC\n#L2FILE hard.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
 			'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
 		};
 		const bucket = {
@@ -3141,6 +3142,93 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/chart01.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('honours an indented set.def directive like the uploader does', async () => {
+		// parse_set_def_labels trims each line before matching, so the
+		// uploader applied this indented #L1 mapping when it cataloged
+		// the BASIC row. Dropping the mapping leaves the row to the
+		// stem/fallback paths, which bound the unrated basic.dtx instead
+		// of the chart the SET.def named.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '  #L1LABEL BASIC\n\t#L1FILE a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not let a confirmed unrated same-stem file claim the row', async () => {
+		// A unique stem match is only a name hint: basic.dtx probes as
+		// #DLEVEL 0 — parse_dtx_folder never catalogs unrated charts, so
+		// it cannot be the row's source. It must stay reserved rather than
+		// claim the row or be bound to it by the sorted fallback.
+		const chartBodies: Record<string, string> = {
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/a.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

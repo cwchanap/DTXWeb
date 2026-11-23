@@ -109,6 +109,16 @@ describe('parseSetDef', () => {
 
 		expect(result.levels[0]?.fileName).toBe('.\\dir\\bas.dtx');
 	});
+
+	it('accepts directives indented by whitespace', () => {
+		// The desktop uploader's parse_set_def_labels trims each line
+		// before matching, so an indented directive still produced a
+		// row label at upload time — the shared parser must see it too.
+		const result = parseSetDef('  #TITLE Song\n\t#L1LABEL BASIC\n  #L1FILE bas.dtx\n');
+
+		expect(result.title).toBe('Song');
+		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'bas.dtx' }]);
+	});
 });
 
 describe('normalizeSetDefFileName', () => {

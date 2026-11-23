@@ -655,12 +655,16 @@ export const discoverCatalogFiles = async (
 		// nothing either way — leave the row and the key to the fallback.
 	}
 
+	// Pair remaining rows with remaining keys in difficulty order so the
+	// positional pairing does not swap charts. Compare on the normalized
+	// scale like claimOrder — the raw column mixes encodings, so raw
+	// 60 < 450 sorts the 6.00 chart below the 4.50 one.
 	const fallbackRows = dtxFiles
 		.map((file, index) => ({ file, index }))
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort(
 			(a, b) =>
-				a.file.level - b.file.level ||
+				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) ||
 				a.file.label.localeCompare(b.file.label) ||
 				a.index - b.index
 		);

@@ -822,6 +822,12 @@ describe('discoverCatalogFiles', () => {
 		// already-prefixed-key shortcut — without preserving the marker the
 		// row binds the root-level `42/basic.dtx` decoy instead. A bare
 		// `42/advanced.dtx` (no `./`) still takes the already-prefixed path.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE .\\42\\basic.dtx\n#L2LABEL ADVANCED\n#L2FILE 42/advanced.dtx\n',
+			'42/42/basic.dtx': '#TITLE: Song\n#DLEVEL: 1\n',
+			'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 5\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -831,11 +837,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer(
-						'#L1LABEL BASIC\n#L1FILE .\\42\\basic.dtx\n#L2LABEL ADVANCED\n#L2FILE 42/advanced.dtx\n'
-					)
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -1304,6 +1307,11 @@ describe('discoverCatalogFiles', () => {
 		// from R2. The sorted-key fallback must NOT assign another .dtx
 		// key (other.dtx) to the Advanced row — it should return null so
 		// the client sees the chart as unavailable.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 1\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1312,11 +1320,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/other.dtx', size: 999, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer(
-						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL ADVANCED\n#L2FILE advanced.dtx\n'
-					)
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -1571,6 +1576,11 @@ describe('discoverCatalogFiles', () => {
 		// second entry overwrites the first and both DB rows resolve to the
 		// same R2 object (orphaning the other file). Each row must claim a
 		// distinct file.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+			'42/basic2.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1579,11 +1589,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/basic2.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer(
-						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n'
-					)
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -1623,6 +1630,11 @@ describe('discoverCatalogFiles', () => {
 		// Three DB rows share label "BASIC" but SET.def only defines two
 		// L-slots for that label. The third row has no remaining SET.def
 		// entry to consume and must fall through to the sorted-key fallback.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+			'42/basic2.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1632,11 +1644,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/basic3.dtx', size: 700, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer(
-						'#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n'
-					)
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -1719,6 +1728,10 @@ describe('discoverCatalogFiles', () => {
 	it('ignores non-positive L0 slots instead of letting them claim a label queue', async () => {
 		// #L0 is not a real chart slot. If it entered the label queue it would
 		// shift()-claim the first matching row's file ahead of the real L1 entry.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L0LABEL BASIC\n#L0FILE ghost.dtx\n#L1LABEL BASIC\n#L1FILE basic.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 1\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1727,11 +1740,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/ghost.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer(
-						'#L0LABEL BASIC\n#L0FILE ghost.dtx\n#L1LABEL BASIC\n#L1FILE basic.dtx\n'
-					)
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -1760,6 +1770,14 @@ describe('discoverCatalogFiles', () => {
 		// Two rows share label "DUP". L1 is written after L2 in the file, but
 		// the first matching DB row must still claim L1's file — queues are
 		// accumulated in sorted L-slot order.
+		// The probed #DLEVELs match no row's level, so claiming exercises
+		// the non-exact path — L-slot order decides which file each row
+		// takes, which is the mechanism under test.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L2LABEL DUP\n#L2FILE b.dtx\n#L1LABEL DUP\n#L1FILE a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 9\n',
+			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 9\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1768,9 +1786,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer('#L2LABEL DUP\n#L2FILE b.dtx\n#L1LABEL DUP\n#L1FILE a.dtx\n')
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -2228,6 +2245,109 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/basic.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('disqualifies a one-row/one-ref placeholder whose header omits #DLEVEL', async () => {
+		// Same one-row/one-ref layout as the zero-rated test, but the
+		// placeholder's complete read finds no #DLEVEL at all. That is a
+		// proven unrated chart — not an unprobed one — so it must be
+		// disqualified like an explicit `#DLEVEL 0` instead of staying
+		// eligible to claim the row over the unlisted real chart.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE placeholder.dtx\n',
+			'42/placeholder.dtx': '#TITLE: Song\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('binds unclaimed rows to unlisted charts by filename stem when level and name orders disagree', async () => {
+		// The placeholder's #DLEVEL 0 disqualifies the only SET.def ref,
+		// leaving both rows unclaimed. The uploader cataloged the unlisted
+		// files under their filename stems, so a unique stem match is the
+		// row's own chart — the positional fallback would pair level-sorted
+		// rows with name-sorted keys and swap the previews because
+		// advanced.dtx sorts before basic.dtx.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE placeholder.dtx\n',
+			'42/placeholder.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+			'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/advanced.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'ADVANCED', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'ADVANCED',
+				level: 50,
+				fileUrl: 'https://cdn.example.test/42/advanced.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
@@ -3018,6 +3138,13 @@ describe('discoverCatalogFiles', () => {
 			// silently failed, the sorted-key fallback would hand it to the
 			// first row instead of leaving it unused — making this test fail
 			// rather than pass by coincidence.
+			const chartBodies: Record<string, string> = {
+				'1004/set.def': fixtureText,
+				'1004/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'1004/extra.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'1004/maniac.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'1004/sub/lead.dtx': '#TITLE: Song\n#DLEVEL: 85\n'
+			};
 			const bucket = {
 				...makeBucket([
 					[
@@ -3029,7 +3156,9 @@ describe('discoverCatalogFiles', () => {
 						{ key: '1004/sub/lead.dtx', size: 900, uploaded: new Date() }
 					]
 				]),
-				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(fixtureText) }))
+				get: vi.fn(async (key: string) => ({
+					arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+				}))
 			} as unknown as R2Bucket;
 
 			// Seeded insert order (seed.sql chart 1004): the level-60 'Basic
@@ -3088,6 +3217,11 @@ describe('discoverCatalogFiles', () => {
 			// Raw #DLEVEL values mix two scales: 450 decodes to 4.50 while 60
 			// decodes to 6.00, so the 450 row is the easier chart and must
 			// claim the earlier L2 slot even though 60 < 450 numerically.
+			const chartBodies: Record<string, string> = {
+				'1004/set.def': fixtureText,
+				'1004/extra.dtx': '#TITLE: Song\n#DLEVEL: 450\n',
+				'1004/maniac.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			};
 			const bucket = {
 				...makeBucket([
 					[
@@ -3096,7 +3230,9 @@ describe('discoverCatalogFiles', () => {
 						{ key: '1004/maniac.dtx', size: 700, uploaded: new Date() }
 					]
 				]),
-				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(fixtureText) }))
+				get: vi.fn(async (key: string) => ({
+					arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+				}))
 			} as unknown as R2Bucket;
 
 			const discovery = await discoverCatalogFiles(

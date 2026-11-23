@@ -1462,9 +1462,9 @@ Find this block (lines ~302–322):
 <!-- Workspace Content -->
 <div class="mb-4">
 	<div class="mb-2 flex items-center">
-		<span class="mr-2 text-sm font-medium text-slate-500 dark:text-slate-400"
-			>Current workspace:</span
-		>
+		<span class="mr-2 text-sm font-medium text-slate-500 dark:text-slate-400">
+			Current workspace:
+		</span>
 		<span class="rounded bg-slate-100 px-2 py-1 font-mono text-sm dark:bg-slate-700">
 			{workspacePath}
 		</span>

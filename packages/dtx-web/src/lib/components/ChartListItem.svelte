@@ -72,9 +72,9 @@
 					<div
 						class="h-1.5 w-1.5 rounded-full bg-gradient-to-r from-purple-400 to-cyan-400"
 					></div>
-					<span class="text-xs font-medium tracking-wider text-purple-300 uppercase"
-						>#{item.displayId}</span
-					>
+					<span class="text-xs font-medium tracking-wider text-purple-300 uppercase">
+						#{item.displayId}
+					</span>
 				</div>
 				<h2
 					class="text-xl leading-tight font-bold text-slate-100 transition-colors duration-200 group-hover:text-purple-300"
@@ -370,9 +370,9 @@
 			<div>
 				<h3 class="text-lg font-semibold text-slate-100">Confirm Deletion</h3>
 				<p class="mt-1 text-slate-300">
-					Are you sure you want to delete "<span class="font-medium text-purple-300"
-						>{item.title}</span
-					>"?
+					Are you sure you want to delete "<span class="font-medium text-purple-300">
+						{item.title}
+					</span>"?
 				</p>
 			</div>
 		</div>

@@ -1672,13 +1672,15 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 						</div>
 						<div class="relative ml-auto">
 							{#if links[songIndex]}
-								<span class="text-cyan text-sm"
-									>Linked: {links[songIndex].title}</span
-								>
+								<span class="text-cyan text-sm">
+									Linked: {links[songIndex].title}
+								</span>
 								<button
 									class="text-faint hover:text-hi ml-2 text-xs underline"
-									onclick={() => (autocompleteFor = songIndex)}>change</button
+									onclick={() => (autocompleteFor = songIndex)}
 								>
+									change
+								</button>
 							{:else}
 								<button
 									class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-lg border px-3 py-1.5 text-sm"
@@ -1703,14 +1705,14 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 							{@const cloudCharts = cloudChartsBySong[songIndex] ?? []}
 							<div class="border-hairline rounded-lg border p-3">
 								<div class="mb-1 flex items-center gap-2 text-sm">
-									<span class="text-hi font-medium"
-										>{chart.difficultyLabel || 'DRUMS'}</span
-									>
+									<span class="text-hi font-medium">
+										{chart.difficultyLabel || 'DRUMS'}
+									</span>
 									<span class="text-faint">Lv {chart.drumLevel / 10}</span>
-									<span class="text-dim"
-										>· plays {chart.aggregate.playCount} · clears {chart
-											.aggregate.clearCount}</span
-									>
+									<span class="text-dim">
+										· plays {chart.aggregate.playCount} · clears {chart
+											.aggregate.clearCount}
+									</span>
 									{#if links[songIndex]}
 										{#if matchedId}
 											<span class="text-green ml-auto text-xs">
@@ -1741,9 +1743,9 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 										>
 											<option value="">— none —</option>
 											{#each cloudCharts as cc}
-												<option value={cc.id}
-													>{cc.label || 'chart'} (Lv {cc.level})</option
-												>
+												<option value={cc.id}>
+													{cc.label || 'chart'} (Lv {cc.level})
+												</option>
 											{/each}
 										</select>
 									</label>
@@ -1767,8 +1769,9 @@ Create `packages/dtx-desktop/src/renderer/src/components/Scores.svelte`:
 												<span
 													class:text-green-300={recent.cleared}
 													class:text-red-300={!recent.cleared}
-													>{recent.cleared ? 'Cleared' : 'Failed'}</span
 												>
+													{recent.cleared ? 'Cleared' : 'Failed'}
+												</span>
 												· {recent.rankLabel ?? '—'} · {recent.achievementRate ??
 													'—'}% · {recent.performedAt}
 											</li>

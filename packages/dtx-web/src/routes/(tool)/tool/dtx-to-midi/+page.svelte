@@ -302,8 +302,9 @@
 									<label
 										for="lane-{lane}"
 										class="min-w-[3rem] text-sm font-medium text-slate-300"
-										>{lane}:</label
 									>
+										{lane}:
+									</label>
 									<input
 										id="lane-{lane}"
 										type="number"

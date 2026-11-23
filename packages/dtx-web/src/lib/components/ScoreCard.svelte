@@ -106,9 +106,9 @@
 								<li
 									class="flex flex-wrap items-center gap-2 text-xs text-slate-300"
 								>
-									<span class="text-slate-500"
-										>{formatDate(recent.performedAt)}</span
-									>
+									<span class="text-slate-500">
+										{formatDate(recent.performedAt)}
+									</span>
 									<span
 										class:text-green-300={recent.cleared === true}
 										class:text-red-300={recent.cleared === false}
@@ -124,13 +124,13 @@
 									{#if recent.rankLabel}
 										<span class="text-amber-300">{recent.rankLabel}</span>
 									{/if}
-									<span class="text-cyan-300"
-										>{formatRate(recent.achievementRate)}</span
-									>
+									<span class="text-cyan-300">
+										{formatRate(recent.achievementRate)}
+									</span>
 									{#if recent.score != null}
-										<span class="text-slate-400"
-											>{formatScore(recent.score)}</span
-										>
+										<span class="text-slate-400">
+											{formatScore(recent.score)}
+										</span>
 									{/if}
 								</li>
 							{/each}

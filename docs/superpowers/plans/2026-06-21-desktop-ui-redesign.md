@@ -626,8 +626,10 @@ Reuse `Navbar.svelte`'s logic (`handleLogout`, `handleClearCache`, login) and pr
 			<button
 				class="bg-surface-2 text-red hover:text-hi flex items-center gap-1 rounded-lg px-2 py-1 text-xs"
 				onclick={handleLogout}
-				aria-label="Logout"><LogOut size={13} /> Logout</button
+				aria-label="Logout"
 			>
+				<LogOut size={13} /> Logout
+			</button>
 		{:else}
 			<button
 				class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"
@@ -1139,8 +1141,10 @@ Expected: FAIL.
 	<button
 		class="bg-surface-2 text-base-text hover:text-hi flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs"
 		onclick={onBack}
-		aria-label="Back to library"><ArrowLeft size={15} /> Back</button
+		aria-label="Back to library"
 	>
+		<ArrowLeft size={15} /> Back
+	</button>
 	<h1 class="font-display text-hi text-sm font-semibold">
 		DTX EDITOR <span class="text-dim">{title}</span>
 	</h1>
@@ -1150,9 +1154,9 @@ Expected: FAIL.
 			value={currentDtx}
 			onchange={(e) => onSwitchDifficulty((e.target as HTMLSelectElement).value)}
 		>
-			{#each difficulties as d}<option value={d.name}
-					>{d.name.replace('.dtx', '').toUpperCase()}</option
-				>{/each}
+			{#each difficulties as d}<option value={d.name}>
+					{d.name.replace('.dtx', '').toUpperCase()}
+				</option>{/each}
 		</select>
 	{/if}
 </div>

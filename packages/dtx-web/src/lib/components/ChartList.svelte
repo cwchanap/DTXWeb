@@ -277,8 +277,9 @@
 
 				<!-- Page Size Selector -->
 				<div class="flex items-center gap-2">
-					<span class="text-sm font-medium text-slate-300">{$_('chart_list.items')}:</span
-					>
+					<span class="text-sm font-medium text-slate-300">
+						{$_('chart_list.items')}:
+					</span>
 					<select
 						bind:value={pageSize}
 						onchange={() => handlePageSizeChange({ pageSize })}
@@ -387,8 +388,9 @@
 									<a
 										href={resolve(chartTitleHref(item, isBlog) ?? '/')}
 										class="hover:text-purple-300"
-										>{item.displayId}. {item.title}</a
 									>
+										{item.displayId}. {item.title}
+									</a>
 								{:else}
 									{item.displayId}. {item.title}
 								{/if}
@@ -450,9 +452,9 @@
 						</div>
 						{#if item.dtxFiles && item.dtxFiles.length > 0}
 							<div class="mt-3 flex items-center gap-2">
-								<span class="text-xs font-medium text-slate-400"
-									>{$_('blog.level')}:</span
-								>
+								<span class="text-xs font-medium text-slate-400">
+									{$_('blog.level')}:
+								</span>
 								<div class="flex flex-wrap gap-1">
 									{#each formatLevelDisplay(item.dtxFiles).split(', ') as level, index (index)}
 										<span

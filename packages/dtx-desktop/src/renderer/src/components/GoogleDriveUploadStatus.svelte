@@ -152,9 +152,12 @@
 				<p class="text-yellow text-sm">{$_(errorMessageKey(operation.errorCode))}</p>
 			{/if}
 			{#if cancelableStages.has(operation.stage)}
-				<button class="text-dim text-sm" onclick={() => handleCancel(operation.operationId)}
-					>{$_('googleDrive.upload.cancel')}</button
+				<button
+					class="text-dim text-sm"
+					onclick={() => handleCancel(operation.operationId)}
 				>
+					{$_('googleDrive.upload.cancel')}
+				</button>
 			{/if}
 		</section>
 	{/each}
@@ -170,8 +173,10 @@
 					class="text-cyan text-sm underline"
 					href={visibleOutcome.downloadUrl}
 					target="_blank"
-					rel="noopener noreferrer">{$_('googleDrive.upload.openLink')}</a
+					rel="noopener noreferrer"
 				>
+					{$_('googleDrive.upload.openLink')}
+				</a>
 				<p class="text-dim text-sm">{$_('googleDrive.upload.browserLink')}</p>
 			{/if}
 		</section>
@@ -183,29 +188,29 @@
 			<p class="text-yellow text-sm">{$_(errorMessageKey(visibleOutcome.errorCode))}</p>
 			{#each actionsFor(visibleOutcome.errorCode) as action (action)}
 				{#if action === 'retry' && onRetry}
-					<button class="text-dim text-sm" onclick={onRetry}
-						>{$_('googleDrive.upload.retry')}</button
-					>
+					<button class="text-dim text-sm" onclick={onRetry}>
+						{$_('googleDrive.upload.retry')}
+					</button>
 				{:else if action === 'reconnect'}
-					<button class="text-dim text-sm" onclick={handleReconnect}
-						>{$_('googleDrive.action.reconnect')}</button
-					>
+					<button class="text-dim text-sm" onclick={handleReconnect}>
+						{$_('googleDrive.action.reconnect')}
+					</button>
 				{:else if action === 'refreshConnection'}
-					<button class="text-dim text-sm" onclick={handleRefreshConnection}
-						>{$_('googleDrive.action.refresh')}</button
-					>
+					<button class="text-dim text-sm" onclick={handleRefreshConnection}>
+						{$_('googleDrive.action.refresh')}
+					</button>
 				{:else if action === 'changeFolder'}
-					<button class="text-dim text-sm" onclick={handleChangeFolder}
-						>{$_('googleDrive.changeFolder')}</button
-					>
+					<button class="text-dim text-sm" onclick={handleChangeFolder}>
+						{$_('googleDrive.changeFolder')}
+					</button>
 				{:else if action === 'recheckSharing'}
-					<button class="text-dim text-sm" onclick={handleRecheckSharing}
-						>{$_('googleDrive.recheckSharing')}</button
-					>
+					<button class="text-dim text-sm" onclick={handleRecheckSharing}>
+						{$_('googleDrive.recheckSharing')}
+					</button>
 				{:else if action === 'replace' && onCreateReplacement}
-					<button class="text-dim text-sm" onclick={onCreateReplacement}
-						>{$_('googleDrive.upload.replace')}</button
-					>
+					<button class="text-dim text-sm" onclick={onCreateReplacement}>
+						{$_('googleDrive.upload.replace')}
+					</button>
 				{/if}
 			{/each}
 		</section>

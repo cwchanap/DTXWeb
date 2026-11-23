@@ -28,19 +28,19 @@
 
 <div class="border-hairline rounded-lg border p-3">
 	<div class="mb-1 flex items-center gap-2 text-sm">
-		<span class="text-hi font-medium"
-			>{chart.difficultyLabel || $_('score.drums_fallback')}</span
-		>
-		<span class="text-faint"
-			>{$_('score.level_value', {
+		<span class="text-hi font-medium">
+			{chart.difficultyLabel || $_('score.drums_fallback')}
+		</span>
+		<span class="text-faint">
+			{$_('score.level_value', {
 				values: { value: normalizeLevel(chart.drumLevel, chart.drumLevelDec) }
-			})}</span
-		>
-		<span class="text-dim"
-			>{$_('score.plays_clears', {
+			})}
+		</span>
+		<span class="text-dim">
+			{$_('score.plays_clears', {
 				values: { plays: chart.aggregate.playCount, clears: chart.aggregate.clearCount }
-			})}</span
-		>
+			})}
+		</span>
 		{#if linked}
 			{#if matchedId}
 				<span class="text-green ml-auto text-xs"> {$_('score.matched')} </span>
@@ -64,10 +64,10 @@
 			>
 				<option value="">{$_('score.none')}</option>
 				{#each cloudCharts as cc (cc.id)}
-					<option value={cc.id}
-						>{cc.label || $_('score.chart_fallback')} ({$_('score.level_short')}
-						{formatCloudLevel(cc.level)})</option
-					>
+					<option value={cc.id}>
+						{cc.label || $_('score.chart_fallback')} ({$_('score.level_short')}
+						{formatCloudLevel(cc.level)})
+					</option>
 				{/each}
 			</select>
 		</label>

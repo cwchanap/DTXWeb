@@ -387,26 +387,31 @@
 									{/if}
 									<th
 										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
-										>File Name</th
 									>
+										File Name
+									</th>
 									<th
 										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
-										>Size</th
 									>
+										Size
+									</th>
 									<th
 										class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
-										>Last Modified</th
 									>
+										Last Modified
+									</th>
 									{#if simfileId && isDesktop && !disableUploads}
 										<th
 											class="px-4 py-2 text-left text-slate-700 dark:text-slate-300"
-											>Status</th
 										>
+											Status
+										</th>
 									{/if}
 									<th
 										class="px-4 py-2 text-center text-slate-700 dark:text-slate-300"
-										>Actions</th
 									>
+										Actions
+									</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -433,51 +438,57 @@
 												{/if}
 											</td>
 										{/if}
-										<td class="px-4 py-2 text-slate-800 dark:text-slate-200"
-											>{file.name}</td
-										>
-										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
-											>{formatFileSize(file.size)}</td
-										>
-										<td class="px-4 py-2 text-slate-600 dark:text-slate-400"
-											>{formatDate(file.lastModified)}</td
-										>
+										<td class="px-4 py-2 text-slate-800 dark:text-slate-200">
+											{file.name}
+										</td>
+										<td class="px-4 py-2 text-slate-600 dark:text-slate-400">
+											{formatFileSize(file.size)}
+										</td>
+										<td class="px-4 py-2 text-slate-600 dark:text-slate-400">
+											{formatDate(file.lastModified)}
+										</td>
 										{#if simfileId && isDesktop && !disableUploads}
 											<td class="px-4 py-2">
 												{#if uploadProgress[file.name] === 'pending'}
 													<span
 														class="rounded-sm bg-gray-100 px-2 py-1 text-xs font-medium text-gray-800 dark:bg-slate-600 dark:text-slate-200"
-														>Pending</span
 													>
+														Pending
+													</span>
 												{:else if uploadProgress[file.name] === 'uploading'}
 													<span
 														class="rounded-sm bg-blue-100 px-2 py-1 text-xs font-medium text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
-														>Uploading...</span
 													>
+														Uploading...
+													</span>
 												{:else if uploadProgress[file.name] === 'success'}
 													<span
 														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300"
-														>Uploaded</span
 													>
+														Uploaded
+													</span>
 												{:else if uploadProgress[file.name] === 'error'}
 													<span
 														class="rounded-sm bg-red-100 px-2 py-1 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-300"
-														>Failed</span
 													>
+														Failed
+													</span>
 												{:else if file.status === 'new'}
 													<span
 														class="rounded-sm bg-green-100 px-2 py-1 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300"
-														>New</span
 													>
+														New
+													</span>
 												{:else if file.status === 'replacing'}
 													<span
 														class="rounded-sm bg-yellow-100 px-2 py-1 text-xs font-medium text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300"
-														>Replacing</span
 													>
+														Replacing
+													</span>
 												{:else}
-													<span class="text-gray-500 dark:text-slate-400"
-														>-</span
-													>
+													<span class="text-gray-500 dark:text-slate-400">
+														-
+													</span>
 												{/if}
 											</td>
 										{/if}
@@ -496,14 +507,14 @@
 														<DownloadCloud />
 													</a>
 												{:else}
-													<span class="text-gray-400 dark:text-slate-500"
-														>-</span
-													>
+													<span class="text-gray-400 dark:text-slate-500">
+														-
+													</span>
 												{/if}
 											{:else}
-												<span class="text-gray-400 dark:text-slate-500"
-													>-</span
-												>
+												<span class="text-gray-400 dark:text-slate-500">
+													-
+												</span>
 											{/if}
 										</td>
 									</tr>

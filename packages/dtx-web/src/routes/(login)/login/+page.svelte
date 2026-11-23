@@ -120,9 +120,9 @@
 
 			<form class="space-y-4" onsubmit={handleLogin}>
 				<div>
-					<label for="email" class="mb-1 block text-sm font-medium text-gray-700"
-						>Email</label
-					>
+					<label for="email" class="mb-1 block text-sm font-medium text-gray-700">
+						Email
+					</label>
 					<input
 						type="email"
 						id="email"
@@ -134,9 +134,9 @@
 				</div>
 
 				<div>
-					<label for="password" class="mb-1 block text-sm font-medium text-gray-700"
-						>Password</label
-					>
+					<label for="password" class="mb-1 block text-sm font-medium text-gray-700">
+						Password
+					</label>
 					<input
 						type="password"
 						id="password"

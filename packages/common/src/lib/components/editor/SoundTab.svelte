@@ -206,29 +206,32 @@
 					soundChips.length > 0 ? Math.max(...soundChips.map((chip) => chip.id)) + 1 : 1;
 
 				store.currentSoundChip.set([...soundChips, new SoundChip('', nextId, 100, 0, '')]);
-			}}>New Sound</button
+			}}
 		>
+			New Sound
+		</button>
 	{/if}
 
 	<div class="overflow-auto" style="max-height: 80vh;">
 		<table class="w-full border-collapse">
 			<thead class={classes.tableHead}>
 				<tr>
-					<td class="w-[10%] border text-center {classes.border} {classes.text}"
-						>Active</td
-					>
-					<td class="w-[12%] border text-center {classes.border} {classes.text}">Label</td
-					>
+					<td class="w-[10%] border text-center {classes.border} {classes.text}">
+						Active
+					</td>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}">
+						Label
+					</td>
 					<td class="w-[8%] border text-center {classes.border} {classes.text}">ID</td>
-					<td class="w-[12%] border text-center {classes.border} {classes.text}"
-						>Volume</td
-					>
-					<td class="w-[12%] border text-center {classes.border} {classes.text}"
-						>Position</td
-					>
-					<td class="w-[12%] border text-center {classes.border} {classes.text}"
-						>Key Binding</td
-					>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}">
+						Volume
+					</td>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}">
+						Position
+					</td>
+					<td class="w-[12%] border text-center {classes.border} {classes.text}">
+						Key Binding
+					</td>
 					<td class="w-[34%] border text-center {classes.border} {classes.text}">File</td>
 				</tr>
 			</thead>
@@ -315,9 +318,9 @@
 										{chip.fileName}
 									</button>
 								{:else}
-									<span class="text-sm italic {classes.textMuted}"
-										>No file assigned</span
-									>
+									<span class="text-sm italic {classes.textMuted}">
+										No file assigned
+									</span>
 								{/if}
 							{:else if chip.file}
 								<!-- For local charts with files -->

@@ -77,9 +77,9 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="disable-bgm-preview"
-			>Disable BGM in Preview:</label
-		>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="disable-bgm-preview">
+			Disable BGM in Preview:
+		</label>
 		<label
 			class="relative inline-flex items-center py-1 {isPreviewing
 				? 'cursor-not-allowed opacity-50'
@@ -106,10 +106,9 @@
 				: ''}"
 			onclick={handlePlay}
 			disabled={!isEditorReady}
-			>{#if isPreviewing}<CirclePause class="h-5 w-5" />{:else}<Play
-					class="h-5 w-5"
-				/>{/if}</button
 		>
+			{#if isPreviewing}<CirclePause class="h-5 w-5" />{:else}<Play class="h-5 w-5" />{/if}
+		</button>
 	</div>
 </div>
 

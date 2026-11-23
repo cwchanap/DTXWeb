@@ -7,7 +7,7 @@
 
 <div data-testid="notation-stub"></div>
 {#if onSeek}
-	<button data-testid="stub-seek" onclick={() => onSeek({ measure: 0, fraction: 0.5 })}
-		>seek</button
-	>
+	<button data-testid="stub-seek" onclick={() => onSeek({ measure: 0, fraction: 0.5 })}>
+		seek
+	</button>
 {/if}

@@ -34,71 +34,81 @@
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Q</kbd
 					>
+						Q
+					</kbd>
 					<span>Toggle editing mode</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<span
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Drag</span
 					>
+						Drag
+					</span>
 					<span>Select multiple notes</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Del</kbd
 					>
+						Del
+					</kbd>
 					<span>Delete selected notes</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Ctrl+X</kbd
 					>
+						Ctrl+X
+					</kbd>
 					<span>Cut selected notes</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Ctrl+C</kbd
 					>
+						Ctrl+C
+					</kbd>
 					<span>Copy selected notes</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Ctrl+V</kbd
 					>
+						Ctrl+V
+					</kbd>
 					<span>Paste notes</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<kbd
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Ctrl+Z</kbd
 					>
+						Ctrl+Z
+					</kbd>
 					<span>Undo last action</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<span
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Right-click</span
 					>
+						Right-click
+					</span>
 					<span>Delete note</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<span
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Left-click</span
 					>
+						Left-click
+					</span>
 					<span>Add note (in edit mode)</span>
 				</div>
 				<div class="flex items-center space-x-2">
 					<span
 						class="rounded border border-purple-500/50 bg-purple-600/40 px-2 py-1 text-xs font-semibold text-purple-200"
-						>Key Bindings</span
 					>
+						Key Bindings
+					</span>
 					<span>Press bound keys to switch active note</span>
 				</div>
 			</div>

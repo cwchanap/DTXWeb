@@ -365,9 +365,9 @@
 
 						<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 							<div>
-								<label for="title" class="block text-sm font-medium text-slate-300"
-									>Title</label
-								>
+								<label for="title" class="block text-sm font-medium text-slate-300">
+									Title
+								</label>
 								<input
 									id="title"
 									type="text"
@@ -376,9 +376,12 @@
 								/>
 							</div>
 							<div>
-								<label for="artist" class="block text-sm font-medium text-slate-300"
-									>Artist</label
+								<label
+									for="artist"
+									class="block text-sm font-medium text-slate-300"
 								>
+									Artist
+								</label>
 								<input
 									id="artist"
 									type="text"
@@ -387,9 +390,9 @@
 								/>
 							</div>
 							<div>
-								<label for="level" class="block text-sm font-medium text-slate-300"
-									>Difficulty Level</label
-								>
+								<label for="level" class="block text-sm font-medium text-slate-300">
+									Difficulty Level
+								</label>
 								<input
 									id="level"
 									type="number"
@@ -400,9 +403,9 @@
 								/>
 							</div>
 							<div>
-								<label for="bpm" class="block text-sm font-medium text-slate-300"
-									>BPM</label
-								>
+								<label for="bpm" class="block text-sm font-medium text-slate-300">
+									BPM
+								</label>
 								<input
 									id="bpm"
 									type="number"
@@ -415,9 +418,9 @@
 						</div>
 
 						<div class="mt-4">
-							<label for="comment" class="block text-sm font-medium text-slate-300"
-								>Comment</label
-							>
+							<label for="comment" class="block text-sm font-medium text-slate-300">
+								Comment
+							</label>
 							<input
 								id="comment"
 								type="text"
@@ -454,9 +457,12 @@
 										class="rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 									>
 										{#each availableLanes as lane (lane)}
-											<option value={lane} class="bg-slate-900 text-slate-200"
-												>{lane} - {getLaneName(lane)}</option
+											<option
+												value={lane}
+												class="bg-slate-900 text-slate-200"
 											>
+												{lane} - {getLaneName(lane)}
+											</option>
 										{/each}
 									</select>
 								</div>

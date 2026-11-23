@@ -61,16 +61,22 @@
 				<nav class="hidden space-x-6 md:flex">
 					<a
 						href={resolve('/blog')}
-						class="text-slate-300 transition-colors hover:text-purple-400">Charts</a
+						class="text-slate-300 transition-colors hover:text-purple-400"
 					>
+						Charts
+					</a>
 					<a
 						href={resolve('/editor')}
-						class="text-slate-300 transition-colors hover:text-green-400">Editor</a
+						class="text-slate-300 transition-colors hover:text-green-400"
 					>
+						Editor
+					</a>
 					<a
 						href={resolve('/tool')}
-						class="text-slate-300 transition-colors hover:text-cyan-400">Tools</a
+						class="text-slate-300 transition-colors hover:text-cyan-400"
 					>
+						Tools
+					</a>
 				</nav>
 			</div>
 		</div>

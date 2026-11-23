@@ -60,17 +60,17 @@
 		</button>
 		<div class="relative ml-auto" data-cloud-song-autocomplete-trigger>
 			{#if link}
-				<span class="text-cyan text-sm"
-					>{$_('score.link.linked', { values: { title: link.title } })}</span
-				>
+				<span class="text-cyan text-sm">
+					{$_('score.link.linked', { values: { title: link.title } })}
+				</span>
 				<button
 					class="text-faint hover:text-hi ml-2 text-xs underline"
 					onclick={onAutocompleteToggle}
 					disabled={uploading}
 					aria-disabled={uploading}
 				>
-					{$_('score.link.change')}</button
-				>
+					{$_('score.link.change')}
+				</button>
 			{:else}
 				<button
 					class="border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 rounded-lg border px-3 py-1.5 text-sm"

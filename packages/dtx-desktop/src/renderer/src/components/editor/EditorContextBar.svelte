@@ -19,8 +19,10 @@
 	<button
 		class="bg-surface-2 text-base-text hover:text-hi flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs"
 		onclick={onBack}
-		aria-label="Back to library"><ArrowLeft size={15} /> Back</button
+		aria-label="Back to library"
 	>
+		<ArrowLeft size={15} /> Back
+	</button>
 	<h1 class="font-display text-hi text-sm font-semibold">
 		DTX EDITOR <span class="text-dim">{title}</span>
 	</h1>
@@ -31,9 +33,9 @@
 			onchange={(e) => onSwitchDifficulty((e.target as HTMLSelectElement).value)}
 			aria-label="Difficulty"
 		>
-			{#each difficulties as d (d.name)}<option value={d.name}
-					>{d.name.replace('.dtx', '').toUpperCase()}</option
-				>{/each}
+			{#each difficulties as d (d.name)}<option value={d.name}>
+					{d.name.replace('.dtx', '').toUpperCase()}
+				</option>{/each}
 		</select>
 	{/if}
 </div>

@@ -118,17 +118,17 @@
 				<span class="text-slate-900 dark:text-slate-100">{displayBpm || 'N/A'}</span>
 			</div>
 			<div class="col-span-1 flex items-center">
-				<label for="artist" class="mr-2 block text-slate-700 dark:text-slate-300"
-					>Artist:</label
-				>
+				<label for="artist" class="mr-2 block text-slate-700 dark:text-slate-300">
+					Artist:
+				</label>
 			</div>
 			<div class="col-span-7">
 				<span class="text-slate-900 dark:text-slate-100">{displayArtist || 'N/A'}</span>
 			</div>
 			<div class="col-span-1 flex items-center">
-				<label for="level" class="mr-2 block text-slate-700 dark:text-slate-300"
-					>Level:</label
-				>
+				<label for="level" class="mr-2 block text-slate-700 dark:text-slate-300">
+					Level:
+				</label>
 			</div>
 			<div class="col-span-7 flex">
 				{#each displayLevels() as level, index (`${level?.id ?? 'noid'}-${index}`)}
@@ -146,9 +146,9 @@
 			</div>
 			{#if showPublishingControls}
 				<div class="col-span-1 flex items-center">
-					<label for="display_id" class="mr-2 block text-slate-700 dark:text-slate-300"
-						>Display ID:</label
-					>
+					<label for="display_id" class="mr-2 block text-slate-700 dark:text-slate-300">
+						Display ID:
+					</label>
 				</div>
 				<div class="col-span-7">
 					<input
@@ -162,8 +162,9 @@
 					<label
 						for="publish_date"
 						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
-						>Publish Date:</label
 					>
+						Publish Date:
+					</label>
 				</div>
 				<div class="col-span-7">
 					<input
@@ -179,8 +180,9 @@
 						<label
 							for="is_published"
 							class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
-							>Published:</label
 						>
+							Published:
+						</label>
 					</div>
 					<div class="col-span-7">
 						<Switch
@@ -196,8 +198,9 @@
 					<label
 						for="download_link"
 						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
-						>Download Link:</label
 					>
+						Download Link:
+					</label>
 				</div>
 				<div class="col-span-7">
 					<input
@@ -211,8 +214,9 @@
 					<label
 						for="video_preview_link"
 						class="mr-2 mb-2 block text-slate-700 dark:text-slate-300"
-						>Video Preview Link:</label
 					>
+						Video Preview Link:
+					</label>
 				</div>
 				<div class="col-span-7">
 					<input

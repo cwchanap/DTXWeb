@@ -152,9 +152,9 @@
 		/>
 	</div>
 	<div class="flex items-center space-x-2">
-		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="measure-input"
-			>Number of Measures:</label
-		>
+		<label class="w-[15%] text-slate-300 2xl:w-1/3" for="measure-input">
+			Number of Measures:
+		</label>
 		<input
 			id="measure-input"
 			type="number"
@@ -232,8 +232,10 @@
 			<button
 				class="music-btn-secondary px-2 py-1"
 				onclick={handleGotoMeasure}
-				disabled={isPreviewing}>Go</button
+				disabled={isPreviewing}
 			>
+				Go
+			</button>
 		</div>
 	</div>
 </div>

@@ -59,46 +59,58 @@
 							? 'cursor-not-allowed text-slate-500'
 							: 'hover:bg-slate-700/50'}"
 						onclick={onNewFile}
-						disabled={isPreviewing}>New</button
+						disabled={isPreviewing}
 					>
+						New
+					</button>
 					<button
 						class="px-4 py-2 text-left text-slate-200 {isPreviewing
 							? 'cursor-not-allowed text-slate-500'
 							: 'hover:bg-slate-700/50'}"
 						onclick={onImportFile}
-						disabled={isPreviewing}>Import File</button
+						disabled={isPreviewing}
 					>
+						Import File
+					</button>
 					<button
 						class="px-4 py-2 text-left text-slate-200 {isPreviewing
 							? 'cursor-not-allowed text-slate-500'
 							: 'hover:bg-slate-700/50'}"
 						onclick={onImportFolder}
-						disabled={isPreviewing}>Import Folder</button
+						disabled={isPreviewing}
 					>
+						Import Folder
+					</button>
 					{#if currentWorkspace && currentWorkspace.dtxFiles.length > 1}
 						<button
 							class="px-4 py-2 text-left text-slate-200 {isPreviewing
 								? 'cursor-not-allowed text-slate-500'
 								: 'hover:bg-slate-700/50'}"
 							onclick={onShowDTXSwitcher}
-							disabled={isPreviewing}>Switch DTX</button
+							disabled={isPreviewing}
 						>
+							Switch DTX
+						</button>
 					{/if}
 					<button
 						class="px-4 py-2 text-left text-slate-200 {isPreviewing
 							? 'cursor-not-allowed text-slate-500'
 							: 'hover:bg-slate-700/50'}"
 						onclick={onExportFile}
-						disabled={isPreviewing}>Export File</button
+						disabled={isPreviewing}
 					>
+						Export File
+					</button>
 					{#if availableWorkspaces.length > 0}
 						<button
 							class="px-4 py-2 text-left text-slate-200 {isPreviewing
 								? 'cursor-not-allowed text-slate-500'
 								: 'hover:bg-slate-700/50'}"
 							onclick={onShowWorkspaceExporter}
-							disabled={isPreviewing}>Export Workspace</button
+							disabled={isPreviewing}
 						>
+							Export Workspace
+						</button>
 					{/if}
 				</div>
 			{/snippet}

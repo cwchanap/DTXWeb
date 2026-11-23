@@ -80,8 +80,10 @@
 			<button
 				class="bg-surface-2 text-red hover:text-hi flex items-center gap-1 rounded-lg px-2 py-1 text-xs"
 				onclick={handleLogout}
-				aria-label="Logout"><LogOut size={13} /> Logout</button
+				aria-label="Logout"
 			>
+				<LogOut size={13} /> Logout
+			</button>
 		{:else if !$authStore.isLoginVisible && !$authStore.isLoading}
 			<button
 				class="bg-magenta font-display flex items-center gap-2 rounded-lg px-4 py-1.5 text-xs font-semibold text-[#16001a]"

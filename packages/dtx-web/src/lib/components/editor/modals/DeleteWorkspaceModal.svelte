@@ -37,9 +37,9 @@
 
 			<div class="mb-6">
 				<p class="mb-3 text-gray-700">
-					Are you sure you want to delete the workspace <strong
-						>"{workspaceToDelete.name}"</strong
-					>?
+					Are you sure you want to delete the workspace <strong>
+						"{workspaceToDelete.name}"
+					</strong>?
 				</p>
 				<div class="mb-3 rounded-lg bg-gray-50 p-3">
 					<div class="text-sm text-gray-600">

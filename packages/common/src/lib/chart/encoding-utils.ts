@@ -85,7 +85,10 @@ export async function decodeFileWithSpecificEncoding(
 
 /**
  * Detects BOM (UTF-16LE, UTF-16BE or UTF-8) in an ArrayBuffer and decodes
- * accordingly, stripping the BOM character from the result.
+ * accordingly, stripping the BOM character from the result. When no BOM is
+ * present, UTF-16 is still detected from the zero-byte parity of the first
+ * pairs — the desktop decoder tries UTF-16LE/BE without a BOM, so BOM-less
+ * UTF-16 charts reach R2 — and anything else falls back to UTF-8.
  *
  * Used for raw byte sources (e.g. `R2Object.arrayBuffer()`) where the default
  * `text()` path always decodes as UTF-8 and would either garble UTF-16LE
@@ -111,8 +114,29 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 		// UTF-8 BOM
 		text = new TextDecoder('utf-8').decode(buffer);
 	} else {
-		// Default to UTF-8 (matches Workers' default text() behavior)
-		text = new TextDecoder('utf-8').decode(buffer);
+		// No BOM — but the desktop decoder also tries UTF-16LE/BE without
+		// a byte-order mark (DTX_DECODING_PRIORITY in
+		// packages/dtx-desktop/src-tauri/src/songs.rs), so a BOM-less
+		// UTF-16 chart can be a cataloged row's source. Such a file
+		// decodes as NUL-interleaved garbage under UTF-8: ASCII-heavy
+		// chart text is zero in every second byte (odd offsets for LE,
+		// even for BE). Detect that zero-byte parity over the first
+		// pairs; anything else defaults to UTF-8 (matching Workers'
+		// default text() behavior).
+		let evenZeros = 0;
+		let oddZeros = 0;
+		const pairs = Math.min(uint8.length >> 1, 512);
+		for (let i = 0; i < pairs; i++) {
+			if (uint8[i * 2] === 0) evenZeros++;
+			if (uint8[i * 2 + 1] === 0) oddZeros++;
+		}
+		const encoding =
+			oddZeros > evenZeros && oddZeros * 4 > pairs
+				? 'utf-16le'
+				: evenZeros > oddZeros && evenZeros * 4 > pairs
+					? 'utf-16be'
+					: 'utf-8';
+		text = new TextDecoder(encoding).decode(buffer);
 	}
 	// Strip BOM character if it survived decoding
 	if (text.charCodeAt(0) === 0xfeff) {

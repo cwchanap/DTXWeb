@@ -54,6 +54,10 @@ const encodeUtf16BeWithBom = (text: string): ArrayBuffer => {
 	return new Uint8Array([0xfe, 0xff, ...utf16Bytes]).buffer;
 };
 
+const encodeUtf16LeNoBom = (text: string): ArrayBuffer => encodeUtf16LeWithBom(text).slice(2);
+
+const encodeUtf16BeNoBom = (text: string): ArrayBuffer => encodeUtf16BeWithBom(text).slice(2);
+
 const makeBucket = (
 	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date }>>
 ): R2Bucket => {
@@ -683,9 +687,12 @@ describe('discoverCatalogFiles', () => {
 			bucket,
 			{
 				simfileId: 42,
+				// Rows are listed in uploader (filename-sorted) order —
+				// parse_dtx_folder emits catalog rows in files.sort()
+				// order — because the fallback pairs positionally.
 				dtxFiles: [
-					{ label: 'Advanced', level: 5 },
-					{ label: 'Basic', level: 1 }
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
 				],
 				publicBaseUrl: 'https://cdn.example.test'
 			},
@@ -694,17 +701,17 @@ describe('discoverCatalogFiles', () => {
 
 		expect(discovery.charts).toEqual([
 			{
-				label: 'Advanced',
-				level: 5,
-				fileUrl: 'https://cdn.example.test/42/z-advanced.dtx',
-				fileSizeBytes: 500,
-				fileEncoding: 'SHIFT_JIS'
-			},
-			{
 				label: 'Basic',
 				level: 1,
 				fileUrl: 'https://cdn.example.test/42/a-basic.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/z-advanced.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
@@ -1381,9 +1388,12 @@ describe('discoverCatalogFiles', () => {
 			bucket,
 			{
 				simfileId: 42,
+				// Rows in uploader (filename-sorted) order — the chart
+				// probes also fail (same throwing get), so pairing is
+				// positional and position is the uploader's file order.
 				dtxFiles: [
-					{ label: 'Advanced', level: 5 },
-					{ label: 'Basic', level: 1 }
+					{ label: 'Basic', level: 1 },
+					{ label: 'Advanced', level: 5 }
 				],
 				publicBaseUrl: 'https://cdn.example.test'
 			},
@@ -1398,17 +1408,17 @@ describe('discoverCatalogFiles', () => {
 		// Should fall through to sorted-key fallback instead of throwing
 		expect(discovery.charts).toEqual([
 			{
-				label: 'Advanced',
-				level: 5,
-				fileUrl: 'https://cdn.example.test/42/b-advanced.dtx',
-				fileSizeBytes: 500,
-				fileEncoding: 'SHIFT_JIS'
-			},
-			{
 				label: 'Basic',
 				level: 1,
 				fileUrl: 'https://cdn.example.test/42/a-basic.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 5,
+				fileUrl: 'https://cdn.example.test/42/b-advanced.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
@@ -1633,7 +1643,8 @@ describe('discoverCatalogFiles', () => {
 		const chartBodies: Record<string, string> = {
 			'42/set.def': '#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL BASIC\n#L2FILE basic2.dtx\n',
 			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
-			'42/basic2.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			'42/basic2.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/basic3.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
 		};
 		const bucket = {
 			...makeBucket([
@@ -1825,6 +1836,11 @@ describe('discoverCatalogFiles', () => {
 	it('lets the sorted-key fallback bind charts for directory-only #LxFILE references', async () => {
 		// `#L1FILE ./` / `.\` normalize to no filename — claiming the row
 		// would suppress the fallback even though unclaimed charts exist.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./\n#L2LABEL ADV\n#L2FILE .\\\n',
+			'42/aaa.dtx': '#TITLE: Song\n#DLEVEL: 1\n',
+			'42/bbb.dtx': '#TITLE: Song\n#DLEVEL: 2\n'
+		};
 		const bucket = {
 			...makeBucket([
 				[
@@ -1833,9 +1849,8 @@ describe('discoverCatalogFiles', () => {
 					{ key: '42/bbb.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
-			get: vi.fn(async () => ({
-				arrayBuffer: async () =>
-					encodeToBuffer('#L1LABEL BASIC\n#L1FILE ./\n#L2LABEL ADV\n#L2FILE .\\\n')
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
 			}))
 		} as unknown as R2Bucket;
 
@@ -3441,5 +3456,157 @@ describe('discoverCatalogFiles', () => {
 				}
 			]);
 		});
+	});
+
+	it.each([
+		['UTF-16LE', encodeUtf16LeNoBom],
+		['UTF-16BE', encodeUtf16BeNoBom]
+	])(
+		'claims a BOM-less %s chart by filename stem when no set.def exists',
+		async (_encodingName, encode) => {
+			// The desktop decoder tries UTF-16 without a byte-order mark, so
+			// such a chart is cataloged with a real rating. The header probe
+			// must decode it the same way — reading it as UTF-8 mistakes the
+			// NUL-interleaved bytes for a missing #DLEVEL and reserves the
+			// object as "proven unrated", leaving the row unbound.
+			const chartBody = encode('#TITLE: Song\n#DLEVEL: 60\n');
+			const bucket = {
+				...makeBucket([[{ key: '42/basic.dtx', size: 300, uploaded: new Date() }]]),
+				get: vi.fn(async () => ({ arrayBuffer: async () => chartBody }))
+			} as unknown as R2Bucket;
+
+			const discovery = await discoverCatalogFiles(
+				bucket,
+				{
+					simfileId: 42,
+					dtxFiles: [{ label: 'Basic', level: 60 }],
+					publicBaseUrl: 'https://cdn.example.test'
+				},
+				silentLogger
+			);
+
+			expect(discovery.charts).toEqual([
+				{
+					label: 'Basic',
+					level: 60,
+					fileUrl: 'https://cdn.example.test/42/basic.dtx',
+					fileSizeBytes: 300,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]);
+		}
+	);
+
+	it('pairs fallback rows by probed level when filename and rating orders disagree', async () => {
+		// Numbered exports carry no difficulty signal in their names:
+		// 01.dtx rates 6.00 (EXPERT) and 02.dtx rates 4.50 (NOVICE), so
+		// filename order disagrees with normalized-rating order. Pairing
+		// sorted rows with sorted keys would hand each difficulty the
+		// other's chart — probe the headers and match on level instead.
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 450\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// Uploader (filename-sorted) order: 01.dtx was cataloged
+				// first. SET.def named the labels but was not uploaded.
+				dtxFiles: [
+					{ label: 'Expert', level: 60 },
+					{ label: 'Novice', level: 450 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Expert',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Novice',
+				level: 450,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('reserves an unlisted rated chart instead of binding it positionally', async () => {
+		// 01.dtx is the EXPERT row's chart via set.def. 02.dtx probes 4.50 —
+		// a level no unclaimed row holds — so it is provably nobody's chart
+		// and must be reserved: if it leaked into the positional pairing it
+		// would bind the NOVICE row ahead of the unprobed 03.dtx.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXPERT\n#L1FILE 01.dtx\n',
+			'42/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 450\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/03.dtx', size: 400, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => {
+				if (key === '42/03.dtx') throw new Error('transient R2 error');
+				return { arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '') };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// A second row no set.def slot names: it reaches the
+				// fallback and pairs with 03.dtx, the only unprobed key.
+				dtxFiles: [
+					{ label: 'Expert', level: 60 },
+					{ label: 'Novice', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Expert',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Novice',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/03.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
 	});
 });

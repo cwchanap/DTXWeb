@@ -537,6 +537,33 @@ describe('encoding-utils', () => {
 			expect(decoded.charCodeAt(0)).not.toBe(0xfeff);
 		});
 
+		it.each([
+			[
+				'UTF-16LE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = codeUnit & 0xff;
+					bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+				}
+			],
+			[
+				'UTF-16BE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = (codeUnit >> 8) & 0xff;
+					bytes[i * 2 + 1] = codeUnit & 0xff;
+				}
+			]
+		])('decodes BOM-less %s from the zero-byte parity', (_name, writeUnit) => {
+			// The desktop decoder tries UTF-16 without a BOM, so such charts
+			// reach R2 — decoding them as UTF-8 interleaves NULs and hides
+			// every directive.
+			const text = '#TITLE: Song\n#DLEVEL: 60\n';
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				writeUnit(i, text.charCodeAt(i), utf16Bytes);
+			}
+			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+		});
+
 		it('returns empty string for empty buffer', () => {
 			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
 		});

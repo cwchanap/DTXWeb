@@ -3234,6 +3234,49 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('orders sorted-fallback rows on the normalized level scale', async () => {
+		// Raw row levels mix encodings: 450 decodes to 4.50 while 60
+		// decodes to 6.00, so NOVICE is the easier row. Sorting on the raw
+		// value (60 < 450) hands EXPERT the first key and swaps the
+		// previews; the normalized scale keeps the intended pairing.
+		const bucket = makeBucket([
+			[
+				{ key: '42/a-easy.dtx', size: 300, uploaded: new Date() },
+				{ key: '42/b-hard.dtx', size: 500, uploaded: new Date() }
+			]
+		]);
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'NOVICE', level: 450 },
+					{ label: 'EXPERT', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'NOVICE',
+				level: 450,
+				fileUrl: 'https://cdn.example.test/42/a-easy.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'EXPERT',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/b-hard.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	describe('e2e mixed-set.def fixture', () => {
 		// The committed e2e fixture (packages/e2e-web/fixtures/mixed-set.def)
 		// backs the chart-1004 catalog-pairing spec. It must stay valid

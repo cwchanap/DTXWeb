@@ -411,6 +411,20 @@ export const discoverCatalogFiles = async (
 		if (!levels) rowLevelsByLabel.set(label, (levels = new Set()));
 		levels.add(normalizeLevel(file.level));
 	}
+	// A one-row/one-ref label is deterministic only when SET.def names
+	// every .dtx object in the folder. When an unlisted chart exists, the
+	// single ref can be an unrated placeholder (#DLEVEL 0) that
+	// parse_dtx_folder skipped while cataloging the unlisted file under
+	// this label — claiming it unprobed would bind the placeholder and
+	// suppress the fallback that holds the row's real chart.
+	const referencedKeys = new Set<string>();
+	for (const refs of filesByLabel.values()) {
+		for (const ref of refs) {
+			const object = resolveSetDefObject(ref);
+			if (object) referencedKeys.add(object.key);
+		}
+	}
+	const hasUnlistedChart = dtxObjects.some((obj) => !referencedKeys.has(obj.key));
 	const fileLevelByRef = new Map<SetDefFileRef, number>();
 	const levelProbes: Promise<void>[] = [];
 	for (const [label, refs] of filesByLabel) {
@@ -418,8 +432,9 @@ export const discoverCatalogFiles = async (
 		// Probe only ambiguous groups: one row claiming its label's single
 		// reference is already deterministic. Ambiguity needs either side
 		// to multiply — multiple refs, or multiple rows sharing one
-		// remaining ref (e.g. a directory placeholder removed the other).
-		if (rows === 0 || (rows === 1 && refs.length === 1)) continue;
+		// remaining ref (e.g. a directory placeholder removed the other) —
+		// or an unlisted chart the named ref could wrongly displace.
+		if (rows === 0 || (rows === 1 && refs.length === 1 && !hasUnlistedChart)) continue;
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
@@ -544,24 +559,26 @@ export const discoverCatalogFiles = async (
 							// Read deeper than the pairing window: a
 							// #DLEVEL behind a long header is still a
 							// valid rating. A file outgrowing the window
-							// reports unprobed and keeps its claim — only
-							// a complete miss proves the root copy unrated.
+							// reports unprobed — nothing is proven — so
+							// the sibling keeps the row.
 							const rootLevel = await probeChartHeaderLevel(
 								bucket,
 								rootCandidate.key,
 								logger,
 								CHART_LEVEL_DEEP_PROBE_BYTES
 							);
-							if (rootLevel === 0 || rootLevel === null) {
-								// Unrated — explicit #DLEVEL 0 or no #DLEVEL in
-								// the whole file — so no row can own
-								// it, and it must not stay in the sorted fallback
-								// where it could displace another row's rated
-								// chart. A genuinely unfetched copy (undefined)
-								// stays claimable since nothing is proven.
-								usedDtxKeys.add(rootCandidate.key);
-							} else if (rootLevel !== undefined) {
+							if (typeof rootLevel === 'number' && rootLevel !== 0) {
 								claimObject = rootCandidate;
+							} else {
+								// Unrated (explicit #DLEVEL 0 or a
+								// complete-read miss) or unprobed: the
+								// sibling keeps the row either way, but
+								// the candidate must not stay in the
+								// sorted fallback — it is provably no
+								// row's chart or possibly THIS row's,
+								// and a positional match could bind it
+								// to an unrelated difficulty instead.
+								usedDtxKeys.add(rootCandidate.key);
 							}
 						}
 					}

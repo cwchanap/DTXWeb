@@ -2186,6 +2186,53 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('probes a one-row/one-ref label when an unlisted chart can supply the row', async () => {
+		// set.def names placeholder.dtx for the only BASIC slot, but the
+		// file is #DLEVEL 0 — parse_dtx_folder skipped it and cataloged
+		// the unlisted basic.dtx under the stem label instead. The
+		// one-row/one-ref skip treats the group as deterministic, so the
+		// row claims the placeholder and suppresses the fallback that
+		// holds its real chart. The probe must still run so a zero level
+		// can disqualify the ref.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE placeholder.dtx\n',
+			'42/placeholder.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('treats a probe-window-truncated #DLEVEL line as unprobed', async () => {
 		// a.dtx's header is cut mid-value at the 16 KiB window end:
 		// '#DLEVEL: 45' of a full '455' reads as level 4.50 — row-45's
@@ -2813,9 +2860,9 @@ describe('discoverCatalogFiles', () => {
 	it('never buffers a multi-MiB root stem-claim candidate whole', async () => {
 		// Same root-vs-nested layout, but the root chart is 1.5 MiB and its
 		// #DLEVEL sits past the deep window: the probe reports unprobed
-		// rather than downloading the whole object, so the rated root
-		// neither displaces nor is reserved — the nested sibling keeps the
-		// row and the root stays claimable for the fallback.
+		// rather than downloading the whole object, so the nested sibling
+		// keeps the row while the unprobed root stays reserved — nothing
+		// proves it is not the row's real chart.
 		const rootBody = `#TITLE: Song\n#COMMENT ${'x'.repeat(1530000)}\n#DLEVEL: 60\n`;
 		const chartBodies: Record<string, string> = {
 			'42/song/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
@@ -2864,6 +2911,71 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/song/solo.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('keeps an unprobed root stem-claim candidate out of the sorted fallback', async () => {
+		// Same long-header layout as the multi-MiB test plus an unrelated
+		// ZEN row. The root chart outgrows the deep window, so nothing is
+		// proven: the nested sibling keeps the SOLO claim, but the root
+		// must stay reserved — 42/solo.dtx sorts before 42/zen.dtx, so a
+		// leaked candidate would bind the ZEN row to the wrong chart.
+		const rootBody = `#TITLE: Song\n#COMMENT ${'x'.repeat(1530000)}\n#DLEVEL: 60\n`;
+		const chartBodies: Record<string, string> = {
+			'42/song/set.def': '#L1LABEL BASIC\n#L1FILE ./solo.dtx\n',
+			'42/song/solo.dtx': '#TITLE: Copy\n#DLEVEL: 60\n',
+			'42/solo.dtx': rootBody,
+			'42/zen.dtx': '#TITLE: Zen\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/song/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/song/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: rootBody.length, uploaded: new Date() },
+					{ key: '42/zen.dtx', size: 400, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(
+				async (key: string, options?: { range?: { offset: number; length: number } }) => {
+					const full = encodeToBuffer(chartBodies[key] ?? '');
+					const range = options?.range;
+					return {
+						arrayBuffer: async () =>
+							range ? full.slice(range.offset, range.offset + range.length) : full
+					};
+				}
+			)
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'ZEN', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/song/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'ZEN',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/zen.dtx',
+				fileSizeBytes: 400,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

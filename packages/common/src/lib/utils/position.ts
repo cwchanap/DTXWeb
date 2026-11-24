@@ -22,11 +22,22 @@ export function normalizePosition(cellOffset: number, cellsPerMeasure: number = 
  * exact double (e.g. 383/384 stays the value that rounds to the barline,
  * or 1/576 after copy/move arithmetic leaves ulp residue) instead of
  * leaving the canonical form a hair off it.
+ *
+ * Parsed patterns are not limited to that grid — a 40-cell quintuplet
+ * pattern stores 1/40 = 0.025 — so a value that misses the snap but sits
+ * within a few ulps of a shorter decimal collapses to it, keeping the
+ * arithmetic and parsed forms of the same cell on one note key.
  */
 export const canonicalizeCellOffset = (cellOffset: number): number => {
 	const canonical = Number(cellOffset.toPrecision(15));
 	const grid = Math.round(canonical * 2304) / 2304;
-	return Math.abs(canonical - grid) < 1e-9 ? grid : canonical;
+	if (Math.abs(canonical - grid) < 1e-9) return grid;
+	const ulpTolerance = Number.EPSILON * 8 * Math.max(1, Math.abs(canonical));
+	for (let digits = 1; digits < 15; digits++) {
+		const shorter = Number(canonical.toPrecision(digits));
+		if (Math.abs(shorter - canonical) <= ulpTolerance) return shorter;
+	}
+	return canonical;
 };
 
 /**

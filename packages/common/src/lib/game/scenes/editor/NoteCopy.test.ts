@@ -414,6 +414,38 @@ describe('NoteCopy', () => {
 			);
 		});
 
+		it('should not paste a duplicate when off-grid arithmetic leaves ulp residue', () => {
+			// A 40-cell pattern stores hits at cells 1, 22, 23 (offsets
+			// 0.025, 0.55, 0.575). Copying the latter two relative to 0.55
+			// leaves relativeCellOffset 0.02499999999999991; pasting at 0
+			// must reuse the stored 0.025 key — not land a second chip a
+			// few ulps beside it.
+			const pattern = '00' + '11' + '00'.repeat(20) + '12' + '13' + '00'.repeat(16);
+			const lane1Note = new LaneMeasureNote(
+				1,
+				'lane1',
+				LaneMeasureNote.parseFromPattern(pattern)
+			);
+			vi.mocked(mockEditor.getNotes).mockReturnValue({ lane1: [lane1Note] });
+			const getByName = vi.fn((name: string) =>
+				name === 'note-0-1-0.025' ? { name } : null
+			);
+			vi.mocked(mockEditor.getPanelContainer).mockReturnValue({ getByName } as never);
+
+			noteCopy.copyNotes(new Set(['note-0-1-0.55', 'note-0-1-0.575']), mockEditor);
+			const result = noteCopy.pasteNotes(0, 1, 0, mockEditor);
+
+			expect(result).toBe(true);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledTimes(1);
+			expect(vi.mocked(mockNoteMove.addNoteToEditor)).toHaveBeenCalledWith(
+				1,
+				0,
+				0,
+				'lane1',
+				'12'
+			);
+		});
+
 		it('should validate target positions and skip invalid ones', () => {
 			// Try to paste at an invalid lane
 			const result = noteCopy.pasteNotes(10, 2, 0, mockEditor); // Lane 10 doesn't exist

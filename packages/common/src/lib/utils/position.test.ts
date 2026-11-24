@@ -126,6 +126,20 @@ describe('canonicalizeCellOffset', () => {
 		expect(canonicalizeCellOffset(1 / 288)).toBe(1 / 288);
 	});
 
+	it('collapses off-grid ulp residue to the stored decimal', () => {
+		// A 40-cell pattern's parsed offsets sit on no 2304-cell grid: cell
+		// 1 stores 0.025. Copying the 0.575 hit relative to 0.55 and pasting
+		// at 0 leaves 0.02499999999999991, so the exact-key occupancy check
+		// missed the stored chip and pasted a duplicate a few ulps away.
+		expect(canonicalizeCellOffset(0.575 - 0.55)).toBe(0.025);
+		expect(canonicalizeCellOffset(0.025)).toBe(0.025);
+		expect(canonicalizeCellOffset(0.55 - 0.575 + 0.6)).toBe(0.575);
+	});
+
+	it('does not merge positions a real distance apart', () => {
+		expect(canonicalizeCellOffset(0.0250000000001)).not.toBe(0.025);
+	});
+
 	it('leaves non-grid positions as their 15-digit canonical form', () => {
 		expect(canonicalizeCellOffset(0.123456789012345)).toBe(0.123456789012345);
 	});

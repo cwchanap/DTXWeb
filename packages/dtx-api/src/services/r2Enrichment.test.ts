@@ -319,8 +319,16 @@ describe('batchDiscoverCatalogFiles', () => {
 
 describe('discoverCatalogFiles', () => {
 	it('encodes each R2 key path segment against the public bucket URL', async () => {
+		// The nested song dir holds the selected set.def, so its sibling
+		// chart is catalog-eligible — a deeper-nested key with no anchoring
+		// set.def would instead stay out of the positional pairing.
 		const bucket = makeBucket([
 			[
+				{
+					key: '42/charts with space/set.def',
+					size: 60,
+					uploaded: new Date()
+				},
 				{
 					key: '42/charts with space/basic#chart.dtx',
 					size: 1234,
@@ -3997,6 +4005,50 @@ describe('discoverCatalogFiles', () => {
 				label: 'basic',
 				level: 85,
 				fileUrl: 'https://cdn.example.test/42/Basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('keeps deeper-nested keys out of the positional fallback', async () => {
+		// The EXPERT row's own chart was re-rated to 60 — the new rating
+		// names no row, so the file stays a positional candidate. A nested
+		// backup still carries 85 but is catalog-ineligible: the rating and
+		// stem passes already refuse it, and the positional pairing must
+		// too — '42/extras/' sorts before '42/z.dtx', so without the scope
+		// the row binds the backup instead of its own re-rated file.
+		const chartBodies: Record<string, string> = {
+			'42/extras/backup.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+			'42/z.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/backup.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/z.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'EXPERT', level: 85 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'EXPERT',
+				level: 85,
+				fileUrl: 'https://cdn.example.test/42/z.dtx',
 				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}

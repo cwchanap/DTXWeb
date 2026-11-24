@@ -888,6 +888,51 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('falls back to the simfile-relative key when a bare ID-prefixed ref misses the direct key', async () => {
+		// `#L1FILE 42/lead.dtx` is ambiguous: a bucket key verbatim, or a
+		// `42/` subfolder beside set.def. No `42/lead.dtx` object exists —
+		// the chart lives at `42/42/lead.dtx` — so direct-key-only
+		// resolution returns nothing while the non-exact claim still marks
+		// the row claimed, suppressing the fallback and yielding a null
+		// fileUrl. Mirrors the retry SimFile.parseFromRemoteURLWithMetadata
+		// applies on 404 for the same bare ID-named subfolder fixture.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL LEAD\n#L1FILE 42/lead.dtx\n',
+			'42/42/lead.dtx': '#TITLE: Song\n#DLEVEL: 7\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/42/lead.dtx', size: 700, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Lead', level: 7 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Lead',
+				level: 7,
+				fileUrl: 'https://cdn.example.test/42/42/lead.dtx',
+				fileSizeBytes: 700,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged assets under `assets/`.
 		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists

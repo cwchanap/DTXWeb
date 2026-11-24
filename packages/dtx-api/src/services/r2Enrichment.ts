@@ -416,25 +416,32 @@ export const discoverCatalogFiles = async (
 	// serve the wrong chart instead of the correct missing-chart null.
 	const rowsClaimedBySetDef = new Set<number>();
 	// Resolve a SET.def file reference to an R2 object. Absolute paths
-	// (already include the simfile id) are kept as-is; relative names are
-	// resolved against the set.def's directory first, then the simfile
-	// root prefix as a fallback for legacy flat uploads where chart files
-	// live at the root despite a nested set.def. An explicit `./`/`.\`
-	// prefix forces the relative branch even when the normalized name
-	// collides with the id prefix — `./42/basic.dtx` means
-	// `42/42/basic.dtx`, not `42/basic.dtx`. Exact match first; fall back
-	// to a case-insensitive lookup so that SET.DEF references like
-	// BASIC.DTX still resolve when the R2 key is basic.dtx. Without these
-	// fallbacks the row is marked as claimed-but-missing, which surfaces
-	// as an INTERNAL error via requireCatalogChart even though the chart
-	// object exists.
+	// (already include the simfile id) are tried as-is first; relative
+	// names are resolved against the set.def's directory first, then the
+	// simfile root prefix as a fallback for legacy flat uploads where
+	// chart files live at the root despite a nested set.def. An explicit
+	// `./`/`.\` prefix forces the relative branch even when the normalized
+	// name collides with the id prefix — `./42/basic.dtx` means
+	// `42/42/basic.dtx`, not `42/basic.dtx`. A bare id-prefixed name is
+	// ambiguous between those readings (bucket key vs same-named
+	// subfolder), so it also falls back to the relative candidates when
+	// the direct key is absent — the same retry
+	// SimFile.parseFromRemoteURLWithMetadata applies on 404 — otherwise
+	// the claimed row resolves to nothing and the nested object stays
+	// unreachable. Exact match first; fall back to a case-insensitive
+	// lookup so that SET.DEF references like BASIC.DTX still resolve when
+	// the R2 key is basic.dtx. Without these fallbacks the row is marked
+	// as claimed-but-missing, which surfaces as an INTERNAL error via
+	// requireCatalogChart even though the chart object exists.
 	const resolveSetDefObject = (setDefRef: SetDefFileRef): R2ObjectMeta | undefined => {
+		const relativeCandidates =
+			setDefBaseDir === prefix
+				? [`${prefix}${setDefRef.file}`]
+				: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
 		const candidates =
 			!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix)
-				? [setDefRef.file]
-				: setDefBaseDir === prefix
-					? [`${prefix}${setDefRef.file}`]
-					: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
+				? [setDefRef.file, ...relativeCandidates]
+				: relativeCandidates;
 		for (const candidateKey of candidates) {
 			const matchedObject =
 				objectsByKey.get(candidateKey) ?? objectsByKeyLower.get(candidateKey.toLowerCase());

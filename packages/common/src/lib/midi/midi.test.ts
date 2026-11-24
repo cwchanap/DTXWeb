@@ -1018,6 +1018,39 @@ describe('midiToDtx', () => {
 		]);
 	});
 
+	it('warns of a dropped tempo change instead of a timing shift when opening changes merge onto one cell', () => {
+		// At 480 PPQ in 4/4, tick 4 nudges onto cell 1/192 (tick 10), where
+		// tick 10 overwrites it. The surviving change at tick 10 is on-grid.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[...evTempo(0, 120), ...evTempo(4, 140), ...evTempo(6, 160), ...evEndOfTrack]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.controls.bpmChanges).toEqual({ '01': 160 });
+		expect(result.notes['08'][0].notes).toEqual([{ noteID: '01', position: 1 / 192 }]);
+		expect(result.warnings).toContain(
+			'1 tempo change(s) merged onto the same 1/192 DTX cell (later tempo kept)'
+		);
+		expect(result.warnings.every((w) => !w.includes('snapped'))).toBe(true);
+	});
+
+	it('reports both merged and snapped warnings when a colliding survivor also snaps', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[...evTempo(0, 120), ...evTempo(4, 140), ...evTempo(7, 160), ...evEndOfTrack]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.controls.bpmChanges).toEqual({ '01': 160 });
+		expect(result.warnings).toContain(
+			'1 tempo change(s) merged onto the same 1/192 DTX cell (later tempo kept)'
+		);
+		expect(result.warnings).toContain(
+			'1 tempo change(s) snapped to the 1/192 DTX grid; timing shifts up to 1 tick(s)'
+		);
+	});
+
 	it('preserves full BPM precision for maximum 3-byte MIDI tempo (0xFFFFFF) on round trip', () => {
 		const maxMpq = 0xffffff;
 		const midi = parseMidi(

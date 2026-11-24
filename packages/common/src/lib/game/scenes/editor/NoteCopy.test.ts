@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { NoteCopy } from './NoteCopy';
 import { LaneMeasureNote } from '../../../chart/note';
+import { canonicalizeCellOffset } from '../../../utils/position';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -968,6 +969,39 @@ describe('NoteCopy', () => {
 			expect(added).toBe(true);
 			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledTimes(1);
 			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledWith(0, 0, 0, 'lane1', '12');
+		});
+
+		it('does not duplicate a stored 9/254 chip when pasting copied 9/254 and 18/254 notes at offset 0', () => {
+			// Parsing a 254-cell pattern stores cells 9 and 18 at canonicalized
+			// values whose difference (18/254 - 9/254) drifts ~4e-15 from stored
+			// 9/254 (> 16 * EPSILON), so the occupancy check must account for
+			// accumulated canonicalization error.
+			const pos9 = canonicalizeCellOffset(9 / 254);
+			const pos18 = canonicalizeCellOffset(18 / 254);
+			expect(Math.abs(canonicalizeCellOffset(pos18 - pos9) - pos9)).toBeGreaterThan(
+				Number.EPSILON * 16
+			);
+
+			const note = new LaneMeasureNote(0, 'lane1', [
+				{ noteID: '11', position: pos9 },
+				{ noteID: '12', position: pos18 }
+			]);
+			vi.mocked(mockEditor.getNotes).mockReturnValue({ lane1: [note] });
+
+			const key9 = `note-0-0-${pos9}`;
+			const key18 = `note-0-0-${pos18}`;
+			vi.mocked(mockEditor.getPanelContainer).mockReturnValue({
+				getByName: vi.fn((key: string) =>
+					key === key9 || key === key18 ? { name: key } : null
+				)
+			} as never);
+
+			noteCopy.copyNotes(new Set([key9, key18]), mockEditor);
+
+			const added = noteCopy.pasteNotes(0, 0, 0, mockEditor);
+			expect(added).toBe(true);
+			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledTimes(1);
+			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledWith(0, 0, 0, 'lane1', '11');
 		});
 	});
 });

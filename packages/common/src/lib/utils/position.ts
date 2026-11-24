@@ -28,11 +28,37 @@ export function normalizePosition(cellOffset: number, cellsPerMeasure: number = 
  * within a few ulps of a shorter decimal collapses to it, keeping the
  * arithmetic and parsed forms of the same cell on one note key.
  */
+/**
+ * Maximum ULP budget used by {@link canonicalizeCellOffset} when collapsing
+ * repeating decimals to shorter decimal forms.
+ */
+export const CELL_OFFSET_CANONICAL_ULP_BUDGET = 8;
+
+/**
+ * Budget (in ULPs) for occupancy comparisons between two canonicalized cell
+ * offsets. Each canonicalization step (parsed source, copied/dragged note,
+ * reference/target, wrapped arithmetic result) can introduce up to
+ * {@link CELL_OFFSET_CANONICAL_ULP_BUDGET} ULPs of rounding error, so checking
+ * occupancy must allow for several accumulated steps while remaining well below
+ * the minimum spacing between distinct chart positions.
+ */
+export const CELL_OFFSET_OCCUPANCY_ULP_BUDGET = CELL_OFFSET_CANONICAL_ULP_BUDGET * 8;
+
+/**
+ * Returns true when two cell offsets represent the same logical position
+ * within accumulated canonicalization rounding error.
+ */
+export const isSameCellOffset = (a: number, b: number): boolean =>
+	a === b ||
+	Math.abs(a - b) <=
+		Number.EPSILON * CELL_OFFSET_OCCUPANCY_ULP_BUDGET * Math.max(1, Math.abs(a), Math.abs(b));
+
 export const canonicalizeCellOffset = (cellOffset: number): number => {
 	const canonical = Number(cellOffset.toPrecision(15));
 	const grid = Math.round(canonical * 2304) / 2304;
 	if (Math.abs(canonical - grid) < 1e-9) return grid;
-	const ulpTolerance = Number.EPSILON * 8 * Math.max(1, Math.abs(canonical));
+	const ulpTolerance =
+		Number.EPSILON * CELL_OFFSET_CANONICAL_ULP_BUDGET * Math.max(1, Math.abs(canonical));
 	for (let digits = 1; digits < 15; digits++) {
 		const shorter = Number(canonical.toPrecision(digits));
 		if (Math.abs(shorter - canonical) <= ulpTolerance) return shorter;

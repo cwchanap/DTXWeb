@@ -101,15 +101,29 @@ export class SimFile {
 				// the same way parseHeader does or `.\name.dtx` fetches 404.
 				// Preserve the distinction between bare `42/adv.dtx` and
 				// explicitly relative `./42/adv.dtx`, and encode each path
-				// segment so `#` or spaces do not truncate the URL.
+				// segment so `#` or spaces do not truncate the URL. A bare path
+				// starting with `{simfileID}/` is ambiguous (already-prefixed
+				// key vs a subfolder named after the simfile ID), so try the
+				// nested `{simfileID}/{normalizedFileName}` key when the direct
+				// lookup returns 404.
 				const trimmedFileName = fileName.trim();
 				const explicitlyRelative = /^\.[\\/]/.test(trimmedFileName);
 				const normalizedFileName = normalizeSetDefFileName(fileName);
-				const objectKey =
-					!explicitlyRelative && normalizedFileName.startsWith(`${simfileID}/`)
-						? normalizedFileName
-						: `${simfileID}/${normalizedFileName}`;
-				const response = await dedupedFetch(`${bucketUrl}/${encodeR2Path(objectKey)}`);
+				const isAmbiguousPrefixed =
+					!explicitlyRelative && normalizedFileName.startsWith(`${simfileID}/`);
+				const objectKey = isAmbiguousPrefixed
+					? normalizedFileName
+					: `${simfileID}/${normalizedFileName}`;
+				let response = await dedupedFetch(`${bucketUrl}/${encodeR2Path(objectKey)}`);
+				if (
+					!response.ok &&
+					isAmbiguousPrefixed &&
+					(response.status === 404 || response.status === undefined)
+				) {
+					response = await dedupedFetch(
+						`${bucketUrl}/${encodeR2Path(`${simfileID}/${normalizedFileName}`)}`
+					);
+				}
 				if (!response.ok) {
 					return;
 				}

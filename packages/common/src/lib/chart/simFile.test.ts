@@ -799,6 +799,55 @@ describe('SimFile', () => {
 			]);
 			expect(simFile.levels[6]?.file.getFileName()).toBe('sub/lead#take2.dtx');
 		});
+
+		it('falls back to the nested simfile-relative key when a bare ID-prefixed path returns 404', async () => {
+			const fetchSpy = vi.fn(async (url: string) => {
+				if (url === 'https://cdn.example/42/42/lead.dtx') {
+					return {
+						ok: true,
+						status: 200,
+						blob: () => Promise.resolve(new Blob(['dtx'])),
+						clone() {
+							return this;
+						}
+					};
+				}
+				return {
+					ok: false,
+					status: url === 'https://cdn.example/42/err.dtx' ? 500 : 404,
+					blob: vi.fn(),
+					clone() {
+						return this;
+					}
+				};
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+			MockDTXFile.mockImplementation(createMockDTXFile);
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'42',
+				'https://cdn.example',
+				{
+					title: 'ID Subfolder Song',
+					levels: {
+						1: { label: 'LEAD', fileName: '42/lead.dtx' },
+						2: { label: 'REL', fileName: './42/missing.dtx' },
+						3: { label: 'ERR', fileName: '42/err.dtx' }
+					}
+				}
+			);
+
+			expect(fetchSpy.mock.calls.map((c) => c[0])).toEqual([
+				'https://cdn.example/42/lead.dtx',
+				'https://cdn.example/42/42/missing.dtx',
+				'https://cdn.example/42/err.dtx',
+				'https://cdn.example/42/42/lead.dtx'
+			]);
+			expect(simFile.levels[1]?.label).toBe('LEAD');
+			expect(simFile.levels[1]?.file.getFileName()).toBe('42/lead.dtx');
+			expect(simFile.levels[2]).toBeUndefined();
+			expect(simFile.levels[3]).toBeUndefined();
+		});
 	});
 
 	describe('parseLevelFromRemoteURL', () => {

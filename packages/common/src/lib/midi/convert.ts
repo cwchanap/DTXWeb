@@ -549,14 +549,13 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const bpmIds = new Map<number, string>();
 	let idCounter = 0;
 	let effectiveBpm = bpm;
-	let tempoSnapped = 0;
-	let maxTempoDrift = 0;
+	let tempoCollisions = 0;
 	// Resolve cell collisions (last wins per 1/192 cell) before allocating
 	// #BPMxx IDs so overwritten intermediate values do not exhaust the 2-char
 	// ID space.
 	const resolvedTempoCells = new Map<
 		string,
-		{ measure: number; position: number; bpm: number }
+		{ measure: number; position: number; bpm: number; drift: number }
 	>();
 	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
 		if (event.bpm === effectiveBpm) continue;
@@ -575,16 +574,23 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		// event.tick is integral; sub-hundredth-tick drift is reconstruction
 		// float dust (position * barTicks), not a real snap.
 		const drift = Math.abs(snappedTick - event.tick);
+		const cellKey = `${measure}|${position}`;
+		const existingCell = resolvedTempoCells.get(cellKey);
+		if (existingCell) {
+			tempoCollisions++;
+			existingCell.bpm = event.bpm;
+			existingCell.drift = drift;
+		} else {
+			resolvedTempoCells.set(cellKey, { measure, position, bpm: event.bpm, drift });
+		}
+	}
+	let tempoSnapped = 0;
+	let maxTempoDrift = 0;
+	for (const { measure, position, bpm: cellBpm, drift } of resolvedTempoCells.values()) {
 		if (drift > 0.01) {
 			tempoSnapped++;
 			maxTempoDrift = Math.max(maxTempoDrift, drift);
 		}
-		const cellKey = `${measure}|${position}`;
-		const existingCell = resolvedTempoCells.get(cellKey);
-		if (existingCell) existingCell.bpm = event.bpm;
-		else resolvedTempoCells.set(cellKey, { measure, position, bpm: event.bpm });
-	}
-	for (const { measure, position, bpm: cellBpm } of resolvedTempoCells.values()) {
 		// Repeated BPM values share one #BPMxx def; ids past 'ZZ' would
 		// produce a three-char cell the writer cannot serialize.
 		let id = bpmIds.get(cellBpm);
@@ -606,6 +612,11 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			(notes['08'] ||= []).push(group);
 		}
 		group.notes.push({ noteID: id, position });
+	}
+	if (tempoCollisions > 0) {
+		warnings.push(
+			`${tempoCollisions} tempo change(s) merged onto the same 1/192 DTX cell (later tempo kept)`
+		);
 	}
 	if (tempoSnapped > 0) {
 		warnings.push(

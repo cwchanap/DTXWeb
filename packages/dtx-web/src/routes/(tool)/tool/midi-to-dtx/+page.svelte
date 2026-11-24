@@ -466,9 +466,12 @@
 										class="rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 									>
 										{#each PLAYABLE_DRUM_LANES as lane (lane)}
-											<option value={lane} class="bg-slate-900 text-slate-200"
-												>{lane} - {getLaneName(lane)}</option
+											<option
+												value={lane}
+												class="bg-slate-900 text-slate-200"
 											>
+												{lane} - {getLaneName(lane)}
+											</option>
 										{/each}
 									</select>
 								</div>

@@ -58,6 +58,7 @@ export interface MovedNoteData {
 	originalMeasure: number;
 	originalCellOffset: number;
 	originalLaneId: string;
+	originalMeasureLength?: number;
 	noteId: string;
 	// New position
 	newNoteKey: string;
@@ -311,8 +312,10 @@ export class NoteBuffer {
 				originalLaneIndex,
 				originalCellOffset,
 				originalLaneId,
+				originalMeasureLength,
 				noteId
 			} = movedNote;
+			const measureLength = originalMeasureLength ?? 1;
 
 			// Use the exact original position without normalization to preserve high-resolution positioning
 			// The originalCellOffset was already properly positioned when the note was originally created
@@ -322,7 +325,7 @@ export class NoteBuffer {
 				originalCellOffset,
 				originalLaneId,
 				noteId,
-				1
+				measureLength
 			);
 			// A duplicate pattern line's chip may still own the source cell's
 			// graphic; write the chip back to the data alongside it.
@@ -332,7 +335,7 @@ export class NoteBuffer {
 					cellOffset: originalCellOffset,
 					laneId: originalLaneId,
 					noteId,
-					measureLength: 1
+					measureLength
 				});
 			}
 		});

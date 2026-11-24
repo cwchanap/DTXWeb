@@ -1271,6 +1271,23 @@ describe('NoteManager', () => {
 			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
 		});
 
+		it('selects a stacked note when clicking within its horizontal stack offset', () => {
+			const graphics = createMockGraphics();
+			graphics.name = 'note-0-0-0.005';
+			mockEditor.getPanelContainer().list.push(graphics);
+			noteManager.setStackIndex('note-0-0-0.005', 1);
+
+			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			// Base bounds span x=102..148; stackIndex=1 shifts to x=105..151.
+			const pointer = createMockPointer(150, 190);
+			const result = noteManager.handlePointerDown(pointer);
+
+			expect(result).toBe(true);
+			expect(noteManager.selectedNotes.has('note-0-0-0.005')).toBe(true);
+		});
+
 		it('should ignore non-Graphics objects in container list', () => {
 			// Add a non-Graphics object with a note name (should be skipped)
 			const nonGraphics = { name: 'note-0-0-0' }; // plain object, not instanceof Graphics

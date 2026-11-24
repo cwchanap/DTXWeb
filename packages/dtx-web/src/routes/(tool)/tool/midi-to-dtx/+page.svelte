@@ -38,8 +38,14 @@
 	let bpm = $state<number | undefined>(120);
 	// True once the user edits the BPM field — an explicit 120 still counts.
 	let bpmTouched = $state(false);
+	let bpmRawInvalid = $state(false);
 	let comment = $state('Converted from MIDI file');
 	let convertAttempt = 0;
+
+	const isValidPositiveBpm = (value: number | undefined | null): value is number =>
+		typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+	const bpmInvalid = $derived(bpmRawInvalid || (bpmTouched && !isValidPositiveBpm(bpm)));
 
 	let fileInput: HTMLInputElement;
 
@@ -60,6 +66,7 @@
 			// A new file gets a fresh detected BPM — the previous file's
 			// "user edited" flag must not carry over.
 			bpmTouched = false;
+			bpmRawInvalid = false;
 			// Set default title from filename
 			title = file.name.replace(/\.[^/.]+$/, '');
 		} else if (file) {
@@ -73,8 +80,10 @@
 	};
 
 	const handleBpmInput = (event: Event) => {
-		const raw = (event.currentTarget as HTMLInputElement).value;
-		bpmTouched = raw.trim() !== '';
+		const input = event.currentTarget as HTMLInputElement;
+		const raw = input.value;
+		bpmRawInvalid = input.validity?.badInput ?? false;
+		bpmTouched = raw.trim() !== '' || bpmRawInvalid;
 	};
 
 	const handleUploadClick = () => {
@@ -86,7 +95,8 @@
 	// the download, so the exported file never serves a stale mapping.
 	const runConversion = (): MidiToDtxResult => {
 		if (!parsedMidi) throw new Error('No MIDI file parsed');
-		const effectiveBpm = typeof bpm === 'number' && Number.isFinite(bpm) ? bpm : undefined;
+		if (bpmInvalid) throw new Error('BPM must be a positive number');
+		const effectiveBpm = isValidPositiveBpm(bpm) ? bpm : undefined;
 		return midiToDtx(parsedMidi, { noteToLane: midiToDtxMap, bpm: effectiveBpm });
 	};
 
@@ -114,6 +124,14 @@
 	const handleConvert = async () => {
 		const file = uploadedFile;
 		if (!file) return;
+		if (bpmInvalid) {
+			toastStore.error({
+				title: 'Invalid BPM',
+				description: 'BPM must be a positive number or left blank for automatic tempo.',
+				duration: 5000
+			});
+			return;
+		}
 
 		const attempt = ++convertAttempt;
 		isConverting = true;
@@ -136,8 +154,7 @@
 			// Download. A user-edited BPM overrides the detected tempo;
 			// otherwise the detected value seeds the field — 120 is a real
 			// value, not a missing one.
-			const overrideBpm =
-				bpmTouched && typeof bpm === 'number' && Number.isFinite(bpm) ? bpm : undefined;
+			const overrideBpm = bpmTouched && isValidPositiveBpm(bpm) ? bpm : undefined;
 			const result = midiToDtx(nextParsedMidi, {
 				noteToLane: midiToDtxMap,
 				bpm: overrideBpm
@@ -164,6 +181,14 @@
 
 	const handleDownload = async () => {
 		if (!dtxFile || !isConverted || !parsedMidi) return;
+		if (bpmInvalid) {
+			toastStore.error({
+				title: 'Invalid BPM',
+				description: 'BPM must be a positive number or left blank for automatic tempo.',
+				duration: 5000
+			});
+			return;
+		}
 
 		try {
 			// Recompute from the cached parse + latest mapping/BPM edit.
@@ -212,6 +237,7 @@
 		level = 5;
 		bpm = 120;
 		bpmTouched = false;
+		bpmRawInvalid = false;
 		comment = 'Converted from MIDI file';
 		if (fileInput) {
 			fileInput.value = '';
@@ -442,8 +468,15 @@
 									max="300"
 									bind:value={bpm}
 									oninput={handleBpmInput}
+									aria-invalid={bpmInvalid}
 									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
+								{#if bpmInvalid}
+									<p role="alert" class="mt-1 text-xs text-red-400">
+										BPM must be greater than 0 (or leave blank for automatic
+										tempo).
+									</p>
+								{/if}
 							</div>
 						</div>
 
@@ -579,8 +612,9 @@
 							<div class="flex justify-center gap-3">
 								<button
 									type="button"
-									class="music-btn-primary border-green-500/50 bg-green-600 px-6 py-3 font-medium transition-all duration-300 hover:bg-green-500"
+									class="music-btn-primary border-green-500/50 bg-green-600 px-6 py-3 font-medium transition-all duration-300 hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50"
 									onclick={handleDownload}
+									disabled={bpmInvalid}
 								>
 									Download DTX File
 								</button>

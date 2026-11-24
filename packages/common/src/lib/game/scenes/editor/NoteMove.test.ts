@@ -736,6 +736,7 @@ describe('NoteMove', () => {
 					getByName: (name: string) => graphics.get(name),
 					y: 0
 				}),
+				getByName: (name: string) => graphics.get(name),
 				getLaneConfigs: vi.fn().mockReturnValue([{ id: 'lane1', noteColor: 0xff0000 }]),
 				getNotes: vi.fn(() => notes),
 				getCellsPerMeasure: vi.fn().mockReturnValue(16),
@@ -836,6 +837,113 @@ describe('NoteMove', () => {
 				{ noteID: '02', position: p37 },
 				{ noteID: '03', position: p47 }
 			]);
+		});
+
+		it('preserves original measureLength on undo when another chip owns the source graphic', () => {
+			const notes: Record<string, LaneMeasureNote[]> = {
+				lane1: [
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '01', position: 0.5 }], 2),
+					new LaneMeasureNote(0, 'lane1', [{ noteID: '02', position: 0.5 }], 2)
+				]
+			};
+			const graphics = new Map<string, { name: string; destroy: ReturnType<typeof vi.fn> }>([
+				['note-0-0-0.5', { name: 'note-0-0-0.5', destroy: vi.fn() }]
+			]);
+			const selectedNotes = new Set<string>();
+			const editor = {
+				add: {
+					graphics: vi.fn().mockReturnValue({
+						setAlpha: vi.fn(),
+						clear: vi.fn(),
+						fillStyle: vi.fn(),
+						fillRect: vi.fn(),
+						strokeRect: vi.fn(),
+						destroy: vi.fn()
+					})
+				},
+				getPanelContainer: vi.fn().mockReturnValue({
+					getByName: (name: string) => graphics.get(name),
+					y: 0
+				}),
+				getByName: (name: string) => graphics.get(name),
+				getLaneConfigs: vi.fn().mockReturnValue([{ id: 'lane1', noteColor: 0xff0000 }]),
+				getNotes: vi.fn(() => notes),
+				getCellsPerMeasure: vi.fn().mockReturnValue(16),
+				getMeasureCount: vi.fn().mockReturnValue(100),
+				getMeasureHeight: vi.fn().mockReturnValue(400),
+				getOffsetX: vi.fn().mockReturnValue(100),
+				getOffsetY: vi.fn().mockReturnValue(200),
+				getCellWidth: vi.fn().mockReturnValue(50),
+				getCellHeightValue: vi.fn().mockReturnValue(25),
+				getCellMargin: vi.fn().mockReturnValue(2),
+				getTotalMesaureOffest: vi.fn().mockReturnValue(0),
+				getCellHeightAt: vi.fn().mockReturnValue(20),
+				getNoteSize: vi.fn().mockReturnValue(18),
+				drawNote: vi.fn((measure: number, _laneIndex: number, cellOffset: number) => {
+					const key = `note-0-${measure}-${cellOffset}`;
+					if (graphics.has(key)) return false;
+					graphics.set(key, { name: key, destroy: vi.fn() });
+					return true;
+				}),
+				deleteNoteByKey: vi.fn((key: string) => {
+					const parsed = parseNoteKey(key);
+					if (!parsed) return;
+					const groups = notes.lane1 ?? [];
+					const group = groups.find(
+						(note) =>
+							note.measure === parsed.measure &&
+							note.notes.some((chip) => chip.position === parsed.cellOffset)
+					);
+					if (group) {
+						const chipIndex = group.notes.findIndex(
+							(chip) => chip.position === parsed.cellOffset
+						);
+						group.notes.splice(chipIndex, 1);
+						if (group.notes.length === 0) {
+							notes.lane1 = groups.filter((note) => note !== group);
+						}
+					}
+					const occupied = (notes.lane1 ?? []).some(
+						(note) =>
+							note.measure === parsed.measure &&
+							note.notes.some((chip) => chip.position === parsed.cellOffset)
+					);
+					if (!occupied) {
+						graphics.get(key)?.destroy();
+						graphics.delete(key);
+					}
+				}),
+				clearSelection: vi.fn(() => selectedNotes.clear()),
+				selectedNotes,
+				highlightSelectedNote: vi.fn(),
+				input: { activePointer: { x: 100, y: -150 } }
+			};
+
+			const noteBuffer = new NoteBuffer();
+			const dragMove = new NoteMove(editor as unknown as Editor, (moved) =>
+				noteBuffer.recordAction('move', moved)
+			);
+			noteBuffer.setNoteMove(dragMove);
+
+			const selection = new Set(['note-0-0-0.5']);
+			dragMove.startDrag(
+				{ x: 100, y: -100 } as Phaser.Input.Pointer,
+				'note-0-0-0.5',
+				selection
+			);
+			dragMove.completeDrag(
+				selection,
+				editor.clearSelection,
+				editor.highlightSelectedNote,
+				editor.deleteNoteByKey
+			);
+
+			expect(noteBuffer.undoLastAction(editor as unknown as Editor)).toBe(true);
+			const restoredGroup = notes.lane1.find((g) =>
+				g.notes.some((c) => c.noteID === '01' && c.position === 0.5)
+			);
+			expect(restoredGroup?.measureLength).toBe(2);
+			expect(restoredGroup?.toPattern()).toBe('00010000');
 		});
 
 		it('should not record a move whose destination placement failed', () => {

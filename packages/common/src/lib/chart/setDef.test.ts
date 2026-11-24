@@ -100,6 +100,14 @@ describe('parseSetDef', () => {
 		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'bas.dtx' }]);
 	});
 
+	it('ignores slot numbers outside the safe integer range', () => {
+		const result = parseSetDef(
+			`#L9007199254740992LABEL A\n#L9007199254740992FILE a.dtx\n#L9007199254740993LABEL B\n#L9007199254740993FILE b.dtx\n#L${'9'.repeat(400)}LABEL INF\n#L${'9'.repeat(400)}FILE inf.dtx\n#L1LABEL BASIC\n#L1FILE bas.dtx\n`
+		);
+
+		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'bas.dtx' }]);
+	});
+
 	it('returns an empty title when #TITLE is absent', () => {
 		expect(parseSetDef('#L1LABEL BASIC\n#L1FILE bas.dtx\n').title).toBe('');
 	});

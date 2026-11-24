@@ -474,17 +474,32 @@ export const discoverCatalogFiles = async (
 	// label set per resolved key so shared keys can be probed and their
 	// exact claims settled first.
 	const labelsByResolvedKey = new Map<string, Set<string>>();
+	const resolvableRefCountByLabel = new Map<string, number>();
 	for (const [label, refs] of filesByLabel) {
+		let resolvableCount = 0;
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
+			resolvableCount += 1;
 			referencedKeys.add(object.key);
 			const labels = labelsByResolvedKey.get(object.key);
 			if (labels) labels.add(label);
 			else labelsByResolvedKey.set(object.key, new Set([label]));
 		}
+		if (resolvableCount > 0) resolvableRefCountByLabel.set(label, resolvableCount);
 	}
 	const hasUnlistedChart = dtxObjects.some((obj) => !referencedKeys.has(obj.key));
+	// A label with no DB rows (or surplus resolvable refs) can still hold a
+	// chart the uploader cataloged under another row's stem (e.g. BASIC ->
+	// placeholder.dtx, EXTRA -> ./basic.dtx). Probe placeholders in that case
+	// so an unrated chart is disqualified instead of suppressing stem lookup.
+	let hasOtherLabelCandidate = false;
+	for (const [label, count] of resolvableRefCountByLabel) {
+		if (count > (rowCountByLabel.get(label) ?? 0)) {
+			hasOtherLabelCandidate = true;
+			break;
+		}
+	}
 	const fileLevelByRef = new Map<SetDefFileRef, number>();
 	const levelProbes: Promise<void>[] = [];
 	for (const [label, refs] of filesByLabel) {
@@ -497,13 +512,14 @@ export const discoverCatalogFiles = async (
 			// reference is already deterministic. Ambiguity needs either side
 			// to multiply — multiple refs, or multiple rows sharing one
 			// remaining ref (e.g. a directory placeholder removed the other) —
-			// or an unlisted chart the named ref could wrongly displace. A key
-			// another label's ref also resolves to is ambiguous too: a
-			// cross-label row can hold its exact rating.
+			// or an unlisted chart / other-label candidate the named ref could
+			// wrongly displace. A key another label's ref also resolves to is
+			// ambiguous too: a cross-label row can hold its exact rating.
 			if (
 				rows === 1 &&
 				refs.length === 1 &&
 				!hasUnlistedChart &&
+				!hasOtherLabelCandidate &&
 				(labelsByResolvedKey.get(object.key)?.size ?? 0) <= 1
 			)
 				continue;
@@ -548,74 +564,140 @@ export const discoverCatalogFiles = async (
 	// (./a.dtx vs a.dtx); the other label's exact claim must win that
 	// object first, or reserving the unused alias leaves the first row
 	// without its chart even though the other row took a different file.
+	const dtxKeyOrder = new Map(dtxObjectKeys.map((key, idx) => [key, idx]));
 	const claimSetDefRows = (exactOnly: boolean): void => {
+		const isRefUnused = (ref: SetDefFileRef): boolean => {
+			const object = resolveSetDefObject(ref);
+			return !object || !usedDtxKeys.has(object.key);
+		};
+		const commitClaim = (rowIndex: number, refs: SetDefFileRef[], refIndex: number): void => {
+			rowsClaimedBySetDef.add(rowIndex);
+			const [setDefRef] = refs.splice(refIndex, 1);
+			const matchedObject = resolveSetDefObject(setDefRef);
+			if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
+				matchedKeysByRowIndex.set(rowIndex, matchedObject.key);
+				usedDtxKeys.add(matchedObject.key);
+			}
+		};
+		if (exactOnly) {
+			// Coordinate exact matches: process the most constrained row (fewest
+			// remaining unused exact refs) first so a multi-choice row does not
+			// consume a shared alias needed by another row, and break equal-rating
+			// ties in uploader filename (dtxObjectKeys) order instead of SET.def order.
+			while (true) {
+				let bestChoice: {
+					rowIndex: number;
+					refs: SetDefFileRef[];
+					bestRefIndex: number;
+					candidateCount: number;
+				} | null = null;
+				for (const { file, index } of claimOrder) {
+					if (rowsClaimedBySetDef.has(index)) continue;
+					const label = file.label.toLowerCase();
+					const refs = filesByLabel.get(label);
+					if (!refs?.length) continue;
+					const rowLevel = normalizeLevel(file.level);
+					const matchingIndexes: number[] = [];
+					for (let i = 0; i < refs.length; i++) {
+						const ref = refs[i];
+						if (isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel) {
+							matchingIndexes.push(i);
+						}
+					}
+					if (matchingIndexes.length === 0) continue;
+					const contendersForKey = (key: string): number => {
+						if (!key) return 0;
+						let count = 0;
+						for (const { file: otherFile, index: otherIndex } of claimOrder) {
+							if (otherIndex === index || rowsClaimedBySetDef.has(otherIndex))
+								continue;
+							const otherRefs = filesByLabel.get(otherFile.label.toLowerCase());
+							if (
+								otherRefs?.some(
+									(r) => isRefUnused(r) && resolveSetDefObject(r)?.key === key
+								)
+							) {
+								count += 1;
+							}
+						}
+						return count;
+					};
+					matchingIndexes.sort((a, b) => {
+						const keyA = resolveSetDefObject(refs[a])?.key ?? '';
+						const keyB = resolveSetDefObject(refs[b])?.key ?? '';
+						return (
+							contendersForKey(keyA) - contendersForKey(keyB) ||
+							(dtxKeyOrder.get(keyA) ?? Number.MAX_SAFE_INTEGER) -
+								(dtxKeyOrder.get(keyB) ?? Number.MAX_SAFE_INTEGER) ||
+							a - b
+						);
+					});
+					if (!bestChoice || matchingIndexes.length < bestChoice.candidateCount) {
+						bestChoice = {
+							rowIndex: index,
+							refs,
+							bestRefIndex: matchingIndexes[0],
+							candidateCount: matchingIndexes.length
+						};
+						if (bestChoice.candidateCount === 1) break;
+					}
+				}
+				if (!bestChoice) break;
+				commitClaim(bestChoice.rowIndex, bestChoice.refs, bestChoice.bestRefIndex);
+			}
+			return;
+		}
 		for (const { file, index } of claimOrder) {
 			if (rowsClaimedBySetDef.has(index)) continue;
 			const label = file.label.toLowerCase();
 			const refs = filesByLabel.get(label);
 			if (!refs?.length) continue;
 			const rowLevel = normalizeLevel(file.level);
-			const isRefUnused = (ref: SetDefFileRef): boolean => {
-				const object = resolveSetDefObject(ref);
-				return !object || !usedDtxKeys.has(object.key);
-			};
-			let refIndex = refs.findIndex(
-				(ref) => isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel
-			);
-			if (refIndex === -1) {
-				if (exactOnly) continue;
-				refIndex = refs.findIndex((ref) => {
-					if (!isRefUnused(ref)) return false;
-					const probed = fileLevelByRef.get(ref);
-					if (probed === undefined) return true;
-					// A probed level of zero names a chart the uploader never
-					// catalogued — parse_dtx_folder skips unrated charts
-					// (#DLEVEL 0 or absent) — so no row can own it. Left in
-					// refs it stays reserved; a non-exact claim must not let
-					// it displace an unlisted file that is a row's real chart.
-					if (probed === 0) return false;
-					const levels = rowLevelsByLabel.get(label);
-					for (const level of levels ?? []) {
-						if (level === probed && level !== rowLevel) return false;
+			const refIndex = refs.findIndex((ref) => {
+				if (!isRefUnused(ref)) return false;
+				const probed = fileLevelByRef.get(ref);
+				if (probed === undefined) return true;
+				// A probed level of zero names a chart the uploader never
+				// catalogued — parse_dtx_folder skips unrated charts
+				// (#DLEVEL 0 or absent) — so no row can own it. Left in
+				// refs it stays reserved; a non-exact claim must not let
+				// it displace an unlisted file that is a row's real chart.
+				if (probed === 0) return false;
+				const levels = rowLevelsByLabel.get(label);
+				for (const level of levels ?? []) {
+					if (level === probed && level !== rowLevel) return false;
+				}
+				// The resolved object can be shared with another label's
+				// ref: its probed rating may name a row in THAT label,
+				// whose own ref will exact-claim the shared key. A
+				// non-exact claim here would consume the object first
+				// (each key is claimed once) and leave the exact row to
+				// the positional fallback — the alias steals its chart.
+				// Exact claims have already settled by this pass, so only
+				// a still-unclaimed row can need the shared object.
+				const sharedObject = resolveSetDefObject(ref);
+				const sharedLabels = sharedObject
+					? labelsByResolvedKey.get(sharedObject.key)
+					: undefined;
+				if (sharedLabels && sharedLabels.size > 1) {
+					for (const otherLabel of sharedLabels) {
+						if (otherLabel === label) continue;
+						const stillNeedsKey = dtxFiles.some(
+							(other, otherIndex) =>
+								!rowsClaimedBySetDef.has(otherIndex) &&
+								other.label.toLowerCase() === otherLabel &&
+								normalizeLevel(other.level) === probed
+						);
+						if (stillNeedsKey) return false;
 					}
-					// The resolved object can be shared with another label's
-					// ref: its probed rating may name a row in THAT label,
-					// whose own ref will exact-claim the shared key. A
-					// non-exact claim here would consume the object first
-					// (each key is claimed once) and leave the exact row to
-					// the positional fallback — the alias steals its chart.
-					// Exact claims have already settled by this pass, so only
-					// a still-unclaimed row can need the shared object.
-					const sharedObject = resolveSetDefObject(ref);
-					const sharedLabels = sharedObject
-						? labelsByResolvedKey.get(sharedObject.key)
-						: undefined;
-					if (sharedLabels && sharedLabels.size > 1) {
-						for (const otherLabel of sharedLabels) {
-							if (otherLabel === label) continue;
-							const stillNeedsKey = dtxFiles.some(
-								(other, otherIndex) =>
-									!rowsClaimedBySetDef.has(otherIndex) &&
-									other.label.toLowerCase() === otherLabel &&
-									normalizeLevel(other.level) === probed
-							);
-							if (stillNeedsKey) return false;
-						}
-					}
-					return true;
-				});
-				// Every remaining ref is provably another row's chart — leave
-				// them for their true rows and let this row fall through to
-				// the sorted fallback.
-				if (refIndex === -1) continue;
-			}
-			rowsClaimedBySetDef.add(index);
-			const [setDefRef] = refs.splice(refIndex, 1);
-			const matchedObject = resolveSetDefObject(setDefRef);
-			if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
-				matchedKeysByRowIndex.set(index, matchedObject.key);
-				usedDtxKeys.add(matchedObject.key);
-			}
+				}
+				return true;
+			});
+			// Every remaining ref is provably another row's chart — leave
+			// them for their true rows and let this row fall through to
+			// the sorted fallback.
+			if (refIndex === -1) continue;
+			commitClaim(index, refs, refIndex);
 		}
 	};
 	claimSetDefRows(true);
@@ -927,8 +1009,30 @@ export const discoverCatalogFiles = async (
 				}
 			}
 			const candidates = remainingEligibleKeys.filter((key) => selectedKeys.has(key));
-			for (const [candidateIndex, row] of groupRows.entries()) {
-				const key = candidates[candidateIndex];
+			const posByKey = new Map(remainingEligibleKeys.map((key, pos) => [key, pos]));
+			const unassignedCandidates: string[] = [];
+			// Keep candidates whose uploader position belongs to a row in this
+			// group with that positional owner first, so a short candidate list
+			// does not shift later candidates onto earlier rows.
+			for (const key of candidates) {
+				const pos = posByKey.get(key);
+				const positionalRow = pos !== undefined ? remainingRowsByPos[pos] : undefined;
+				if (
+					positionalRow &&
+					groupRowIndexes.has(positionalRow.index) &&
+					!rowsClaimedBySetDef.has(positionalRow.index)
+				) {
+					rowsClaimedBySetDef.add(positionalRow.index);
+					matchedKeysByRowIndex.set(positionalRow.index, key);
+					usedDtxKeys.add(key);
+				} else {
+					unassignedCandidates.push(key);
+				}
+			}
+			let unassignedIndex = 0;
+			for (const row of groupRows) {
+				if (rowsClaimedBySetDef.has(row.index)) continue;
+				const key = unassignedCandidates[unassignedIndex++];
 				if (!key) break;
 				rowsClaimedBySetDef.add(row.index);
 				matchedKeysByRowIndex.set(row.index, key);

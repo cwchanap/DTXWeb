@@ -300,6 +300,10 @@ describe('DTX to MIDI Component Rendering', () => {
 
 		await vi.waitFor(() => {
 			expect(screen.getByText(/lane 99 has no GM note/i)).toBeTruthy();
+			expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+			expect(toastMock.success).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Success' })
+			);
 		});
 
 		const nextFile = new File(['content2'], 'song2.dtx', { type: 'text/plain' });

@@ -114,6 +114,20 @@ class MidiFileBuilder {
 		denominator: number,
 		deltaTime: number = 0
 	): number[] {
+		if (!Number.isInteger(numerator) || numerator < 1 || numerator > 255) {
+			throw new RangeError(
+				`Time signature numerator must be an integer 1..255, got ${numerator}`
+			);
+		}
+		if (
+			!Number.isInteger(denominator) ||
+			denominator < 1 ||
+			(denominator & (denominator - 1)) !== 0
+		) {
+			throw new RangeError(
+				`Time signature denominator must be a positive power of two, got ${denominator}`
+			);
+		}
 		return [
 			...this.encodeVariableLength(deltaTime),
 			0xff,
@@ -213,14 +227,32 @@ class MidiFileBuilder {
 		// Timed events: meter changes and note on/offs, emitted in tick order
 		// with meter first at identical ticks.
 		const timedEvents: Array<
-			| { time: number; type: 'sig'; numerator: number; denominator: number }
-			| { time: number; type: 'tempo'; bpm: number }
-			| { time: number; type: 'on' | 'off'; note: number; velocity: number; channel: number }
+			| {
+					time: number;
+					group: 0;
+					seq: number;
+					type: 'sig';
+					numerator: number;
+					denominator: number;
+			  }
+			| { time: number; group: 1; seq: number; type: 'tempo'; bpm: number }
+			| {
+					time: number;
+					group: 2 | 3 | 4;
+					seq: number;
+					type: 'on' | 'off';
+					note: number;
+					velocity: number;
+					channel: number;
+			  }
 		> = [];
 
+		let seq = 0;
 		for (const sig of options.timeSignatures ?? []) {
 			timedEvents.push({
 				time: sig.tick,
+				group: 0,
+				seq: seq++,
 				type: 'sig',
 				numerator: sig.numerator,
 				denominator: sig.denominator
@@ -228,13 +260,22 @@ class MidiFileBuilder {
 		}
 
 		for (const tempoChange of options.tempos ?? []) {
-			timedEvents.push({ time: tempoChange.tick, type: 'tempo', bpm: tempoChange.bpm });
+			timedEvents.push({
+				time: tempoChange.tick,
+				group: 1,
+				seq: seq++,
+				type: 'tempo',
+				bpm: tempoChange.bpm
+			});
 		}
 
-		for (const noteData of options.notes ?? []) {
+		for (const [noteIndex, noteData] of (options.notes ?? []).entries()) {
 			const channel = noteData.channel || 0;
+			const isZeroDuration = noteData.duration === 0;
 			timedEvents.push({
 				time: noteData.startTime,
+				group: isZeroDuration ? 3 : 4,
+				seq: isZeroDuration ? noteIndex * 2 : seq++,
 				type: 'on',
 				note: noteData.note,
 				velocity: noteData.velocity,
@@ -242,6 +283,8 @@ class MidiFileBuilder {
 			});
 			timedEvents.push({
 				time: noteData.startTime + noteData.duration,
+				group: isZeroDuration ? 3 : 2,
+				seq: isZeroDuration ? noteIndex * 2 + 1 : seq++,
 				type: 'off',
 				note: noteData.note,
 				velocity: 0,
@@ -249,10 +292,9 @@ class MidiFileBuilder {
 			});
 		}
 
-		// Meter/tempo before note events at the same tick; off before on keeps a
-		// re-struck note's release ahead of its next attack.
-		const typeRank = { sig: 0, tempo: 1, off: 2, on: 3 } as const;
-		timedEvents.sort((a, b) => a.time - b.time || typeRank[a.type] - typeRank[b.type]);
+		// Order at identical ticks: sig (0), tempo (1), releases of prior notes (2),
+		// zero-duration note on-then-off pairs (3), and new attacks (4).
+		timedEvents.sort((a, b) => a.time - b.time || a.group - b.group || a.seq - b.seq);
 
 		for (const event of timedEvents) {
 			const deltaTime = event.time - currentTime;

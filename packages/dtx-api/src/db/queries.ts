@@ -202,8 +202,8 @@ export const listSimfiles = async (
 	}
 
 	const ids = rows.map((r) => r.id);
-	// Same insertion-order contract as getSimfile for duplicate-label
-	// SET.def pairing within each simfile's group.
+	// Read-order guarantee within each simfile: chart rows arrive in ascending
+	// id order, matching getSimfile.
 	const dtxRows = await orm
 		.select({
 			simfile_id: dtxFiles.simfileId,

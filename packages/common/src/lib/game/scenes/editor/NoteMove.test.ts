@@ -617,6 +617,88 @@ describe('NoteMove', () => {
 			expect(notesToMove[0].newKey).toBe('note-0-1-0');
 		});
 
+		it('moves a group note onto an off-grid cell vacated by another selected note', () => {
+			// 1/7, 3/7, and 4/7 are selected; dragging 3/7 to the measure
+			// start moves 1/7 into the previous measure. The 4/7 note's
+			// computed cell is a few ulps off the stored 1/7 position, but
+			// that occupant vacates in the same drag, so 4/7 must follow it
+			// instead of staying behind.
+			const p17 = canonicalizeCellOffset(1 / 7);
+			const p37 = canonicalizeCellOffset(3 / 7);
+			const p47 = canonicalizeCellOffset(4 / 7);
+			expect(canonicalizeCellOffset(p47 - p37)).not.toBe(p17);
+
+			const lineA = new LaneMeasureNote(2, 'lane1', [
+				{ noteID: '01', position: p17 },
+				{ noteID: '02', position: p37 },
+				{ noteID: '03', position: p47 }
+			]);
+			mockEditor._setMockNotes({ lane1: [lineA] });
+
+			const key17 = `note-0-2-${p17}`;
+			const key37 = `note-0-2-${p37}`;
+			const key47 = `note-0-2-${p47}`;
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set([key17, key37, key47]);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+
+			expect(notesToMove.map((n) => n.oldKey)).toEqual([key17, key37, key47]);
+			expect(notesToMove.map((n) => n.newKey)).toEqual([
+				`note-0-1-${canonicalizeCellOffset(p17 - p37 + 1)}`,
+				'note-0-2-0',
+				`note-0-2-${canonicalizeCellOffset(p47 - p37)}`
+			]);
+		});
+
+		it('refuses an off-grid destination whose selected occupant cannot vacate', () => {
+			// Same 1/7, 3/7, 4/7 group in measure 0. Dragging 3/7 to the
+			// measure start pushes 1/7 into measure -1, so its move is
+			// refused and the drifted cell stays occupied — 4/7 must stay
+			// behind rather than land on top of it.
+			const p17 = canonicalizeCellOffset(1 / 7);
+			const p37 = canonicalizeCellOffset(3 / 7);
+			const p47 = canonicalizeCellOffset(4 / 7);
+
+			const lineA = new LaneMeasureNote(0, 'lane1', [
+				{ noteID: '01', position: p17 },
+				{ noteID: '02', position: p37 },
+				{ noteID: '03', position: p47 }
+			]);
+			mockEditor._setMockNotes({ lane1: [lineA] });
+
+			const key17 = `note-0-0-${p17}`;
+			const key37 = `note-0-0-${p37}`;
+			const key47 = `note-0-0-${p47}`;
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set([key17, key37, key47]);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+
+			expect(notesToMove.map((n) => n.oldKey)).toEqual([key37]);
+			expect(notesToMove[0].newKey).toBe('note-0-0-0');
+		});
+
 		it('should not record a move whose destination placement failed', () => {
 			const selectedNotes = new Set(['note-0-1-0']);
 			const deleteNoteByKey = vi.fn();

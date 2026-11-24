@@ -282,8 +282,9 @@ export class NoteMove {
 		}>
 	): void {
 		const candidates: typeof notesToMove = [];
-		// Moves whose placement depends on a dragged destination vacating.
-		const draggedDeps = new Set<string>();
+		// Moves whose placement depends on dragged occupants vacating their
+		// cells, keyed by the moving note and the occupants it waits on.
+		const draggedDeps = new Map<string, Set<string>>();
 
 		this.draggedNotes.forEach((noteKey) => {
 			const parsed = parseNoteKey(noteKey);
@@ -349,17 +350,31 @@ export class NoteMove {
 					// hit instead of being refused — the same occupancy hole
 					// pasteNotes guards with its drift check.
 					const ulpTolerance = Number.EPSILON * 16 * Math.max(1, Math.abs(newCellOffset));
-					const existingDriftHit = (this.editor.getNotes()[newLaneId] ?? []).some(
-						(group) =>
-							group.measure === newMeasure &&
-							group.notes.some(
-								(chip) =>
-									chip.position !== newCellOffset &&
-									Math.abs(chip.position - newCellOffset) <= ulpTolerance
-							)
-					);
+					// Nearby chips are occupancy too. A selected occupant vacates
+					// its cell in the same drag, so it becomes a dependency like
+					// an exact-key dragged destination; an unselected occupant or
+					// a duplicate line's surviving chip still blocks.
+					const driftOccupants = new Set<string>();
+					let driftBlocked = false;
+					for (const group of this.editor.getNotes()[newLaneId] ?? []) {
+						if (group.measure !== newMeasure) continue;
+						for (const chip of group.notes) {
+							if (chip.position === newCellOffset) continue;
+							if (Math.abs(chip.position - newCellOffset) > ulpTolerance) continue;
+							const occupantKey = `note-${newLaneIndex}-${newMeasure}-${chip.position}`;
+							if (
+								!this.draggedNotes.has(occupantKey) ||
+								this.hasSurvivingChip(newLaneIndex, newMeasure, chip.position)
+							) {
+								driftBlocked = true;
+								break;
+							}
+							driftOccupants.add(occupantKey);
+						}
+						if (driftBlocked) break;
+					}
 					if (
-						!existingDriftHit &&
+						!driftBlocked &&
 						(!existingNote ||
 							(destIsDragged &&
 								!this.hasSurvivingChip(newLaneIndex, newMeasure, newCellOffset)))
@@ -373,20 +388,25 @@ export class NoteMove {
 							laneId: newLaneId,
 							originalNoteId: originalNoteIds.get(noteKey) || '01'
 						});
-						if (destIsDragged) {
-							draggedDeps.add(noteKey);
-						}
+						const addDraggedDep = (occupantKey: string) => {
+							const deps = draggedDeps.get(noteKey);
+							if (deps) deps.add(occupantKey);
+							else draggedDeps.set(noteKey, new Set([occupantKey]));
+						};
+						if (destIsDragged) addDraggedDep(existingNote.name);
+						driftOccupants.forEach(addDraggedDep);
 					}
 				}
 			}
 		});
 
-		// A move onto a dragged destination only lands when that note actually
-		// vacates. If its own move was refused (survivor chip, bounds, occupied
-		// target), the incoming placement fails after the source was deleted
-		// and the chip is lost — so propagate the refusal. Follow each
-		// dependency edge once: dependents[occupantKey] holds the sources
-		// waiting on that dragged cell, and a refusal cascades down its chain.
+		// A move onto a dragged occupant only lands when that occupant
+		// actually vacates. If its own move was refused (survivor chip,
+		// bounds, occupied target), the incoming placement fails after the
+		// source was deleted and the chip is lost — so propagate the refusal.
+		// Follow each dependency edge once: dependents[occupantKey] holds the
+		// sources waiting on that dragged cell, and a refusal cascades down
+		// its chain.
 		const claimed = new Set<string>();
 		const movable = new Map<string, (typeof candidates)[number]>();
 		const dependents = new Map<string, string[]>();
@@ -401,19 +421,22 @@ export class NoteMove {
 			claimed.add(candidate.newKey);
 			movable.set(candidate.oldKey, candidate);
 		});
-		draggedDeps.forEach((oldKey) => {
+		draggedDeps.forEach((occupants, oldKey) => {
 			const candidate = movable.get(oldKey);
 			if (!candidate) return;
-			if (movable.has(candidate.newKey)) {
-				const waiters = dependents.get(candidate.newKey);
+			const occupantsVacate = [...occupants].every((occupantKey) => movable.has(occupantKey));
+			if (!occupantsVacate) {
+				blocked.push(oldKey);
+				return;
+			}
+			occupants.forEach((occupantKey) => {
+				const waiters = dependents.get(occupantKey);
 				if (waiters) {
 					waiters.push(oldKey);
 				} else {
-					dependents.set(candidate.newKey, [oldKey]);
+					dependents.set(occupantKey, [oldKey]);
 				}
-			} else {
-				blocked.push(oldKey);
-			}
+			});
 		});
 		while (blocked.length > 0) {
 			const oldKey = blocked.pop()!;

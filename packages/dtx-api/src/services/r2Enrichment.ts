@@ -738,7 +738,8 @@ export const discoverCatalogFiles = async (
 	// Catalog-eligible charts sit directly at the simfile root or beside
 	// the selected set.def — parse_dtx_folder catalogs only top-level
 	// files, so a deeper-nested .dtx can never be a row's chart and must
-	// not claim one by rating or take a positional slot below.
+	// not claim one by rating or take a positional slot while an
+	// eligible candidate remains.
 	const isCatalogEligibleKey = (key: string): boolean =>
 		isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
 	if (fallbackRows.length > 0) {
@@ -748,6 +749,9 @@ export const discoverCatalogFiles = async (
 				// re-reading the shorter window could only downgrade a found
 				// #DLEVEL to "unprobed".
 				if (usedDtxKeys.has(key) || probedLevelByKey.has(key)) return;
+				// Below both catalog dirs a chart can never claim a row, so
+				// probing its header spends an R2 read no pass consumes.
+				if (!isCatalogEligibleKey(key)) return;
 				const level = await probeChartHeaderLevel(bucket, key, logger);
 				if (level === undefined) return;
 				if (level === null || level === 0) {
@@ -819,15 +823,22 @@ export const discoverCatalogFiles = async (
 	// files.sort() order) — so pair remaining rows in row order with
 	// remaining keys in key order, reproducing the uploader's own
 	// row↔file correspondence instead of assuming filenames sort by
-	// difficulty. The pool keeps the catalog scope: an uncataloged
-	// nested file is never a row's chart and would otherwise take a
-	// positional slot ahead of the row's real file.
+	// difficulty. The pool prefers the catalog scope: an uncataloged
+	// nested file is never a row's chart and must not take a positional
+	// slot while an eligible candidate remains. When NO eligible
+	// candidate is left and the leftover objects match the remaining
+	// rows one-to-one — a legacy simfile whose charts all sit below the
+	// catalog dirs — there is nothing to displace and nothing to guess
+	// between, so the full leftover pool pairs as it did before the
+	// scope.
 	const positionalRows = fallbackRows
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort((a, b) => a.index - b.index);
-	const fallbackKeys = dtxObjectKeys.filter(
-		(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
-	);
+	const unusedKeys = dtxObjectKeys.filter((key) => !usedDtxKeys.has(key));
+	const fallbackKeys = unusedKeys.filter(isCatalogEligibleKey);
+	if (fallbackKeys.length === 0 && unusedKeys.length === positionalRows.length) {
+		fallbackKeys.push(...unusedKeys);
+	}
 	for (const [fallbackIndex, row] of positionalRows.entries()) {
 		const key = fallbackKeys[fallbackIndex];
 		if (key) {

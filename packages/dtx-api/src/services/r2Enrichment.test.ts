@@ -4054,4 +4054,77 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('pairs a leftover row with its only nested chart', async () => {
+		// Legacy nested layout: the song's only chart sits in a subfolder
+		// and no set.def exists, so no object is catalog-eligible. With
+		// the leftover objects matching the remaining rows one-to-one
+		// there is no eligible chart to displace — the nested file is
+		// the row's only possible source and must still serve the
+		// preview.
+		const get = vi.fn();
+		const bucket = {
+			...makeBucket([[{ key: '42/charts/basic.dtx', size: 500, uploaded: new Date() }]]),
+			get
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 30 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/charts/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+		// A catalog-ineligible chart never claims a row by rating, so its
+		// header is not worth a probe read.
+		expect(get).not.toHaveBeenCalled();
+	});
+
+	it('skips header probes for catalog-ineligible charts', async () => {
+		// The rating pass probes leftover objects for #DLEVEL, but a
+		// deeper-nested key can never claim a row — reading its header
+		// wastes an R2 GET. The eligible candidate is still probed.
+		const get = vi.fn(async (key: string) => ({
+			arrayBuffer: async () =>
+				encodeToBuffer(
+					key === '42/song.dtx'
+						? '#TITLE: Song\n#DLEVEL: 30\n'
+						: '#TITLE: B\n#DLEVEL: 85\n'
+				)
+		}));
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/backup.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/song.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get
+		} as unknown as R2Bucket;
+
+		await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 30 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(get).toHaveBeenCalledWith('42/song.dtx', expect.anything());
+		expect(get).not.toHaveBeenCalledWith('42/extras/backup.dtx', expect.anything());
+	});
 });

@@ -735,6 +735,12 @@ export const discoverCatalogFiles = async (
 			(a, b) =>
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
+	// Catalog-eligible charts sit directly at the simfile root or beside
+	// the selected set.def — parse_dtx_folder catalogs only top-level
+	// files, so a deeper-nested .dtx can never be a row's chart and must
+	// not claim one by rating or take a positional slot below.
+	const isCatalogEligibleKey = (key: string): boolean =>
+		isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
 	if (fallbackRows.length > 0) {
 		await Promise.all(
 			dtxObjectKeys.map(async (key) => {
@@ -763,12 +769,7 @@ export const discoverCatalogFiles = async (
 		// consumes a probed key that positionally belongs to a later row
 		// and the skipped unprobed key binds the wrong row. A uniquely-
 		// rated row still requires an exact probed match; unprobed keys
-		// stay positional there. Candidates are scoped like the stem
-		// pass: parse_dtx_folder catalogs only top-level charts, so a
-		// deeper-nested .dtx can never be a row's chart and must not
-		// claim one by rating ahead of the re-rated stem pass.
-		const isCatalogEligibleKey = (key: string): boolean =>
-			isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
+		// stay positional there.
 		for (let groupStart = 0; groupStart < fallbackRows.length;) {
 			const groupLevel = normalizeLevel(fallbackRows[groupStart].file.level);
 			let groupEnd = groupStart + 1;
@@ -818,11 +819,15 @@ export const discoverCatalogFiles = async (
 	// files.sort() order) — so pair remaining rows in row order with
 	// remaining keys in key order, reproducing the uploader's own
 	// row↔file correspondence instead of assuming filenames sort by
-	// difficulty.
+	// difficulty. The pool keeps the catalog scope: an uncataloged
+	// nested file is never a row's chart and would otherwise take a
+	// positional slot ahead of the row's real file.
 	const positionalRows = fallbackRows
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort((a, b) => a.index - b.index);
-	const fallbackKeys = dtxObjectKeys.filter((key) => !usedDtxKeys.has(key));
+	const fallbackKeys = dtxObjectKeys.filter(
+		(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
+	);
 	for (const [fallbackIndex, row] of positionalRows.entries()) {
 		const key = fallbackKeys[fallbackIndex];
 		if (key) {

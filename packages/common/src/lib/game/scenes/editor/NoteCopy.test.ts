@@ -937,4 +937,37 @@ describe('NoteCopy', () => {
 			expect(mockDeleteNoteByKey).not.toHaveBeenCalled();
 		});
 	});
+
+	describe('repeating-fraction paste occupancy check', () => {
+		it('does not duplicate a stored 1/7 chip when pasting copied 3/7 and 4/7 notes at offset 0', () => {
+			const posOneSeventh = Number((1 / 7).toPrecision(15));
+			const posThreeSevenths = Number((3 / 7).toPrecision(15));
+			const posFourSevenths = Number((4 / 7).toPrecision(15));
+
+			const note = new LaneMeasureNote(0, 'lane1', [
+				{ noteID: '11', position: posOneSeventh },
+				{ noteID: '12', position: posThreeSevenths },
+				{ noteID: '13', position: posFourSevenths }
+			]);
+			vi.mocked(mockEditor.getNotes).mockReturnValue({ lane1: [note] });
+
+			const existingKey = `note-0-0-${posOneSeventh}`;
+			vi.mocked(mockEditor.getPanelContainer).mockReturnValue({
+				getByName: vi.fn((key: string) => (key === existingKey ? { name: key } : null))
+			} as never);
+
+			noteCopy.copyNotes(
+				new Set([`note-0-0-${posThreeSevenths}`, `note-0-0-${posFourSevenths}`]),
+				mockEditor
+			);
+
+			// Pasting at 0 places 3/7 at 0 (empty) and 4/7 - 3/7 at 1/7 (occupied by 1/7!).
+			// Arithmetic 4/7 - 3/7 yields 0.142857142857142 vs stored 0.142857142857143;
+			// only the 0-offset note should paste, never a duplicate at 1/7.
+			const added = noteCopy.pasteNotes(0, 0, 0, mockEditor);
+			expect(added).toBe(true);
+			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledTimes(1);
+			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledWith(0, 0, 0, 'lane1', '12');
+		});
+	});
 });

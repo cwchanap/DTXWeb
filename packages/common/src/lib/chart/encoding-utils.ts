@@ -130,12 +130,33 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 			if (uint8[i * 2] === 0) evenZeros++;
 			if (uint8[i * 2 + 1] === 0) oddZeros++;
 		}
-		const encoding =
-			oddZeros > evenZeros && oddZeros * 4 > pairs
-				? 'utf-16le'
-				: evenZeros > oddZeros && evenZeros * 4 > pairs
-					? 'utf-16be'
-					: 'utf-8';
+		let encoding: 'utf-8' | 'utf-16le' | 'utf-16be' = 'utf-8';
+		if (oddZeros > evenZeros && oddZeros * 4 > pairs) {
+			encoding = 'utf-16le';
+		} else if (evenZeros > oddZeros && evenZeros * 4 > pairs) {
+			encoding = 'utf-16be';
+		} else if (uint8.length >= 2) {
+			// Sparse-zero UTF-16 (e.g. #TITLE: followed by hundreds of CJK chars)
+			// fails the zero-byte density test; sniff valid directives in both
+			// UTF-16 byte orders before falling back to UTF-8. Truncate the
+			// probe slice to an even byte count so an odd-length ranged read
+			// doesn't emit U+FFFD for a trailing half-code-unit.
+			const directiveRegex =
+				/^\s*#(?:TITLE|ARTIST|BPM|DLEVEL|COMMENT|WAV|BMP|PREVIEW|L\d+(?:LABEL|FILE|FONT))/im;
+			const probeEnd = Math.min(uint8.length & ~1, 2048);
+			const probeSlice = uint8.subarray(0, probeEnd);
+			for (const candidate of ['utf-16le', 'utf-16be'] as const) {
+				const decoded = new TextDecoder(candidate).decode(probeSlice);
+				if (
+					!decoded.includes('\u0000') &&
+					!decoded.includes('\uFFFD') &&
+					directiveRegex.test(decoded)
+				) {
+					encoding = candidate;
+					break;
+				}
+			}
+		}
 		text = new TextDecoder(encoding).decode(buffer);
 	}
 	// Strip BOM character if it survived decoding

@@ -204,7 +204,10 @@ const probeChartHeaderLevel = async (
 		});
 		if (!body) return undefined;
 		const buffer = await body.arrayBuffer();
-		const truncated = buffer.byteLength > maxBytes;
+		const truncated =
+			typeof body.size === 'number'
+				? buffer.byteLength < body.size
+				: buffer.byteLength > maxBytes;
 		let head = decodeArrayBufferWithBomDetection(buffer);
 		// NUL characters in the decoded header mean the bytes are an
 		// encoding the decoder could not place — undecodable, not unrated.
@@ -507,9 +510,16 @@ export const discoverCatalogFiles = async (
 		const refs = filesByLabel.get(label);
 		if (!refs?.length) continue;
 		const rowLevel = normalizeLevel(file.level);
-		let refIndex = refs.findIndex((ref) => fileLevelByRef.get(ref) === rowLevel);
+		const isRefUnused = (ref: SetDefFileRef): boolean => {
+			const object = resolveSetDefObject(ref);
+			return !object || !usedDtxKeys.has(object.key);
+		};
+		let refIndex = refs.findIndex(
+			(ref) => isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel
+		);
 		if (refIndex === -1) {
 			refIndex = refs.findIndex((ref) => {
+				if (!isRefUnused(ref)) return false;
 				const probed = fileLevelByRef.get(ref);
 				if (probed === undefined) return true;
 				// A probed level of zero names a chart the uploader never
@@ -532,7 +542,7 @@ export const discoverCatalogFiles = async (
 		rowsClaimedBySetDef.add(index);
 		const [setDefRef] = refs.splice(refIndex, 1);
 		const matchedObject = resolveSetDefObject(setDefRef);
-		if (matchedObject) {
+		if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
 			matchedKeysByRowIndex.set(index, matchedObject.key);
 			usedDtxKeys.add(matchedObject.key);
 		}
@@ -561,12 +571,19 @@ export const discoverCatalogFiles = async (
 	for (const refs of filesByLabel.values()) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
-			if (!object) continue;
-			if (
-				(isTopLevelR2Key(object.key, prefix) ||
-					isTopLevelR2Key(object.key, setDefBaseDir)) &&
-				fileLevelByRef.get(ref) !== 0
-			) {
+			if (!object || usedDtxKeys.has(object.key)) continue;
+			if (isTopLevelR2Key(object.key, prefix) || isTopLevelR2Key(object.key, setDefBaseDir)) {
+				let leftoverLevel: number | null | undefined = fileLevelByRef.get(ref);
+				if (leftoverLevel === undefined) {
+					leftoverLevel = await probeChartHeaderLevel(bucket, object.key, logger);
+					if (leftoverLevel !== undefined) {
+						fileLevelByRef.set(ref, leftoverLevel ?? 0);
+					}
+				}
+				if (leftoverLevel === 0 || leftoverLevel === null) {
+					usedDtxKeys.add(object.key);
+					continue;
+				}
 				const stem = r2FileName(object.key)
 					.replace(/\.dtx$/i, '')
 					.toLowerCase();
@@ -774,6 +791,7 @@ export const discoverCatalogFiles = async (
 		// and the skipped unprobed key binds the wrong row. A uniquely-
 		// rated row still requires an exact probed match; unprobed keys
 		// stay positional there.
+		const levelGroups: (typeof fallbackRows)[] = [];
 		for (let groupStart = 0; groupStart < fallbackRows.length;) {
 			const groupLevel = normalizeLevel(fallbackRows[groupStart].file.level);
 			let groupEnd = groupStart + 1;
@@ -783,7 +801,16 @@ export const discoverCatalogFiles = async (
 			) {
 				groupEnd += 1;
 			}
-			const groupRows = fallbackRows.slice(groupStart, groupEnd);
+			levelGroups.push(fallbackRows.slice(groupStart, groupEnd));
+			groupStart = groupEnd;
+		}
+		// Pass 1: claim groups whose full row count can be satisfied by exact
+		// probed matches before any shortage fill runs, so a later exact match
+		// (e.g. Expert/80) clears its slot and key before equal-rated shortage
+		// fills run.
+		const deferredGroups: (typeof fallbackRows)[] = [];
+		for (const groupRows of levelGroups) {
+			const groupLevel = normalizeLevel(groupRows[0].file.level);
 			const groupSize = groupRows.length;
 			const selectedKeys = new Set<string>();
 			for (const key of dtxObjectKeys) {
@@ -791,12 +818,9 @@ export const discoverCatalogFiles = async (
 				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
-			if (groupSize > 1 && selectedKeys.size < groupSize) {
-				for (const key of dtxObjectKeys) {
-					if (selectedKeys.size === groupSize) break;
-					if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
-					if (!probedLevelByKey.has(key)) selectedKeys.add(key);
-				}
+			if (selectedKeys.size < groupSize && groupSize > 1) {
+				deferredGroups.push(groupRows);
+				continue;
 			}
 			const candidates = dtxObjectKeys.filter((key) => selectedKeys.has(key));
 			for (const [candidateIndex, row] of groupRows.entries()) {
@@ -806,7 +830,44 @@ export const discoverCatalogFiles = async (
 				matchedKeysByRowIndex.set(row.index, key);
 				usedDtxKeys.add(key);
 			}
-			groupStart = groupEnd;
+		}
+		// Pass 2: for equal-rated groups with an exact-match shortage, only fill
+		// from unprobed keys whose remaining uploader-position slot belongs to
+		// a row inside the group — never steal an unprobed key whose position
+		// maps to an unclaimed row outside the group.
+		for (const groupRows of deferredGroups) {
+			const groupLevel = normalizeLevel(groupRows[0].file.level);
+			const groupSize = groupRows.length;
+			const groupRowIndexes = new Set(groupRows.map((row) => row.index));
+			const remainingRowsByPos = fallbackRows
+				.filter((row) => !rowsClaimedBySetDef.has(row.index))
+				.sort((a, b) => a.index - b.index);
+			const remainingEligibleKeys = dtxObjectKeys.filter(
+				(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
+			);
+			const selectedKeys = new Set<string>();
+			for (const key of remainingEligibleKeys) {
+				if (selectedKeys.size === groupSize) break;
+				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
+			}
+			if (selectedKeys.size < groupSize) {
+				for (const [pos, key] of remainingEligibleKeys.entries()) {
+					if (selectedKeys.size === groupSize) break;
+					if (selectedKeys.has(key) || probedLevelByKey.has(key)) continue;
+					const positionalRow = remainingRowsByPos[pos];
+					if (positionalRow && groupRowIndexes.has(positionalRow.index)) {
+						selectedKeys.add(key);
+					}
+				}
+			}
+			const candidates = remainingEligibleKeys.filter((key) => selectedKeys.has(key));
+			for (const [candidateIndex, row] of groupRows.entries()) {
+				const key = candidates[candidateIndex];
+				if (!key) break;
+				rowsClaimedBySetDef.add(row.index);
+				matchedKeysByRowIndex.set(row.index, key);
+				usedDtxKeys.add(key);
+			}
 		}
 	}
 

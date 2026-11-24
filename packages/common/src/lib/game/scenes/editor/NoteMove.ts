@@ -369,9 +369,20 @@ export class NoteMove {
 		// and the chip is lost — so propagate the refusal. Follow each
 		// dependency edge once: dependents[occupantKey] holds the sources
 		// waiting on that dragged cell, and a refusal cascades down its chain.
-		const movable = new Map(candidates.map((candidate) => [candidate.oldKey, candidate]));
+		const claimed = new Set<string>();
+		const movable = new Map<string, (typeof candidates)[number]>();
 		const dependents = new Map<string, string[]>();
 		const blocked: string[] = [];
+		// Two sources can canonicalize onto one destination key. Only the first
+		// can land, so refuse the others before propagating dependencies.
+		candidates.forEach((candidate) => {
+			if (claimed.has(candidate.newKey)) {
+				blocked.push(candidate.oldKey);
+				return;
+			}
+			claimed.add(candidate.newKey);
+			movable.set(candidate.oldKey, candidate);
+		});
 		draggedDeps.forEach((oldKey) => {
 			const candidate = movable.get(oldKey);
 			if (!candidate) return;
@@ -392,14 +403,8 @@ export class NoteMove {
 			dependents.get(oldKey)?.forEach((dep) => blocked.push(dep));
 		}
 
-		// Two sources can canonicalize onto one destination key; only the
-		// first placement would succeed.
-		const claimed = new Set<string>();
 		movable.forEach((candidate) => {
-			if (!claimed.has(candidate.newKey)) {
-				claimed.add(candidate.newKey);
-				notesToMove.push(candidate);
-			}
+			notesToMove.push(candidate);
 		});
 	}
 

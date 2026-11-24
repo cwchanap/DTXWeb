@@ -341,7 +341,7 @@ export const buildTimingInput = (
 	const legacyBpmChanges: LaneMeasureNote[] = [];
 	for (const lm of notesByLane[LEGACY_BPM_CHANNEL] ?? []) {
 		const convertedNotes = lm.notes
-			.filter((n) => n.noteID !== '00')
+			.filter((n) => n.noteID !== '00' && /^[0-9A-F]{2}$/i.test(n.noteID))
 			.map((n) => {
 				const syntheticId = `03:${n.noteID}`;
 				bpmValueMap[syntheticId] = parseInt(n.noteID, 16);

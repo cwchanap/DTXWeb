@@ -1215,8 +1215,12 @@ export class Editor extends BaseGame {
 	/**
 	 * Delete note by key - delegate to NoteManager
 	 */
-	deleteNoteByKey(noteKey: string): void {
-		this.noteManager.deleteNoteByKey(noteKey);
+	deleteNoteByKey(noteKey: string, targetNoteId?: string): void {
+		if (targetNoteId !== undefined) {
+			this.noteManager.deleteNoteByKey(noteKey, targetNoteId);
+		} else {
+			this.noteManager.deleteNoteByKey(noteKey);
+		}
 	}
 
 	/**

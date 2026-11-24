@@ -399,4 +399,43 @@ describe('MIDI Preview', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Choose File' }));
 		expect(clickSpy).toHaveBeenCalled();
 	});
+
+	it('accepts .midi files', async () => {
+		const { container } = render(MidiPreview);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const validFile = createMinimalMidiFile();
+		const midiExtFile = new File([await validFile.arrayBuffer()], 'song.midi', {
+			type: 'audio/midi'
+		});
+
+		await fireEvent.change(input, { target: { files: [midiExtFile] } });
+
+		expect(await screen.findByText('File Information')).toBeInTheDocument();
+		expect(toastMock.error).not.toHaveBeenCalled();
+	});
+
+	it('clears previous metadata when a replacement file fails to parse', async () => {
+		const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			const { container } = render(MidiPreview);
+			const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+			await fireEvent.change(input, { target: { files: [createMinimalMidiFile()] } });
+			await screen.findByText('File Information');
+
+			const badFile = new File([new Uint8Array([0x4d, 0x54, 0x68, 0x65])], 'bad.midi', {
+				type: 'audio/midi'
+			});
+			await fireEvent.change(input, { target: { files: [badFile] } });
+
+			await waitFor(() => {
+				expect(toastMock.error).toHaveBeenCalledWith(
+					expect.objectContaining({ title: 'Failed to parse MIDI' })
+				);
+			});
+			expect(screen.queryByText('File Information')).not.toBeInTheDocument();
+		} finally {
+			consoleSpy.mockRestore();
+		}
+	});
 });

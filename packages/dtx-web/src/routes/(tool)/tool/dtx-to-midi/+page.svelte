@@ -37,6 +37,7 @@
 		if (file && isValidDtxFile(file)) {
 			uploadedFile = file;
 			isConverted = false;
+			exportWarnings = [];
 		} else if (file) {
 			toastStore.error({
 				title: 'Invalid file type',

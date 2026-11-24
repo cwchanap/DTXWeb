@@ -281,6 +281,57 @@ describe('parseMidi', () => {
 		expect(parseMidi(padded).trackCount).toBe(1);
 	});
 
+	it('skips unknown SMF chunks before MTrk without counting them as tracks', () => {
+		const inner = buildMidi(480, [[...evNoteOn(0, 36), ...evNoteOff(60, 36), ...evEndOfTrack]]);
+		const customChunk = new Uint8Array([
+			0x58, 0x45, 0x58, 0x54, 0x00, 0x00, 0x00, 0x02, 0xaa, 0xbb
+		]); // 'XEXT' len 2
+		const withCustom = new Uint8Array(14 + customChunk.length + (inner.length - 14));
+		withCustom.set(inner.slice(0, 14), 0);
+		withCustom.set(customChunk, 14);
+		withCustom.set(inner.slice(14), 14 + customChunk.length);
+
+		const midi = parseMidi(withCustom);
+		expect(midi.tracks).toHaveLength(1);
+		expect(midi.totalNotes).toBe(1);
+	});
+
+	it('reads the known prefix of extended tempo and time-signature meta events', () => {
+		const bytes = buildMidi(480, [
+			[
+				// 4-byte tempo payload (3 standard + 1 extension byte)
+				...vlq(0),
+				0xff,
+				0x51,
+				0x04,
+				0x07,
+				0xa1,
+				0x20,
+				0x99,
+				// 5-byte time signature payload (4 standard + 1 extension byte)
+				...vlq(0),
+				0xff,
+				0x58,
+				0x05,
+				0x03,
+				0x02,
+				24,
+				8,
+				0x77,
+				...evNoteOn(0, 36),
+				...evNoteOff(60, 36),
+				...evEndOfTrack
+			]
+		]);
+
+		const midi = parseMidi(bytes);
+		expect(midi.tempoEvents).toEqual([{ tick: 0, microsecondsPerQuarter: 500000 }]);
+		expect(midi.meterEvents).toEqual([
+			{ tick: 0, numerator: 3, denominator: 4, notated32ndsPerQuarter: 8 }
+		]);
+		expect(midi.totalNotes).toBe(1);
+	});
+
 	describe('rejects malformed input', () => {
 		const cases: Array<[string, Uint8Array]> = [
 			['missing MThd', new Uint8Array([0x00, 0x01, 0x02, 0x03])],
@@ -300,6 +351,27 @@ describe('parseMidi', () => {
 				'format 2',
 				(() => {
 					const bytes = buildMidi(480, [[...evEndOfTrack]], 2);
+					return bytes;
+				})()
+			],
+			[
+				'format 0 with 0 tracks',
+				(() => {
+					const bytes = buildMidi(480, [], 0);
+					return bytes;
+				})()
+			],
+			[
+				'format 0 with 2 tracks',
+				(() => {
+					const bytes = buildMidi(480, [[...evEndOfTrack], [...evEndOfTrack]], 0);
+					return bytes;
+				})()
+			],
+			[
+				'format 1 with 0 tracks',
+				(() => {
+					const bytes = buildMidi(480, [], 1);
 					return bytes;
 				})()
 			],
@@ -471,6 +543,7 @@ describe('dtxToMidi', () => {
 		expect(ons).toHaveLength(2);
 		expect(ons.every((e) => e.note === 35)).toBe(true);
 		expect(warnings.some((w) => w.includes('51'))).toBe(true);
+		expect(warnings.some((w) => w.includes('same MIDI note and tick'))).toBe(true);
 	});
 
 	it('warns and skips lane overrides outside the 0-127 MIDI note range', () => {
@@ -727,6 +800,25 @@ describe('midiToDtx', () => {
 		expect(() => midiToDtx(midi)).toThrow(/measure/i);
 	});
 
+	it('excludes ignored non-drum notes from the DTX measure-range check', () => {
+		// Kick at tick 0 plus a melody note on channel 0 past measure 999:
+		// the non-drum note is ignored and must not trigger the range error.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evNoteOn(0, 36, 100, 9),
+					...evNoteOff(60, 36, 9),
+					...evNoteOn(1_920_000 - 60, 60, 100, 0),
+					...evNoteOff(60, 60, 0),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['13'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+		expect(result.warnings.some((w) => w.includes('non-drum channels ignored'))).toBe(true);
+	});
+
 	it('rolls a hit that quantizes onto the barline into the next bar slot 0', () => {
 		// slot = 10 ticks at 480 PPQ 4/4: tick 1917 -> raw slot 191.7 -> 192.
 		const midi = parseMidi(
@@ -837,6 +929,23 @@ describe('midiToDtx', () => {
 			])
 		);
 		expect(() => midiToDtx(midi)).toThrow(/BPM|id/i);
+	});
+
+	it('allocates BPM ids only for surviving values after cell collisions', () => {
+		// At 32736 PPQ (4/4 bar = 130944 ticks, 1/192 cell = 682 ticks),
+		// 1296 distinct tempo events 1 tick apart all collapse onto <= 3 cells,
+		// so only <= 3 #BPMxx ids are needed.
+		const midi = parseMidi(
+			buildMidi(32736, [
+				[
+					...evTempo(0, 120),
+					...Array.from({ length: 1296 }, (_, i) => evTempo(1, 50 + i)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(Object.keys(result.controls.bpmChanges ?? {}).length).toBeLessThanOrEqual(3);
 	});
 
 	it('rejects a zero-numerator meter instead of hanging', () => {
@@ -1005,14 +1114,33 @@ describe('round trips', () => {
 				expect(Math.abs(slotOf[i] - tick)).toBeLessThanOrEqual(halfSlot);
 			});
 
-		// Time domain: positionToTime must track real MIDI seconds through the
-		// tempo change, within half a slot.
+		// Time domain: reparsed DTX hits must survive serialization and
+		// positionToTime must track real MIDI seconds through the tempo change.
 		const out = new DTXFile();
 		out.bpm = result.bpm;
 		const text = out.toDtxText(result.notes, result.controls);
 		const reparsed = new DTXFile(text);
 		reparsed.parseFromText(text);
 		const timing = buildChartTiming(buildTimingInput(reparsed));
+
+		const reparsedHits: { measure: number; position: number }[] = [];
+		for (const lm of reparsed.parseNotes()) {
+			if (lm.laneID === '08') continue;
+			for (const n of lm.notes) {
+				if (n.noteID !== '00') {
+					reparsedHits.push({ measure: lm.measure, position: n.position });
+				}
+			}
+		}
+		expect(reparsedHits).toHaveLength(5);
+		reparsedHits.sort((a, b) => a.measure - b.measure || a.position - b.position);
+
+		const reparsedSlots = reparsedHits.map((r) => r.measure * barTicks + r.position * barTicks);
+		hits.map((h) => h.tick)
+			.sort((a, b) => a - b)
+			.forEach((tick, i) => {
+				expect(Math.abs(reparsedSlots[i] - tick)).toBeLessThanOrEqual(halfSlot);
+			});
 
 		const secondsPerTick = (tick: number) =>
 			tick <= 7680
@@ -1021,7 +1149,7 @@ describe('round trips', () => {
 		const halfSlotSeconds = (halfSlot * (60 / Math.min(bpmA, bpmB))) / ppq;
 
 		hits.forEach((hit, i) => {
-			const r = recovered[i];
+			const r = reparsedHits[i];
 			const actual = timing.positionToTime(r.measure, r.position);
 			expect(Math.abs(actual - secondsPerTick(hit.tick))).toBeLessThanOrEqual(
 				halfSlotSeconds

@@ -281,9 +281,21 @@ export class NoteCopy {
 				const newLaneId = editor.getLaneConfigs()[newLaneIndex].id;
 				const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
 
-				// Check if position is already occupied
+				// Check if position is already occupied (both by exact graphic key
+				// and by existing note data within floating-point ULP drift, e.g.
+				// repeating fractions like 4/7 - 3/7 vs stored 1/7).
 				const existingNote = editor.getPanelContainer().getByName(newKey);
-				if (!existingNote) {
+				const ulpTolerance = Number.EPSILON * 16 * Math.max(1, Math.abs(newCellOffset));
+				const existingDriftHit = (editor.getNotes?.()?.[newLaneId] ?? []).some(
+					(group) =>
+						group.measure === newMeasure &&
+						group.notes.some(
+							(chip) =>
+								chip.position !== newCellOffset &&
+								Math.abs(chip.position - newCellOffset) <= ulpTolerance
+						)
+				);
+				if (!existingNote && !existingDriftHit) {
 					notesToPaste.push({
 						laneIndex: newLaneIndex,
 						measure: newMeasure,

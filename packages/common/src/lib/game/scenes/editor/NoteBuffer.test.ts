@@ -263,14 +263,41 @@ describe('NoteBuffer', () => {
 			);
 		});
 
-		it('should undo an add action by deleting the inserted notes', () => {
+		it('should undo an add action by deleting the inserted chip by noteID', () => {
 			noteBuffer.recordAction('add', [mockDeletedNoteData]);
 
 			const result = noteBuffer.undoLastAction(mockEditor as unknown as Editor);
 
 			expect(result).toBe(true);
-			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('test-note-1');
+			expect(mockEditor.deleteNoteByKey).toHaveBeenCalledWith('test-note-1', '11');
 			expect(noteBuffer.getHistoryLength()).toBe(0);
+		});
+
+		it('should remove the added chip rather than a surviving duplicate-line chip when undoing add', () => {
+			const survivorGroup = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '99', position: 0.5 }
+			]);
+			const insertedGroup = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '11', position: 0.5 }
+			]);
+			mockEditor.notes = { lane1: [survivorGroup, insertedGroup] };
+			vi.mocked(mockEditor.deleteNoteByKey).mockImplementation(
+				(_noteKey: string, targetNoteId?: string) => {
+					const idx = mockEditor.notes.lane1.findIndex((g) =>
+						g.notes.some(
+							(n) =>
+								n.position === 0.5 &&
+								(targetNoteId === undefined || n.noteID === targetNoteId)
+						)
+					);
+					if (idx !== -1) mockEditor.notes.lane1.splice(idx, 1);
+				}
+			);
+
+			noteBuffer.recordAction('add', [mockDeletedNoteData]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(mockEditor.notes.lane1).toEqual([survivorGroup]);
 		});
 
 		it('should restore action to history if undo fails', () => {

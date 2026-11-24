@@ -593,7 +593,7 @@ describe('MIDI to DTX Component Rendering', () => {
 			],
 			hits: [
 				{ tick: 0, note: 36 },
-				{ tick: 480, note: 38 }
+				{ tick: 480, note: 36 }
 			]
 		});
 		await fireEvent.change(input, { target: { files: [midiFile] } });
@@ -867,5 +867,57 @@ describe('MIDI to DTX Component Rendering', () => {
 		expect(notes['13']).toBeUndefined();
 
 		exportSpy.mockRestore();
+	});
+
+	it('populates detected BPM when the field is cleared before Convert', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({
+			tempos: [{ tick: 0, bpm: 140 }],
+			hits: [{ tick: 0, note: 36 }]
+		});
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+		await fireEvent.input(bpmInput, { target: { value: '180' } });
+		await fireEvent.input(bpmInput, { target: { value: '' } });
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(bpmInput.value).toBe('140');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+		expect((exportSpy.mock.instances[0] as DTXFile).bpm).toBe(140);
+
+		exportSpy.mockRestore();
+	});
+
+	it('discards stale conversion results if the uploaded file is replaced while reading', async () => {
+		let resolveSlowRead!: (buf: ArrayBuffer) => void;
+		const slowFile = drumMidiFile({ name: 'slow.mid', hits: [{ tick: 0, note: 36 }] });
+		const fastFile = drumMidiFile({ name: 'fast.mid', hits: [{ tick: 0, note: 38 }] });
+		const slowBufferPromise = new Promise<ArrayBuffer>((resolve) => {
+			resolveSlowRead = resolve;
+		});
+		const slowBytes = await slowFile.arrayBuffer();
+		vi.spyOn(slowFile, 'arrayBuffer').mockReturnValueOnce(slowBufferPromise);
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+
+		await fireEvent.change(input, { target: { files: [slowFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+
+		// Replace upload while slowFile.arrayBuffer() is still pending.
+		await fireEvent.change(input, { target: { files: [fastFile] } });
+		// Now resolve the stale read — must NOT mark fastFile as converted with slowFile's data.
+		resolveSlowRead(slowBytes);
+		await Promise.resolve();
+
+		expect(screen.queryByText('Conversion Complete!')).toBeNull();
+		expect(screen.queryByText('fast.dtx')).toBeNull();
 	});
 });

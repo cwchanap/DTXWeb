@@ -71,7 +71,8 @@ export const dtxToMidi = (
 	dtx: DTXFile,
 	laneNoteMap: Record<string, number> = {}
 ): DtxToMidiResult => {
-	const timing = buildTimingInput(dtx);
+	const parsedNotes = dtx.parseNotes();
+	const timing = buildTimingInput(dtx, parsedNotes);
 	const { measureLengths, measureCount } = timing;
 
 	const events: PendingEvent[] = [];
@@ -83,7 +84,7 @@ export const dtxToMidi = (
 	// division floor both need to know which same-note onsets actually emit.
 	const emissionGroups: { lm: LaneMeasureNote; noteNumber: number }[] = [];
 	const onsetFractions = new Map<string, { measure: number; fractions: number[] }>();
-	for (const lm of dtx.parseNotes()) {
+	for (const lm of parsedNotes) {
 		const lane = lm.laneID.toUpperCase();
 		if (NON_DRUM_LANES.has(lane)) continue;
 		if (lm.measure < 0 || lm.measure >= measureCount) continue;
@@ -133,8 +134,13 @@ export const dtxToMidi = (
 		minBarLength = Math.min(minBarLength, measureLengths[m] ?? 1);
 	}
 	let onsetPpq = 0;
+	let mergedSamePitch = 0;
 	for (const { measure, fractions } of onsetFractions.values()) {
 		const barLength = measureLengths[measure] ?? 1;
+		const sorted = [...fractions].sort((a, b) => a - b);
+		for (let i = 1; i < sorted.length; i++) {
+			if (sorted[i] === sorted[i - 1]) mergedSamePitch++;
+		}
 		const distinct = [...new Set(fractions), 0, 1].sort((a, b) => a - b);
 		for (let i = 1; i < distinct.length; i++) {
 			const gap = distinct[i] - distinct[i - 1];
@@ -142,6 +148,11 @@ export const dtxToMidi = (
 				onsetPpq = Math.max(onsetPpq, 1 / (4 * Math.max(barLength, 1e-9) * gap));
 			}
 		}
+	}
+	if (mergedSamePitch > 0) {
+		warnings.push(
+			`${mergedSamePitch} hit(s) share the same MIDI note and tick as another lane and may merge on reimport`
+		);
 	}
 	const ppq = Math.min(
 		0x7fe0,
@@ -360,8 +371,19 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		meterIndex = 1;
 	}
 
+	const laneOf = { ...GM_IMPORT_LANE, ...options.noteToLane };
+	const isMappedDrumNote = (channel: number, note: number): boolean => {
+		if (channel !== DRUM_CHANNEL) return false;
+		const lane = laneOf[note]?.toUpperCase();
+		return Boolean(lane && laneToStaff(lane));
+	};
+
 	const lastNoteTick = midi.tracks.reduce(
-		(max, t) => t.notes.reduce((m, n) => Math.max(m, n.startTime), max),
+		(max, t) =>
+			t.notes.reduce(
+				(m, n) => (isMappedDrumNote(n.channel, n.note) ? Math.max(m, n.startTime) : m),
+				max
+			),
 		0
 	);
 	const endTick = Math.max(
@@ -449,7 +471,6 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		return { measure, position: slot / 192 };
 	};
 
-	const laneOf = { ...GM_IMPORT_LANE, ...options.noteToLane };
 	const notes: Record<string, LaneMeasureNote[]> = {};
 	const groupBy = new Map<string, LaneMeasureNote>();
 	const occupied = new Set<string>();
@@ -521,22 +542,16 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	let effectiveBpm = bpm;
 	let tempoSnapped = 0;
 	let maxTempoDrift = 0;
+	// Resolve cell collisions (last wins per 1/192 cell) before allocating
+	// #BPMxx IDs so overwritten intermediate values do not exhaust the 2-char
+	// ID space.
+	const resolvedTempoCells = new Map<
+		string,
+		{ measure: number; position: number; bpm: number }
+	>();
 	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
 		if (event.bpm === effectiveBpm) continue;
 		effectiveBpm = event.bpm;
-		// Repeated BPM values share one #BPMxx def; ids past 'ZZ' would
-		// produce a three-char cell the writer cannot serialize.
-		let id = bpmIds.get(event.bpm);
-		if (id === undefined) {
-			if (++idCounter > MAX_BPM_ID) {
-				throw new Error(
-					`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
-				);
-			}
-			id = idCounter.toString(36).toUpperCase().padStart(2, '0');
-			bpmIds.set(event.bpm, id);
-		}
-		bpmChanges[id] = event.bpm;
 		const { measure, position } = quantize(event.tick);
 		// DTX tempo refs can only sit on the 1/192 grid; each off-grid snap
 		// shifts playback time, and shifts compound across segments.
@@ -550,6 +565,25 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			tempoSnapped++;
 			maxTempoDrift = Math.max(maxTempoDrift, drift);
 		}
+		const cellKey = `${measure}|${position}`;
+		const existingCell = resolvedTempoCells.get(cellKey);
+		if (existingCell) existingCell.bpm = event.bpm;
+		else resolvedTempoCells.set(cellKey, { measure, position, bpm: event.bpm });
+	}
+	for (const { measure, position, bpm: cellBpm } of resolvedTempoCells.values()) {
+		// Repeated BPM values share one #BPMxx def; ids past 'ZZ' would
+		// produce a three-char cell the writer cannot serialize.
+		let id = bpmIds.get(cellBpm);
+		if (id === undefined) {
+			if (++idCounter > MAX_BPM_ID) {
+				throw new Error(
+					`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
+				);
+			}
+			id = idCounter.toString(36).toUpperCase().padStart(2, '0');
+			bpmIds.set(cellBpm, id);
+		}
+		bpmChanges[id] = cellBpm;
 		const groupKey = `08|${measure}`;
 		let group = groupBy.get(groupKey);
 		if (!group) {
@@ -557,11 +591,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			groupBy.set(groupKey, group);
 			(notes['08'] ||= []).push(group);
 		}
-		// A second tempo ref landing on one cell overwrites in place (last wins,
-		// matching tempo normalization); it is not a drum collision.
-		const existing = group.notes.findIndex((n) => n.position === position);
-		if (existing === -1) group.notes.push({ noteID: id, position });
-		else group.notes[existing].noteID = id;
+		group.notes.push({ noteID: id, position });
 	}
 	if (tempoSnapped > 0) {
 		warnings.push(

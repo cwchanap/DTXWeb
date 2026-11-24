@@ -760,4 +760,89 @@ describe('NoteMove', () => {
 			expect(highlightSelectedNote).toHaveBeenCalledWith(mockGraphics);
 		});
 	});
+
+	describe('duplicate destination claim before dependency propagation', () => {
+		it('refuses a dependent note when its dragged target loses a duplicate-destination claim', () => {
+			const deleteNoteByKey = vi.fn();
+			const offsetB = 0.700000000000003;
+			const offsetC = 0.200000000000003;
+			const noteData = new LaneMeasureNote(0, 'lane1', [
+				{ noteID: '14', position: offsetC },
+				{ noteID: '12', position: 0.7 },
+				{ noteID: '13', position: offsetB }
+			]);
+			mockEditor._setMockNotes({ lane1: [noteData] });
+
+			const keyA = 'note-0-0-0.7';
+			const keyB = `note-0-0-${offsetB}`;
+			const keyC = `note-0-0-${offsetC}`;
+			mockEditor._addMockGameObject(keyA);
+			mockEditor._addMockGameObject(keyB);
+			mockEditor._addMockGameObject(keyC);
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{
+						oldKey: string;
+						newKey: string;
+						laneIndex: number;
+						measure: number;
+						cellOffset: number;
+						laneId: string;
+						originalNoteId: string;
+					}>
+				) => void;
+				performMove: (
+					notesToMove: Array<{
+						oldKey: string;
+						newKey: string;
+						laneIndex: number;
+						measure: number;
+						cellOffset: number;
+						laneId: string;
+						originalNoteId: string;
+					}>,
+					deleteNoteByKey: (noteKey: string) => void
+				) => { movedNotes: string[]; unmovableNotes: string[] };
+			};
+
+			// Adding +0.5 crosses 1.0 for A (0.7) and B (0.700000000000003), where
+			// toPrecision(15) collapses both to 1.2 -> note-0-1-0.2. A claims
+			// note-0-1-0.2 so B stays at offsetB. C (0.200000000000003 + 0.5) stays
+			// under 1.0 and targets B's original cell (offsetB), so C must also be
+			// refused before performMove.
+			internals.draggedNotes = new Set([keyA, keyB, keyC]);
+			const notesToMove: Array<{
+				oldKey: string;
+				newKey: string;
+				laneIndex: number;
+				measure: number;
+				cellOffset: number;
+				laneId: string;
+				originalNoteId: string;
+			}> = [];
+			internals.calculateNewPositions(
+				0,
+				0,
+				0.5,
+				new Map([
+					[keyA, '12'],
+					[keyB, '13'],
+					[keyC, '14']
+				]),
+				notesToMove
+			);
+
+			expect(notesToMove.map((n) => n.oldKey)).toEqual([keyA]);
+			internals.performMove(notesToMove, deleteNoteByKey);
+			expect(deleteNoteByKey).toHaveBeenCalledTimes(1);
+			expect(deleteNoteByKey).toHaveBeenCalledWith(keyA);
+			expect(deleteNoteByKey).not.toHaveBeenCalledWith(keyC);
+		});
+	});
 });

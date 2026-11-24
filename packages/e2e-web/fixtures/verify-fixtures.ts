@@ -92,6 +92,14 @@ function verifyMidiFile(filepath: string): MidiFileInfo {
 			}
 
 			const trackLength = readUint32BE(data, offset + 4);
+			if (offset + 8 + trackLength > data.length) {
+				return {
+					filename,
+					size: data.length,
+					isValid: false,
+					error: `Truncated MTrk chunk at offset ${offset}: expected ${trackLength} bytes`
+				};
+			}
 			offset += 8 + trackLength;
 			actualTrackCount++;
 		}

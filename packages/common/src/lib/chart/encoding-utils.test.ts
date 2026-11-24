@@ -564,6 +564,30 @@ describe('encoding-utils', () => {
 			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
 		});
 
+		it.each([
+			[
+				'UTF-16LE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = codeUnit & 0xff;
+					bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+				}
+			],
+			[
+				'UTF-16BE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = (codeUnit >> 8) & 0xff;
+					bytes[i * 2 + 1] = codeUnit & 0xff;
+				}
+			]
+		])('decodes BOM-less %s with sparse zero bytes (long CJK title)', (_name, writeUnit) => {
+			const text = `#TITLE: ${'漢'.repeat(512)}\n#DLEVEL: 60\n`;
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				writeUnit(i, text.charCodeAt(i), utf16Bytes);
+			}
+			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+		});
+
 		it('returns empty string for empty buffer', () => {
 			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
 		});

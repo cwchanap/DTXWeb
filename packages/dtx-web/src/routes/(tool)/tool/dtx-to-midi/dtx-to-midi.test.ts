@@ -284,7 +284,7 @@ describe('DTX to MIDI Component Rendering', () => {
 		expect(container.querySelector('#lane-01')).toBeNull();
 	});
 
-	it('shows nonfatal conversion warnings after download', async () => {
+	it('shows nonfatal conversion warnings after download and clears them on replacement upload', async () => {
 		parseNotesMock.mockReturnValue([
 			{ measure: 0, laneID: '99', notes: [{ noteID: '01', position: 0 }], measureLength: 1 }
 		]);
@@ -301,6 +301,12 @@ describe('DTX to MIDI Component Rendering', () => {
 		await vi.waitFor(() => {
 			expect(screen.getByText(/lane 99 has no GM note/i)).toBeTruthy();
 		});
+
+		const nextFile = new File(['content2'], 'song2.dtx', { type: 'text/plain' });
+		await fireEvent.change(input, { target: { files: [nextFile] } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to MIDI' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(screen.queryByText(/lane 99 has no GM note/i)).toBeNull();
 	});
 
 	it('clicks file input when Choose Different File is clicked', async () => {

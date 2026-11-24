@@ -3892,4 +3892,114 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('reserves probed exact matches before giving unprobed keys to an equal-rated group', async () => {
+		// Rows in uploader order: 01.dtx -> Expert (80), 02.dtx -> Basic
+		// (60), 03.dtx -> Advanced (60). 01.dtx's #DLEVEL sits beyond the
+		// probe window (unprobed); the two level-60 charts probe exactly.
+		// The equal-rated group has enough exact matches, so the earlier
+		// unprobed key is Expert's positional candidate — consuming it
+		// for Basic leaves only displaced charts for the other rows.
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': `${'#TITLE: ' + 'x'.repeat(16390)}\n#DLEVEL: 80\n`,
+			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/03.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 16420, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/03.dtx', size: 700, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return { arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer) };
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Expert', level: 80 },
+					{ label: 'Basic', level: 60 },
+					{ label: 'Advanced', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 16420,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/03.dtx',
+				fileSizeBytes: 700,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('scopes rating-based fallback claims to catalog-eligible chart keys', async () => {
+		// One BASIC row at 85. Its own top-level chart was re-rated to
+		// 60 — the name survives while the stored level stays stale — and
+		// a nested backup still carries 85. parse_dtx_folder catalogs
+		// only top-level files, so a nested chart can never be a row's
+		// chart: the rating claim must not let it displace the stem
+		// match that the re-rated pass restores.
+		const chartBodies: Record<string, string> = {
+			'42/Basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/extras/backup.dtx': '#TITLE: Song\n#DLEVEL: 85\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/Basic.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/extras/backup.dtx', size: 700, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'basic', level: 85 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'basic',
+				level: 85,
+				fileUrl: 'https://cdn.example.test/42/Basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

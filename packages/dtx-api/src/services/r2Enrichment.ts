@@ -753,12 +753,22 @@ export const discoverCatalogFiles = async (
 		);
 		// Rows sharing a normalized level are indistinguishable by rating
 		// alone, so within an equal-rated group an unprobed key is as
-		// plausible a match as a probed one. Each row takes the earliest
-		// still-plausible key in uploader filename order — otherwise the
-		// first row consumes a probed key that positionally belongs to a
-		// later row and the skipped unprobed key binds the wrong row.
-		// A uniquely-rated row still requires an exact probed match;
-		// unprobed keys stay positional there.
+		// plausible a match as a probed one — but only on a shortage.
+		// When the group has enough exact-rated candidates, an earlier
+		// unprobed key belongs to another row's positional claim and
+		// consuming it displaces the whole tail. Each group's candidate
+		// set therefore reserves probed matches first, fills only the
+		// shortage with unprobed keys, and pairs the selected keys to
+		// its rows in uploader filename order — otherwise the first row
+		// consumes a probed key that positionally belongs to a later row
+		// and the skipped unprobed key binds the wrong row. A uniquely-
+		// rated row still requires an exact probed match; unprobed keys
+		// stay positional there. Candidates are scoped like the stem
+		// pass: parse_dtx_folder catalogs only top-level charts, so a
+		// deeper-nested .dtx can never be a row's chart and must not
+		// claim one by rating ahead of the re-rated stem pass.
+		const isCatalogEligibleKey = (key: string): boolean =>
+			isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
 		for (let groupStart = 0; groupStart < fallbackRows.length;) {
 			const groupLevel = normalizeLevel(fallbackRows[groupStart].file.level);
 			let groupEnd = groupStart + 1;
@@ -768,14 +778,25 @@ export const discoverCatalogFiles = async (
 			) {
 				groupEnd += 1;
 			}
-			const ambiguous = groupEnd - groupStart > 1;
-			for (const row of fallbackRows.slice(groupStart, groupEnd)) {
-				const key = dtxObjectKeys.find((candidate) => {
-					if (usedDtxKeys.has(candidate)) return false;
-					const probed = probedLevelByKey.get(candidate);
-					return probed === groupLevel || (ambiguous && probed === undefined);
-				});
-				if (!key) continue;
+			const groupRows = fallbackRows.slice(groupStart, groupEnd);
+			const groupSize = groupRows.length;
+			const selectedKeys = new Set<string>();
+			for (const key of dtxObjectKeys) {
+				if (selectedKeys.size === groupSize) break;
+				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
+				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
+			}
+			if (groupSize > 1 && selectedKeys.size < groupSize) {
+				for (const key of dtxObjectKeys) {
+					if (selectedKeys.size === groupSize) break;
+					if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
+					if (!probedLevelByKey.has(key)) selectedKeys.add(key);
+				}
+			}
+			const candidates = dtxObjectKeys.filter((key) => selectedKeys.has(key));
+			for (const [candidateIndex, row] of groupRows.entries()) {
+				const key = candidates[candidateIndex];
+				if (!key) break;
 				rowsClaimedBySetDef.add(row.index);
 				matchedKeysByRowIndex.set(row.index, key);
 				usedDtxKeys.add(key);

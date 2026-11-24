@@ -362,6 +362,23 @@ export const discoverCatalogFiles = async (
 		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => compareByCodePoint(a.key, b.key));
 	const dtxObjectKeys = dtxObjects.map((obj: R2ObjectMeta) => obj.key);
 	const usedDtxKeys = new Set<string>();
+	// Refs under different SET.def labels can resolve to one object (./a.dtx
+	// and a.dtx, or a case-insensitive collide). A header read proves the
+	// same rating for every ref, so share the in-flight probe rather than
+	// fetching the same window once per label.
+	const probeCache = new Map<string, Promise<number | null | undefined>>();
+	const probeChartLevel = (
+		key: string,
+		maxBytes: number = CHART_LEVEL_PROBE_BYTES
+	): Promise<number | null | undefined> => {
+		const cacheKey = `${maxBytes}:${key}`;
+		let probe = probeCache.get(cacheKey);
+		if (!probe) {
+			probe = probeChartHeaderLevel(bucket, key, logger, maxBytes);
+			probeCache.set(cacheKey, probe);
+		}
+		return probe;
+	};
 
 	// Prefer the canonical top-level key `{simfileId}/set.def`
 	// (case-insensitive) over any nested `set.def` (e.g.
@@ -492,7 +509,7 @@ export const discoverCatalogFiles = async (
 				continue;
 			levelProbes.push(
 				(async () => {
-					const level = await probeChartHeaderLevel(bucket, object.key, logger);
+					const level = await probeChartLevel(object.key);
 					// A complete read with no #DLEVEL (null) proves the chart is
 					// unrated — record it as 0 so the claim loop disqualifies it
 					// the same as an explicit `#DLEVEL 0`. Only an unprobed
@@ -526,64 +543,83 @@ export const discoverCatalogFiles = async (
 			(a, b) =>
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
-	for (const { file, index } of claimOrder) {
-		const label = file.label.toLowerCase();
-		const refs = filesByLabel.get(label);
-		if (!refs?.length) continue;
-		const rowLevel = normalizeLevel(file.level);
-		const isRefUnused = (ref: SetDefFileRef): boolean => {
-			const object = resolveSetDefObject(ref);
-			return !object || !usedDtxKeys.has(object.key);
-		};
-		let refIndex = refs.findIndex(
-			(ref) => isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel
-		);
-		if (refIndex === -1) {
-			refIndex = refs.findIndex((ref) => {
-				if (!isRefUnused(ref)) return false;
-				const probed = fileLevelByRef.get(ref);
-				if (probed === undefined) return true;
-				// A probed level of zero names a chart the uploader never
-				// catalogued — parse_dtx_folder skips unrated charts
-				// (#DLEVEL 0 or absent) — so no row can own it. Left in
-				// refs it stays reserved; a non-exact claim must not let
-				// it displace an unlisted file that is a row's real chart.
-				if (probed === 0) return false;
-				const levels = rowLevelsByLabel.get(label);
-				for (const level of levels ?? []) {
-					if (level === probed && level !== rowLevel) return false;
-				}
-				// The resolved object can be shared with another label's
-				// ref: its probed rating may name a row in THAT label,
-				// whose own ref will exact-claim the shared key. A
-				// non-exact claim here would consume the object first
-				// (each key is claimed once) and leave the exact row to
-				// the positional fallback — the alias steals its chart.
-				const sharedObject = resolveSetDefObject(ref);
-				const sharedLabels = sharedObject
-					? labelsByResolvedKey.get(sharedObject.key)
-					: undefined;
-				if (sharedLabels && sharedLabels.size > 1) {
-					for (const otherLabel of sharedLabels) {
-						if (otherLabel === label) continue;
-						if (rowLevelsByLabel.get(otherLabel)?.has(probed)) return false;
+	// Settle every exact SET.def claim before any non-exact one. A row's
+	// reference may resolve to an object another label also aliases
+	// (./a.dtx vs a.dtx); the other label's exact claim must win that
+	// object first, or reserving the unused alias leaves the first row
+	// without its chart even though the other row took a different file.
+	const claimSetDefRows = (exactOnly: boolean): void => {
+		for (const { file, index } of claimOrder) {
+			if (rowsClaimedBySetDef.has(index)) continue;
+			const label = file.label.toLowerCase();
+			const refs = filesByLabel.get(label);
+			if (!refs?.length) continue;
+			const rowLevel = normalizeLevel(file.level);
+			const isRefUnused = (ref: SetDefFileRef): boolean => {
+				const object = resolveSetDefObject(ref);
+				return !object || !usedDtxKeys.has(object.key);
+			};
+			let refIndex = refs.findIndex(
+				(ref) => isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel
+			);
+			if (refIndex === -1) {
+				if (exactOnly) continue;
+				refIndex = refs.findIndex((ref) => {
+					if (!isRefUnused(ref)) return false;
+					const probed = fileLevelByRef.get(ref);
+					if (probed === undefined) return true;
+					// A probed level of zero names a chart the uploader never
+					// catalogued — parse_dtx_folder skips unrated charts
+					// (#DLEVEL 0 or absent) — so no row can own it. Left in
+					// refs it stays reserved; a non-exact claim must not let
+					// it displace an unlisted file that is a row's real chart.
+					if (probed === 0) return false;
+					const levels = rowLevelsByLabel.get(label);
+					for (const level of levels ?? []) {
+						if (level === probed && level !== rowLevel) return false;
 					}
-				}
-				return true;
-			});
-			// Every remaining ref is provably another row's chart — leave
-			// them for their true rows and let this row fall through to
-			// the sorted fallback.
-			if (refIndex === -1) continue;
+					// The resolved object can be shared with another label's
+					// ref: its probed rating may name a row in THAT label,
+					// whose own ref will exact-claim the shared key. A
+					// non-exact claim here would consume the object first
+					// (each key is claimed once) and leave the exact row to
+					// the positional fallback — the alias steals its chart.
+					// Exact claims have already settled by this pass, so only
+					// a still-unclaimed row can need the shared object.
+					const sharedObject = resolveSetDefObject(ref);
+					const sharedLabels = sharedObject
+						? labelsByResolvedKey.get(sharedObject.key)
+						: undefined;
+					if (sharedLabels && sharedLabels.size > 1) {
+						for (const otherLabel of sharedLabels) {
+							if (otherLabel === label) continue;
+							const stillNeedsKey = dtxFiles.some(
+								(other, otherIndex) =>
+									!rowsClaimedBySetDef.has(otherIndex) &&
+									other.label.toLowerCase() === otherLabel &&
+									normalizeLevel(other.level) === probed
+							);
+							if (stillNeedsKey) return false;
+						}
+					}
+					return true;
+				});
+				// Every remaining ref is provably another row's chart — leave
+				// them for their true rows and let this row fall through to
+				// the sorted fallback.
+				if (refIndex === -1) continue;
+			}
+			rowsClaimedBySetDef.add(index);
+			const [setDefRef] = refs.splice(refIndex, 1);
+			const matchedObject = resolveSetDefObject(setDefRef);
+			if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
+				matchedKeysByRowIndex.set(index, matchedObject.key);
+				usedDtxKeys.add(matchedObject.key);
+			}
 		}
-		rowsClaimedBySetDef.add(index);
-		const [setDefRef] = refs.splice(refIndex, 1);
-		const matchedObject = resolveSetDefObject(setDefRef);
-		if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
-			matchedKeysByRowIndex.set(index, matchedObject.key);
-			usedDtxKeys.add(matchedObject.key);
-		}
-	}
+	};
+	claimSetDefRows(true);
+	claimSetDefRows(false);
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
 	// reserve their objects so the sorted fallback cannot bind them to
@@ -612,7 +648,7 @@ export const discoverCatalogFiles = async (
 			if (isTopLevelR2Key(object.key, prefix) || isTopLevelR2Key(object.key, setDefBaseDir)) {
 				let leftoverLevel: number | null | undefined = fileLevelByRef.get(ref);
 				if (leftoverLevel === undefined) {
-					leftoverLevel = await probeChartHeaderLevel(bucket, object.key, logger);
+					leftoverLevel = await probeChartLevel(object.key);
 					if (leftoverLevel !== undefined) {
 						fileLevelByRef.set(ref, leftoverLevel ?? 0);
 					}
@@ -647,10 +683,8 @@ export const discoverCatalogFiles = async (
 							// valid rating. A file outgrowing the window
 							// reports unprobed — nothing is proven — so
 							// the sibling keeps the row.
-							const rootLevel = await probeChartHeaderLevel(
-								bucket,
+							const rootLevel = await probeChartLevel(
 								rootCandidate.key,
-								logger,
 								CHART_LEVEL_DEEP_PROBE_BYTES
 							);
 							if (typeof rootLevel === 'number' && rootLevel !== 0) {
@@ -738,12 +772,7 @@ export const discoverCatalogFiles = async (
 			let probed: number | null | undefined = probedLevelByKey.get(keys[0]);
 			if (probed === undefined && !stemDeepProbedKeys.has(keys[0])) {
 				stemDeepProbedKeys.add(keys[0]);
-				probed = await probeChartHeaderLevel(
-					bucket,
-					keys[0],
-					logger,
-					CHART_LEVEL_DEEP_PROBE_BYTES
-				);
+				probed = await probeChartLevel(keys[0], CHART_LEVEL_DEEP_PROBE_BYTES);
 				if (typeof probed === 'number') probedLevelByKey.set(keys[0], probed);
 			}
 			const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
@@ -806,7 +835,7 @@ export const discoverCatalogFiles = async (
 				// Below both catalog dirs a chart can never claim a row, so
 				// probing its header spends an R2 read no pass consumes.
 				if (!isCatalogEligibleKey(key)) return;
-				const level = await probeChartHeaderLevel(bucket, key, logger);
+				const level = await probeChartLevel(key);
 				if (level === undefined) return;
 				if (level === null || level === 0) {
 					usedDtxKeys.add(key);

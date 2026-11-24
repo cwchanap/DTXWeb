@@ -3731,6 +3731,99 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('lets a row use an aliased chart after the other label exact-claims a different file', async () => {
+		// SET.def names BASIC a.dtx, EXPERT b.dtx, then a second EXPERT
+		// alias ./a.dtx. Re-uploading a.dtx at EXPERT's rating makes
+		// BASIC's reference look like another label's chart, but EXPERT
+		// exact-claims b.dtx — the unused alias must not reserve a.dtx
+		// away from BASIC, which would leave BASIC without a preview.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL EXPERT\n#L2FILE b.dtx\n#L3LABEL EXPERT\n#L3FILE ./a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 120, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'EXPERT',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('shares one header read between labels that alias the same chart', async () => {
+		// BASIC a.dtx and EXPERT ./a.dtx resolve to one R2 object. Both
+		// labels are ambiguous, but the header proves the same rating for
+		// both refs — the second label must not spend another R2 GET.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL EXPERT\n#L2FILE ./a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+		};
+		const get = vi.fn(async (key: string) => ({
+			arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+		}));
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get
+		} as unknown as R2Bucket;
+
+		await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(get.mock.calls.filter(([key]) => key === '42/a.dtx')).toHaveLength(1);
+	});
+
 	it('keeps filename order among probed and unprobed keys for equal-rated rows', async () => {
 		// Both rows rate 6.00. 01.dtx's #DLEVEL sits beyond the 16 KiB
 		// probe window so it stays unprobed; 02.dtx probes 60. The first

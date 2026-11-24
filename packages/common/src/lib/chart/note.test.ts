@@ -1,14 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { LaneMeasureNote } from './note';
 
-// Mock the position utility since it's an external dependency
-vi.mock('../utils/position', () => ({
-	normalizePosition: vi.fn(
-		(pos: number, subdivision: number = 192) => Math.round(pos * subdivision) / subdivision
-	),
-	canonicalizeCellOffset: vi.fn((pos: number) => Number(pos.toPrecision(15)))
-}));
-
 describe('LaneMeasureNote', () => {
 	describe('constructor', () => {
 		it('should create a LaneMeasureNote with provided values', () => {
@@ -237,11 +229,10 @@ describe('LaneMeasureNote', () => {
 			expect(pattern.slice(4, 6)).toBe('02'); // cell 2
 
 			// Reimport keeps the widened cells distinct instead of snapping
-			// back onto the 192 grid. Stored positions are canonicalized to
-			// 15 digits so editor note keys stay stable.
+			// back onto the 192 grid.
 			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
-				{ noteID: '01', position: Number((1 / 384).toPrecision(15)) },
-				{ noteID: '02', position: Number((1 / 192).toPrecision(15)) }
+				{ noteID: '01', position: 1 / 384 },
+				{ noteID: '02', position: 1 / 192 }
 			]);
 		});
 
@@ -262,7 +253,7 @@ describe('LaneMeasureNote', () => {
 			expect(result).toHaveLength(384 * 2);
 			expect(result.slice(2, 4)).toBe('01');
 			expect(LaneMeasureNote.parseFromPattern(result)).toEqual([
-				{ noteID: '01', position: Number((1 / 384).toPrecision(15)) }
+				{ noteID: '01', position: 1 / 384 }
 			]);
 		});
 
@@ -278,7 +269,7 @@ describe('LaneMeasureNote', () => {
 			expect(pattern).toHaveLength(768 * 2);
 			expect(pattern.slice(2, 4)).toBe('01'); // cell 1
 			expect(LaneMeasureNote.parseFromPattern(pattern)).toEqual([
-				{ noteID: '01', position: Number((1 / 768).toPrecision(15)) }
+				{ noteID: '01', position: 1 / 768 }
 			]);
 		});
 
@@ -317,13 +308,11 @@ describe('LaneMeasureNote', () => {
 
 		it('should warn when a note rounds to a cell outside the pattern grid', () => {
 			// A position a hair under the bar end rounds to index `resolution`
-			// and falls out of the [0, resolution) range — it used to vanish
-			// without a word, now it reports through the same warning path as
-			// shared-cell drops.
+			// on every supported grid (even 768) and falls out of [0, resolution).
 			const warnings: string[] = [];
 			const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 			const laneMeasureNote = new LaneMeasureNote(0, '12', [
-				{ noteID: '01', position: 0.999 },
+				{ noteID: '01', position: 0.9999 },
 				{ noteID: '02', position: 0 }
 			]);
 			const pattern = laneMeasureNote.toPattern((message) => warnings.push(message));
@@ -334,6 +323,37 @@ describe('LaneMeasureNote', () => {
 			// The in-bounds note still lands on cell 0.
 			expect(pattern.slice(0, 2)).toBe('02');
 			warn.mockRestore();
+		});
+
+		it('should widen to 768 rather than dropping a near-barline hit at 1023/1024', () => {
+			// 1023/1024 rounds to out-of-range cell 192 on the 192-cell grid,
+			// but fits valid cell 767 on the 768-cell grid.
+			const warnings: string[] = [];
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 0 },
+				{ noteID: '02', position: 1023 / 1024 }
+			]);
+			const pattern = laneMeasureNote.toPattern((message) => warnings.push(message));
+
+			expect(warnings).toEqual([]);
+			expect(pattern).toHaveLength(768 * 2);
+			expect(pattern.slice(0, 2)).toBe('01');
+			expect(pattern.slice(767 * 2, 767 * 2 + 2)).toBe('02');
+		});
+
+		it('should try supported triplet grids (576) before overwriting closely spaced hits', () => {
+			// 3/4096 and 4/4096 collide on 192, 384, and 768, but land on
+			// distinct cells 0 and 1 on the supported 576-cell grid.
+			const warnings: string[] = [];
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 3 / 4096 },
+				{ noteID: '02', position: 4 / 4096 }
+			]);
+			const pattern = laneMeasureNote.toPattern((message) => warnings.push(message));
+
+			expect(warnings).toEqual([]);
+			expect(pattern).toHaveLength(576 * 2);
+			expect(pattern.slice(0, 4)).toBe('0102');
 		});
 
 		it('should report the merged-cell loss to an onWarning sink instead of console.warn', () => {
@@ -430,11 +450,11 @@ describe('LaneMeasureNote', () => {
 			expect(result[0]).toEqual({ noteID: '01', position: 0 });
 			expect(result[1]).toEqual({
 				noteID: '02',
-				position: Number((1 / 24).toPrecision(15))
+				position: 1 / 24
 			});
 			expect(result[2]).toEqual({
 				noteID: '03',
-				position: Number((8 / 24).toPrecision(15))
+				position: 1 / 3
 			});
 		});
 
@@ -468,11 +488,11 @@ describe('LaneMeasureNote', () => {
 			expect(result[0]).toEqual({ noteID: '01', position: 0 });
 			expect(result[1]).toEqual({
 				noteID: '02',
-				position: Number((1 / 48).toPrecision(15))
+				position: 1 / 48
 			});
 			expect(result[2]).toEqual({
 				noteID: '03',
-				position: Number((2 / 48).toPrecision(15))
+				position: 1 / 24
 			});
 		});
 

@@ -1068,6 +1068,15 @@ describe('buildTimingInput', () => {
 		expect(input.bpmValueMap['03:0A']).toBe(10);
 	});
 
+	it('skips malformed non-hex channel 03 cells instead of parsing partial digits', () => {
+		const dtx = makeDtx(['#00103: 7GF0'], 120);
+		const input = buildTimingInput(dtx);
+		expect(input.bpmValueMap['03:7G']).toBeUndefined();
+		expect(input.bpmValueMap['03:F0']).toBe(240);
+		const legacy = input.bpmChanges.find((lm) => lm.laneID === '08' && lm.measure === 1);
+		expect(legacy?.notes).toEqual([{ noteID: '03:F0', position: 0.5 }]);
+	});
+
 	it('defaults bpm to 120 when the dtx has none', () => {
 		// `0` is the field's real value when a file lacks #BPM; passing
 		// `undefined` would hit makeDtx's own 120 default and hide whether the

@@ -216,8 +216,8 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 			offset += length;
 
 			if (subtype === 0x51) {
-				if (payload.length !== 3) {
-					fail(`tempo meta event has ${payload.length} bytes, expected 3`);
+				if (payload.length < 3) {
+					fail(`tempo meta event has ${payload.length} bytes, expected at least 3`);
 				}
 				const microsecondsPerQuarter = (payload[0] << 16) | (payload[1] << 8) | payload[2];
 				// Zero would produce an infinite BPM downstream.
@@ -226,8 +226,10 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 				}
 				tempoEvents.push({ tick: currentTime, microsecondsPerQuarter });
 			} else if (subtype === 0x58) {
-				if (payload.length !== 4) {
-					fail(`time signature meta event has ${payload.length} bytes, expected 4`);
+				if (payload.length < 4) {
+					fail(
+						`time signature meta event has ${payload.length} bytes, expected at least 4`
+					);
 				}
 				meterEvents.push({
 					tick: currentTime,
@@ -315,6 +317,12 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 	const format = readUint16(8);
 	if (format > 1) fail(`unsupported format ${format}`);
 	const trackCount = readUint16(10);
+	if (format === 0 && trackCount !== 1) {
+		fail(`format 0 requires 1 track, got ${trackCount}`);
+	}
+	if (format === 1 && trackCount < 1) {
+		fail(`format 1 requires at least 1 track, got ${trackCount}`);
+	}
 	const ticksPerQuarter = readUint16(12);
 	if (ticksPerQuarter & 0x8000) fail('SMPTE division is not supported');
 	if (ticksPerQuarter === 0) fail('zero ticks per quarter note');
@@ -324,16 +332,22 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 	const meterEvents: MidiMeterEvent[] = [];
 
 	let offset = 8 + headerLength;
-	for (let i = 0; i < trackCount; i++) {
-		if (offset + 8 > data.length) fail(`truncated: track ${i} header missing`);
-		if (String.fromCharCode(...data.slice(offset, offset + 4)) !== 'MTrk') {
-			fail(`missing MTrk for track ${i}`);
+	while (tracks.length < trackCount) {
+		if (offset + 8 > data.length) {
+			fail(`truncated: track ${tracks.length} header missing`);
 		}
-		const trackLength = readUint32(offset + 4);
+		const chunkType = String.fromCharCode(...data.slice(offset, offset + 4));
+		const chunkLength = readUint32(offset + 4);
 		offset += 8;
-		if (offset + trackLength > data.length) fail(`track ${i} extends past end of file`);
+		if (offset + chunkLength > data.length) {
+			fail(`chunk ${chunkType} extends past end of file`);
+		}
+		if (chunkType !== 'MTrk') {
+			offset += chunkLength;
+			continue;
+		}
 
-		const raw = parseTrack(data, offset, offset + trackLength);
+		const raw = parseTrack(data, offset, offset + chunkLength);
 		tracks.push(raw.track);
 		// Spread-into-push would pass every element as a call argument; a
 		// track with enough meta events overflows the engine's argument limit.

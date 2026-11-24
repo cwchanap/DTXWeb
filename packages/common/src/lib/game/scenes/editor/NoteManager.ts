@@ -564,7 +564,7 @@ export class NoteManager {
 	/**
 	 * Delete a single note by its key
 	 */
-	public deleteNoteByKey(noteKey: string): void {
+	public deleteNoteByKey(noteKey: string, targetNoteId?: string): void {
 		this.cleanupNoteVisuals(noteKey);
 
 		// Parse the note key to get the position info
@@ -576,11 +576,15 @@ export class NoteManager {
 			// Remove the specific note from this.notes
 			const notes = this.editor.getNotes();
 			if (laneId in notes) {
-				// Find the LaneMeasureNote that contains this note
+				// Find the LaneMeasureNote that contains this note (matching noteID when specified)
 				const measureNote = notes[laneId].find(
 					(note) =>
 						note.measure === measure &&
-						note.notes.some((n) => n.position === cellOffset)
+						note.notes.some(
+							(n) =>
+								n.position === cellOffset &&
+								(targetNoteId === undefined || n.noteID === targetNoteId)
+						)
 				);
 
 				if (measureNote) {
@@ -967,57 +971,40 @@ export class NoteManager {
 	 * When multiple notes overlap, returns the topmost (most recently stacked) note
 	 */
 	private getClickedNote(pointer: Phaser.Input.Pointer): Phaser.GameObjects.Graphics | null {
-		const clickedNotes: Array<{ note: Phaser.GameObjects.Graphics; stackIndex: number }> = [];
-
 		const containerList = this.editor.getPanelContainer().list;
 
-		// First pass: Fast hit detection using simplified bounds (no stacking calculation)
-		const potentialNotes: Phaser.GameObjects.Graphics[] = [];
-
-		for (const child of containerList) {
+		// Walk in reverse display order so the frontmost graphic wins even when
+		// stackIndex ties (e.g. a note deleted and re-added over another).
+		for (let i = containerList.length - 1; i >= 0; i--) {
+			const child = containerList[i];
 			if (
 				child.name &&
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Use simplified bounds calculation (no stacking) for initial hit detection
+				// Fast hit detection using simplified bounds (no stacking) before
+				// calculating precise stacked bounds.
 				const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
 
-				if (simplifiedBounds) {
-					// Check if the pointer is within the simplified note bounds
+				if (
+					simplifiedBounds &&
+					pointer.x >= simplifiedBounds.x &&
+					pointer.x <= simplifiedBounds.x + simplifiedBounds.width &&
+					pointer.y >= simplifiedBounds.y &&
+					pointer.y <= simplifiedBounds.y + simplifiedBounds.height
+				) {
+					const preciseBounds = this.calculateNoteBounds(child.name);
 					if (
-						pointer.x >= simplifiedBounds.x &&
-						pointer.x <= simplifiedBounds.x + simplifiedBounds.width &&
-						pointer.y >= simplifiedBounds.y &&
-						pointer.y <= simplifiedBounds.y + simplifiedBounds.height
+						preciseBounds &&
+						pointer.x >= preciseBounds.x &&
+						pointer.x <= preciseBounds.x + preciseBounds.width &&
+						pointer.y >= preciseBounds.y &&
+						pointer.y <= preciseBounds.y + preciseBounds.height
 					) {
-						potentialNotes.push(child);
+						return child;
 					}
 				}
 			}
-		}
-
-		// Second pass: Only calculate precise stacking for notes that were actually hit
-		for (const note of potentialNotes) {
-			// Now calculate precise bounds with stacking for hit notes only
-			const preciseBounds = this.calculateNoteBounds(note.name);
-			if (preciseBounds) {
-				// Double-check with precise bounds
-				if (
-					pointer.x >= preciseBounds.x &&
-					pointer.x <= preciseBounds.x + preciseBounds.width &&
-					pointer.y >= preciseBounds.y &&
-					pointer.y <= preciseBounds.y + preciseBounds.height
-				) {
-					clickedNotes.push({ note, stackIndex: this.stackIndexOf(note.name) });
-				}
-			}
-		}
-
-		// If multiple notes were clicked, return the one with the highest stack index (topmost)
-		if (clickedNotes.length > 0) {
-			clickedNotes.sort((a, b) => b.stackIndex - a.stackIndex); // Sort by stack index descending
-			return clickedNotes[0].note;
 		}
 
 		return null;

@@ -372,7 +372,17 @@ describe('MIDI to DTXFile via shared parseMidi + midiToDtx', () => {
 		out.bpm = conversion.bpm;
 		const reparsed = dtxFromText(out.toDtxText(conversion.notes, conversion.controls));
 		expect(reparsed.bpm).toBe(120);
-		expect(Object.values(reparsed.parseBPMChanges())).toContain(180);
+		const bpmDefs = reparsed.parseBPMChanges();
+		const lane08 = reparsed.parseNotes().filter((lm) => lm.laneID === '08');
+		expect(
+			lane08.flatMap((lm) =>
+				lm.notes.map((n) => ({
+					measure: lm.measure,
+					position: n.position,
+					bpm: bpmDefs[n.noteID]
+				}))
+			)
+		).toEqual([{ measure: 1, position: 0, bpm: 180 }]);
 	});
 
 	it('represents a mid-song 3/4 section through channel-02 bar lengths', () => {
@@ -452,7 +462,17 @@ describe('DTX to MIDI to DTX round trip', () => {
 		const reparsed = dtxFromText(out.toDtxText(conversion.notes, conversion.controls));
 
 		expect(reparsed.bpm).toBe(150);
-		expect(Object.values(reparsed.parseBPMChanges())).toContain(180);
+		const bpmDefs = reparsed.parseBPMChanges();
+		const lane08 = reparsed.parseNotes().filter((lm) => lm.laneID === '08');
+		expect(
+			lane08.flatMap((lm) =>
+				lm.notes.map((n) => ({
+					measure: lm.measure,
+					position: n.position,
+					bpm: bpmDefs[n.noteID]
+				}))
+			)
+		).toEqual([{ measure: 1, position: 0.5, bpm: 180 }]);
 		expect(reparsed.parseMeasureLengths().get(2)).toBe(0.75);
 
 		const positions = hitsByLane(reparsed);

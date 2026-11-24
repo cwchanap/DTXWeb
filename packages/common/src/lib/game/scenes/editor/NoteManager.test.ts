@@ -1248,6 +1248,29 @@ describe('NoteManager', () => {
 			findNearbyNotesSpy.mockRestore();
 		});
 
+		it('should select frontmost graphic by container order when stackIndex ties', () => {
+			// B was drawn after A, then A was deleted and re-added after B, so both
+			// carry stackIndex=1 while A sits later (frontmost) in containerList.
+			const graphicsB = createMockGraphics();
+			graphicsB.name = 'note-0-0-0.005';
+			const graphicsA = createMockGraphics();
+			graphicsA.name = 'note-0-0-0';
+			mockEditor.getPanelContainer().list.push(graphicsB);
+			mockEditor.getPanelContainer().list.push(graphicsA);
+
+			noteManager.setStackIndex('note-0-0-0.005', 1);
+			noteManager.setStackIndex('note-0-0-0', 1);
+
+			const mockOverlay = { lineStyle: vi.fn(), strokeRect: vi.fn(), setName: vi.fn() };
+			mockEditor.add.graphics.mockReturnValue(mockOverlay);
+
+			const pointer = createMockPointer(110, 190);
+			noteManager.handlePointerDown(pointer);
+
+			expect(noteManager.selectedNotes.size).toBe(1);
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(true);
+		});
+
 		it('should ignore non-Graphics objects in container list', () => {
 			// Add a non-Graphics object with a note name (should be skipped)
 			const nonGraphics = { name: 'note-0-0-0' }; // plain object, not instanceof Graphics

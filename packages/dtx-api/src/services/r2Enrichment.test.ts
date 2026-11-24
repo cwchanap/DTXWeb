@@ -2385,14 +2385,14 @@ describe('discoverCatalogFiles', () => {
 		// leaves a.dtx unprobed so slot order keeps each row's file.
 		const chartBodies: Record<string, string> = {
 			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
-			'42/a.dtx': `${'#TITLE: ' + 'x'.repeat(16364)}\n#DLEVEL: 455\n#BPM: 120\n`,
+			'42/a.dtx': `${'#TITLE: ' + 'x'.repeat(16365)}\n#DLEVEL: 455\n#BPM: 120\n`,
 			'42/b.dtx': '#TITLE: Song\n#DLEVEL: 450\n'
 		};
 		const bucket = {
 			...makeBucket([
 				[
 					{ key: '42/set.def', size: 90, uploaded: new Date() },
-					{ key: '42/a.dtx', size: 16396, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 16397, uploaded: new Date() },
 					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
 				]
 			]),
@@ -2421,7 +2421,7 @@ describe('discoverCatalogFiles', () => {
 				label: 'BASIC',
 				level: 40,
 				fileUrl: 'https://cdn.example.test/42/a.dtx',
-				fileSizeBytes: 16396,
+				fileSizeBytes: 16397,
 				fileEncoding: 'SHIFT_JIS'
 			},
 			{
@@ -3339,6 +3339,7 @@ describe('discoverCatalogFiles', () => {
 			// rather than pass by coincidence.
 			const chartBodies: Record<string, string> = {
 				'1004/set.def': fixtureText,
+				'1004/aaa-decoy.dtx': '#TITLE: Decoy\n#DLEVEL: 40\n',
 				'1004/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
 				'1004/extra.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
 				'1004/maniac.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
@@ -3531,11 +3532,11 @@ describe('discoverCatalogFiles', () => {
 			bucket,
 			{
 				simfileId: 42,
-				// Uploader (filename-sorted) order: 01.dtx was cataloged
-				// first. SET.def named the labels but was not uploaded.
+				// Reversed from 01.dtx/02.dtx ratings so positional pairing
+				// would assign the opposite file to each row.
 				dtxFiles: [
-					{ label: 'Expert', level: 60 },
-					{ label: 'Novice', level: 450 }
+					{ label: 'Novice', level: 450 },
+					{ label: 'Expert', level: 60 }
 				],
 				publicBaseUrl: 'https://cdn.example.test'
 			},
@@ -3544,17 +3545,17 @@ describe('discoverCatalogFiles', () => {
 
 		expect(discovery.charts).toEqual([
 			{
-				label: 'Expert',
-				level: 60,
-				fileUrl: 'https://cdn.example.test/42/01.dtx',
-				fileSizeBytes: 300,
-				fileEncoding: 'SHIFT_JIS'
-			},
-			{
 				label: 'Novice',
 				level: 450,
 				fileUrl: 'https://cdn.example.test/42/02.dtx',
 				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);
@@ -4125,6 +4126,202 @@ describe('discoverCatalogFiles', () => {
 		);
 
 		expect(get).toHaveBeenCalledWith('42/song.dtx', expect.anything());
-		expect(get).not.toHaveBeenCalledWith('42/extras/backup.dtx', expect.anything());
+		expect(get.mock.calls.some(([calledKey]) => calledKey === '42/extras/backup.dtx')).toBe(
+			false
+		);
+	});
+
+	it('keeps a 16385-byte chart ending in #DLEVEL 0 without trailing newline as unrated (EOF)', async () => {
+		const prefix = '#TITLE: ' + 'x'.repeat(16367) + '\n#DLEVEL 0'; // exact 16385 bytes, no trailing newline
+		expect(prefix.length).toBe(16385);
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 80, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 16385, uploaded: new Date() },
+					{ key: '42/real.dtx', size: 200, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => {
+				const text =
+					key === '42/set.def'
+						? '#L1LABEL BASIC\n#L1FILE placeholder.dtx\n'
+						: key === '42/placeholder.dtx'
+							? prefix
+							: '#TITLE: Real\n#DLEVEL: 45\n';
+				const buf = encodeToBuffer(text);
+				return {
+					size: buf.byteLength,
+					arrayBuffer: async () => buf
+				};
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 45 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts[0]?.fileUrl).toBe('https://cdn.example.test/42/real.dtx');
+	});
+
+	it('prevents two SET.def rows from claiming the same resolved R2 chart', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL EXPERT\n#L2FILE ./a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 80, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'BASIC',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'EXPERT',
+				level: 80,
+				fileUrl: null,
+				fileSizeBytes: null,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('probes leftover SET.def references so an unrated leftover cannot claim a row by stem', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXTRA\n#L1FILE solo.dtx\n',
+			'42/solo.dtx': '#TITLE: Unrated Solo\n',
+			'42/a.dtx': '#TITLE: Real Solo\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 80, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 200, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not fill an equal-rated shortage with an unprobed key belonging to another row position', async () => {
+		// Uploader order: 01.dtx -> Expert (80), 02.dtx -> Basic (60), 03.dtx -> Advanced (60).
+		// Both 01.dtx and 03.dtx are truncated before #DLEVEL (unprobed); 02.dtx probes 60.
+		// The level-60 group has a one-exact shortage, so it must fill with 03.dtx (pos 2)
+		// rather than stealing 01.dtx (pos 0, Expert's file).
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': `${'#TITLE: ' + 'x'.repeat(16390)}\n#DLEVEL: 80\n`,
+			'42/02.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/03.dtx': `${'#TITLE: ' + 'x'.repeat(16390)}\n#DLEVEL: 60\n`
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 16420, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/03.dtx', size: 16420, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return {
+					size: buffer.byteLength,
+					arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer)
+				};
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Expert', level: 80 },
+					{ label: 'Basic', level: 60 },
+					{ label: 'Advanced', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 16420,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/03.dtx',
+				fileSizeBytes: 16420,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
 	});
 });

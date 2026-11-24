@@ -35,10 +35,11 @@
 	let title = $state('Converted from MIDI');
 	let artist = $state('Unknown');
 	let level = $state(5);
-	let bpm = $state(120);
+	let bpm = $state<number | undefined>(120);
 	// True once the user edits the BPM field — an explicit 120 still counts.
 	let bpmTouched = $state(false);
 	let comment = $state('Converted from MIDI file');
+	let convertAttempt = 0;
 
 	let fileInput: HTMLInputElement;
 
@@ -50,8 +51,12 @@
 			file &&
 			(file.name.toLowerCase().endsWith('.mid') || file.name.toLowerCase().endsWith('.midi'))
 		) {
+			convertAttempt += 1;
 			uploadedFile = file;
 			isConverted = false;
+			isConverting = false;
+			parsedMidi = null;
+			dtxFile = null;
 			// A new file gets a fresh detected BPM — the previous file's
 			// "user edited" flag must not carry over.
 			bpmTouched = false;
@@ -67,6 +72,11 @@
 		}
 	};
 
+	const handleBpmInput = (event: Event) => {
+		const raw = (event.currentTarget as HTMLInputElement).value;
+		bpmTouched = raw.trim() !== '';
+	};
+
 	const handleUploadClick = () => {
 		fileInput?.click();
 	};
@@ -76,7 +86,8 @@
 	// the download, so the exported file never serves a stale mapping.
 	const runConversion = (): MidiToDtxResult => {
 		if (!parsedMidi) throw new Error('No MIDI file parsed');
-		return midiToDtx(parsedMidi, { noteToLane: midiToDtxMap, bpm });
+		const effectiveBpm = typeof bpm === 'number' && Number.isFinite(bpm) ? bpm : undefined;
+		return midiToDtx(parsedMidi, { noteToLane: midiToDtxMap, bpm: effectiveBpm });
 	};
 
 	const conversion = $derived.by<MidiToDtxResult | null>(() => {
@@ -101,37 +112,46 @@
 	});
 
 	const handleConvert = async () => {
-		if (!uploadedFile) return;
+		const file = uploadedFile;
+		if (!file) return;
 
+		const attempt = ++convertAttempt;
 		isConverting = true;
 
 		try {
 			// Parse once; the ParsedMidi is retained for download-time
 			// reconversion with whatever mapping the user ends on.
-			parsedMidi = parseMidi(new Uint8Array(await uploadedFile.arrayBuffer()));
+			const bytes = new Uint8Array(await file.arrayBuffer());
+			if (attempt !== convertAttempt) return;
+			const nextParsedMidi = parseMidi(bytes);
 
-			dtxFile = new DTXFile();
-			dtxFile.title = title;
-			dtxFile.artist = artist;
-			dtxFile.level = level;
-			dtxFile.comment = comment;
+			const nextDtxFile = new DTXFile();
+			nextDtxFile.title = title;
+			nextDtxFile.artist = artist;
+			nextDtxFile.level = level;
+			nextDtxFile.comment = comment;
 
 			// Run the conversion once here so unsupported input (e.g.
 			// mid-bar meter changes) fails at Convert rather than later at
 			// Download. A user-edited BPM overrides the detected tempo;
 			// otherwise the detected value seeds the field — 120 is a real
 			// value, not a missing one.
-			const result = midiToDtx(parsedMidi, {
+			const overrideBpm =
+				bpmTouched && typeof bpm === 'number' && Number.isFinite(bpm) ? bpm : undefined;
+			const result = midiToDtx(nextParsedMidi, {
 				noteToLane: midiToDtxMap,
-				bpm: bpmTouched ? bpm : undefined
+				bpm: overrideBpm
 			});
+			parsedMidi = nextParsedMidi;
+			dtxFile = nextDtxFile;
 			if (!bpmTouched) bpm = result.bpm;
 
-			const baseName = uploadedFile.name.replace(/\.[^/.]+$/, '');
+			const baseName = file.name.replace(/\.[^/.]+$/, '');
 			convertedFileName = `${baseName}.dtx`;
 			isConverting = false;
 			isConverted = true;
 		} catch (error) {
+			if (attempt !== convertAttempt) return;
 			parsedMidi = null;
 			isConverting = false;
 			toastStore.error({
@@ -180,6 +200,7 @@
 	};
 
 	const handleReset = () => {
+		convertAttempt += 1;
 		uploadedFile = null;
 		isConverted = false;
 		isConverting = false;
@@ -420,7 +441,7 @@
 									min="60"
 									max="300"
 									bind:value={bpm}
-									oninput={() => (bpmTouched = true)}
+									oninput={handleBpmInput}
 									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-3 py-2 text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
 								/>
 							</div>

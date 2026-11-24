@@ -142,23 +142,49 @@ export class LaneMeasureNote {
 		}
 
 		// No standard grid holds every position (they sit finer than 1/192).
-		// Widen until each note keeps its own cell rather than overwriting a
-		// hit; capped so a pathological position can't allocate a huge string.
+		// Widen until each note keeps its own valid cell rather than dropping
+		// or overwriting a hit; capped so a pathological position can't allocate
+		// a huge string.
 		if (resolution === 0) {
 			resolution = 192;
-			const distinctCells = (res: number): number => {
+			const inspectGrid = (
+				res: number
+			): { allInRange: boolean; distinctCount: number; inRangeCount: number } => {
 				const used = new Set<number>();
+				let allInRange = true;
+				let inRangeCount = 0;
 				for (const note of this.notes) {
-					used.add(Math.round((note.position / this.measureLength) * res));
+					const index = Math.round((note.position / this.measureLength) * res);
+					if (index >= 0 && index < res) {
+						used.add(index);
+						inRangeCount++;
+					} else {
+						allInRange = false;
+					}
 				}
-				return used.size;
+				return { allInRange, distinctCount: used.size, inRangeCount };
 			};
-			while (resolution < 768 && distinctCells(resolution) < this.notes.length) {
+			const preservesAll = (res: number): boolean => {
+				const stats = inspectGrid(res);
+				return stats.allInRange && stats.distinctCount === this.notes.length;
+			};
+			while (resolution < 768 && !preservesAll(resolution)) {
 				resolution *= 2;
 			}
-			if (distinctCells(resolution) < this.notes.length) {
+			// If doubling missed triplet-subdivided hits (e.g. 3/4096 and 4/4096),
+			// try the remaining supported triplet grids before warning.
+			if (!preservesAll(resolution)) {
+				for (const tripletRes of [288, 576]) {
+					if (preservesAll(tripletRes)) {
+						resolution = tripletRes;
+						break;
+					}
+				}
+			}
+			const finalStats = inspectGrid(resolution);
+			if (finalStats.distinctCount < finalStats.inRangeCount) {
 				(onWarning ?? console.warn)(
-					`toPattern: ${this.notes.length - distinctCells(resolution)} note(s) share a cell at ${resolution}-cell resolution and overwrite earlier hits`
+					`toPattern: ${finalStats.inRangeCount - finalStats.distinctCount} note(s) share a cell at ${resolution}-cell resolution and overwrite earlier hits`
 				);
 			}
 		}

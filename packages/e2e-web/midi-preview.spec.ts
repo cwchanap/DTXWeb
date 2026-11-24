@@ -137,7 +137,7 @@ test.describe('MIDI Preview Tool', () => {
 				timeout: 10000
 			});
 
-			await expect(gridValue(page, 'Total Notes')).toHaveText(String(expected.totalNotes));
+			await expect(gridValue(page, 'Total Notes')).toHaveText('8');
 			await expect(detailValue(page, 'Tempo')).toHaveText(`${expected.tempo} BPM`);
 			await expect(detailValue(page, 'Ticks per Quarter')).toHaveText('960');
 

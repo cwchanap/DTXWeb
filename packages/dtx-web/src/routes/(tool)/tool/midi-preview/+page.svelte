@@ -21,6 +21,7 @@
 	let uploadedFile = $state<File | null>(null);
 	let isLoading = $state(false);
 	let midiData = $state<ParsedMidi | null>(null);
+	let parseAttempt = 0;
 
 	let fileInput: HTMLInputElement;
 
@@ -28,13 +29,17 @@
 		const target = event.target as HTMLInputElement;
 		const file = target.files?.[0];
 
-		if (file && file.name.toLowerCase().endsWith('.mid')) {
+		if (
+			file &&
+			(file.name.toLowerCase().endsWith('.mid') || file.name.toLowerCase().endsWith('.midi'))
+		) {
 			uploadedFile = file;
+			midiData = null;
 			parseMidiFile(file);
 		} else if (file) {
 			toastStore.error({
 				title: 'Invalid file type',
-				description: 'Please select a valid MIDI file (.mid)',
+				description: 'Please select a valid MIDI file (.mid or .midi)',
 				duration: 3000
 			});
 			target.value = '';
@@ -42,9 +47,11 @@
 	};
 
 	const parseMidiFile = async (file: File) => {
+		const attempt = ++parseAttempt;
 		isLoading = true;
 		try {
 			const arrayBuffer = await file.arrayBuffer();
+			if (attempt !== parseAttempt) return;
 			const data = parseMidi(new Uint8Array(arrayBuffer));
 			midiData = data;
 
@@ -54,6 +61,7 @@
 				duration: 3000
 			});
 		} catch (error) {
+			if (attempt !== parseAttempt) return;
 			console.error('Error parsing MIDI file:', error);
 			toastStore.error({
 				title: 'Failed to parse MIDI',
@@ -61,7 +69,9 @@
 				duration: 5000
 			});
 		} finally {
-			isLoading = false;
+			if (attempt === parseAttempt) {
+				isLoading = false;
+			}
 		}
 	};
 
@@ -75,6 +85,17 @@
 		const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 		const octave = Math.floor(noteNumber / 12) - 1;
 		return `${notes[noteNumber % 12]}${octave}`;
+	};
+
+	const getTrackNoteRange = (notes: { note: number }[]): { min: number; max: number } => {
+		let min = notes[0].note;
+		let max = notes[0].note;
+		for (let i = 1; i < notes.length; i++) {
+			const note = notes[i].note;
+			if (note < min) min = note;
+			if (note > max) max = note;
+		}
+		return { min, max };
 	};
 
 	const getInstrumentName = (program: number): string => {
@@ -106,6 +127,8 @@
 	};
 
 	const handleReset = () => {
+		parseAttempt++;
+		isLoading = false;
 		uploadedFile = null;
 		midiData = null;
 		if (fileInput) {
@@ -401,13 +424,8 @@
 										</div>
 										<div class="text-sm text-slate-200">
 											{#if track.notes.length > 0}
-												{@const minNote = Math.min(
-													...track.notes.map((n) => n.note)
-												)}
-												{@const maxNote = Math.max(
-													...track.notes.map((n) => n.note)
-												)}
-												{getNoteName(minNote)} - {getNoteName(maxNote)}
+												{@const range = getTrackNoteRange(track.notes)}
+												{getNoteName(range.min)} - {getNoteName(range.max)}
 											{:else}
 												No notes
 											{/if}

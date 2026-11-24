@@ -181,9 +181,9 @@ export class NoteBuffer {
 					this.undoPaste(lastAction.data, editor);
 					return true;
 				case 'add':
-					// Undoing an add is the same as undoing a paste: delete the
-					// chips the insert created.
-					this.undoPaste(lastAction.data, editor);
+					// Delete the specific chip the add inserted (by noteID) so a
+					// surviving duplicate-line chip at the same key is not removed.
+					this.undoAdd(lastAction.data, editor);
 					return true;
 				case 'cut':
 					this.undoCut(lastAction.data, editor);
@@ -373,6 +373,21 @@ export class NoteBuffer {
 		});
 
 		// Clear selection after undoing paste
+		editor.clearSelection();
+	}
+
+	/**
+	 * Undoes an add operation by deleting the specific chip that was inserted
+	 */
+	private undoAdd(addedNotes: PastedNoteData[], editor: Editor): void {
+		if (!addedNotes || addedNotes.length === 0) {
+			return;
+		}
+
+		addedNotes.forEach((addedNote) => {
+			editor.deleteNoteByKey(addedNote.noteKey, addedNote.noteId);
+		});
+
 		editor.clearSelection();
 	}
 

@@ -337,13 +337,26 @@ export const discoverCatalogFiles = async (
 
 	// Sort chart keys in the uploader's filename order: read_top_level_files
 	// uses Rust's case-sensitive path sort (songs.rs), which is what
-	// produced the catalog rows' id order — code-unit comparison
-	// reproduces that row↔file correspondence. Locale collation does
-	// not: it places 'basic.dtx' before 'Expert.dtx' while the uploader
-	// kept 'Expert.dtx' first, so pairing the two orders swaps previews.
+	// produced the catalog rows' id order. Rust orders paths by UTF-8
+	// bytes — code-point order — so compare code points, not UTF-16 code
+	// units: a supplementary character's leading surrogate (0xD800–0xDBFF)
+	// sorts below every BMP unit above it, inverting e.g. 'Ａ.dtx'
+	// (U+FF21) against '𠀀.dtx' (U+20000). Locale collation does not
+	// reproduce the order either: it places 'basic.dtx' before
+	// 'Expert.dtx' while the uploader kept 'Expert.dtx' first, so pairing
+	// the two orders swaps previews.
+	const compareByCodePoint = (a: string, b: string): number => {
+		const aPoints = Array.from(a, (ch) => ch.codePointAt(0) ?? 0);
+		const bPoints = Array.from(b, (ch) => ch.codePointAt(0) ?? 0);
+		for (let index = 0; index < Math.min(aPoints.length, bPoints.length); index++) {
+			const diff = aPoints[index] - bPoints[index];
+			if (diff !== 0) return diff;
+		}
+		return aPoints.length - bPoints.length;
+	};
 	const dtxObjects = objects
 		.filter((obj: R2ObjectMeta) => obj.key.toLowerCase().endsWith('.dtx'))
-		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+		.sort((a: R2ObjectMeta, b: R2ObjectMeta) => compareByCodePoint(a.key, b.key));
 	const dtxObjectKeys = dtxObjects.map((obj: R2ObjectMeta) => obj.key);
 	const usedDtxKeys = new Set<string>();
 
@@ -629,53 +642,77 @@ export const discoverCatalogFiles = async (
 	// candidate stay ambiguous and fall through to the sorted fallback,
 	// whose level/filename pairing can otherwise swap difficulties when
 	// the two orders disagree.
-	const unusedKeysByStem = new Map<string, string[]>();
-	for (const key of dtxObjectKeys) {
-		if (usedDtxKeys.has(key)) continue;
-		if (!isTopLevelR2Key(key, prefix) && !isTopLevelR2Key(key, setDefBaseDir)) continue;
-		const stem = r2FileName(key)
-			.replace(/\.dtx$/i, '')
-			.toLowerCase();
-		const keys = unusedKeysByStem.get(stem);
-		if (keys) keys.push(key);
-		else unusedKeysByStem.set(stem, [key]);
-	}
-	const unclaimedRowsByLabel = new Map<string, number[]>();
-	dtxFiles.forEach((file, index) => {
-		if (rowsClaimedBySetDef.has(index)) return;
-		const label = file.label.toLowerCase();
-		const rows = unclaimedRowsByLabel.get(label);
-		if (rows) rows.push(index);
-		else unclaimedRowsByLabel.set(label, [index]);
-	});
-	// A probed rating equal to a DIFFERENT row's level names that row's
-	// chart — the same disqualification the set.def claim loop applies —
-	// so the file must not claim this row on its stem alone.
+	//
+	// The pass runs twice. Before the sorted fallback it claims only
+	// name-and-rating agreements: a mismatched-rating stem match is a
+	// weaker signal than another file's exact rating (a re-rated
+	// Basic.dtx whose probe names no row is not the Basic row's chart
+	// when 01.dtx probes the Basic level), so those claims defer until
+	// exact-rating claims have settled and the stem heuristic applies
+	// only to leftover rows and files.
 	const allRowLevels = new Set(dtxFiles.map((file) => normalizeLevel(file.level)));
-	for (const [stem, keys] of unusedKeysByStem) {
-		const rows = unclaimedRowsByLabel.get(stem);
-		if (keys.length !== 1 || rows?.length !== 1) continue;
-		// Read deeper than the pairing window like the root stem-claim
-		// path — a #DLEVEL behind a long header is still a valid rating.
-		const probed = await probeChartHeaderLevel(
-			bucket,
-			keys[0],
-			logger,
-			CHART_LEVEL_DEEP_PROBE_BYTES
-		);
-		const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
-		const namesDifferentRow =
-			typeof probed === 'number' && probed !== rowLevel && allRowLevels.has(probed);
-		if (rowLevel !== 0 && typeof probed === 'number' && probed !== 0 && !namesDifferentRow) {
-			rowsClaimedBySetDef.add(rows[0]);
-			matchedKeysByRowIndex.set(rows[0], keys[0]);
-			usedDtxKeys.add(keys[0]);
-		} else if (probed === 0 || probed === null) {
-			usedDtxKeys.add(keys[0]);
+	const probedLevelByKey = new Map<string, number>();
+	const stemDeepProbedKeys = new Set<string>();
+	const claimStemMatchedRows = async (exactOnly: boolean): Promise<void> => {
+		const unusedKeysByStem = new Map<string, string[]>();
+		for (const key of dtxObjectKeys) {
+			if (usedDtxKeys.has(key)) continue;
+			if (!isTopLevelR2Key(key, prefix) && !isTopLevelR2Key(key, setDefBaseDir)) continue;
+			const stem = r2FileName(key)
+				.replace(/\.dtx$/i, '')
+				.toLowerCase();
+			const keys = unusedKeysByStem.get(stem);
+			if (keys) keys.push(key);
+			else unusedKeysByStem.set(stem, [key]);
 		}
-		// An unprobed read or a rating that names a different chart proves
-		// nothing either way — leave the row and the key to the fallback.
-	}
+		const unclaimedRowsByLabel = new Map<string, number[]>();
+		dtxFiles.forEach((file, index) => {
+			if (rowsClaimedBySetDef.has(index)) return;
+			const label = file.label.toLowerCase();
+			const rows = unclaimedRowsByLabel.get(label);
+			if (rows) rows.push(index);
+			else unclaimedRowsByLabel.set(label, [index]);
+		});
+		// A probed rating equal to a DIFFERENT row's level names that row's
+		// chart — the same disqualification the set.def claim loop applies —
+		// so the file must not claim this row on its stem alone.
+		for (const [stem, keys] of unusedKeysByStem) {
+			const rows = unclaimedRowsByLabel.get(stem);
+			if (keys.length !== 1 || rows?.length !== 1) continue;
+			// Read deeper than the pairing window like the root stem-claim
+			// path — a #DLEVEL behind a long header is still a valid rating.
+			let probed: number | null | undefined = probedLevelByKey.get(keys[0]);
+			if (probed === undefined && !stemDeepProbedKeys.has(keys[0])) {
+				stemDeepProbedKeys.add(keys[0]);
+				probed = await probeChartHeaderLevel(
+					bucket,
+					keys[0],
+					logger,
+					CHART_LEVEL_DEEP_PROBE_BYTES
+				);
+				if (typeof probed === 'number') probedLevelByKey.set(keys[0], probed);
+			}
+			const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
+			const namesDifferentRow =
+				typeof probed === 'number' && probed !== rowLevel && allRowLevels.has(probed);
+			if (
+				rowLevel !== 0 &&
+				typeof probed === 'number' &&
+				probed !== 0 &&
+				!namesDifferentRow &&
+				(!exactOnly || probed === rowLevel)
+			) {
+				rowsClaimedBySetDef.add(rows[0]);
+				matchedKeysByRowIndex.set(rows[0], keys[0]);
+				usedDtxKeys.add(keys[0]);
+			} else if (probed === 0 || probed === null) {
+				usedDtxKeys.add(keys[0]);
+			}
+			// An unprobed read or a rating that names a different chart proves
+			// nothing either way — leave the row and the key to the fallback.
+		}
+	};
+	await claimStemMatchedRows(true);
 
 	// Content-verify the remaining charts before pairing positionally:
 	// filename order is not a difficulty signal (numbered exports like
@@ -698,11 +735,13 @@ export const discoverCatalogFiles = async (
 			(a, b) =>
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
-	const probedLevelByKey = new Map<string, number>();
 	if (fallbackRows.length > 0) {
 		await Promise.all(
 			dtxObjectKeys.map(async (key) => {
-				if (usedDtxKeys.has(key)) return;
+				// Stem-claim candidates already carry a deeper probe result —
+				// re-reading the shorter window could only downgrade a found
+				// #DLEVEL to "unprobed".
+				if (usedDtxKeys.has(key) || probedLevelByKey.has(key)) return;
 				const level = await probeChartHeaderLevel(bucket, key, logger);
 				if (level === undefined) return;
 				if (level === null || level === 0) {
@@ -744,6 +783,14 @@ export const discoverCatalogFiles = async (
 			groupStart = groupEnd;
 		}
 	}
+
+	// Re-rated leftovers: with exact-rating claims settled, a unique stem
+	// match whose probed rating names no catalog row is still likely the
+	// row's own re-rated file — the uploader replaces charts in place, so
+	// the filename survives while the stored row level stays stale.
+	// Claiming it earlier would let the weaker name match displace another
+	// file's exact rating.
+	await claimStemMatchedRows(false);
 
 	// What remains is genuinely positional: rows arrive in id order —
 	// the uploader's filename order (parse_dtx_folder emits rows in

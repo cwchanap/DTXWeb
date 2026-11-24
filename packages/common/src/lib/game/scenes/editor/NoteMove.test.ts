@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NoteMove } from './NoteMove';
+import { NoteBuffer } from './NoteBuffer';
 import type { Editor } from '../Editor';
 // import type { MovedNoteData } from './NoteBuffer';
 import { LaneMeasureNote } from '../../../chart/note';
-import { canonicalizeCellOffset } from '../../../utils/position';
+import { canonicalizeCellOffset, parseNoteKey } from '../../../utils/position';
 import Phaser from 'phaser'; // Import to ensure global mock is available
 
 const createMockGraphics = (): Phaser.GameObjects.Graphics =>
@@ -697,6 +698,137 @@ describe('NoteMove', () => {
 
 			expect(notesToMove.map((n) => n.oldKey)).toEqual([key37]);
 			expect(notesToMove[0].newKey).toBe('note-0-0-0');
+		});
+
+		it('moves and restores every chip in an off-grid group drag', () => {
+			// End-to-end: performMove deletes all three sources before
+			// placing them, so the drift dependency must not lose a chip.
+			// Undo then restores the same IDs at their original positions.
+			const p17 = canonicalizeCellOffset(1 / 7);
+			const p37 = canonicalizeCellOffset(3 / 7);
+			const p47 = canonicalizeCellOffset(4 / 7);
+
+			const notes: Record<string, LaneMeasureNote[]> = {
+				lane1: [
+					new LaneMeasureNote(2, 'lane1', [
+						{ noteID: '01', position: p17 },
+						{ noteID: '02', position: p37 },
+						{ noteID: '03', position: p47 }
+					])
+				]
+			};
+			const graphics = new Map<string, { name: string; destroy: ReturnType<typeof vi.fn> }>();
+			const selectedNotes = new Set<string>();
+			const keyOf = (measure: number, offset: number) => `note-0-${measure}-${offset}`;
+
+			const editor = {
+				add: {
+					graphics: vi.fn().mockReturnValue({
+						setAlpha: vi.fn(),
+						clear: vi.fn(),
+						fillStyle: vi.fn(),
+						fillRect: vi.fn(),
+						strokeRect: vi.fn(),
+						destroy: vi.fn()
+					})
+				},
+				getPanelContainer: vi.fn().mockReturnValue({
+					getByName: (name: string) => graphics.get(name),
+					y: 0
+				}),
+				getLaneConfigs: vi.fn().mockReturnValue([{ id: 'lane1', noteColor: 0xff0000 }]),
+				getNotes: vi.fn(() => notes),
+				getCellsPerMeasure: vi.fn().mockReturnValue(16),
+				getMeasureCount: vi.fn().mockReturnValue(100),
+				getMeasureHeight: vi.fn().mockReturnValue(400),
+				getOffsetX: vi.fn().mockReturnValue(100),
+				getOffsetY: vi.fn().mockReturnValue(200),
+				getCellWidth: vi.fn().mockReturnValue(50),
+				getCellHeightValue: vi.fn().mockReturnValue(25),
+				getCellMargin: vi.fn().mockReturnValue(2),
+				getTotalMesaureOffest: vi.fn().mockReturnValue(0),
+				getCellHeightAt: vi.fn().mockReturnValue(20),
+				getNoteSize: vi.fn().mockReturnValue(18),
+				drawNote: vi.fn((measure: number, _laneIndex: number, cellOffset: number) => {
+					const key = keyOf(measure, cellOffset);
+					if (graphics.has(key)) return false;
+					graphics.set(key, { name: key, destroy: vi.fn() });
+					return true;
+				}),
+				deleteNoteByKey: vi.fn((key: string) => {
+					const parsed = parseNoteKey(key);
+					if (!parsed) return;
+					const group = notes.lane1.find(
+						(note) =>
+							note.measure === parsed.measure &&
+							note.notes.some((chip) => chip.position === parsed.cellOffset)
+					);
+					if (group) {
+						const chipIndex = group.notes.findIndex(
+							(chip) => chip.position === parsed.cellOffset
+						);
+						group.notes.splice(chipIndex, 1);
+					}
+					const occupied = notes.lane1.some(
+						(note) =>
+							note.measure === parsed.measure &&
+							note.notes.some((chip) => chip.position === parsed.cellOffset)
+					);
+					if (!occupied) {
+						graphics.get(key)?.destroy();
+						graphics.delete(key);
+					}
+				}),
+				clearSelection: vi.fn(() => selectedNotes.clear()),
+				selectedNotes,
+				highlightSelectedNote: vi.fn(),
+				input: { activePointer: { x: 100, y: -600 } }
+			};
+
+			for (const position of [p17, p37, p47]) {
+				graphics.set(keyOf(2, position), { name: keyOf(2, position), destroy: vi.fn() });
+			}
+
+			const noteBuffer = new NoteBuffer();
+			const dragMove = new NoteMove(editor as unknown as Editor, (moved) =>
+				noteBuffer.recordAction('move', moved)
+			);
+			noteBuffer.setNoteMove(dragMove);
+
+			const selection = new Set([keyOf(2, p17), keyOf(2, p37), keyOf(2, p47)]);
+			dragMove.startDrag(
+				{ x: 100, y: -600 } as Phaser.Input.Pointer,
+				keyOf(2, p37),
+				selection
+			);
+			dragMove.completeDrag(
+				selection,
+				editor.clearSelection,
+				editor.highlightSelectedNote,
+				editor.deleteNoteByKey
+			);
+
+			const chipsByMeasure = (measure: number) =>
+				notes.lane1
+					.filter((note) => note.measure === measure)
+					.flatMap((note) => note.notes)
+					.sort((a, b) => a.position - b.position);
+
+			expect(chipsByMeasure(1)).toEqual([
+				{ noteID: '01', position: canonicalizeCellOffset(p17 - p37 + 1) }
+			]);
+			expect(chipsByMeasure(2)).toEqual([
+				{ noteID: '02', position: 0 },
+				{ noteID: '03', position: canonicalizeCellOffset(p47 - p37) }
+			]);
+
+			expect(noteBuffer.undoLastAction(editor as unknown as Editor)).toBe(true);
+			expect(chipsByMeasure(1)).toEqual([]);
+			expect(chipsByMeasure(2)).toEqual([
+				{ noteID: '01', position: p17 },
+				{ noteID: '02', position: p37 },
+				{ noteID: '03', position: p47 }
+			]);
 		});
 
 		it('should not record a move whose destination placement failed', () => {

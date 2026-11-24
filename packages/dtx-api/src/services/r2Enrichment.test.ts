@@ -3779,4 +3779,117 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('pairs positional fallback charts in code-point order for supplementary filenames', async () => {
+		// Rust's path sort orders 'Ａ.dtx' (U+FF21) before '𠀀.dtx'
+		// (U+20000) by code point. JavaScript's code-unit comparison
+		// inverts them — the supplementary character's leading surrogate
+		// (0xD840) sorts below any BMP unit above it — so equal-rated or
+		// positional pairing on code-unit order swaps the charts.
+		const chartBodies: Record<string, string> = {
+			'42/Ａ.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+			'42/𠀀.dtx': '#TITLE: Song\n#DLEVEL: 35\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/Ａ.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/𠀀.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// Uploader order: Ａ.dtx cataloged first (HARD), then
+				// 𠀀.dtx (EASY). The re-rated probes name no row and no
+				// SET.def exists, so only filename order can pair them.
+				dtxFiles: [
+					{ label: 'HARD', level: 80 },
+					{ label: 'EASY', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'HARD',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/%EF%BC%A1.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'EASY',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/%F0%A0%80%80.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not let a re-rated stem claim displace an exact-rating match', async () => {
+		// The local SET.def cataloged 01.dtx as Basic (30) and Basic.dtx as
+		// Expert (80) — a row's label is not always its chart's filename
+		// stem. R2 holds both charts but no SET.def, and Basic.dtx was
+		// re-rated to 85: its probed rating names no row, so the stem
+		// claim would bind it to the Basic row before 01.dtx's exact 30
+		// rating can claim it — leaving Expert to take 01.dtx positionally.
+		// Mismatched-rating stem claims must defer to exact-rating claims.
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+			'42/Basic.dtx': '#TITLE: Song\n#DLEVEL: 85\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/Basic.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				// Uploader order: 01.dtx cataloged first as Basic, then
+				// Basic.dtx as Expert.
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/Basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

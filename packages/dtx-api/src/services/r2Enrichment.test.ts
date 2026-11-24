@@ -4324,4 +4324,67 @@ describe('discoverCatalogFiles', () => {
 			}
 		]);
 	});
+
+	it('does not let a lower-rated row steal a shared alias from the exact-rated row', async () => {
+		// Reproduced from PR #365 review: SET.def names the same chart
+		// twice through different spellings — `./a.dtx` for BASIC and
+		// `a.dtx` for EXPERT — which resolve to one R2 object. The
+		// uploader's literal lookup gives a.dtx to EXPERT and catalogs
+		// the unlisted basic.dtx under its stem. Processing lower-rated
+		// rows first lets BASIC's non-exact claim take the shared key
+		// before EXPERT's exact claim runs, then positional pairing
+		// hands EXPERT the wrong chart.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE ./a.dtx\n#L2LABEL EXPERT\n#L2FILE a.dtx\n',
+			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return {
+					size: buffer.byteLength,
+					arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer)
+				};
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 });

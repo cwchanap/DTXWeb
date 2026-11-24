@@ -588,6 +588,37 @@ describe('encoding-utils', () => {
 			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
 		});
 
+		it.each([
+			[
+				'UTF-16LE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = codeUnit & 0xff;
+					bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+				}
+			],
+			[
+				'UTF-16BE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = (codeUnit >> 8) & 0xff;
+					bytes[i * 2 + 1] = codeUnit & 0xff;
+				}
+			]
+		])('decodes BOM-less %s when the probe cut splits a surrogate pair', (_name, writeUnit) => {
+			// Reproduced from PR #365 review: the 2048-byte probe ends inside
+			// the emoji at code-unit 1023, leaving a lone high surrogate that
+			// decodes as U+FFFD — rejecting UTF-16 even though #TITLE: is in
+			// the probe. CJK padding keeps the zero-byte density below the
+			// parity threshold so the sniffing path runs.
+			const text = `#TITLE: ${'漢'.repeat(1015)}🥁\n#DLEVEL: 60\n`;
+			// The emoji's high surrogate must be the last unit inside the probe.
+			expect(text.charCodeAt(1023)).toBe(0xd83e);
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				writeUnit(i, text.charCodeAt(i), utf16Bytes);
+			}
+			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+		});
+
 		it('returns empty string for empty buffer', () => {
 			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
 		});

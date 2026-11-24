@@ -306,6 +306,28 @@ describe('LaneMeasureNote', () => {
 			warn.mockRestore();
 		});
 
+		it('should export on the grid that preserves the most hits when no grid fits all', () => {
+			// Reproduced from PR #365 review: hits at cells 5, 6 and 2047 of a
+			// 2048-cell pattern. The 2047 hit rounds out of range on every
+			// supported grid, so no grid preserves all three — but rounding is
+			// not monotonic in resolution: 768 merges 5 and 6 into cell 2 while
+			// 576 keeps them on cells 1 and 2. Defaulting to 768 loses a hit
+			// another supported grid keeps.
+			const warnings: string[] = [];
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 5 / 2048 },
+				{ noteID: '02', position: 6 / 2048 },
+				{ noteID: '03', position: 2047 / 2048 }
+			]);
+			const pattern = laneMeasureNote.toPattern((message) => warnings.push(message));
+
+			expect(pattern).toHaveLength(576 * 2);
+			expect(pattern.slice(2, 4)).toBe('01'); // cell 1
+			expect(pattern.slice(4, 6)).toBe('02'); // cell 2
+			expect(warnings).toHaveLength(1);
+			expect(warnings[0]).toContain('dropped');
+		});
+
 		it('should warn when a note rounds to a cell outside the pattern grid', () => {
 			// A position a hair under the bar end rounds to index `resolution`
 			// on every supported grid (even 768) and falls out of [0, resolution).

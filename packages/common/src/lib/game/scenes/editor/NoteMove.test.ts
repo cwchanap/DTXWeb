@@ -758,7 +758,8 @@ describe('NoteMove', () => {
 				deleteNoteByKey: vi.fn((key: string) => {
 					const parsed = parseNoteKey(key);
 					if (!parsed) return;
-					const group = notes.lane1.find(
+					const groups = notes.lane1 ?? [];
+					const group = groups.find(
 						(note) =>
 							note.measure === parsed.measure &&
 							note.notes.some((chip) => chip.position === parsed.cellOffset)
@@ -768,8 +769,14 @@ describe('NoteMove', () => {
 							(chip) => chip.position === parsed.cellOffset
 						);
 						group.notes.splice(chipIndex, 1);
+						// NoteManager drops an emptied measure group (and lane
+						// entry), so placement must recreate it.
+						if (group.notes.length === 0) {
+							notes.lane1 = groups.filter((note) => note !== group);
+							if (notes.lane1.length === 0) delete notes.lane1;
+						}
 					}
-					const occupied = notes.lane1.some(
+					const occupied = (notes.lane1 ?? []).some(
 						(note) =>
 							note.measure === parsed.measure &&
 							note.notes.some((chip) => chip.position === parsed.cellOffset)

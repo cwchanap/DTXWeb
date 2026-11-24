@@ -181,6 +181,25 @@ export class LaneMeasureNote {
 					}
 				}
 			}
+			if (!preservesAll(resolution)) {
+				// No supported grid keeps every hit distinct and in range —
+				// export on the grid that preserves the most hits, not the
+				// finest by default. Rounding to nearest is not monotonic in
+				// resolution (768 can merge hits a coarser grid keeps apart),
+				// so the candidate set is scored, not just widened. Prefer the
+				// finer grid on a tie for fidelity.
+				let bestDistinct = -1;
+				for (const res of [192, 384, 768, 288, 576]) {
+					const stats = inspectGrid(res);
+					if (
+						stats.distinctCount > bestDistinct ||
+						(stats.distinctCount === bestDistinct && res > resolution)
+					) {
+						resolution = res;
+						bestDistinct = stats.distinctCount;
+					}
+				}
+			}
 			const finalStats = inspectGrid(resolution);
 			if (finalStats.distinctCount < finalStats.inRangeCount) {
 				(onWarning ?? console.warn)(

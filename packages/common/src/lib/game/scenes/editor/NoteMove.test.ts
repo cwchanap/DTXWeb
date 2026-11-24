@@ -575,6 +575,48 @@ describe('NoteMove', () => {
 			expect(notesToMove).toEqual([]);
 		});
 
+		it('should refuse a destination held by a chip a few ulps off the computed key', () => {
+			// Reproduced from PR #365 review: a seven-cell pattern holds same-lane
+			// hits at 1/7, 3/7, 4/7. Dragging 3/7 to offset 0 moves 4/7 onto
+			// 0.14285714285714, but the stored 1/7 chip sits at
+			// 0.142857142857143 — the exact graphic-key lookup misses it and the
+			// moved hit duplicates the occupied cell.
+			const p17 = canonicalizeCellOffset(1 / 7); // 0.142857142857143
+			const p37 = canonicalizeCellOffset(3 / 7); // 0.42857142857143
+			const p47 = canonicalizeCellOffset(4 / 7); // 0.57142857142857
+			expect(canonicalizeCellOffset(p47 - p37)).not.toBe(p17);
+
+			const lineA = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '01', position: p17 },
+				{ noteID: '02', position: p37 },
+				{ noteID: '03', position: p47 }
+			]);
+			mockEditor._setMockNotes({ lane1: [lineA] });
+			mockEditor._addMockGameObject(`note-0-1-${p17}`);
+
+			const key37 = `note-0-1-${p37}`;
+			const key47 = `note-0-1-${p47}`;
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set([key37, key47]);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+
+			// The 3/7 note lands on empty offset 0; the 4/7 note is refused
+			// instead of duplicating the drifted 1/7 cell.
+			expect(notesToMove.map((n) => n.oldKey)).toEqual([key37]);
+			expect(notesToMove[0].newKey).toBe('note-0-1-0');
+		});
+
 		it('should not record a move whose destination placement failed', () => {
 			const selectedNotes = new Set(['note-0-1-0']);
 			const deleteNoteByKey = vi.fn();

@@ -329,6 +329,7 @@ export class NoteMove {
 					newCellOffset >= 0 &&
 					newCellOffset < 1
 				) {
+					const newLaneId = this.editor.getLaneConfigs()[newLaneIndex].id;
 					const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
 					const existingNote = this.editor.getPanelContainer().getByName(newKey);
 
@@ -341,10 +342,27 @@ export class NoteMove {
 					// was already deleted.
 					const destIsDragged =
 						!!existingNote && this.draggedNotes.has(existingNote.name);
+					// The exact-key lookup misses a destination stored a few ulps
+					// off the computed offset (4/7 - 3/7 → 0.14285714285714 vs a
+					// stored 1/7 = 0.142857142857143): the graphic exists but under
+					// a different key, and the incoming chip would duplicate the
+					// hit instead of being refused — the same occupancy hole
+					// pasteNotes guards with its drift check.
+					const ulpTolerance = Number.EPSILON * 16 * Math.max(1, Math.abs(newCellOffset));
+					const existingDriftHit = (this.editor.getNotes()[newLaneId] ?? []).some(
+						(group) =>
+							group.measure === newMeasure &&
+							group.notes.some(
+								(chip) =>
+									chip.position !== newCellOffset &&
+									Math.abs(chip.position - newCellOffset) <= ulpTolerance
+							)
+					);
 					if (
-						!existingNote ||
-						(destIsDragged &&
-							!this.hasSurvivingChip(newLaneIndex, newMeasure, newCellOffset))
+						!existingDriftHit &&
+						(!existingNote ||
+							(destIsDragged &&
+								!this.hasSurvivingChip(newLaneIndex, newMeasure, newCellOffset)))
 					) {
 						candidates.push({
 							oldKey: noteKey,
@@ -352,7 +370,7 @@ export class NoteMove {
 							laneIndex: newLaneIndex,
 							measure: newMeasure,
 							cellOffset: newCellOffset,
-							laneId: this.editor.getLaneConfigs()[newLaneIndex].id,
+							laneId: newLaneId,
 							originalNoteId: originalNoteIds.get(noteKey) || '01'
 						});
 						if (destIsDragged) {

@@ -449,10 +449,22 @@ export const discoverCatalogFiles = async (
 	// this label — claiming it unprobed would bind the placeholder and
 	// suppress the fallback that holds the row's real chart.
 	const referencedKeys = new Set<string>();
-	for (const refs of filesByLabel.values()) {
+	// Refs under different labels can resolve to one R2 object (./a.dtx
+	// and a.dtx, or a case-insensitive collide). The claim loop consumes
+	// one object per claim, so a shared key is ambiguous: a non-exact
+	// claim by one label's row would take it before a row in the other
+	// label holding its exact probed rating can claim it. Track the
+	// label set per resolved key so shared keys can be probed and their
+	// exact claims settled first.
+	const labelsByResolvedKey = new Map<string, Set<string>>();
+	for (const [label, refs] of filesByLabel) {
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
-			if (object) referencedKeys.add(object.key);
+			if (!object) continue;
+			referencedKeys.add(object.key);
+			const labels = labelsByResolvedKey.get(object.key);
+			if (labels) labels.add(label);
+			else labelsByResolvedKey.set(object.key, new Set([label]));
 		}
 	}
 	const hasUnlistedChart = dtxObjects.some((obj) => !referencedKeys.has(obj.key));
@@ -460,15 +472,24 @@ export const discoverCatalogFiles = async (
 	const levelProbes: Promise<void>[] = [];
 	for (const [label, refs] of filesByLabel) {
 		const rows = rowCountByLabel.get(label) ?? 0;
-		// Probe only ambiguous groups: one row claiming its label's single
-		// reference is already deterministic. Ambiguity needs either side
-		// to multiply — multiple refs, or multiple rows sharing one
-		// remaining ref (e.g. a directory placeholder removed the other) —
-		// or an unlisted chart the named ref could wrongly displace.
-		if (rows === 0 || (rows === 1 && refs.length === 1 && !hasUnlistedChart)) continue;
+		if (rows === 0) continue;
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object) continue;
+			// Probe only ambiguous groups: one row claiming its label's single
+			// reference is already deterministic. Ambiguity needs either side
+			// to multiply — multiple refs, or multiple rows sharing one
+			// remaining ref (e.g. a directory placeholder removed the other) —
+			// or an unlisted chart the named ref could wrongly displace. A key
+			// another label's ref also resolves to is ambiguous too: a
+			// cross-label row can hold its exact rating.
+			if (
+				rows === 1 &&
+				refs.length === 1 &&
+				!hasUnlistedChart &&
+				(labelsByResolvedKey.get(object.key)?.size ?? 0) <= 1
+			)
+				continue;
 			levelProbes.push(
 				(async () => {
 					const level = await probeChartHeaderLevel(bucket, object.key, logger);
@@ -531,6 +552,22 @@ export const discoverCatalogFiles = async (
 				const levels = rowLevelsByLabel.get(label);
 				for (const level of levels ?? []) {
 					if (level === probed && level !== rowLevel) return false;
+				}
+				// The resolved object can be shared with another label's
+				// ref: its probed rating may name a row in THAT label,
+				// whose own ref will exact-claim the shared key. A
+				// non-exact claim here would consume the object first
+				// (each key is claimed once) and leave the exact row to
+				// the positional fallback — the alias steals its chart.
+				const sharedObject = resolveSetDefObject(ref);
+				const sharedLabels = sharedObject
+					? labelsByResolvedKey.get(sharedObject.key)
+					: undefined;
+				if (sharedLabels && sharedLabels.size > 1) {
+					for (const otherLabel of sharedLabels) {
+						if (otherLabel === label) continue;
+						if (rowLevelsByLabel.get(otherLabel)?.has(probed)) return false;
+					}
 				}
 				return true;
 			});

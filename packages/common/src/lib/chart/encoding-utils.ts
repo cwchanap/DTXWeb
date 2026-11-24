@@ -144,9 +144,21 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 			const directiveRegex =
 				/^\s*#(?:TITLE|ARTIST|BPM|DLEVEL|COMMENT|WAV|BMP|PREVIEW|L\d+(?:LABEL|FILE|FONT))/im;
 			const probeEnd = Math.min(uint8.length & ~1, 2048);
-			const probeSlice = uint8.subarray(0, probeEnd);
 			for (const candidate of ['utf-16le', 'utf-16be'] as const) {
-				const decoded = new TextDecoder(candidate).decode(probeSlice);
+				// The even-byte cut can still split a surrogate pair: a non-BMP
+				// char (emoji, CJK ext-B) straddling probeEnd leaves a lone
+				// high surrogate that decodes as U+FFFD and falsely rejects
+				// this byte order even when the probe holds a valid
+				// directive. Drop the half pair before sniffing.
+				let end = probeEnd;
+				if (end >= 2) {
+					const lastUnit =
+						candidate === 'utf-16le'
+							? uint8[end - 2] | (uint8[end - 1] << 8)
+							: (uint8[end - 2] << 8) | uint8[end - 1];
+					if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 2;
+				}
+				const decoded = new TextDecoder(candidate).decode(uint8.subarray(0, end));
 				if (
 					!decoded.includes('\u0000') &&
 					!decoded.includes('\uFFFD') &&

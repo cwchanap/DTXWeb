@@ -4621,6 +4621,82 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('preserves raw-filename ownership when distinct equal-rated labels share cross-label aliases', async () => {
+		// Desktop uploader matches raw filenames: A -> a.dtx, B -> b.dtx, C -> c.dtx.
+		// Ranking by contender count alone lets A take ./b.dtx (1 contender) over
+		// a.dtx (2 contenders), swapping A and B.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': [
+				'#L1LABEL A',
+				'#L1FILE a.dtx',
+				'#L2LABEL A',
+				'#L2FILE ./b.dtx',
+				'#L3LABEL B',
+				'#L3FILE b.dtx',
+				'#L4LABEL B',
+				'#L4FILE ./a.dtx',
+				'#L5LABEL C',
+				'#L5FILE c.dtx',
+				'#L6LABEL C',
+				'#L6FILE ./a.dtx'
+			].join('\n'),
+			'42/a.dtx': '#TITLE: Chart A\n#DLEVEL: 60\n',
+			'42/b.dtx': '#TITLE: Chart B\n#DLEVEL: 60\n',
+			'42/c.dtx': '#TITLE: Chart C\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 160, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/c.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 60 },
+					{ label: 'B', level: 60 },
+					{ label: 'C', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'A',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'B',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/b.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'C',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/c.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('preserves row positions when a deferred equal-rated fallback group remains short', async () => {
 		const oversizedHeader = `#TITLE: Big\n#COMMENT: ${'x'.repeat(20000)}\n#DLEVEL: 80\n`;
 		const chartBodies: Record<string, string> = {

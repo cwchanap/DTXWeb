@@ -618,6 +618,40 @@ describe('NoteMove', () => {
 			expect(notesToMove[0].newKey).toBe('note-0-1-0');
 		});
 
+		it('refuses a 254-cell destination when accumulated canonicalization error exceeds 16 ULPs', () => {
+			const pos9 = canonicalizeCellOffset(9 / 254);
+			const pos18 = canonicalizeCellOffset(18 / 254);
+			expect(Math.abs(canonicalizeCellOffset(pos18 - pos9) - pos9)).toBeGreaterThan(
+				Number.EPSILON * 16
+			);
+
+			const lineA = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '01', position: pos9 },
+				{ noteID: '02', position: pos18 }
+			]);
+			mockEditor._setMockNotes({ lane1: [lineA] });
+			mockEditor._addMockGameObject(`note-0-1-${pos9}`);
+			mockEditor._addMockGameObject(`note-0-1-${pos18}`);
+
+			const key18 = `note-0-1-${pos18}`;
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set([key18]);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(0, 0, -pos9, new Map(), notesToMove);
+
+			expect(notesToMove).toEqual([]);
+		});
+
 		it('moves a group note onto an off-grid cell vacated by another selected note', () => {
 			// 1/7, 3/7, and 4/7 are selected; dragging 3/7 to the measure
 			// start moves 1/7 into the previous measure. The 4/7 note's

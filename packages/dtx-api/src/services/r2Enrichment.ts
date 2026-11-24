@@ -565,6 +565,14 @@ export const discoverCatalogFiles = async (
 	// object first, or reserving the unused alias leaves the first row
 	// without its chart even though the other row took a different file.
 	const dtxKeyOrder = new Map(dtxObjectKeys.map((key, idx) => [key, idx]));
+	// The desktop uploader maps SET.def labels by raw filename (lowercased,
+	// without ./ or directory prefixes), so a bare non-./ reference matching
+	// the object's filename represents raw-filename ownership rather than a
+	// cross-label alias.
+	const isDirectRawRef = (ref: SetDefFileRef, key: string): boolean =>
+		!ref.explicitlyRelative &&
+		Boolean(key) &&
+		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
 	const claimSetDefRows = (exactOnly: boolean): void => {
 		const isRefUnused = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
@@ -582,14 +590,17 @@ export const discoverCatalogFiles = async (
 		if (exactOnly) {
 			// Coordinate exact matches: process the most constrained row (fewest
 			// remaining unused exact refs) first so a multi-choice row does not
-			// consume a shared alias needed by another row, and break equal-rating
-			// ties in uploader filename (dtxObjectKeys) order instead of SET.def order.
+			// consume a shared alias needed by another row. Within a row,
+			// preserve raw-filename ownership before ranking by contender count
+			// or uploader filename (dtxObjectKeys) order so shared aliases do
+			// not swap equally rated charts behind distinct labels.
 			while (true) {
 				let bestChoice: {
 					rowIndex: number;
 					refs: SetDefFileRef[];
 					bestRefIndex: number;
 					candidateCount: number;
+					bestIsDirect: boolean;
 				} | null = null;
 				for (const { file, index } of claimOrder) {
 					if (rowsClaimedBySetDef.has(index)) continue;
@@ -625,21 +636,34 @@ export const discoverCatalogFiles = async (
 					matchingIndexes.sort((a, b) => {
 						const keyA = resolveSetDefObject(refs[a])?.key ?? '';
 						const keyB = resolveSetDefObject(refs[b])?.key ?? '';
+						const directDiff =
+							Number(isDirectRawRef(refs[b], keyB)) -
+							Number(isDirectRawRef(refs[a], keyA));
 						return (
+							directDiff ||
 							contendersForKey(keyA) - contendersForKey(keyB) ||
 							(dtxKeyOrder.get(keyA) ?? Number.MAX_SAFE_INTEGER) -
 								(dtxKeyOrder.get(keyB) ?? Number.MAX_SAFE_INTEGER) ||
 							a - b
 						);
 					});
-					if (!bestChoice || matchingIndexes.length < bestChoice.candidateCount) {
+					const bestRefKey = resolveSetDefObject(refs[matchingIndexes[0]])?.key ?? '';
+					const bestIsDirect = isDirectRawRef(refs[matchingIndexes[0]], bestRefKey);
+					if (
+						!bestChoice ||
+						matchingIndexes.length < bestChoice.candidateCount ||
+						(matchingIndexes.length === bestChoice.candidateCount &&
+							bestIsDirect &&
+							!bestChoice.bestIsDirect)
+					) {
 						bestChoice = {
 							rowIndex: index,
 							refs,
 							bestRefIndex: matchingIndexes[0],
-							candidateCount: matchingIndexes.length
+							candidateCount: matchingIndexes.length,
+							bestIsDirect
 						};
-						if (bestChoice.candidateCount === 1) break;
+						if (bestChoice.candidateCount === 1 && bestChoice.bestIsDirect) break;
 					}
 				}
 				if (!bestChoice) break;

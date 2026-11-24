@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	normalizePosition,
 	canonicalizeCellOffset,
+	isSameCellOffset,
 	snapCellOffsetToBarline,
 	parseNoteKey
 } from './position';
@@ -142,6 +143,15 @@ describe('canonicalizeCellOffset', () => {
 
 	it('leaves non-grid positions as their 15-digit canonical form', () => {
 		expect(canonicalizeCellOffset(0.123456789012345)).toBe(0.123456789012345);
+	});
+});
+
+describe('isSameCellOffset', () => {
+	it('treats accumulated canonicalization error as the same cell without conflating distinct offsets', () => {
+		const pos9 = canonicalizeCellOffset(9 / 254);
+		const pos18 = canonicalizeCellOffset(18 / 254);
+		expect(isSameCellOffset(pos9, canonicalizeCellOffset(pos18 - pos9))).toBe(true);
+		expect(isSameCellOffset(0.025, 0.0250000000001)).toBe(false);
 	});
 });
 

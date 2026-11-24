@@ -3,6 +3,7 @@ import type { Editor } from '../Editor';
 import { type MovedNoteData } from './NoteBuffer';
 import {
 	canonicalizeCellOffset,
+	isSameCellOffset,
 	parseNoteKey,
 	snapCellOffsetToBarline
 } from '../../../utils/position';
@@ -343,13 +344,12 @@ export class NoteMove {
 					// was already deleted.
 					const destIsDragged =
 						!!existingNote && this.draggedNotes.has(existingNote.name);
-					// The exact-key lookup misses a destination stored a few ulps
-					// off the computed offset (4/7 - 3/7 → 0.14285714285714 vs a
-					// stored 1/7 = 0.142857142857143): the graphic exists but under
-					// a different key, and the incoming chip would duplicate the
-					// hit instead of being refused — the same occupancy hole
-					// pasteNotes guards with its drift check.
-					const ulpTolerance = Number.EPSILON * 16 * Math.max(1, Math.abs(newCellOffset));
+					// The exact-key lookup misses a destination stored within
+					// accumulated canonicalization drift of the computed offset
+					// (e.g. 4/7 - 3/7 vs 1/7, or 18/254 - 9/254 vs 9/254): the
+					// graphic exists under a different key, and the incoming chip
+					// would duplicate the hit instead of being refused — the same
+					// occupancy hole pasteNotes guards with its drift check.
 					// Nearby chips are occupancy too. A selected occupant vacates
 					// its cell in the same drag, so it becomes a dependency like
 					// an exact-key dragged destination; an unselected occupant or
@@ -360,7 +360,7 @@ export class NoteMove {
 						if (group.measure !== newMeasure) continue;
 						for (const chip of group.notes) {
 							if (chip.position === newCellOffset) continue;
-							if (Math.abs(chip.position - newCellOffset) > ulpTolerance) continue;
+							if (!isSameCellOffset(chip.position, newCellOffset)) continue;
 							const occupantKey = `note-${newLaneIndex}-${newMeasure}-${chip.position}`;
 							if (
 								!this.draggedNotes.has(occupantKey) ||

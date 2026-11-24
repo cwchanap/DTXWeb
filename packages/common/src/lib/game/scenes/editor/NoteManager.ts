@@ -982,27 +982,17 @@ export class NoteManager {
 				child.name.startsWith('note-') &&
 				child instanceof Phaser.GameObjects.Graphics
 			) {
-				// Fast hit detection using simplified bounds (no stacking) before
-				// calculating precise stacked bounds.
-				const simplifiedBounds = this.calculateSimplifiedNoteBounds(child.name);
-
+				// Use precise stacked bounds directly so frontmost stacked notes
+				// remain clickable across their full horizontal offset.
+				const preciseBounds = this.calculateNoteBounds(child.name);
 				if (
-					simplifiedBounds &&
-					pointer.x >= simplifiedBounds.x &&
-					pointer.x <= simplifiedBounds.x + simplifiedBounds.width &&
-					pointer.y >= simplifiedBounds.y &&
-					pointer.y <= simplifiedBounds.y + simplifiedBounds.height
+					preciseBounds &&
+					pointer.x >= preciseBounds.x &&
+					pointer.x <= preciseBounds.x + preciseBounds.width &&
+					pointer.y >= preciseBounds.y &&
+					pointer.y <= preciseBounds.y + preciseBounds.height
 				) {
-					const preciseBounds = this.calculateNoteBounds(child.name);
-					if (
-						preciseBounds &&
-						pointer.x >= preciseBounds.x &&
-						pointer.x <= preciseBounds.x + preciseBounds.width &&
-						pointer.y >= preciseBounds.y &&
-						pointer.y <= preciseBounds.y + preciseBounds.height
-					) {
-						return child;
-					}
+					return child;
 				}
 			}
 		}

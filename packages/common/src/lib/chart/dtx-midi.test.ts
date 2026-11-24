@@ -191,6 +191,22 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 		expect(roundTrip.notes['13'][0].notes).toHaveLength(2);
 	});
 
+	it('merges exported ticks that quantize to one 1/192 cell on reimport', () => {
+		const cells = new Array(768).fill('00');
+		cells[2] = '01';
+		cells[3] = '01';
+		const dtx = dtxFromText(
+			['#BPM: 120', '#00002: 0.25', `#00013: ${cells.join('')}`].join('\r\n')
+		);
+
+		const parsed = parseMidi(dtxToMidi(dtx).data);
+		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([2, 3]);
+
+		const roundTrip = midiToDtx(parsed);
+		expect(roundTrip.collisions).toBe(1);
+		expect(roundTrip.notes['13'][0].notes).toHaveLength(1);
+	});
+
 	it('warns when hits sit closer than the 15-bit PPQ limit separates', () => {
 		// Adjacent 768-cell hits in a 1/256 bar would need 49152 PPQ — past
 		// the 0x7fe0 cap — so the export reports that onsets may merge.

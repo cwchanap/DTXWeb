@@ -6,6 +6,10 @@
 		"moduleResolution": "Bundler",
 		"lib": ["ES2022", "DOM"],
 		"types": ["node", "@playwright/test"],
+		"baseUrl": ".",
+		"paths": {
+			"@dtx/common": ["../common/src/lib/index.ts"]
+		},
 		"noEmit": true,
 		"isolatedModules": true,
 		"allowSyntheticDefaultImports": true

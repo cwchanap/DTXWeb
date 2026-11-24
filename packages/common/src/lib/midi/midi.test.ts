@@ -296,6 +296,21 @@ describe('parseMidi', () => {
 		expect(midi.totalNotes).toBe(1);
 	});
 
+	it('rejects MIDI files with more MTrk chunks than declared in the header', () => {
+		const twoTrack = buildMidi(
+			480,
+			[
+				[...evNoteOn(0, 36), ...evNoteOff(60, 36), ...evEndOfTrack],
+				[...evNoteOn(0, 38), ...evNoteOff(60, 38), ...evEndOfTrack]
+			],
+			1
+		);
+		// Patch header trackCount from 2 down to 1
+		new DataView(twoTrack.buffer).setUint16(10, 1, false);
+
+		expect(() => parseMidi(twoTrack)).toThrow(/extra MTrk/i);
+	});
+
 	it('reads the known prefix of extended tempo and time-signature meta events', () => {
 		const bytes = buildMidi(480, [
 			[
@@ -970,6 +985,65 @@ describe('midiToDtx', () => {
 		const result = midiToDtx(midi, { bpm: 90 });
 		expect(result.bpm).toBe(90);
 		expect(result.controls.bpmChanges).toEqual({ '01': 240 });
+	});
+
+	it('keeps a positive-tick tempo change out of initial cell 0 so BPM override holds', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evTempo(4, 180),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi, { bpm: 90 });
+		expect(result.bpm).toBe(90);
+		expect(result.notes['08'][0].notes[0]).toEqual({ noteID: '01', position: 1 / 192 });
+		expect(result.warnings).toContain(
+			'1 tempo change(s) snapped to the 1/192 DTX grid; timing shifts up to 6 tick(s)'
+		);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const reparsed = new DTXFile(out.toDtxText(result.notes, result.controls));
+		reparsed.parseFromText(out.toDtxText(result.notes, result.controls));
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+		expect(timing.positionToTime(0, 0)).toBe(0);
+		expect(timing.tempoEvents).toEqual([
+			{ measure: 0, fraction: 0, bpm: 90 },
+			{ measure: 0, fraction: 1 / 192, bpm: 180 }
+		]);
+	});
+
+	it('preserves full BPM precision for maximum 3-byte MIDI tempo (0xFFFFFF) on round trip', () => {
+		const maxMpq = 0xffffff;
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...vlq(0),
+					0xff,
+					0x51,
+					0x03,
+					(maxMpq >> 16) & 0xff,
+					(maxMpq >> 8) & 0xff,
+					maxMpq & 0xff,
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+
+		expect(() => dtxToMidi(reparsed)).not.toThrow();
 	});
 
 	it('honours noteToLane overrides over GM_IMPORT_LANE', () => {

@@ -39,7 +39,7 @@ export const parseSetDef = (text: string): ParsedSetDef => {
 		const match = line.match(levelPattern);
 		if (!match) continue;
 		const level = parseInt(match[1], 10);
-		if (level <= 0) continue;
+		if (!Number.isSafeInteger(level) || level <= 0) continue;
 		const entry = entries.get(level) ?? {};
 		const value = match[3].trim();
 		if (match[2].toUpperCase() === 'LABEL') {

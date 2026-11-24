@@ -479,10 +479,9 @@ describe('getSimfile', () => {
 });
 
 describe('getSimfile chart id', () => {
-	it('orders dtx_files by ascending row id so duplicate-label pairing is deterministic', async () => {
-		// Duplicate-label SET.def pairing consumes rows FIFO in the order
-		// returned here. Without ORDER BY the association between a row and
-		// its set.def slot is unspecified; ascending row id = insert order.
+	it('orders dtx_files by ascending row id for deterministic query output', async () => {
+		// Guarantees chart rows are read in ascending row id order; row IDs
+		// do not identify SET.def slots (enrichment binds rows by rating/label).
 		mockDrizzleDb.select.mockClear();
 		drizzleSelectResults.length = 0;
 		drizzleSelectResults.push(
@@ -588,8 +587,8 @@ describe('listSimfiles', () => {
 	});
 
 	it('orders the batched dtx_files select by ascending row id', async () => {
-		// Same contract as getSimfile: per-simfile FIFO duplicate-label
-		// pairing depends on a stable row order across the batched fetch.
+		// Same read-order guarantee as getSimfile: per-simfile chart rows
+		// arrive in ascending row id order across the batched fetch.
 		drizzleSelectResults.push(
 			[{ cnt: 1 }],
 			[baseSimfileRow],
@@ -1914,7 +1913,7 @@ describe('listUserScoredSimfiles', () => {
 		const dtxSql = (db.prepare as ReturnType<typeof vi.fn>).mock.calls
 			.map((call) => call[0] as string)
 			.find((sql) => sql.includes('FROM dtx_files'));
-		expect(dtxSql).toContain('ORDER BY id');
+		expect(dtxSql).toContain('ORDER BY id ASC');
 	});
 
 	it('clamps an out-of-range page to 1, returning a full page instead of an empty one', async () => {

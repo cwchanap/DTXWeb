@@ -524,7 +524,16 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 
 	// Tempo: first event -> base #BPM (or override); later effective changes ->
 	// #BPMxx defs + channel-08 refs quantized like drum hits.
-	const bpmOf = (mpq: number) => Math.round((60000000 / mpq) * 1000) / 1000;
+	const MAX_MIDI_MPQ = 0xffffff;
+	const bpmOf = (mpq: number): number => {
+		const rounded = Math.round((60000000 / mpq) * 1000) / 1000;
+		// Keep 3-decimal rounding for normal tempos (recovering exact 140/180
+		// from integer MPQ), but fall back to full precision when rounding
+		// drops below the 24-bit MIDI tempo floor (e.g. mpq = 0xFFFFFF).
+		return rounded > 0 && Math.round(60000000 / rounded) <= MAX_MIDI_MPQ
+			? rounded
+			: 60000000 / mpq;
+	};
 	const tempoEvents: { tick: number; bpm: number }[] = [];
 	for (const event of midi.tempoEvents) {
 		const last = tempoEvents[tempoEvents.length - 1];
@@ -552,7 +561,12 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
 		if (event.bpm === effectiveBpm) continue;
 		effectiveBpm = event.bpm;
-		const { measure, position } = quantize(event.tick);
+		let { measure, position } = quantize(event.tick);
+		// Keep positive-tick tempo changes out of cell 0 so they cannot
+		// overwrite the base #BPM (or user BPM override) at t = 0.
+		if (event.tick > 0 && measure === 0 && position === 0) {
+			position = 1 / 192;
+		}
 		// DTX tempo refs can only sit on the 1/192 grid; each off-grid snap
 		// shifts playback time, and shifts compound across segments.
 		const snappedTick =

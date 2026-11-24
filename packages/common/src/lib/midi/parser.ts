@@ -355,6 +355,23 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 		for (const event of raw.meterEvents) meterEvents.push(event);
 		offset = raw.nextOffset;
 	}
+	// Reject any extra MTrk chunks beyond the declared trackCount while
+	// continuing to skip complete unknown chunks.
+	while (offset < data.length) {
+		if (offset + 8 > data.length) {
+			fail('truncated trailing chunk header');
+		}
+		const chunkType = String.fromCharCode(...data.slice(offset, offset + 4));
+		const chunkLength = readUint32(offset + 4);
+		offset += 8;
+		if (offset + chunkLength > data.length) {
+			fail(`chunk ${chunkType} extends past end of file`);
+		}
+		if (chunkType === 'MTrk') {
+			fail(`unexpected extra MTrk chunk beyond declared track count ${trackCount}`);
+		}
+		offset += chunkLength;
+	}
 
 	tempoEvents.sort((a, b) => a.tick - b.tick);
 	meterEvents.sort((a, b) => a.tick - b.tick);

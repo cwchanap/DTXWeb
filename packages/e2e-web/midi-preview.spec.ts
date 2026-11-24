@@ -76,7 +76,7 @@ test.describe('MIDI Preview Tool', () => {
 			await expect(page.getByText('Format', { exact: true })).toBeVisible();
 			await expect(page.getByText('Tracks', { exact: true })).toBeVisible();
 			await expect(page.getByText('Total Notes', { exact: true })).toBeVisible();
-			await expect(page.getByText('Duration', { exact: true })).toBeVisible();
+			await expect(page.getByText('Est. Duration', { exact: true })).toBeVisible();
 			await expect(page.getByText('Tempo', { exact: true })).toBeVisible();
 			await expect(page.getByText(/\bBPM\b/)).toBeVisible();
 
@@ -97,7 +97,9 @@ test.describe('MIDI Preview Tool', () => {
 			await expect(gridValue(page, 'Format')).toHaveText(String(expected.format));
 			await expect(gridValue(page, 'Tracks')).toHaveText(String(expected.trackCount));
 			await expect(gridValue(page, 'Total Notes')).toHaveText(String(expected.totalNotes));
-			await expect(gridValue(page, 'Duration')).toHaveText(formatTime(expected.duration));
+			await expect(gridValue(page, 'Est. Duration')).toHaveText(
+				formatTime(expected.duration)
+			);
 			await expect(detailValue(page, 'Tempo')).toHaveText(`${expected.tempo} BPM`);
 			await expect(detailValue(page, 'Ticks per Quarter')).toHaveText(
 				String(expected.ticksPerQuarter)

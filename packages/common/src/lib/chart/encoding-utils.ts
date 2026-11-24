@@ -131,39 +131,45 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 			if (uint8[i * 2 + 1] === 0) oddZeros++;
 		}
 		let encoding: 'utf-8' | 'utf-16le' | 'utf-16be' = 'utf-8';
+		const directiveRegex =
+			/^\s*#(?:TITLE|ARTIST|BPM|DLEVEL|COMMENT|WAV|BMP|PREVIEW|L\d+(?:LABEL|FILE|FONT))/im;
+		const probeEnd = Math.min(uint8.length & ~1, 2048);
+		const isValidUtf16Probe = (candidate: 'utf-16le' | 'utf-16be'): boolean => {
+			if (probeEnd < 2) return false;
+			// The even-byte cut can still split a surrogate pair: a non-BMP
+			// char (emoji, CJK ext-B) straddling probeEnd leaves a lone
+			// high surrogate that decodes as U+FFFD and falsely rejects
+			// this byte order even when the probe holds a valid
+			// directive. Drop the half pair before sniffing.
+			let end = probeEnd;
+			const lastUnit =
+				candidate === 'utf-16le'
+					? uint8[end - 2] | (uint8[end - 1] << 8)
+					: (uint8[end - 2] << 8) | uint8[end - 1];
+			if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 2;
+			const decoded = new TextDecoder(candidate).decode(uint8.subarray(0, end));
+			return (
+				!decoded.includes('\u0000') &&
+				!decoded.includes('\uFFFD') &&
+				directiveRegex.test(decoded)
+			);
+		};
 		if (oddZeros > evenZeros && oddZeros * 4 > pairs) {
-			encoding = 'utf-16le';
+			encoding =
+				!isValidUtf16Probe('utf-16le') && isValidUtf16Probe('utf-16be')
+					? 'utf-16be'
+					: 'utf-16le';
 		} else if (evenZeros > oddZeros && evenZeros * 4 > pairs) {
-			encoding = 'utf-16be';
+			encoding =
+				!isValidUtf16Probe('utf-16be') && isValidUtf16Probe('utf-16le')
+					? 'utf-16le'
+					: 'utf-16be';
 		} else if (uint8.length >= 2) {
 			// Sparse-zero UTF-16 (e.g. #TITLE: followed by hundreds of CJK chars)
 			// fails the zero-byte density test; sniff valid directives in both
-			// UTF-16 byte orders before falling back to UTF-8. Truncate the
-			// probe slice to an even byte count so an odd-length ranged read
-			// doesn't emit U+FFFD for a trailing half-code-unit.
-			const directiveRegex =
-				/^\s*#(?:TITLE|ARTIST|BPM|DLEVEL|COMMENT|WAV|BMP|PREVIEW|L\d+(?:LABEL|FILE|FONT))/im;
-			const probeEnd = Math.min(uint8.length & ~1, 2048);
+			// UTF-16 byte orders before falling back to UTF-8.
 			for (const candidate of ['utf-16le', 'utf-16be'] as const) {
-				// The even-byte cut can still split a surrogate pair: a non-BMP
-				// char (emoji, CJK ext-B) straddling probeEnd leaves a lone
-				// high surrogate that decodes as U+FFFD and falsely rejects
-				// this byte order even when the probe holds a valid
-				// directive. Drop the half pair before sniffing.
-				let end = probeEnd;
-				if (end >= 2) {
-					const lastUnit =
-						candidate === 'utf-16le'
-							? uint8[end - 2] | (uint8[end - 1] << 8)
-							: (uint8[end - 2] << 8) | uint8[end - 1];
-					if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 2;
-				}
-				const decoded = new TextDecoder(candidate).decode(uint8.subarray(0, end));
-				if (
-					!decoded.includes('\u0000') &&
-					!decoded.includes('\uFFFD') &&
-					directiveRegex.test(decoded)
-				) {
+				if (isValidUtf16Probe(candidate)) {
 					encoding = candidate;
 					break;
 				}

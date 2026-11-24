@@ -603,6 +603,35 @@ describe('encoding-utils', () => {
 					bytes[i * 2 + 1] = codeUnit & 0xff;
 				}
 			]
+		])(
+			'validates byte order when non-ASCII chars skew zero-byte parity (%s)',
+			(_name, writeUnit) => {
+				// U+4E00 ('一') has a 0x00 high byte, inverting the parity heuristic
+				// over the first 512 pairs when repeated before #DLEVEL.
+				const text = `#TITLE: ${'一'.repeat(512)}\n#DLEVEL: 60\n`;
+				const utf16Bytes = new Uint8Array(text.length * 2);
+				for (let i = 0; i < text.length; i++) {
+					writeUnit(i, text.charCodeAt(i), utf16Bytes);
+				}
+				expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+			}
+		);
+
+		it.each([
+			[
+				'UTF-16LE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = codeUnit & 0xff;
+					bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+				}
+			],
+			[
+				'UTF-16BE',
+				(i: number, codeUnit: number, bytes: Uint8Array) => {
+					bytes[i * 2] = (codeUnit >> 8) & 0xff;
+					bytes[i * 2 + 1] = codeUnit & 0xff;
+				}
+			]
 		])('decodes BOM-less %s when the probe cut splits a surrogate pair', (_name, writeUnit) => {
 			// Reproduced from PR #365 review: the 2048-byte probe ends inside
 			// the emoji at code-unit 1023, leaving a lone high surrogate that

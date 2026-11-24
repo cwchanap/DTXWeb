@@ -154,6 +154,45 @@ describe('SimFile', () => {
 			expect(simFile.levels[6]?.label).toBe('MANIAC');
 		});
 
+		it('resolves local chart references relative to the SET.def directory before root fallback', async () => {
+			const defContent =
+				'#L1LABEL BASIC\n#L1FILE root.dtx\n#L6LABEL MANIAC\n#L6FILE lead.dtx\n';
+			const defFile = new File([defContent], 'song/set.def');
+			const simFile = new SimFile([
+				defFile,
+				new File(['dtx'], 'root.dtx'),
+				new File(['dtx'], 'song/lead.dtx')
+			]);
+
+			await simFile.parseHeader(defFile);
+
+			expect(simFile.levels[1]?.file.getFileName()).toBe('root.dtx');
+			expect(simFile.levels[6]?.file.getFileName()).toBe('song/lead.dtx');
+		});
+
+		it('URL-encodes path segments when fetching remote SET.def charts', async () => {
+			const fetchSpy = vi.fn().mockResolvedValue({
+				ok: true,
+				blob: () => Promise.resolve(new Blob(['dtx'])),
+				clone() {
+					return this;
+				}
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+			const defFile = new File(['#L6LABEL LEAD\n#L6FILE sub/lead#take2.dtx\n'], 'set.def');
+			const simFile = new SimFile([defFile], 'https://cdn.example');
+			simFile.isParseFromRemoteURL = true;
+			simFile.simFileID = '42';
+
+			await simFile.parseHeader(defFile);
+
+			expect(fetchSpy).toHaveBeenCalledWith(
+				'https://cdn.example/42/sub/lead%23take2.dtx',
+				undefined
+			);
+			expect(simFile.levels[6]?.file.getFileName()).toBe('sub/lead#take2.dtx');
+		});
+
 		it('parses a UTF-16LE-with-BOM def file whose directives are lowercase', async () => {
 			// parseSetDef is case-insensitive, but the encoding validation
 			// callback required uppercase '#TITLE'/'#L1…' — a lowercase UTF-16LE
@@ -728,6 +767,37 @@ describe('SimFile', () => {
 
 			expect(simFile).toBeInstanceOf(SimFile);
 			expect(simFile.title).toBe('Empty Song');
+		});
+
+		it('avoids double-prefixing bare simfile keys while keeping ./ relative keys under simfileID', async () => {
+			const fetchSpy = vi.fn().mockResolvedValue({
+				ok: true,
+				blob: () => Promise.resolve(new Blob(['dtx'])),
+				clone() {
+					return this;
+				}
+			});
+			vi.stubGlobal('fetch', fetchSpy);
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'42',
+				'https://cdn.example',
+				{
+					title: 'Key Test',
+					levels: {
+						1: { label: 'ADV', fileName: '42/advanced.dtx' },
+						2: { label: 'EXT', fileName: './42/nested.dtx' },
+						6: { label: 'LEAD', fileName: 'sub/lead#take2.dtx' }
+					}
+				}
+			);
+
+			expect(fetchSpy.mock.calls.map((c) => c[0])).toEqual([
+				'https://cdn.example/42/advanced.dtx',
+				'https://cdn.example/42/42/nested.dtx',
+				'https://cdn.example/42/sub/lead%23take2.dtx'
+			]);
+			expect(simFile.levels[6]?.file.getFileName()).toBe('sub/lead#take2.dtx');
 		});
 	});
 

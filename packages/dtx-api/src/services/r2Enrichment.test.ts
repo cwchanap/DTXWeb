@@ -2116,60 +2116,55 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
-	it('pairs same-label charts whose #DLEVEL uses whitespace separators or fractions', async () => {
-		// The desktop uploader's directive_value accepts `#DLEVEL 60` as
-		// well as `#DLEVEL: 4.5` and keeps the fraction — the rows store
-		// 4.5 and 60. A colon-only integer probe truncates 4.5 to 0.4 and
-		// misses the space-separated header, making both files look
-		// ambiguous and swapping them between the rows.
-		const chartBodies: Record<string, string> = {
-			'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n',
-			'42/a.dtx': '#TITLE: Song\n#DLEVEL: 4.5\n',
-			'42/b.dtx': '#TITLE: Song\n#DLEVEL 60\n'
-		};
-		const bucket = {
-			...makeBucket([
-				[
-					{ key: '42/set.def', size: 90, uploaded: new Date() },
-					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
-					{ key: '42/b.dtx', size: 500, uploaded: new Date() }
-				]
-			]),
-			get: vi.fn(async (key: string) => ({
-				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
-			}))
-		} as unknown as R2Bucket;
+	it.each([
+		['fraction with colon', '#DLEVEL: 4.5', 4.5],
+		['whitespace separator', '#DLEVEL 60', 60]
+	])(
+		'pairs same-label charts whose #DLEVEL uses %s over an earlier nonmatching slot',
+		async (_desc, directive, rowLevel) => {
+			// Place a nonmatching rated file in L1 before the matching file in L2:
+			// if the probe fails to parse either #DLEVEL syntax, non-exact claim
+			// falls back to slot order and picks L1 instead of L2.
+			const chartBodies: Record<string, string> = {
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE other.dtx\n#L2LABEL BASIC\n#L2FILE match.dtx\n',
+				'42/other.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/match.dtx': `#TITLE: Song\n${directive}\n`
+			};
+			const bucket = {
+				...makeBucket([
+					[
+						{ key: '42/set.def', size: 90, uploaded: new Date() },
+						{ key: '42/other.dtx', size: 300, uploaded: new Date() },
+						{ key: '42/match.dtx', size: 500, uploaded: new Date() }
+					]
+				]),
+				get: vi.fn(async (key: string) => ({
+					arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+				}))
+			} as unknown as R2Bucket;
 
-		const discovery = await discoverCatalogFiles(
-			bucket,
-			{
-				simfileId: 42,
-				dtxFiles: [
-					{ label: 'Basic', level: 4.5 },
-					{ label: 'Basic', level: 60 }
-				],
-				publicBaseUrl: 'https://cdn.example.test'
-			},
-			silentLogger
-		);
+			const discovery = await discoverCatalogFiles(
+				bucket,
+				{
+					simfileId: 42,
+					dtxFiles: [{ label: 'Basic', level: rowLevel }],
+					publicBaseUrl: 'https://cdn.example.test'
+				},
+				silentLogger
+			);
 
-		expect(discovery.charts).toEqual([
-			{
-				label: 'Basic',
-				level: 4.5,
-				fileUrl: 'https://cdn.example.test/42/a.dtx',
-				fileSizeBytes: 300,
-				fileEncoding: 'SHIFT_JIS'
-			},
-			{
-				label: 'Basic',
-				level: 60,
-				fileUrl: 'https://cdn.example.test/42/b.dtx',
-				fileSizeBytes: 500,
-				fileEncoding: 'SHIFT_JIS'
-			}
-		]);
-	});
+			expect(discovery.charts).toEqual([
+				{
+					label: 'Basic',
+					level: rowLevel,
+					fileUrl: 'https://cdn.example.test/42/match.dtx',
+					fileSizeBytes: 500,
+					fileEncoding: 'SHIFT_JIS'
+				}
+			]);
+		}
+	);
 
 	it('does not let a zero-rated set.def file displace an unlisted rated chart', async () => {
 		// parse_dtx_folder skips #DLEVEL 0 files, so no row owns the
@@ -3325,8 +3320,8 @@ describe('discoverCatalogFiles', () => {
 				title: 'E2E Mixed Set',
 				levels: [
 					{ level: 1, label: 'Basic Easy', fileName: 'basic.dtx' },
-					{ level: 2, label: 'Basic Multi', fileName: 'extra.dtx' },
-					{ level: 3, label: 'Basic Multi', fileName: 'maniac.dtx' },
+					{ level: 2, label: 'Basic Multi', fileName: 'maniac.dtx' },
+					{ level: 3, label: 'Basic Multi', fileName: 'extra.dtx' },
 					{ level: 6, label: 'Extreme L6', fileName: 'sub/lead.dtx' }
 				]
 			});
@@ -3417,10 +3412,13 @@ describe('discoverCatalogFiles', () => {
 			// Raw #DLEVEL values mix two scales: 450 decodes to 4.50 while 60
 			// decodes to 6.00, so the 450 row is the easier chart and must
 			// claim the earlier L2 slot even though 60 < 450 numerically.
+			// Use valid ratings (400, 70) that match neither row's raw rating so
+			// exact-match claiming cannot bypass normalized sorting.
 			const chartBodies: Record<string, string> = {
-				'1004/set.def': fixtureText,
-				'1004/extra.dtx': '#TITLE: Song\n#DLEVEL: 450\n',
-				'1004/maniac.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+				'1004/set.def':
+					'#L2LABEL Basic Multi\n#L2FILE extra.dtx\n#L3LABEL Basic Multi\n#L3FILE maniac.dtx\n',
+				'1004/extra.dtx': '#TITLE: Song\n#DLEVEL: 400\n',
+				'1004/maniac.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
 			};
 			const bucket = {
 				...makeBucket([
@@ -4476,6 +4474,212 @@ describe('discoverCatalogFiles', () => {
 				level: 80,
 				fileUrl: 'https://cdn.example.test/42/a.dtx',
 				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('probes a sole reference when another SET.def label with no DB rows can own the row', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE placeholder.dtx\n#L2LABEL EXTRA\n#L2FILE ./basic.dtx\n',
+			'42/placeholder.dtx': '#TITLE: Empty\n#DLEVEL: 0\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 500, uploaded: new Date() },
+					{ key: '42/placeholder.dtx', size: 100, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 50 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 50,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('breaks equal-rating exact SET.def ties in uploader filename order', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE z.dtx\n#L2LABEL BASIC\n#L2FILE a.dtx\n',
+			'42/a.dtx': '#TITLE: Song A\n#DLEVEL: 60\n',
+			'42/z.dtx': '#TITLE: Song Z\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/z.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Basic', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/a.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/z.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('coordinates exact claims so shared references preserve distinct matches', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL A\n#L1FILE 01.dtx\n#L2LABEL A\n#L2FILE 02.dtx\n#L3LABEL B\n#L3FILE ./01.dtx\n',
+			'42/01.dtx': '#TITLE: Chart 1\n#DLEVEL: 60\n',
+			'42/02.dtx': '#TITLE: Chart 2\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/02.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 60 },
+					{ label: 'B', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'A',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'B',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('preserves row positions when a deferred equal-rated fallback group remains short', async () => {
+		const oversizedHeader = `#TITLE: Big\n#COMMENT: ${'x'.repeat(20000)}\n#DLEVEL: 80\n`;
+		const chartBodies: Record<string, string> = {
+			'42/01.dtx': '#TITLE: Basic Re-rated\n#DLEVEL: 70\n',
+			'42/02.dtx': oversizedHeader,
+			'42/03.dtx': '#TITLE: Advanced\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/02.dtx', size: oversizedHeader.length, uploaded: new Date() },
+					{ key: '42/03.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string, options?: { range?: { length?: number } }) => {
+				const buffer = encodeToBuffer(chartBodies[key] ?? '');
+				const length = options?.range?.length;
+				return {
+					size: buffer.byteLength,
+					arrayBuffer: async () => (length ? buffer.slice(0, length) : buffer)
+				};
+			})
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Expert', level: 80 },
+					{ label: 'Advanced', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/02.dtx',
+				fileSizeBytes: oversizedHeader.length,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Advanced',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/03.dtx',
+				fileSizeBytes: 500,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

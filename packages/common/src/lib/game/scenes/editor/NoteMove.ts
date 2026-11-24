@@ -490,8 +490,13 @@ export class NoteMove {
 						cellOffset: originalCellOffset
 					} = oldParsed;
 					const originalLaneId = this.editor.getLaneConfigs()[originalLaneIndex].id;
-
-					// No need to capture original pattern data since we work with notes arrays directly
+					const originalGroup = this.editor
+						.getNotes()
+						[originalLaneId]?.find(
+							(note) =>
+								note.measure === originalMeasure &&
+								note.notes.some((n) => n.position === originalCellOffset)
+						);
 
 					moveData.push({
 						originalNoteKey: oldKey,
@@ -499,6 +504,7 @@ export class NoteMove {
 						originalMeasure,
 						originalCellOffset,
 						originalLaneId,
+						originalMeasureLength: originalGroup?.measureLength ?? 1,
 						noteId: originalNoteId,
 						newNoteKey: newKey,
 						newLaneIndex: laneIndex,

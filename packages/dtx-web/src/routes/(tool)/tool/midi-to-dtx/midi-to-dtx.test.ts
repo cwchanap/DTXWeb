@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { tick } from 'svelte';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import PopoverStub from '../../../../tests/stubs/PopoverStub.svelte';
 
@@ -850,6 +851,7 @@ describe('MIDI to DTX Component Rendering', () => {
 		const { container } = render(MidiToDtx);
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 36 }] });
+		const arrayBufferSpy = vi.spyOn(midiFile, 'arrayBuffer');
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
 		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
@@ -862,6 +864,7 @@ describe('MIDI to DTX Component Rendering', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
 		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
 
+		expect(arrayBufferSpy).toHaveBeenCalledTimes(1);
 		const notes = exportSpy.mock.calls[0][0] ?? {};
 		expect(notes['12']).toBeDefined();
 		expect(notes['13']).toBeUndefined();
@@ -916,8 +919,53 @@ describe('MIDI to DTX Component Rendering', () => {
 		// Now resolve the stale read — must NOT mark fastFile as converted with slowFile's data.
 		resolveSlowRead(slowBytes);
 		await Promise.resolve();
+		await tick();
 
 		expect(screen.queryByText('Conversion Complete!')).toBeNull();
-		expect(screen.queryByText('fast.dtx')).toBeNull();
+		expect(screen.queryByText('slow.dtx')).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		expect(screen.getByText('fast.dtx')).toBeInTheDocument();
 	});
+
+	it.each(['-1', '0'])(
+		'rejects nonpositive BPM override %s before Convert and before Download',
+		async (invalidValue) => {
+			const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+			const { container } = render(MidiToDtx);
+			const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+			const midiFile = drumMidiFile({
+				tempos: [{ tick: 0, bpm: 140 }],
+				hits: [{ tick: 0, note: 36 }]
+			});
+			await fireEvent.change(input, { target: { files: [midiFile] } });
+
+			const bpmInput = screen.getByLabelText('BPM') as HTMLInputElement;
+			await fireEvent.input(bpmInput, { target: { value: invalidValue } });
+			expect(screen.getByRole('alert')).toHaveTextContent(/greater than 0/i);
+
+			await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+			expect(screen.queryByText('Conversion Complete!')).toBeNull();
+			expect(toastMock.error).toHaveBeenCalledWith(
+				expect.objectContaining({ title: 'Invalid BPM' })
+			);
+
+			// Clear to automatic tempo, convert, then enter invalid BPM before Download.
+			await fireEvent.input(bpmInput, { target: { value: '' } });
+			await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+			await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+
+			await fireEvent.input(bpmInput, { target: { value: invalidValue } });
+			const downloadBtn = screen.getByRole('button', {
+				name: 'Download DTX File'
+			}) as HTMLButtonElement;
+			expect(downloadBtn.disabled).toBe(true);
+			await fireEvent.click(downloadBtn);
+			expect(exportSpy).not.toHaveBeenCalled();
+
+			exportSpy.mockRestore();
+		}
+	);
 });

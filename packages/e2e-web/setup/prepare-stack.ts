@@ -201,18 +201,34 @@ wrangler('put R2 object (set.def)', [
 	'--file',
 	setDefFixture
 ]);
-for (const chartFile of ['aaa-decoy.dtx', 'basic.dtx', 'extra.dtx', 'maniac.dtx', 'sub/lead.dtx']) {
-	wrangler(`put R2 object (${chartFile})`, [
-		'r2',
-		'object',
-		'put',
-		`simfile-dtx/${CHART_D_ID}/${chartFile}`,
-		'--local',
-		'--persist-to',
-		persist,
-		'--file',
-		fixture
-	]);
+const chartDFiles: Array<{ name: string; dlevel: number }> = [
+	{ name: 'aaa-decoy.dtx', dlevel: 40 },
+	{ name: 'basic.dtx', dlevel: 40 },
+	{ name: 'extra.dtx', dlevel: 50 },
+	{ name: 'maniac.dtx', dlevel: 60 },
+	{ name: 'sub/lead.dtx', dlevel: 85 }
+];
+const baseChartText = readFileSync(fixture, 'utf8');
+const tmpChartDDir = mkdtempSync(join(tmpdir(), 'e2e-chart-d-'));
+try {
+	for (const { name, dlevel } of chartDFiles) {
+		const chartPath = join(tmpChartDDir, name.replaceAll('/', '_'));
+		const chartText = baseChartText.replace(/^#DLEVEL:.*$/m, `#DLEVEL: ${dlevel}`);
+		writeFileSync(chartPath, chartText);
+		wrangler(`put R2 object (${name})`, [
+			'r2',
+			'object',
+			'put',
+			`simfile-dtx/${CHART_D_ID}/${name}`,
+			'--local',
+			'--persist-to',
+			persist,
+			'--file',
+			chartPath
+		]);
+	}
+} finally {
+	rmSync(tmpChartDDir, { recursive: true, force: true });
 }
 
 console.log(

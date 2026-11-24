@@ -9,6 +9,8 @@ interface DtxLevel {
 	file: DTXFile;
 }
 
+const encodeR2Path = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+
 export class SimFile {
 	private isParseFromRemoteURL: boolean = false;
 	private simFileID: string = '';
@@ -97,10 +99,17 @@ export class SimFile {
 			try {
 				// Server-provided fileName is verbatim SET.def text; normalize
 				// the same way parseHeader does or `.\name.dtx` fetches 404.
+				// Preserve the distinction between bare `42/adv.dtx` and
+				// explicitly relative `./42/adv.dtx`, and encode each path
+				// segment so `#` or spaces do not truncate the URL.
+				const trimmedFileName = fileName.trim();
+				const explicitlyRelative = /^\.[\\/]/.test(trimmedFileName);
 				const normalizedFileName = normalizeSetDefFileName(fileName);
-				const response = await dedupedFetch(
-					`${bucketUrl}/${simfileID}/${normalizedFileName}`
-				);
+				const objectKey =
+					!explicitlyRelative && normalizedFileName.startsWith(`${simfileID}/`)
+						? normalizedFileName
+						: `${simfileID}/${normalizedFileName}`;
+				const response = await dedupedFetch(`${bucketUrl}/${encodeR2Path(objectKey)}`);
 				if (!response.ok) {
 					return;
 				}
@@ -181,26 +190,32 @@ export class SimFile {
 		const parsed = parseSetDef(content);
 		this.title = parsed.title;
 
+		const setDefSlash = file.name.lastIndexOf('/');
+		const setDefDir = setDefSlash >= 0 ? file.name.slice(0, setDefSlash + 1) : '';
+
 		const promises = parsed.levels.map(async ({ level, label, fileName }) => {
 			// SET.def written on Windows uses `\` separators and `.\` / `./`
 			// prefixes; File names and R2 keys use `/` paths without them.
 			const normalizedFileName = normalizeSetDefFileName(fileName);
-			let file;
+			let dtxSourceFile;
 			if (!this.isParseFromRemoteURL) {
-				file = this.files.find((f) => f.name === normalizedFileName);
+				dtxSourceFile =
+					(setDefDir
+						? this.files.find((f) => f.name === `${setDefDir}${normalizedFileName}`)
+						: undefined) ?? this.files.find((f) => f.name === normalizedFileName);
 			} else {
 				const response = await dedupedFetch(
-					`${this.bucketUrl}/${this.simFileID}/${normalizedFileName}`
+					`${this.bucketUrl}/${this.simFileID}/${encodeR2Path(normalizedFileName)}`
 				);
 				if (!response.ok) {
 					return;
 				}
-				file = new File([await response.blob()], normalizedFileName);
+				dtxSourceFile = new File([await response.blob()], normalizedFileName);
 			}
-			if (!file) {
+			if (!dtxSourceFile) {
 				return;
 			}
-			const dtx = new DTXFile(file, label);
+			const dtx = new DTXFile(dtxSourceFile, label);
 			await dtx.parse();
 			this.levels[level] = { label, file: dtx };
 		});

@@ -356,7 +356,7 @@
 							>
 								{formatTime(midiData.duration)}
 							</div>
-							<div class="text-sm text-slate-400">Duration</div>
+							<div class="text-sm text-slate-400">Est. Duration</div>
 						</div>
 					</div>
 
@@ -453,7 +453,7 @@
 				</p>
 				<p>
 					<strong class="text-slate-200">Supported formats:</strong> Standard MIDI files (.mid,
-					.midi), SMF format 0 and 1
+					.midi), SMF formats 0 and 1 with PPQ timing
 				</p>
 				<p>
 					<strong class="text-slate-200">Features:</strong> Track analysis, instrument detection,

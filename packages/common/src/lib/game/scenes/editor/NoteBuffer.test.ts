@@ -771,6 +771,34 @@ describe('NoteBuffer', () => {
 			);
 		});
 
+		it('preserves originalMeasureLength in both addNoteToEditor and restoreChipData paths', () => {
+			const moveWithLen2: MovedNoteData = {
+				...mockMovedNoteData,
+				originalMeasureLength: 2
+			};
+
+			noteBuffer.recordAction('move', [moveWithLen2]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledWith(1, 0, 0.5, 'lane1', '11', 2);
+
+			// Fallback path when another pattern line owns the graphic
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }], 2)
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+
+			noteBuffer.recordAction('move', [moveWithLen2]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const restoredGroup = mockEditor.notes['lane1'].find((g) =>
+				g.notes.some((c) => c.noteID === '11' && c.position === 0.5)
+			);
+			expect(restoredGroup?.measureLength).toBe(2);
+			// Position 0.5 in a measureLength=2 group is 1/4 of the measure (noteID '11')
+			expect(restoredGroup?.toPattern()).toBe('00110000');
+		});
+
 		it('should throw when undoMove is called but noteMove is not set', () => {
 			const moveAction: MoveUndoAction = {
 				type: 'move',

@@ -107,6 +107,24 @@ const noteOnTicks = (bytes: Uint8Array) => {
 const tempoEventsOf = (bytes: Uint8Array) => parseMidi(bytes).tempoEvents;
 const meterEventsOf = (bytes: Uint8Array) => parseMidi(bytes).meterEvents;
 
+/** Real seconds at `tick`, integrating the file's tempo map from 120 BPM. */
+const secondsAtTick = (
+	tempoEvents: { tick: number; microsecondsPerQuarter: number }[],
+	tick: number,
+	ppq: number
+): number => {
+	let seconds = 0;
+	let previousTick = 0;
+	let mpq = 500000;
+	for (const event of tempoEvents) {
+		if (event.tick >= tick) break;
+		seconds += ((event.tick - previousTick) * mpq) / 1e6 / ppq;
+		previousTick = event.tick;
+		mpq = event.microsecondsPerQuarter;
+	}
+	return seconds + ((tick - previousTick) * mpq) / 1e6 / ppq;
+};
+
 describe('parseMidi', () => {
 	it('parses a format-0 file with notes, tempo, meter and track metadata', () => {
 		const bytes = buildMidi(480, [
@@ -1136,22 +1154,71 @@ describe('midiToDtx', () => {
 		reparsed.parseFromText(text);
 		const timing = buildChartTiming(buildTimingInput(reparsed));
 
-		const noteTick = 108970;
-		let expectedSeconds = 0;
-		let previousTick = 0;
-		let mpq = 500000;
-		for (const event of midi.tempoEvents) {
-			if (event.tick >= noteTick) break;
-			expectedSeconds += ((event.tick - previousTick) * mpq) / 1e6 / 480;
-			previousTick = event.tick;
-			mpq = event.microsecondsPerQuarter;
-		}
-		expectedSeconds += ((noteTick - previousTick) * mpq) / 1e6 / 480;
-
 		const kick = result.notes['13'][0];
+		const expectedSeconds = secondsAtTick(midi.tempoEvents, 108970, 480);
 		expect(
 			Math.abs(timing.positionToTime(kick.measure, kick.notes[0].position) - expectedSeconds)
 		).toBeLessThan(0.1);
+	});
+
+	it('merges only the tempo pairs needed to fit an evenly spaced ramp', () => {
+		// Equal 0.125 BPM gaps make every pair equally mergeable; folding all
+		// of them would collapse the ramp to one midpoint BPM and move a hit
+		// at tick 4,800 from ~9.2 s to ~5.0 s.
+		const ramp = Array.from({ length: 1296 }, (_, i) => 40 + i * 0.125);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...ramp
+						.slice(0, 480)
+						.map((bpm) => evTempo(10, bpm))
+						.flat(),
+					...evNoteOn(0, 36), // tick 4,800, inside the ramp
+					...ramp
+						.slice(480)
+						.map((bpm) => evTempo(10, bpm))
+						.flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		const tempos = Object.values(result.controls.bpmChanges ?? {});
+		expect(tempos).toHaveLength(1295);
+		expect(Math.min(...tempos)).toBeCloseTo(40, 0);
+		expect(Math.max(...tempos)).toBeCloseTo(201.875, 1);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+
+		const kick = result.notes['13'][0];
+		const expectedSeconds = secondsAtTick(midi.tempoEvents, 4800, 480);
+		expect(
+			Math.abs(timing.positionToTime(kick.measure, kick.notes[0].position) - expectedSeconds)
+		).toBeLessThan(0.1);
+	});
+
+	it('merges the final tempo pair without reading past the cluster list', () => {
+		// 1,296 values: 1,295 two-BPM steps, then a 0.5-BPM step at the end.
+		// The smallest gap is the last pair, which has no following cluster.
+		const values = Array.from({ length: 1295 }, (_, i) => 10 + i * 2);
+		values.push(values[values.length - 1] + 0.5);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...values.map((bpm) => evTempo(10, bpm)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(Object.keys(result.controls.bpmChanges ?? {})).toHaveLength(1295);
 	});
 
 	it('allocates BPM ids only for surviving values after cell collisions', () => {

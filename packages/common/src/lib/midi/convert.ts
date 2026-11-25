@@ -621,61 +621,100 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// A dense tempo ramp can carry more distinct MPQs than the two-character
 	// #BPMxx id space. Merge only the closest neighbouring tempos until the
 	// ids fit, so a steady tempo away from the ramp keeps its exact BPM
-	// instead of being rounded to the ramp's coarsest scale. Gaps of 1 BPM or
-	// more are audible; a file with more than MAX_BPM_ID such values is
-	// unrepresentable.
+	// instead of being rounded to the ramp's coarsest scale. A merge that
+	// spans 1 BPM or more is audible, so a file needing one is unrepresentable.
 	const uniqueTempos = [
 		...new Set([...resolvedTempoCells.values()].map((cell) => cell.bpm))
 	].sort((a, b) => a - b);
 	if (uniqueTempos.length > MAX_BPM_ID) {
-		const mergeableGaps = uniqueTempos
-			.slice(1)
-			.map((bpm, i) => bpm - uniqueTempos[i])
-			.filter((gap) => gap < 1)
-			.sort((a, b) => a - b);
-		const clusterCount = (threshold: number): number => {
-			let count = 1;
-			for (let i = 1; i < uniqueTempos.length; i++) {
-				if (uniqueTempos[i] - uniqueTempos[i - 1] > threshold) count++;
+		const clusters = uniqueTempos.map((_, i) => ({
+			start: i,
+			end: i,
+			next: i + 1 < uniqueTempos.length ? i + 1 : -1,
+			alive: true
+		}));
+		const heap: { gap: number; left: number; right: number }[] = [];
+		const pushGap = (gap: number, left: number, right: number): void => {
+			heap.push({ gap, left, right });
+			let i = heap.length - 1;
+			while (i > 0) {
+				const parent = (i - 1) >> 1;
+				if (heap[parent].gap <= heap[i].gap) break;
+				[heap[parent], heap[i]] = [heap[i], heap[parent]];
+				i = parent;
 			}
-			return count;
 		};
-		if (
-			mergeableGaps.length === 0 ||
-			clusterCount(mergeableGaps[mergeableGaps.length - 1]) > MAX_BPM_ID
-		) {
+		const popGap = (): { gap: number; left: number; right: number } | undefined => {
+			const top = heap[0];
+			if (top === undefined) return undefined;
+			const last = heap.pop();
+			if (last === undefined || heap.length === 0) return top;
+			heap[0] = last;
+			let i = 0;
+			for (;;) {
+				const left = i * 2 + 1;
+				const right = left + 1;
+				let smallest = i;
+				if (left < heap.length && heap[left].gap < heap[smallest].gap) smallest = left;
+				if (right < heap.length && heap[right].gap < heap[smallest].gap) smallest = right;
+				if (smallest === i) break;
+				[heap[i], heap[smallest]] = [heap[smallest], heap[i]];
+				i = smallest;
+			}
+			return top;
+		};
+		for (let i = 0; i < uniqueTempos.length - 1; i++) {
+			pushGap(uniqueTempos[i + 1] - uniqueTempos[i], i, i + 1);
+		}
+		let clusterCount = uniqueTempos.length;
+		while (clusterCount > MAX_BPM_ID) {
+			const entry = popGap();
+			if (!entry) break;
+			const { left, right } = entry;
+			if (!clusters[left].alive || !clusters[right].alive || clusters[left].next !== right) {
+				continue;
+			}
+			const merged = clusters[left];
+			const removed = clusters[right];
+			// Cluster spans only grow, so a blocked pair stays blocked.
+			if (uniqueTempos[removed.end] - uniqueTempos[merged.start] >= 1) continue;
+			merged.end = removed.end;
+			merged.next = removed.next;
+			removed.alive = false;
+			clusterCount--;
+			if (merged.next !== -1) {
+				pushGap(
+					uniqueTempos[clusters[merged.next].start] - uniqueTempos[merged.end],
+					left,
+					merged.next
+				);
+			}
+		}
+		if (clusterCount > MAX_BPM_ID) {
 			throw new Error(
 				`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
 			);
 		}
-		let lo = 0;
-		let hi = mergeableGaps.length - 1;
-		while (lo < hi) {
-			const mid = (lo + hi) >> 1;
-			if (clusterCount(mergeableGaps[mid]) <= MAX_BPM_ID) hi = mid;
-			else lo = mid + 1;
-		}
-		const threshold = mergeableGaps[lo];
 		const mergedTempos = new Map<number, number>();
-		let clusterStart = 0;
-		for (let i = 1; i <= uniqueTempos.length; i++) {
-			if (i === uniqueTempos.length || uniqueTempos[i] - uniqueTempos[i - 1] > threshold) {
-				const representative = (uniqueTempos[clusterStart] + uniqueTempos[i - 1]) / 2;
-				for (let j = clusterStart; j < i; j++) {
-					mergedTempos.set(uniqueTempos[j], representative);
-				}
-				clusterStart = i;
+		let maxTempoError = 0;
+		let maxClusterSpan = 0;
+		for (const cluster of clusters) {
+			if (!cluster.alive) continue;
+			const representative = (uniqueTempos[cluster.start] + uniqueTempos[cluster.end]) / 2;
+			maxClusterSpan = Math.max(
+				maxClusterSpan,
+				uniqueTempos[cluster.end] - uniqueTempos[cluster.start]
+			);
+			for (let i = cluster.start; i <= cluster.end; i++) {
+				mergedTempos.set(uniqueTempos[i], representative);
+				maxTempoError = Math.max(maxTempoError, Math.abs(representative - uniqueTempos[i]));
 			}
 		}
-		let maxTempoError = 0;
 		for (const cell of resolvedTempoCells.values()) {
-			const merged = mergedTempos.get(cell.bpm);
-			if (merged === undefined) continue;
-			maxTempoError = Math.max(maxTempoError, Math.abs(merged - cell.bpm));
-			cell.bpm = merged;
+			cell.bpm = mergedTempos.get(cell.bpm) ?? cell.bpm;
 		}
 		warnings.push(
-			`MIDI has more than ${MAX_BPM_ID} distinct tempo changes; tempo values within ${Number(threshold.toPrecision(3))} BPM were merged (up to ${Number(maxTempoError.toPrecision(3))} BPM) to fit the DTX #BPM id space`
+			`MIDI has more than ${MAX_BPM_ID} distinct tempo changes; tempo values within ${Number(maxClusterSpan.toPrecision(3))} BPM were merged (up to ${Number(maxTempoError.toPrecision(3))} BPM) to fit the DTX #BPM id space`
 		);
 	}
 	let tempoSnapped = 0;

@@ -747,6 +747,7 @@ describe('MIDI to DTX Component Rendering', () => {
 		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
 		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 60 }] });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
+		expect(screen.queryByRole('button', { name: /^Remove MIDI note .* mapping$/ })).toBeNull();
 
 		await fireEvent.input(screen.getByLabelText('Add MIDI note'), {
 			target: { value: '60' }
@@ -755,6 +756,7 @@ describe('MIDI to DTX Component Rendering', () => {
 			target: { value: '1C' }
 		});
 		await fireEvent.click(screen.getByRole('button', { name: 'Add mapping' }));
+		expect(screen.getByRole('button', { name: 'Remove MIDI note 60 mapping' })).toBeTruthy();
 		await fireEvent.click(screen.getByRole('button', { name: 'Remove MIDI note 60 mapping' }));
 		expect(screen.queryByText(/\(60\):/)).toBeNull();
 

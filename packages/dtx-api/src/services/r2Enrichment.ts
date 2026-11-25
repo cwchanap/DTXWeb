@@ -809,6 +809,7 @@ export const discoverCatalogFiles = async (
 			(file, index) => !rowsClaimedBySetDef.has(index) && normalizeLevel(file.level) === 0
 		);
 	const probedLevelByKey = new Map<string, number>();
+	const retainedLevelZeroRootKeys = new Set<string>();
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
 	// reserve their objects so the sorted fallback cannot bind them to
@@ -915,11 +916,17 @@ export const discoverCatalogFiles = async (
 								!rootNamesAnotherRow
 							) {
 								claimObject = rootCandidate;
-							} else if (!rootNamesAnotherRow && !anotherLevelZeroRowNeedsChart) {
-								// Unrated or unprobed: the sibling keeps this row. Reserve
-								// the root copy unless another level-zero row can still use
-								// a confirmed-unrated exact-level candidate.
-								usedDtxKeys.add(rootCandidate.key);
+							} else if (!rootNamesAnotherRow) {
+								// Unrated or unprobed: the sibling keeps this row. Keep a
+								// confirmed-unrated root available for another level-zero
+								// row, but rank it after ordinary zero-level candidates —
+								// it is still a copy of the stem row's chart. Without such
+								// a row, reserve it from positional fallback.
+								if (anotherLevelZeroRowNeedsChart) {
+									retainedLevelZeroRootKeys.add(rootCandidate.key);
+								} else {
+									usedDtxKeys.add(rootCandidate.key);
+								}
 							}
 							// A positive rating naming another row is stronger ownership
 							// evidence than the stem: leave the root unused so the exact-
@@ -1103,6 +1110,15 @@ export const discoverCatalogFiles = async (
 			levelGroups.push(fallbackRows.slice(groupStart, groupEnd));
 			groupStart = groupEnd;
 		}
+		// Retained same-stem root copies are duplicates; try ordinary zero-level
+		// charts first and use a copy only to fill a shortage.
+		const orderExactCandidates = (groupLevel: number, keys: string[]): string[] =>
+			groupLevel === 0
+				? [
+						...keys.filter((key) => !retainedLevelZeroRootKeys.has(key)),
+						...keys.filter((key) => retainedLevelZeroRootKeys.has(key))
+					]
+				: keys;
 		// Pass 1: claim groups whose full row count can be satisfied by exact
 		// probed matches before any shortage fill runs, so a later exact match
 		// (e.g. Expert/80) clears its slot and key before equal-rated shortage
@@ -1112,7 +1128,7 @@ export const discoverCatalogFiles = async (
 			const groupLevel = normalizeLevel(groupRows[0].file.level);
 			const groupSize = groupRows.length;
 			const selectedKeys = new Set<string>();
-			for (const key of dtxObjectKeys) {
+			for (const key of orderExactCandidates(groupLevel, dtxObjectKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
@@ -1121,7 +1137,10 @@ export const discoverCatalogFiles = async (
 				deferredGroups.push(groupRows);
 				continue;
 			}
-			const candidates = dtxObjectKeys.filter((key) => selectedKeys.has(key));
+			const candidates = orderExactCandidates(
+				groupLevel,
+				dtxObjectKeys.filter((key) => selectedKeys.has(key))
+			);
 			for (const [candidateIndex, row] of groupRows.entries()) {
 				const key = candidates[candidateIndex];
 				if (!key) break;
@@ -1145,7 +1164,7 @@ export const discoverCatalogFiles = async (
 				(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
 			);
 			const selectedKeys = new Set<string>();
-			for (const key of remainingEligibleKeys) {
+			for (const key of orderExactCandidates(groupLevel, remainingEligibleKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
@@ -1159,7 +1178,10 @@ export const discoverCatalogFiles = async (
 					}
 				}
 			}
-			const candidates = remainingEligibleKeys.filter((key) => selectedKeys.has(key));
+			const candidates = orderExactCandidates(
+				groupLevel,
+				remainingEligibleKeys.filter((key) => selectedKeys.has(key))
+			);
 			const posByKey = new Map(remainingEligibleKeys.map((key, pos) => [key, pos]));
 			const unassignedCandidates: string[] = [];
 			// Keep candidates whose uploader position belongs to a row in this

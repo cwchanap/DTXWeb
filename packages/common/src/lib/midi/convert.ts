@@ -109,10 +109,13 @@ export const dtxToMidi = (
 			}
 			continue;
 		}
-		if (lane === '1C' && !warned.has('left-bass-reimport')) {
+		const defaultImportLane = GM_IMPORT_LANE[noteNumber];
+		if (lane === '1C' && defaultImportLane !== '1C' && !warned.has('left-bass-reimport')) {
 			warned.add('left-bass-reimport');
 			warnings.push(
-				'lane 1C exports as GM note 35, which imports as lane 13 by default; use a mapping override to re-import left-bass hits'
+				defaultImportLane
+					? `lane 1C exports as GM note ${noteNumber}, which imports as lane ${defaultImportLane} by default; use a mapping override to re-import left-bass hits`
+					: `lane 1C exports as GM note ${noteNumber}, which has no default import lane; use a mapping override to re-import left-bass hits`
 			);
 		}
 		emissionGroups.push({ lm, noteNumber });
@@ -334,6 +337,11 @@ export interface MidiToDtxResult {
  * changes are rejected rather than silently shifting later hits.
  */
 export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): MidiToDtxResult => {
+	if (midi.format === 2 && midi.tracks.length > 1) {
+		throw new Error(
+			'Multi-track format 2 MIDI files contain independent sequences and cannot be merged into one DTX chart'
+		);
+	}
 	const ppq = midi.ticksPerQuarter;
 	const warnings: string[] = [];
 
@@ -382,23 +390,22 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		const lane = laneOf[note]?.toUpperCase();
 		return Boolean(lane && laneToStaff(lane));
 	};
-	const isMappedDrumNote = (channel: number, note: number): boolean =>
-		channel === DRUM_CHANNEL && isLaneMapped(note);
 	// Drum-only MIDI exports are not consistently written to channel 10. The
 	// pre-shared importer mapped notes on every channel, so treat all channels
-	// as drum input when channel 10 carries no mapped note-ons; when channel 10
-	// does have drum data, keep the stricter filter so melodic channels stay out.
-	const hasMappedDrumChannelNote = midi.tracks.some((track) =>
+	// as drum input when channel 10 has no nonzero-velocity note-ons at all;
+	// when channel 10 does have note-ons (even unmapped percussion), keep the
+	// stricter filter so melodic channels are not turned into drum hits.
+	const hasDrumChannelNote = midi.tracks.some((track) =>
 		track.events.some(
 			(event) =>
 				event.type === 'channel' &&
 				event.command === 0x90 &&
 				event.note !== undefined &&
 				Boolean(event.velocity) &&
-				isMappedDrumNote(event.channel ?? -1, event.note)
+				event.channel === DRUM_CHANNEL
 		)
 	);
-	const useAllChannels = !hasMappedDrumChannelNote;
+	const useAllChannels = !hasDrumChannelNote;
 	const isConvertibleNote = (channel: number, note: number): boolean =>
 		(useAllChannels || channel === DRUM_CHANNEL) && isLaneMapped(note);
 

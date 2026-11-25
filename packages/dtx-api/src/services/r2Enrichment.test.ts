@@ -981,6 +981,47 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('does not penalize an ID-prefixed fallback ref that resolves directly beside a same-ID nested set.def', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/42/set.def':
+				'#L1LABEL NOVICE\n#L1FILE 42/novice.dtx\n#L2LABEL NOVICE\n#L2FILE ./z-extras/alternate.dtx\n',
+			'42/42/novice.dtx': '#TITLE: Song\n#DLEVEL: 10\n',
+			'42/42/z-extras/alternate.dtx': '#TITLE: Song\n#DLEVEL: 10\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/42/novice.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/42/z-extras/alternate.dtx', size: 700, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Novice', level: 10 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Novice',
+				level: 10,
+				fileUrl: 'https://cdn.example.test/42/42/novice.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged assets under `assets/`.
 		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists
@@ -4901,6 +4942,108 @@ describe('discoverCatalogFiles', () => {
 				level: 60,
 				fileUrl: 'https://cdn.example.test/42/03.dtx',
 				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('does not let an unrated SET.def leftover claim a rated row when a level-zero row exists', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXTRA\n#L1FILE basic.dtx\n',
+			'42/01.dtx': '#TITLE: Basic\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Unrated Extra\n',
+			'42/practice.dtx': '#TITLE: Practice\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 80, uploaded: new Date() },
+					{ key: '42/01.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/practice.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Practice', level: 0 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Practice',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/practice.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('preserves an unrated SET.def leftover for an unclaimed level-zero row when its stem does not match', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXTRA\n#L1FILE basic.dtx\n',
+			'42/01.dtx': '#TITLE: Basic\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Unrated Practice\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 80, uploaded: new Date() },
+					{ key: '42/01.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 200, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Practice', level: 0 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Practice',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 200,
 				fileEncoding: 'SHIFT_JIS'
 			}
 		]);

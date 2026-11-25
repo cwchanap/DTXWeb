@@ -476,10 +476,12 @@ export const discoverCatalogFiles = async (
 	// as claimed-but-missing, which surfaces as an INTERNAL error via
 	// requireCatalogChart even though the chart object exists.
 	// Refs that resolve only through the ambiguous-ID retry land in a
-	// subfolder beside set.def — below the directory the uploader's
+	// subfolder below set.def — below the directory the uploader's
 	// top-level-only catalog scans — so they can never be a row's
 	// cataloged chart. Track them so an equal-rating exact-match tie
-	// prefers a directly resolved ref over the deeper fallback object.
+	// prefers a directly resolved ref over the deeper fallback object,
+	// unless the fallback landed directly beside setDefBaseDir (e.g.
+	// `42/42/novice.dtx` when set.def itself sits at `42/42/set.def`).
 	const refsResolvedViaIdFallback = new Set<SetDefFileRef>();
 	const resolveSetDefObject = (setDefRef: SetDefFileRef): R2ObjectMeta | undefined => {
 		const relativeCandidates =
@@ -495,7 +497,13 @@ export const discoverCatalogFiles = async (
 			const matchedObject =
 				objectsByKey.get(candidateKey) ?? objectsByKeyLower.get(candidateKey.toLowerCase());
 			if (matchedObject) {
-				if (hasDirectCandidate && index > 0) refsResolvedViaIdFallback.add(setDefRef);
+				if (
+					hasDirectCandidate &&
+					index > 0 &&
+					!isTopLevelR2Key(matchedObject.key, setDefBaseDir)
+				) {
+					refsResolvedViaIdFallback.add(setDefRef);
+				}
 				return matchedObject;
 			}
 		}
@@ -825,6 +833,7 @@ export const discoverCatalogFiles = async (
 		for (const ref of refs) {
 			const object = resolveSetDefObject(ref);
 			if (!object || usedDtxKeys.has(object.key)) continue;
+			let isUnratedLeftover = false;
 			if (isTopLevelR2Key(object.key, prefix) || isTopLevelR2Key(object.key, setDefBaseDir)) {
 				let leftoverLevel: number | null | undefined = fileLevelByRef.get(ref);
 				if (leftoverLevel === undefined) {
@@ -833,10 +842,8 @@ export const discoverCatalogFiles = async (
 						fileLevelByRef.set(ref, leftoverLevel ?? 0);
 					}
 				}
-				if (
-					(leftoverLevel === 0 || leftoverLevel === null) &&
-					!hasUnclaimedLevelZeroRow()
-				) {
+				isUnratedLeftover = leftoverLevel === 0 || leftoverLevel === null;
+				if (isUnratedLeftover && !hasUnclaimedLevelZeroRow()) {
 					usedDtxKeys.add(object.key);
 					continue;
 				}
@@ -845,13 +852,17 @@ export const discoverCatalogFiles = async (
 					.toLowerCase();
 				const stemRowIndexes: number[] = [];
 				dtxFiles.forEach((file, index) => {
-					if (!rowsClaimedBySetDef.has(index) && file.label.toLowerCase() === stem) {
+					if (
+						!rowsClaimedBySetDef.has(index) &&
+						file.label.toLowerCase() === stem &&
+						(!isUnratedLeftover || normalizeLevel(file.level) === 0)
+					) {
 						stemRowIndexes.push(index);
 					}
 				});
 				if (stemRowIndexes.length === 1) {
 					let claimObject = object;
-					if (!isTopLevelR2Key(object.key, prefix)) {
+					if (!isUnratedLeftover && !isTopLevelR2Key(object.key, prefix)) {
 						const rootCandidate = dtxObjects.find(
 							(candidate) =>
 								isTopLevelR2Key(candidate.key, prefix) &&
@@ -890,7 +901,11 @@ export const discoverCatalogFiles = async (
 					usedDtxKeys.add(claimObject.key);
 				}
 			}
-			usedDtxKeys.add(object.key);
+			// Preserve unrated objects while a level-zero row stays unclaimed
+			// so zero-level exact/positional matching can still bind them.
+			if (!isUnratedLeftover || !hasUnclaimedLevelZeroRow()) {
+				usedDtxKeys.add(object.key);
+			}
 		}
 	}
 
@@ -972,7 +987,11 @@ export const discoverCatalogFiles = async (
 				rowsClaimedBySetDef.add(rows[0]);
 				matchedKeysByRowIndex.set(rows[0], keys[0]);
 				usedDtxKeys.add(keys[0]);
-			} else if ((probed === 0 || probed === null) && rowLevel !== 0) {
+			} else if (
+				(probed === 0 || probed === null) &&
+				rowLevel !== 0 &&
+				!hasUnclaimedLevelZeroRow()
+			) {
 				usedDtxKeys.add(keys[0]);
 			}
 			// An unprobed read or a rating that names a different chart proves

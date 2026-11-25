@@ -980,13 +980,37 @@ describe('NoteMove', () => {
 			expect(restoredGroup?.toPattern()).toBe('00010000');
 		});
 
-		it('should not record a move whose destination placement failed', () => {
+		it('should restore the source note and not record a move when destination placement fails', () => {
 			const selectedNotes = new Set(['note-0-1-0']);
-			const deleteNoteByKey = vi.fn();
-			mockEditor.drawNote.mockReturnValue(false);
-
 			const lane1Notes = LaneMeasureNote.parseFromPattern('11000000000000000000000000000000');
 			mockEditor._setMockNotes({ lane1: [new LaneMeasureNote(1, 'lane1', lane1Notes)] });
+			mockEditor._addMockGameObject('note-0-1-0');
+			mockEditor.drawNote.mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+			const deleteNoteByKey = vi.fn((key: string) => {
+				const parsed = parseNoteKey(key);
+				if (!parsed) return;
+				const notes = mockEditor._getMockNotes();
+				const laneId = mockEditor.getLaneConfigs()[parsed.laneIndex].id;
+				const groups = notes[laneId] ?? [];
+				const group = groups.find(
+					(g) =>
+						g.measure === parsed.measure &&
+						g.notes.some((chip) => chip.position === parsed.cellOffset)
+				);
+				if (group) {
+					const chipIndex = group.notes.findIndex(
+						(chip) => chip.position === parsed.cellOffset
+					);
+					group.notes.splice(chipIndex, 1);
+					if (group.notes.length === 0) {
+						notes[laneId] = groups.filter((g) => g !== group);
+					}
+				}
+				const objects = mockEditor._getMockGameObjects();
+				const objIndex = objects.findIndex((obj) => obj.name === key);
+				if (objIndex !== -1) objects.splice(objIndex, 1);
+			});
 
 			const pointer = createMockPointer(150, 50);
 			noteMove.startDrag(pointer, 'note-0-1-0', selectedNotes);
@@ -995,6 +1019,10 @@ describe('NoteMove', () => {
 			expect(deleteNoteByKey).toHaveBeenCalledWith('note-0-1-0');
 			expect(mockEditor.drawNote).toHaveBeenLastCalledWith(1, 0, 0, '11');
 			expect(mockRecordMoveAction).not.toHaveBeenCalled();
+			expect(mockEditor.getNotes().lane1.flatMap((g) => g.notes)).toEqual([
+				{ noteID: '11', position: 0 }
+			]);
+			expect(selectedNotes).toEqual(new Set(['note-0-1-0']));
 		});
 	});
 

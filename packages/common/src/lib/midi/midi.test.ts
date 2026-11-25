@@ -583,6 +583,20 @@ describe('dtxToMidi', () => {
 		expect(warnings.some((w) => w.includes('51'))).toBe(true);
 		expect(warnings.some((w) => w.includes('lane 1C exports as GM note 35'))).toBe(true);
 		expect(warnings.some((w) => w.includes('same MIDI note and tick'))).toBe(true);
+
+		const mappedOverride = dtxToMidi(dtxFromText('#BPM: 120\r\n#0001C: 01'), { '1C': 36 });
+		expect(
+			mappedOverride.warnings.some((w) =>
+				w.includes('lane 1C exports as GM note 36, which imports as lane 13 by default')
+			)
+		).toBe(true);
+
+		const unmappedOverride = dtxToMidi(dtxFromText('#BPM: 120\r\n#0001C: 01'), { '1C': 60 });
+		expect(
+			unmappedOverride.warnings.some((w) =>
+				w.includes('lane 1C exports as GM note 60, which has no default import lane')
+			)
+		).toBe(true);
 	});
 
 	it('warns and skips lane overrides outside the 0-127 MIDI note range', () => {
@@ -832,7 +846,7 @@ describe('midiToDtx', () => {
 		expect(result.notes['13']).toBeDefined();
 	});
 
-	it('falls back to all channels when channel 10 has no mapped drum notes', () => {
+	it('falls back to all channels when channel 10 has no note-ons', () => {
 		const midi = parseMidi(
 			buildMidi(480, [
 				[
@@ -847,6 +861,45 @@ describe('midiToDtx', () => {
 		expect(result.warnings.some((warning) => warning.includes('non-drum channels'))).toBe(
 			false
 		);
+	});
+
+	it('does not fall back to melodic channels when channel 10 has only unmapped percussion', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evNoteOn(0, 39, 100, 9), // unmapped hand clap on channel 10
+					...evNoteOff(60, 39, 9),
+					...evNoteOn(0, 36, 100, 0), // bass note on channel 1
+					...evNoteOff(60, 36, 0),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['13']).toBeUndefined();
+		expect(result.unmappedNotes).toBe(1);
+		expect(result.warnings.some((w) => w.includes('non-drum channels ignored'))).toBe(true);
+	});
+
+	it('rejects multi-track format-2 MIDI files instead of merging independent sequences', () => {
+		const multiFormat2 = parseMidi(
+			buildMidi(
+				480,
+				[
+					[...evNoteOn(0, 36), ...evNoteOff(60, 36), ...evEndOfTrack],
+					[...evNoteOn(0, 38), ...evNoteOff(60, 38), ...evEndOfTrack]
+				],
+				2
+			)
+		);
+		expect(() => midiToDtx(multiFormat2)).toThrow(/format 2/i);
+
+		const singleFormat2 = parseMidi(
+			buildMidi(480, [[...evNoteOn(0, 36), ...evNoteOff(60, 36), ...evEndOfTrack]], 2)
+		);
+		expect(midiToDtx(singleFormat2).notes['13']?.[0].notes).toEqual([
+			{ noteID: '01', position: 0 }
+		]);
 	});
 
 	it('rejects input that would exceed the 3-digit DTX measure range', () => {

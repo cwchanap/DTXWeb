@@ -618,6 +618,32 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			resolvedTempoCells.set(cellKey, { measure, position, bpm: event.bpm, drift });
 		}
 	}
+	// A dense tempo ramp can carry more distinct MPQs than the two-character
+	// #BPMxx id space. Tempos differing below the DTX BPM resolution are
+	// indistinguishable in playback, so coarsen them onto the 3-decimal grid
+	// (then 2/1/whole BPM) instead of failing the conversion. A file whose
+	// tempos stay distinct even at whole-BPM resolution is unrepresentable.
+	const distinctTempoValues = (quantizeBpm: (bpm: number) => number): number =>
+		new Set([...resolvedTempoCells.values()].map((cell) => quantizeBpm(cell.bpm))).size;
+	if (distinctTempoValues((bpm) => bpm) > MAX_BPM_ID) {
+		let quantizeTempo: ((bpm: number) => number) | undefined;
+		for (const scale of [1000, 100, 10, 1]) {
+			const quantizeBpm = (bpm: number): number => Math.round(bpm * scale) / scale;
+			if (distinctTempoValues(quantizeBpm) <= MAX_BPM_ID) {
+				quantizeTempo = quantizeBpm;
+				break;
+			}
+		}
+		if (!quantizeTempo) {
+			throw new Error(
+				`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
+			);
+		}
+		for (const cell of resolvedTempoCells.values()) cell.bpm = quantizeTempo(cell.bpm);
+		warnings.push(
+			`MIDI has more than ${MAX_BPM_ID} distinct tempo changes; tempo values were rounded to fit the DTX #BPM id space`
+		);
+	}
 	let tempoSnapped = 0;
 	let maxTempoDrift = 0;
 	for (const { measure, position, bpm: cellBpm, drift } of resolvedTempoCells.values()) {

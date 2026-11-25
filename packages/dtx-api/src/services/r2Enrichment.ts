@@ -879,9 +879,18 @@ export const discoverCatalogFiles = async (
 					}
 				});
 				const stemRowIndex = stemRowIndexes.length === 1 ? stemRowIndexes[0] : -1;
+				// A shared rating is not evidence that the leftover belongs to a
+				// different row: every equal-rated row would make a same-stem ref
+				// look like a stranger's chart, and the exact-rating fallback could
+				// then hand this row the nested copy instead of its own root file.
+				// Only a rating that differs from the stem row's own level names
+				// another row.
+				const stemRowLevel =
+					stemRowIndex >= 0 ? normalizeLevel(dtxFiles[stemRowIndex].level) : undefined;
 				const leftoverNamesAnotherRow =
 					typeof leftoverLevel === 'number' &&
 					leftoverLevel !== 0 &&
+					leftoverLevel !== stemRowLevel &&
 					dtxFiles.some(
 						(file, index) =>
 							index !== stemRowIndex &&
@@ -920,7 +929,6 @@ export const discoverCatalogFiles = async (
 								// which the exact-level fallback represents as zero.
 								probedLevelByKey.set(rootCandidate.key, 0);
 							}
-							const stemRowLevel = normalizeLevel(dtxFiles[stemRowIndexes[0]].level);
 							const rootNamesAnotherRow =
 								typeof rootLevel === 'number' &&
 								rootLevel !== 0 &&

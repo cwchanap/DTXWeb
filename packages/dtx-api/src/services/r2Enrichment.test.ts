@@ -2660,6 +2660,62 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers the root chart when a leftover rating also matches another row', async () => {
+		// Both rows rate 60 and the nested EXTRA ref's chart also rates 60.
+		// That shared rating is not evidence that the nested copy belongs to
+		// the other row: Basic must keep its own root basic.dtx instead of
+		// previewing the alternate copy, which sorts first.
+		const chartBodies: Record<string, string> = {
+			'42/assets/set.def': '#L1LABEL EXTRA\n#L1FILE basic.dtx\n',
+			'42/assets/basic.dtx': '#TITLE: Alternate\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/assets/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/assets/basic.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/expert.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 60 },
+					{ label: 'Expert', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/expert.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('keeps a leftover set.def ref reserved when its stem matches multiple rows', async () => {
 		// Two unclaimed rows can share the stem label — the leftover
 		// object could belong to either, so reserving it beats guessing.
@@ -4415,6 +4471,36 @@ describe('discoverCatalogFiles', () => {
 				range: expect.objectContaining({ offset: 0 })
 			})
 		);
+	});
+
+	it('re-probes after a failed R2 precondition instead of caching the unprobed result', async () => {
+		// A failed onlyIf returns object metadata without a body. That read
+		// proves nothing about the chart, so it must stay out of the shared
+		// probe cache and the next discovery must ask R2 again. The row label
+		// does not match the filename stem, so only the pairing probe runs.
+		const object = {
+			key: '42/chart1.dtx',
+			size: 300,
+			uploaded: new Date('2026-01-01T00:00:00Z'),
+			etag: 'listed-etag'
+		};
+		const get = vi.fn(async () => ({ etag: 'listed-etag', size: object.size }));
+		const bucket = {
+			// Both discoveries must see the same listing so the second one
+			// reaches the probe cache.
+			list: vi.fn(async () => ({ objects: [object], truncated: false, cursor: undefined })),
+			get
+		} as unknown as R2Bucket;
+		const options = {
+			simfileId: 42,
+			dtxFiles: [{ label: 'BASIC', level: 30 }],
+			publicBaseUrl: 'https://cdn.example.test'
+		};
+
+		await discoverCatalogFiles(bucket, options, silentLogger);
+		await discoverCatalogFiles(bucket, options, silentLogger);
+
+		expect(get).toHaveBeenCalledTimes(2);
 	});
 
 	it('keeps filename order among probed and unprobed keys for equal-rated rows', async () => {

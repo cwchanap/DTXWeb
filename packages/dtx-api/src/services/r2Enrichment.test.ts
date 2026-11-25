@@ -3101,6 +3101,61 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers an ordinary zero-level chart over a retained same-stem root copy', async () => {
+		// The nested file claims SOLO by stem, leaving root solo.dtx as a
+		// retained duplicate candidate for the second zero-level row. The
+		// ordinary unrated standard.dtx is a better BASIC candidate than the
+		// SOLO copy even though the copy sorts first.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n',
+			'42/standard.dtx': '#TITLE: Basic\n#DLEVEL: 0\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/standard.dtx', size: 400, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 0 },
+					{ label: 'BASIC', level: 0 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
+				fileSizeBytes: 200,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/standard.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
 	it('prefers a rated nested set.def sibling over an unrated root chart sharing its stem', async () => {
 		// Same layout as the root-preference test with the ratings swapped:
 		// the nested sibling of the leftover ref carries #DLEVEL 60, while

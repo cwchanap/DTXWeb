@@ -1263,6 +1263,41 @@ describe('midiToDtx', () => {
 		expect(tempos[1]).toBeCloseTo(41.5, 1);
 	});
 
+	it('keeps tempo weights independent of late lane mappings', () => {
+		// 1,294 spaced tempos force 40 and 40.98 BPM to share a definition.
+		// The last mapped snare sits 48 beats into each tempo; mapping a later
+		// hit must not reweight the shared tempo and shift the snare.
+		const ramp = Array.from({ length: 1294 }, (_, i) => 100 + i * 2);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...ramp.map((bpm) => evTempo(10, bpm)).flat(),
+					...evTempo(10, 40), // tick 12,950
+					...evTempo(23040, 40.98), // tick 35,990
+					...evNoteOn(23040, 38), // tick 59,030, last mapped hit
+					...evNoteOn(92160, 60), // tick 151,190, unmapped by default
+					...evEndOfTrack
+				]
+			])
+		);
+		const without = midiToDtx(midi);
+		const withMapping = midiToDtx(midi, { noteToLane: { 60: '13' } });
+		expect(withMapping.controls.bpmChanges).toEqual(without.controls.bpmChanges);
+
+		const snareSeconds = (result: ReturnType<typeof midiToDtx>): number => {
+			const out = new DTXFile();
+			out.bpm = result.bpm;
+			const text = out.toDtxText(result.notes, result.controls);
+			const reparsed = new DTXFile(text);
+			reparsed.parseFromText(text);
+			const timing = buildChartTiming(buildTimingInput(reparsed));
+			const snare = result.notes['12'][0];
+			return timing.positionToTime(snare.measure, snare.notes[0].position);
+		};
+		expect(Math.abs(snareSeconds(withMapping) - snareSeconds(without))).toBeLessThan(1e-6);
+	});
+
 	it('merges the final tempo pair without reading past the cluster list', () => {
 		// 1,296 values: 1,295 two-BPM steps, then a 0.5-BPM step at the end.
 		// The smallest gap is the last pair, which has no following cluster.

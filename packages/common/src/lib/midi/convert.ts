@@ -451,6 +451,18 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		effectiveTempoEvents[effectiveTempoEvents.length - 1]?.tick ?? 0,
 		meterChanges[meterChanges.length - 1]?.tick ?? 0
 	);
+	// Tempo weights must stay independent of lane mappings: mapping a late
+	// hit extends endTick, but it must not reweight a shared tempo definition
+	// and shift earlier hits. The source timeline includes every note.
+	let sourceEndTick = Math.max(
+		effectiveTempoEvents[effectiveTempoEvents.length - 1]?.tick ?? 0,
+		meterChanges[meterChanges.length - 1]?.tick ?? 0
+	);
+	for (const track of midi.tracks) {
+		for (const note of track.notes) {
+			sourceEndTick = Math.max(sourceEndTick, note.startTime + note.duration);
+		}
+	}
 
 	// DTX measure headers are three digits (#NNNxx), so output is bounded to
 	// measure indices 0-999. A hostile tick (e.g. 0x0fffffff at PPQ 1) would
@@ -631,7 +643,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const cellsByTick = [...resolvedTempoCells.values()].sort((a, b) => a.tick - b.tick);
 	for (let i = 0; i < cellsByTick.length; i++) {
 		const cell = cellsByTick[i];
-		const nextTick = cellsByTick[i + 1]?.tick ?? endTick;
+		const nextTick = cellsByTick[i + 1]?.tick ?? sourceEndTick;
 		activeTicks.set(
 			cell.bpm,
 			(activeTicks.get(cell.bpm) ?? 0) + Math.max(0, nextTick - cell.tick)

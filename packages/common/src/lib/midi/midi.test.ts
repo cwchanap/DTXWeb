@@ -1203,6 +1203,66 @@ describe('midiToDtx', () => {
 		).toBeLessThan(0.1);
 	});
 
+	it('weights a merged tempo by how long it is held', () => {
+		// The id budget forces 40 and 40.98 BPM to share one definition. A
+		// midpoint would move a hit after 200 beats at 40 BPM by ~3.6 s; the
+		// long-held tempo must dominate the merged value.
+		const others = Array.from({ length: 1294 }, (_, i) => 100 + i * 2);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evTempo(10, 40),
+					...evTempo(96000, 40.98),
+					...evNoteOn(480, 36),
+					...others.map((bpm) => evTempo(10, bpm)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(Object.keys(result.controls.bpmChanges ?? {})).toHaveLength(1295);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+
+		const kick = result.notes['13'][0];
+		const expectedSeconds = secondsAtTick(midi.tempoEvents, 96490, 480);
+		expect(
+			Math.abs(timing.positionToTime(kick.measure, kick.notes[0].position) - expectedSeconds)
+		).toBeLessThan(0.1);
+	});
+
+	it('merges outer pairs instead of the smallest middle gap', () => {
+		// Gaps 0.8, 0.3, 0.8: merging the middle pair leaves no second merge
+		// under 1 BPM, while the outer pairs free two ids at span 0.8.
+		const values = [
+			40,
+			40.8,
+			41.1,
+			41.9,
+			...Array.from({ length: 1293 }, (_, i) => 100 + i * 2)
+		];
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...values.map((bpm) => evTempo(10, bpm)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		const tempos = Object.values(result.controls.bpmChanges ?? {}).sort((a, b) => a - b);
+		expect(tempos).toHaveLength(1295);
+		expect(tempos[0]).toBeCloseTo(40.4, 1);
+		expect(tempos[1]).toBeCloseTo(41.5, 1);
+	});
+
 	it('merges the final tempo pair without reading past the cluster list', () => {
 		// 1,296 values: 1,295 two-BPM steps, then a 0.5-BPM step at the end.
 		// The smallest gap is the last pair, which has no following cluster.

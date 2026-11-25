@@ -821,8 +821,9 @@ export const discoverCatalogFiles = async (
 	// reserved. The stem claim is limited to objects directly at the
 	// simfile root or beside the selected set.def — a deeper nested file
 	// sharing the basename (extras/solo.dtx next to solo.dtx) is never a
-	// row's chart — and is skipped when the probed #DLEVEL is zero, since
-	// unrated charts never produce rows. When the resolved object sits
+	// row's chart — and a zero-probed file only claims a legacy/manual
+	// level-zero row, since ordinary uploads never produce a row for an
+	// unrated chart. When the resolved object sits
 	// beside a nested set.def but an unused root chart carries the same
 	// stem, the root file wins the row: stem labels catalog the
 	// uploader's song-folder file, not a stray copy that merely borrowed
@@ -884,14 +885,29 @@ export const discoverCatalogFiles = async (
 							);
 							if (typeof rootLevel === 'number') {
 								probedLevelByKey.set(rootCandidate.key, rootLevel);
+							} else if (rootLevel === null) {
+								// A complete read with no #DLEVEL is confirmed unrated,
+								// which the exact-level fallback represents as zero.
+								probedLevelByKey.set(rootCandidate.key, 0);
 							}
+							const stemRowLevel = normalizeLevel(dtxFiles[stemRowIndexes[0]].level);
 							const rootNamesAnotherRow =
 								typeof rootLevel === 'number' &&
 								rootLevel !== 0 &&
+								rootLevel !== stemRowLevel &&
 								dtxFiles.some(
 									(file, index) =>
 										index !== stemRowIndexes[0] &&
 										normalizeLevel(file.level) === rootLevel
+								);
+							const rootIsUnrated = rootLevel === 0 || rootLevel === null;
+							const anotherLevelZeroRowNeedsChart =
+								rootIsUnrated &&
+								dtxFiles.some(
+									(file, index) =>
+										index !== stemRowIndexes[0] &&
+										!rowsClaimedBySetDef.has(index) &&
+										normalizeLevel(file.level) === 0
 								);
 							if (
 								typeof rootLevel === 'number' &&
@@ -899,15 +915,10 @@ export const discoverCatalogFiles = async (
 								!rootNamesAnotherRow
 							) {
 								claimObject = rootCandidate;
-							} else if (!rootNamesAnotherRow) {
-								// Unrated (explicit #DLEVEL 0 or a
-								// complete-read miss) or unprobed: the
-								// sibling keeps the row either way, but
-								// the candidate must not stay in the
-								// sorted fallback — it is provably no
-								// row's chart or possibly THIS row's,
-								// and a positional match could bind it
-								// to an unrelated difficulty instead.
+							} else if (!rootNamesAnotherRow && !anotherLevelZeroRowNeedsChart) {
+								// Unrated or unprobed: the sibling keeps this row. Reserve
+								// the root copy unless another level-zero row can still use
+								// a confirmed-unrated exact-level candidate.
 								usedDtxKeys.add(rootCandidate.key);
 							}
 							// A positive rating naming another row is stronger ownership

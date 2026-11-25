@@ -40,10 +40,14 @@
 			midiToDtxMap[newMidiNote] === undefined
 	);
 
-	const addMidiNoteMapping = () => {
+	const handleAddMidiNoteMapping = () => {
 		if (!canAddMidiNote || newMidiNote === undefined) return;
 		midiToDtxMap[newMidiNote] = newMidiLane;
 		newMidiNote = undefined;
+	};
+
+	const handleRemoveMidiNoteMapping = (noteNumber: number) => {
+		delete midiToDtxMap[noteNumber];
 	};
 
 	// DTX metadata settings
@@ -562,7 +566,7 @@
 							</div>
 							<button
 								type="button"
-								onclick={addMidiNoteMapping}
+								onclick={handleAddMidiNoteMapping}
 								disabled={!canAddMidiNote}
 								class="music-btn-secondary px-3 py-1 text-sm font-medium transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
 							>
@@ -594,6 +598,17 @@
 											</option>
 										{/each}
 									</select>
+									{#if GM_IMPORT_LANE[Number(midiNote)] === undefined}
+										<button
+											type="button"
+											aria-label={`Remove MIDI note ${midiNote} mapping`}
+											onclick={() =>
+												handleRemoveMidiNoteMapping(Number(midiNote))}
+											class="shrink-0 rounded px-2 py-1 text-sm text-slate-400 transition-colors hover:bg-red-500/20 hover:text-red-300"
+										>
+											×
+										</button>
+									{/if}
 								</div>
 							{/each}
 						</div>

@@ -740,6 +740,35 @@ describe('MIDI to DTX Component Rendering', () => {
 		exportSpy.mockRestore();
 	});
 
+	it('removes a custom MIDI note mapping before download', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 60 }] });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		await fireEvent.input(screen.getByLabelText('Add MIDI note'), {
+			target: { value: '60' }
+		});
+		await fireEvent.change(screen.getByLabelText('Add target lane'), {
+			target: { value: '1C' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Add mapping' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Remove MIDI note 60 mapping' }));
+		expect(screen.queryByText(/\(60\):/)).toBeNull();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const notes = exportSpy.mock.calls[0][0] ?? {};
+		expect(notes['1C']).toBeUndefined();
+
+		exportSpy.mockRestore();
+	});
+
 	it('clicking Choose File button triggers handleUploadClick', async () => {
 		const { container } = render(MidiToDtx);
 		const button = screen.getByRole('button', { name: 'Choose File' });

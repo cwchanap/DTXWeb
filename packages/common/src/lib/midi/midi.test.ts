@@ -68,6 +68,15 @@ const evTempo = (delta: number, bpm: number): number[] => {
 	const mpq = Math.round(60000000 / bpm);
 	return [...vlq(delta), 0xff, 0x51, 0x03, (mpq >> 16) & 0xff, (mpq >> 8) & 0xff, mpq & 0xff];
 };
+const evTempoMpq = (delta: number, mpq: number): number[] => [
+	...vlq(delta),
+	0xff,
+	0x51,
+	0x03,
+	(mpq >> 16) & 0xff,
+	(mpq >> 8) & 0xff,
+	mpq & 0xff
+];
 const evMeter = (
 	delta: number,
 	numerator: number,
@@ -1074,6 +1083,27 @@ describe('midiToDtx', () => {
 			])
 		);
 		expect(() => midiToDtx(midi)).toThrow(/BPM|id/i);
+	});
+
+	it('rounds a dense tempo ramp to fit the DTX BPM id space instead of failing', () => {
+		// 1,296 distinct MPQs 10 ticks apart — one per 1/192 cell at 480 PPQ.
+		// They differ below the 3-decimal BPM resolution, so exact values
+		// would need 1,296 #BPMxx ids; rounding merges them and converts.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...Array.from({ length: 1296 }, (_, i) => evTempoMpq(10, 500001 + i)).flat(),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		const ids = Object.keys(result.controls.bpmChanges ?? {});
+		expect(ids.length).toBeGreaterThan(1);
+		expect(ids.length).toBeLessThanOrEqual(1295);
+		expect(ids.every((id) => /^[0-9A-Z]{2}$/.test(id))).toBe(true);
+		expect(result.warnings.some((w) => w.includes('rounded to fit'))).toBe(true);
 	});
 
 	it('allocates BPM ids only for surviving values after cell collisions', () => {

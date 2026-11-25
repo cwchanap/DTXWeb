@@ -13,3 +13,4 @@ export {
 	type ParsedSetDef,
 	type SetDefLevel
 } from './chart/setDef';
+export { normalizeLevel } from './utils/level';

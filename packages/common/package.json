@@ -51,11 +51,6 @@
 			"types": "./dist/encoding.d.ts",
 			"import": "./dist/encoding.js",
 			"default": "./dist/encoding.js"
-		},
-		"./utils/level": {
-			"types": "./dist/utils/level.d.ts",
-			"import": "./dist/utils/level.js",
-			"default": "./dist/utils/level.js"
 		}
 	},
 	"peerDependencies": {

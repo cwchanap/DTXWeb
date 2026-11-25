@@ -366,6 +366,7 @@ export class Editor extends BaseGame {
 
 							// Remove the note graphics, text, and selection overlay
 							this.noteManager.cleanupNoteVisuals(noteKey);
+							this.noteManager.selectedNotes.delete(noteKey);
 
 							// Remove the specific note from the notes array
 							// Check if the instance has the new method (backward compatibility)

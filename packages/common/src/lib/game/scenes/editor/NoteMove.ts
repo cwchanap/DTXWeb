@@ -440,7 +440,7 @@ export class NoteMove {
 		});
 		while (blocked.length > 0) {
 			const oldKey = blocked.pop()!;
-			movable.delete(oldKey);
+			if (!movable.delete(oldKey)) continue;
 			dependents.get(oldKey)?.forEach((dep) => blocked.push(dep));
 		}
 
@@ -519,6 +519,32 @@ export class NoteMove {
 	}
 
 	/**
+	 * Write a chip back beside any duplicate-line survivor when its shared
+	 * graphic already owns the source key.
+	 */
+	private restoreChipData(
+		measure: number,
+		cellOffset: number,
+		laneId: string,
+		noteId: string,
+		measureLength: number
+	): void {
+		const groups = (this.editor.getNotes()[laneId] ||= []);
+		const target = groups.find(
+			(group) =>
+				group.measure === measure &&
+				!group.notes.some((chip) => chip.position === cellOffset)
+		);
+		if (target) {
+			target.addNote(noteId, cellOffset);
+			return;
+		}
+		const group = new LaneMeasureNote(measure, laneId, [], measureLength);
+		group.addNote(noteId, cellOffset);
+		groups.push(group);
+	}
+
+	/**
 	 * Execute the note moving operations
 	 */
 	private performMove(
@@ -545,14 +571,43 @@ export class NoteMove {
 			}
 		});
 
+		// Capture source placements before deleting them so a failed destination
+		// placement can restore its chip instead of losing it outside undo history.
+		const sources = new Map<
+			string,
+			{
+				laneIndex: number;
+				measure: number;
+				cellOffset: number;
+				laneId: string;
+				measureLength: number;
+			}
+		>();
+		notesToMove.forEach(({ oldKey }) => {
+			const parsed = parseNoteKey(oldKey);
+			if (!parsed) return;
+			const laneId = this.editor.getLaneConfigs()[parsed.laneIndex].id;
+			const group = this.editor
+				.getNotes()
+				[laneId]?.find(
+					(note) =>
+						note.measure === parsed.measure &&
+						note.notes.some((chip) => chip.position === parsed.cellOffset)
+				);
+			sources.set(oldKey, { ...parsed, laneId, measureLength: group?.measureLength ?? 1 });
+		});
+
 		// First, remove old notes that are moving
 		notesToMove.forEach(({ oldKey }) => {
 			deleteNoteByKey(oldKey);
 		});
 
-		// Then, add new notes
+		// Then, add new notes. A placement that still fails after the source was
+		// deleted is restored at its source once every destination has had a
+		// chance to vacate; undo entries only describe moves that truly landed.
+		const failedPlacements: (typeof notesToMove)[number][] = [];
 		notesToMove.forEach(
-			({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId }) => {
+			({ newKey, laneIndex, measure, cellOffset, laneId, originalNoteId, oldKey }) => {
 				const noteAdded = this.addNoteToEditor(
 					measure,
 					laneIndex,
@@ -563,9 +618,41 @@ export class NoteMove {
 
 				if (noteAdded) {
 					movedNotes.push(newKey);
+				} else {
+					failedPlacements.push({
+						oldKey,
+						newKey,
+						laneIndex,
+						measure,
+						cellOffset,
+						laneId,
+						originalNoteId
+					});
 				}
 			}
 		);
+		for (const failed of failedPlacements) {
+			const source = sources.get(failed.oldKey);
+			if (!source) continue;
+			const restored = this.addNoteToEditor(
+				source.measure,
+				source.laneIndex,
+				source.cellOffset,
+				source.laneId,
+				failed.originalNoteId,
+				source.measureLength
+			);
+			if (!restored && this.editor.getPanelContainer().getByName(failed.oldKey)) {
+				this.restoreChipData(
+					source.measure,
+					source.cellOffset,
+					source.laneId,
+					failed.originalNoteId,
+					source.measureLength
+				);
+			}
+			unmovableNotes.push(failed.oldKey);
+		}
 
 		return { movedNotes, unmovableNotes };
 	}

@@ -993,6 +993,7 @@ describe('NoteMove', () => {
 			noteMove.completeDrag(selectedNotes, vi.fn(), vi.fn(), deleteNoteByKey);
 
 			expect(deleteNoteByKey).toHaveBeenCalledWith('note-0-1-0');
+			expect(mockEditor.drawNote).toHaveBeenLastCalledWith(1, 0, 0, '11');
 			expect(mockRecordMoveAction).not.toHaveBeenCalled();
 		});
 	});

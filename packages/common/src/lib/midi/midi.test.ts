@@ -296,7 +296,7 @@ describe('parseMidi', () => {
 		expect(midi.totalNotes).toBe(1);
 	});
 
-	it('rejects MIDI files with more MTrk chunks than declared in the header', () => {
+	it('ignores undeclared trailing chunks like the legacy parsers did', () => {
 		const twoTrack = buildMidi(
 			480,
 			[
@@ -305,10 +305,45 @@ describe('parseMidi', () => {
 			],
 			1
 		);
-		// Patch header trackCount from 2 down to 1
+		// Patch header trackCount from 2 down to 1: the second chunk is trailing data,
+		// not a declared track, and must not make the file unparseable.
 		new DataView(twoTrack.buffer).setUint16(10, 1, false);
 
-		expect(() => parseMidi(twoTrack)).toThrow(/extra MTrk/i);
+		const midi = parseMidi(twoTrack);
+		expect(midi.trackCount).toBe(1);
+		expect(midi.tracks).toHaveLength(1);
+		expect(midi.totalNotes).toBe(1);
+	});
+
+	it('accepts legacy-tolerated missing or early end-of-track events and trailing bytes', () => {
+		const missingEnd = buildMidi(480, [[...evNoteOn(0, 36), ...evNoteOff(60, 36)]]);
+		expect(parseMidi(missingEnd).totalNotes).toBe(1);
+
+		const earlyEnd = buildMidi(480, [[...evEndOfTrack, ...evNoteOn(0, 36)]]);
+		const parsedEarly = parseMidi(earlyEnd);
+		expect(parsedEarly.tracks[0].events.some((event) => event.type === 'channel')).toBe(false);
+
+		const shortTrailing = buildMidi(480, [[...evEndOfTrack]]);
+		const withTrailing = new Uint8Array(shortTrailing.length + 3);
+		withTrailing.set(shortTrailing, 0);
+		withTrailing.set([1, 2, 3], shortTrailing.length);
+		expect(parseMidi(withTrailing).trackCount).toBe(1);
+	});
+
+	it('accepts format-2 files like the legacy parsers did', () => {
+		const bytes = buildMidi(
+			480,
+			[
+				[...evNoteOn(0, 36), ...evNoteOff(60, 36), ...evEndOfTrack],
+				[...evNoteOn(0, 38), ...evNoteOff(60, 38), ...evEndOfTrack]
+			],
+			2
+		);
+
+		const midi = parseMidi(bytes);
+		expect(midi.format).toBe(2);
+		expect(midi.tracks).toHaveLength(2);
+		expect(midi.totalNotes).toBe(2);
 	});
 
 	it('reads the known prefix of extended tempo and time-signature meta events', () => {
@@ -359,13 +394,6 @@ describe('parseMidi', () => {
 				(() => {
 					const bytes = buildMidi(480, [[...evEndOfTrack]]);
 					new DataView(bytes.buffer).setUint32(4, 4, false);
-					return bytes;
-				})()
-			],
-			[
-				'format 2',
-				(() => {
-					const bytes = buildMidi(480, [[...evEndOfTrack]], 2);
 					return bytes;
 				})()
 			],
@@ -447,11 +475,6 @@ describe('parseMidi', () => {
 				'time signature meta event shorter than 4 bytes',
 				buildMidi(480, [[...vlq(0), 0xff, 0x58, 0x02, 0x03, 0x02, ...evEndOfTrack]])
 			],
-			[
-				'missing end-of-track meta event',
-				buildMidi(480, [[...evNoteOn(0, 36), ...evNoteOff(60, 36)]])
-			],
-			['events after end-of-track', buildMidi(480, [[...evEndOfTrack, ...evNoteOn(0, 36)]])],
 			[
 				'non-empty end-of-track payload',
 				buildMidi(480, [[...vlq(0), 0xff, 0x2f, 0x01, 0x00]])
@@ -558,6 +581,7 @@ describe('dtxToMidi', () => {
 		expect(ons).toHaveLength(2);
 		expect(ons.every((e) => e.note === 35)).toBe(true);
 		expect(warnings.some((w) => w.includes('51'))).toBe(true);
+		expect(warnings.some((w) => w.includes('lane 1C exports as GM note 35'))).toBe(true);
 		expect(warnings.some((w) => w.includes('same MIDI note and tick'))).toBe(true);
 	});
 
@@ -789,10 +813,12 @@ describe('midiToDtx', () => {
 		expect(result.notes['12'][0].notes).toEqual([{ noteID: '01', position: 0.25 }]);
 	});
 
-	it('counts unmapped drum notes and ignores non-drum channels', () => {
+	it('counts unmapped drum notes and ignores non-drum channels when channel 10 has drums', () => {
 		const midi = parseMidi(
 			buildMidi(480, [
 				[
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
 					...evNoteOn(0, 100), // GM note with no lane
 					...evNoteOff(60, 100),
 					...evNoteOn(0, 60, 100, 0), // melody channel -> not a drum candidate
@@ -803,7 +829,24 @@ describe('midiToDtx', () => {
 		);
 		const result = midiToDtx(midi);
 		expect(result.unmappedNotes).toBe(1);
-		expect(Object.keys(result.notes)).toHaveLength(0);
+		expect(result.notes['13']).toBeDefined();
+	});
+
+	it('falls back to all channels when channel 10 has no mapped drum notes', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evNoteOn(0, 36, 100, 0), // drum export written outside channel 10
+					...evNoteOff(60, 36, 0),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['13']?.[0].notes).toEqual([{ noteID: '01', position: 0 }]);
+		expect(result.warnings.some((warning) => warning.includes('non-drum channels'))).toBe(
+			false
+		);
 	});
 
 	it('rejects input that would exceed the 3-digit DTX measure range', () => {

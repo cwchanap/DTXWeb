@@ -109,6 +109,12 @@ export const dtxToMidi = (
 			}
 			continue;
 		}
+		if (lane === '1C' && !warned.has('left-bass-reimport')) {
+			warned.add('left-bass-reimport');
+			warnings.push(
+				'lane 1C exports as GM note 35, which imports as lane 13 by default; use a mapping override to re-import left-bass hits'
+			);
+		}
 		emissionGroups.push({ lm, noteNumber });
 		const groupKey = `${noteNumber}|${lm.measure}`;
 		const group = onsetFractions.get(groupKey) ?? { measure: lm.measure, fractions: [] };
@@ -151,7 +157,7 @@ export const dtxToMidi = (
 	}
 	if (mergedSamePitch > 0) {
 		warnings.push(
-			`${mergedSamePitch} hit(s) share the same MIDI note and tick as another lane and may merge on reimport`
+			`${mergedSamePitch} hit(s) share the same MIDI note and tick with another hit and may merge on reimport`
 		);
 	}
 	const ppq = Math.min(
@@ -372,16 +378,34 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	}
 
 	const laneOf = { ...GM_IMPORT_LANE, ...options.noteToLane };
-	const isMappedDrumNote = (channel: number, note: number): boolean => {
-		if (channel !== DRUM_CHANNEL) return false;
+	const isLaneMapped = (note: number): boolean => {
 		const lane = laneOf[note]?.toUpperCase();
 		return Boolean(lane && laneToStaff(lane));
 	};
+	const isMappedDrumNote = (channel: number, note: number): boolean =>
+		channel === DRUM_CHANNEL && isLaneMapped(note);
+	// Drum-only MIDI exports are not consistently written to channel 10. The
+	// pre-shared importer mapped notes on every channel, so treat all channels
+	// as drum input when channel 10 carries no mapped note-ons; when channel 10
+	// does have drum data, keep the stricter filter so melodic channels stay out.
+	const hasMappedDrumChannelNote = midi.tracks.some((track) =>
+		track.events.some(
+			(event) =>
+				event.type === 'channel' &&
+				event.command === 0x90 &&
+				event.note !== undefined &&
+				Boolean(event.velocity) &&
+				isMappedDrumNote(event.channel ?? -1, event.note)
+		)
+	);
+	const useAllChannels = !hasMappedDrumChannelNote;
+	const isConvertibleNote = (channel: number, note: number): boolean =>
+		(useAllChannels || channel === DRUM_CHANNEL) && isLaneMapped(note);
 
 	const lastNoteTick = midi.tracks.reduce(
 		(max, t) =>
 			t.notes.reduce(
-				(m, n) => (isMappedDrumNote(n.channel, n.note) ? Math.max(m, n.startTime) : m),
+				(m, n) => (isConvertibleNote(n.channel, n.note) ? Math.max(m, n.startTime) : m),
 				max
 			),
 		0
@@ -488,7 +512,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			) {
 				continue;
 			}
-			if (event.channel !== DRUM_CHANNEL) {
+			if (!useAllChannels && event.channel !== DRUM_CHANNEL) {
 				skippedChannels++;
 				continue;
 			}

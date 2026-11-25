@@ -355,8 +355,10 @@ describe('MIDI to DTXFile via shared parseMidi + midiToDtx', () => {
 		]);
 	});
 
-	it('ignores non-drum channels and counts unmapped GM notes as a warning', () => {
+	it('ignores non-drum channels and counts unmapped GM notes as a warning when channel 10 has drums', () => {
 		const bytes = buildMidi(480, [
+			...evNoteOn(0, 36),
+			...evNoteOff(120, 36),
 			...evNoteOn(0, 60, 0), // channel 0 — not drums
 			...evNoteOff(120, 60, 0),
 			...evNoteOn(0, 99), // channel 9 but unmapped
@@ -366,7 +368,7 @@ describe('MIDI to DTXFile via shared parseMidi + midiToDtx', () => {
 
 		const { notes, unmappedNotes, warnings } = midiToDtx(parseMidi(bytes));
 
-		expect(notes['13']).toBeUndefined();
+		expect(notes['13']).toBeDefined();
 		expect(unmappedNotes).toBe(1);
 		expect(warnings.length).toBeGreaterThan(0);
 	});

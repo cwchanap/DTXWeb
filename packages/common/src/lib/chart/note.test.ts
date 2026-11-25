@@ -393,6 +393,30 @@ describe('LaneMeasureNote', () => {
 			warn.mockRestore();
 		});
 
+		it('round-trips quintuplet and septuplet grids instead of moving untouched hits', () => {
+			for (const cells of [5, 7, 40, 80]) {
+				const patternCells = new Array(cells).fill('00');
+				patternCells[1] = '01';
+				const notes = LaneMeasureNote.parseFromPattern(patternCells.join(''));
+				const result = new LaneMeasureNote(0, '12', notes).toPattern();
+
+				expect(result).toHaveLength(cells * 2);
+				expect(LaneMeasureNote.parseFromPattern(result)).toEqual(notes);
+			}
+		});
+
+		it('uses the least common multiple grid for mixed nonstandard positions', () => {
+			const laneMeasureNote = new LaneMeasureNote(0, '12', [
+				{ noteID: '01', position: 1 / 5 },
+				{ noteID: '02', position: 1 / 7 }
+			]);
+			const result = laneMeasureNote.toPattern();
+
+			expect(result).toHaveLength(35 * 2);
+			expect(result.slice(7 * 2, 7 * 2 + 2)).toBe('01');
+			expect(result.slice(5 * 2, 5 * 2 + 2)).toBe('02');
+		});
+
 		it('should keep a note at fraction 0.875 in a 3/4 bar', () => {
 			// MIDI-import contract: positions are [0,1) bar fractions with
 			// measureLength = 1 even for 3/4; the meter lives only in the

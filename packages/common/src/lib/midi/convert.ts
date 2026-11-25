@@ -591,7 +591,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// ID space.
 	const resolvedTempoCells = new Map<
 		string,
-		{ measure: number; position: number; bpm: number; drift: number }
+		{ measure: number; position: number; bpm: number; drift: number; tick: number }
 	>();
 	for (const event of effectiveTempoEvents) {
 		let { measure, position } = quantize(event.tick);
@@ -614,9 +614,28 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 			tempoCollisions++;
 			existingCell.bpm = event.bpm;
 			existingCell.drift = drift;
+			existingCell.tick = snappedTick;
 		} else {
-			resolvedTempoCells.set(cellKey, { measure, position, bpm: event.bpm, drift });
+			resolvedTempoCells.set(cellKey, {
+				measure,
+				position,
+				bpm: event.bpm,
+				drift,
+				tick: snappedTick
+			});
 		}
+	}
+	// Ticks each tempo is active, used to keep a long-held tempo close to its
+	// original BPM when the id space forces it to share a definition.
+	const activeTicks = new Map<number, number>();
+	const cellsByTick = [...resolvedTempoCells.values()].sort((a, b) => a.tick - b.tick);
+	for (let i = 0; i < cellsByTick.length; i++) {
+		const cell = cellsByTick[i];
+		const nextTick = cellsByTick[i + 1]?.tick ?? endTick;
+		activeTicks.set(
+			cell.bpm,
+			(activeTicks.get(cell.bpm) ?? 0) + Math.max(0, nextTick - cell.tick)
+		);
 	}
 	// A dense tempo ramp can carry more distinct MPQs than the two-character
 	// #BPMxx id space. Partition the sorted tempos into at most MAX_BPM_ID
@@ -711,7 +730,19 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		let maxTempoError = 0;
 		let maxClusterSpan = 0;
 		for (const group of groups) {
-			const representative = (uniqueTempos[group.start] + uniqueTempos[group.end]) / 2;
+			// Harmonic mean weighted by active ticks keeps the group's total
+			// playback time, so a tempo held for most of a group dominates.
+			let groupTicks = 0;
+			let groupTime = 0;
+			for (let i = group.start; i <= group.end; i++) {
+				const ticks = activeTicks.get(uniqueTempos[i]) ?? 0;
+				groupTicks += ticks;
+				groupTime += ticks / uniqueTempos[i];
+			}
+			const representative =
+				groupTime > 0
+					? groupTicks / groupTime
+					: (uniqueTempos[group.start] + uniqueTempos[group.end]) / 2;
 			maxClusterSpan = Math.max(maxClusterSpan, spanOf(group.start, group.end));
 			for (let i = group.start; i <= group.end; i++) {
 				mergedTempos.set(uniqueTempos[i], representative);

@@ -60,6 +60,7 @@ export interface R2ObjectMeta {
 	key: string;
 	size: number;
 	uploaded: Date;
+	etag?: string;
 }
 
 // Bounds R2 list calls when an adapter keeps returning `truncated: true`
@@ -92,7 +93,8 @@ export const listR2ObjectPages = async function* (
 		yield (listResult.objects ?? []).map((obj) => ({
 			key: obj.key,
 			size: obj.size,
-			uploaded: obj.uploaded
+			uploaded: obj.uploaded,
+			etag: obj.etag
 		}));
 
 		if (!listResult.truncated) return;

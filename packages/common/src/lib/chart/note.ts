@@ -118,30 +118,61 @@ export class LaneMeasureNote {
 		// notes (e.g. humanized MIDI) into shared slots and silently drops them.
 		let resolution = 0;
 
-		// Find the smallest resolution that can accommodate all note positions
-		for (const res of commonResolutions) {
+		const canAccommodate = (res: number): boolean => {
 			const used = new Set<number>();
-			let canAccommodateAll = true;
 			for (const note of this.notes) {
 				const pos = note.position / this.measureLength;
 				const cell = Math.round(pos * res);
 				// Check if this resolution can represent this position precisely
-				if (Math.abs(pos * res - cell) >= 0.001) {
-					canAccommodateAll = false;
-					break;
-				}
+				if (Math.abs(pos * res - cell) >= 0.001) return false;
 				used.add(cell);
 			}
 			// The tolerance alone can still merge distinct positions into one
 			// cell (e.g. 0.5 and 0.5001 at res 4) and silently overwrite a hit —
 			// a viable grid must give every note its own cell.
-			if (canAccommodateAll && used.size === this.notes.length) {
+			return used.size === this.notes.length;
+		};
+
+		// Find the smallest standard resolution that can accommodate all note positions
+		for (const res of commonResolutions) {
+			if (canAccommodate(res)) {
 				resolution = res;
-				break; // Use the first (smallest) resolution that works for all notes
+				break; // Use the first (smallest) standard resolution that works
 			}
 		}
 
-		// No standard grid holds every position (they sit finer than 1/192).
+		// DTX patterns are not limited to power-of-two/triplet grids: parsed
+		// quintuplet, septuplet and other arbitrary cell counts must round-trip
+		// instead of being nudged onto the 192 fallback. Positions are stored as
+		// floating-point bar fractions, so recover each small rational denominator
+		// within canonicalization error and try the LCM grid before widening.
+		if (resolution === 0) {
+			const denominatorOf = (position: number): number | undefined => {
+				for (let denominator = 1; denominator <= 768; denominator++) {
+					const scaled = position * denominator;
+					if (Math.abs(scaled - Math.round(scaled)) < 1e-9) return denominator;
+				}
+				return undefined;
+			};
+			const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+			let lcm = 1;
+			let exactGrid = true;
+			for (const note of this.notes) {
+				const denominator = denominatorOf(note.position / this.measureLength);
+				if (denominator === undefined) {
+					exactGrid = false;
+					break;
+				}
+				lcm = (lcm * denominator) / gcd(lcm, denominator);
+				if (lcm > 768) {
+					exactGrid = false;
+					break;
+				}
+			}
+			if (exactGrid && lcm > 0 && canAccommodate(lcm)) resolution = lcm;
+		}
+
+		// No standard or exact rational grid holds every position (they sit finer than 1/192).
 		// Widen until each note keeps its own valid cell rather than dropping
 		// or overwriting a hit; capped so a pathological position can't allocate
 		// a huge string.

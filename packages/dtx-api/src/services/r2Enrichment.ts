@@ -1,9 +1,9 @@
 import {
 	decodeArrayBufferWithBomDetection,
 	parseSetDef,
-	normalizeSetDefFileName
+	normalizeSetDefFileName,
+	normalizeLevel
 } from '@dtx/common/encoding';
-import { normalizeLevel } from '@dtx/common';
 import type { WorkerLogger } from '../lib/workerLogger';
 import type { R2Bucket } from '@cloudflare/workers-types';
 import {
@@ -96,6 +96,16 @@ const CHART_LEVEL_PROBE_BYTES = 16 * 1024;
  * isolate. A miss past this window reports unprobed, not unrated.
  */
 const CHART_LEVEL_DEEP_PROBE_BYTES = 1024 * 1024;
+
+/**
+ * Workers isolates commonly serve many requests. Cache definitive header
+ * probes across those requests, keyed by the object's listing identity so an
+ * overwrite cannot reuse a stale rating. Undefined results are not cached:
+ * they include transient R2 failures as well as truncated probe windows.
+ * The small FIFO bound keeps a large bucket corpus from growing isolate memory.
+ */
+const MAX_SHARED_CHART_LEVEL_PROBES = 512;
+const sharedChartLevelProbes = new Map<string, Promise<number | null | undefined>>();
 
 type SetDefFileRef = {
 	file: string;
@@ -374,7 +384,39 @@ export const discoverCatalogFiles = async (
 		const cacheKey = `${maxBytes}:${key}`;
 		let probe = probeCache.get(cacheKey);
 		if (!probe) {
-			probe = probeChartHeaderLevel(bucket, key, logger, maxBytes);
+			const object = objectsByKey.get(key);
+			const uploaded =
+				object?.uploaded instanceof Date
+					? object.uploaded.toISOString()
+					: String(object?.uploaded);
+			const sharedKey = [
+				maxBytes,
+				key,
+				object?.etag ?? '',
+				object?.size ?? '',
+				uploaded
+			].join('|');
+			probe = object?.etag ? sharedChartLevelProbes.get(sharedKey) : undefined;
+			if (!probe) {
+				const readProbe = probeChartHeaderLevel(bucket, key, logger, maxBytes);
+				// R2 listings always carry an etag in production. Test doubles and
+				// nonstandard adapters can omit it; without that immutable object
+				// identity, content probes must stay request-local rather than
+				// risking cross-request contamination.
+				if (!object?.etag) {
+					probe = readProbe;
+				} else {
+					probe = readProbe.then((level) => {
+						if (level === undefined) sharedChartLevelProbes.delete(sharedKey);
+						return level;
+					});
+					sharedChartLevelProbes.set(sharedKey, probe);
+					if (sharedChartLevelProbes.size > MAX_SHARED_CHART_LEVEL_PROBES) {
+						const oldest = sharedChartLevelProbes.keys().next().value;
+						if (oldest) sharedChartLevelProbes.delete(oldest);
+					}
+				}
+			}
 			probeCache.set(cacheKey, probe);
 		}
 		return probe;
@@ -750,6 +792,14 @@ export const discoverCatalogFiles = async (
 	};
 	claimSetDefRows(true);
 	claimSetDefRows(false);
+	// Legacy/manual catalog rows can carry level 0 even though the desktop
+	// uploader now skips unrated charts. While such a row remains unclaimed an
+	// unrated object is a possible exact/positional match, not a placeholder to
+	// reserve; once no zero row remains, zero-probed objects are reserved again.
+	const hasUnclaimedLevelZeroRow = (): boolean =>
+		dtxFiles.some(
+			(file, index) => !rowsClaimedBySetDef.has(index) && normalizeLevel(file.level) === 0
+		);
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
 	// reserve their objects so the sorted fallback cannot bind them to
@@ -783,7 +833,10 @@ export const discoverCatalogFiles = async (
 						fileLevelByRef.set(ref, leftoverLevel ?? 0);
 					}
 				}
-				if (leftoverLevel === 0 || leftoverLevel === null) {
+				if (
+					(leftoverLevel === 0 || leftoverLevel === null) &&
+					!hasUnclaimedLevelZeroRow()
+				) {
 					usedDtxKeys.add(object.key);
 					continue;
 				}
@@ -906,19 +959,20 @@ export const discoverCatalogFiles = async (
 				if (typeof probed === 'number') probedLevelByKey.set(keys[0], probed);
 			}
 			const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
+			const effectiveProbed = probed === null ? 0 : probed;
 			const namesDifferentRow =
-				typeof probed === 'number' && probed !== rowLevel && allRowLevels.has(probed);
+				typeof effectiveProbed === 'number' &&
+				effectiveProbed !== rowLevel &&
+				allRowLevels.has(effectiveProbed);
 			if (
-				rowLevel !== 0 &&
-				typeof probed === 'number' &&
-				probed !== 0 &&
+				typeof effectiveProbed === 'number' &&
 				!namesDifferentRow &&
-				(!exactOnly || probed === rowLevel)
+				(exactOnly ? effectiveProbed === rowLevel : effectiveProbed !== 0 || rowLevel === 0)
 			) {
 				rowsClaimedBySetDef.add(rows[0]);
 				matchedKeysByRowIndex.set(rows[0], keys[0]);
 				usedDtxKeys.add(keys[0]);
-			} else if (probed === 0 || probed === null) {
+			} else if ((probed === 0 || probed === null) && rowLevel !== 0) {
 				usedDtxKeys.add(keys[0]);
 			}
 			// An unprobed read or a rating that names a different chart proves
@@ -968,7 +1022,8 @@ export const discoverCatalogFiles = async (
 				const level = await probeChartLevel(key);
 				if (level === undefined) return;
 				if (level === null || level === 0) {
-					usedDtxKeys.add(key);
+					if (hasUnclaimedLevelZeroRow()) probedLevelByKey.set(key, 0);
+					else usedDtxKeys.add(key);
 					return;
 				}
 				probedLevelByKey.set(key, level);
@@ -1096,6 +1151,11 @@ export const discoverCatalogFiles = async (
 	// Claiming it earlier would let the weaker name match displace another
 	// file's exact rating.
 	await claimStemMatchedRows(false);
+	if (!hasUnclaimedLevelZeroRow()) {
+		for (const key of dtxObjectKeys) {
+			if (!usedDtxKeys.has(key) && probedLevelByKey.get(key) === 0) usedDtxKeys.add(key);
+		}
+	}
 
 	// What remains is genuinely positional: rows arrive in id order —
 	// the uploader's filename order (parse_dtx_folder emits rows in

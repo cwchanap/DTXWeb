@@ -3711,6 +3711,58 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('binds a level-zero row to a chart that probes as zero or unrated', async () => {
+		for (const body of ['#TITLE: Song\n#DLEVEL: 0\n', '#TITLE: Song\n']) {
+			const bucket = {
+				...makeBucket([[{ key: '42/basic.dtx', size: 300, uploaded: new Date() }]]),
+				get: vi.fn(async () => ({ arrayBuffer: async () => encodeToBuffer(body) }))
+			} as unknown as R2Bucket;
+
+			const discovery = await discoverCatalogFiles(
+				bucket,
+				{
+					simfileId: 42,
+					dtxFiles: [{ label: 'basic', level: 0 }],
+					publicBaseUrl: 'https://cdn.example.test'
+				},
+				silentLogger
+			);
+
+			expect(discovery.charts[0]).toEqual({
+				label: 'basic',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			});
+		}
+	});
+
+	it('reuses definitive chart level probes across requests for the same object identity', async () => {
+		const object = {
+			key: '99/basic.dtx',
+			size: 300,
+			uploaded: new Date('2026-01-01T00:00:00Z'),
+			etag: 'etag-before'
+		};
+		const bucket = {
+			...makeBucket([[object]]),
+			get: vi.fn(async () => ({
+				arrayBuffer: async () => encodeToBuffer('#TITLE: Song\n#DLEVEL: 60\n')
+			}))
+		} as unknown as R2Bucket;
+		const options = {
+			simfileId: 99,
+			dtxFiles: [{ label: 'basic', level: 60 }],
+			publicBaseUrl: 'https://cdn.example.test'
+		};
+
+		await discoverCatalogFiles(bucket, options, silentLogger);
+		await discoverCatalogFiles(bucket, options, silentLogger);
+
+		expect(bucket.get).toHaveBeenCalledTimes(1);
+	});
+
 	it('pairs remaining rows positionally in the uploader’s case-sensitive filename order', async () => {
 		// Catalog rows arrive in files.sort() order — Rust's case-sensitive
 		// path sort puts 'Expert.dtx' before 'basic.dtx'. Pairing that row

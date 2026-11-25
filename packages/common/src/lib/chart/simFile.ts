@@ -11,6 +11,43 @@ interface DtxLevel {
 
 const encodeR2Path = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
 
+/**
+ * Resolve a SET.def chart reference against the remote simfile root. Bare
+ * id-prefixed references are ambiguous between an already-complete bucket key
+ * (`42/basic.dtx`) and a same-named subfolder (`42/42/basic.dtx`), so try the
+ * direct key first and the simfile-relative key on a missing response. An
+ * explicit `./`/`.\` reference is always relative, even when normalization
+ * makes it look id-prefixed. Both remote loading paths share this resolver so
+ * metadata-less and metadata-driven editor loads cannot disagree.
+ */
+const fetchRemoteChartFile = async (
+	simfileID: string,
+	bucketUrl: string,
+	fileName: string
+): Promise<File | null> => {
+	const trimmedFileName = fileName.trim();
+	const explicitlyRelative = /^\.[\\/]/.test(trimmedFileName);
+	const normalizedFileName = normalizeSetDefFileName(fileName);
+	const prefixedKey = `${simfileID}/${normalizedFileName}`;
+	const isAmbiguousPrefixed =
+		!explicitlyRelative && normalizedFileName.startsWith(`${simfileID}/`);
+	const candidates = explicitlyRelative
+		? [prefixedKey]
+		: isAmbiguousPrefixed
+			? [normalizedFileName, prefixedKey]
+			: [prefixedKey];
+
+	for (const [index, objectKey] of candidates.entries()) {
+		const response = await dedupedFetch(`${bucketUrl}/${encodeR2Path(objectKey)}`);
+		if (response.ok) return new File([await response.blob()], normalizedFileName);
+		const canTryNext =
+			index < candidates.length - 1 &&
+			(response.status === 404 || response.status === undefined);
+		if (!canTryNext) return null;
+	}
+	return null;
+};
+
 export class SimFile {
 	private isParseFromRemoteURL: boolean = false;
 	private simFileID: string = '';
@@ -97,37 +134,10 @@ export class SimFile {
 			const level = Number(levelKey);
 			const { label, fileName } = levelData;
 			try {
-				// Server-provided fileName is verbatim SET.def text; normalize
-				// the same way parseHeader does or `.\name.dtx` fetches 404.
-				// Preserve the distinction between bare `42/adv.dtx` and
-				// explicitly relative `./42/adv.dtx`, and encode each path
-				// segment so `#` or spaces do not truncate the URL. A bare path
-				// starting with `{simfileID}/` is ambiguous (already-prefixed
-				// key vs a subfolder named after the simfile ID), so try the
-				// nested `{simfileID}/{normalizedFileName}` key when the direct
-				// lookup returns 404.
-				const trimmedFileName = fileName.trim();
-				const explicitlyRelative = /^\.[\\/]/.test(trimmedFileName);
-				const normalizedFileName = normalizeSetDefFileName(fileName);
-				const isAmbiguousPrefixed =
-					!explicitlyRelative && normalizedFileName.startsWith(`${simfileID}/`);
-				const objectKey = isAmbiguousPrefixed
-					? normalizedFileName
-					: `${simfileID}/${normalizedFileName}`;
-				let response = await dedupedFetch(`${bucketUrl}/${encodeR2Path(objectKey)}`);
-				if (
-					!response.ok &&
-					isAmbiguousPrefixed &&
-					(response.status === 404 || response.status === undefined)
-				) {
-					response = await dedupedFetch(
-						`${bucketUrl}/${encodeR2Path(`${simfileID}/${normalizedFileName}`)}`
-					);
-				}
-				if (!response.ok) {
+				const file = await fetchRemoteChartFile(simfileID, bucketUrl, fileName);
+				if (!file) {
 					return;
 				}
-				const file = new File([await response.blob()], normalizedFileName);
 				const dtx = new DTXFile(file, label);
 				await dtx.parse();
 				simFile.levels[level] = { label, file: dtx };
@@ -218,13 +228,14 @@ export class SimFile {
 						? this.files.find((f) => f.name === `${setDefDir}${normalizedFileName}`)
 						: undefined) ?? this.files.find((f) => f.name === normalizedFileName);
 			} else {
-				const response = await dedupedFetch(
-					`${this.bucketUrl}/${this.simFileID}/${encodeR2Path(normalizedFileName)}`
+				dtxSourceFile = await fetchRemoteChartFile(
+					this.simFileID,
+					this.bucketUrl,
+					fileName
 				);
-				if (!response.ok) {
+				if (!dtxSourceFile) {
 					return;
 				}
-				dtxSourceFile = new File([await response.blob()], normalizedFileName);
 			}
 			if (!dtxSourceFile) {
 				return;

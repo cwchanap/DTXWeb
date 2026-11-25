@@ -1,5 +1,5 @@
 /**
- * Shared Standard MIDI File parser (SMF format 0/1, PPQ division).
+ * Shared Standard MIDI File parser (SMF format 0/1/2, PPQ division).
  *
  * Started from the midi-preview page parser (which read header lengths and
  * channel-message widths correctly) and hardened: every read is bounds-checked
@@ -111,7 +111,6 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 
 	let currentTime = 0;
 	let runningStatus = 0;
-	let sawEndOfTrack = false;
 	// Open note-ons per channel+pitch, oldest first. Overlapping re-attacks
 	// queue so every attack is retained; a note-off pairs FIFO with the
 	// earliest still-open attack, and offs with none pending are ignored.
@@ -238,15 +237,14 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 					notated32ndsPerQuarter: payload[3]
 				});
 			} else if (subtype === 0x2f) {
-				// End of track must be a zero-length, genuinely terminal meta
-				// event — not padding and not followed by more bytes.
+				// End of track is terminal, but older exporter output tolerated by
+				// the previous parsers can carry padding or even stray bytes after
+				// it inside the declared chunk. Ignore the remainder rather than
+				// rejecting a file whose playable events are already complete.
 				if (payload.length !== 0) {
 					fail(`end-of-track meta event has ${payload.length} bytes, expected 0`);
 				}
-				if (offset !== trackEnd) {
-					fail('data follows the end-of-track event');
-				}
-				sawEndOfTrack = true;
+				offset = trackEnd;
 			} else if (subtype === 0x03 && trackName === undefined) {
 				trackName = new TextDecoder().decode(new Uint8Array(payload));
 			}
@@ -268,8 +266,6 @@ const parseTrack = (data: Uint8Array, offset: number, trackEnd: number): RawTrac
 			return fail(`unsupported system status 0x${status.toString(16)}`);
 		}
 	}
-
-	if (!sawEndOfTrack) fail('missing end-of-track meta event');
 
 	// Notes still open at track end close at the last seen tick.
 	for (const pending of activeNotes.values()) {
@@ -315,13 +311,13 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 	if (8 + headerLength > data.length) fail('truncated header');
 
 	const format = readUint16(8);
-	if (format > 1) fail(`unsupported format ${format}`);
+	if (format > 2) fail(`unsupported format ${format}`);
 	const trackCount = readUint16(10);
 	if (format === 0 && trackCount !== 1) {
 		fail(`format 0 requires 1 track, got ${trackCount}`);
 	}
-	if (format === 1 && trackCount < 1) {
-		fail(`format 1 requires at least 1 track, got ${trackCount}`);
+	if ((format === 1 || format === 2) && trackCount < 1) {
+		fail(`format ${format} requires at least 1 track, got ${trackCount}`);
 	}
 	const ticksPerQuarter = readUint16(12);
 	if (ticksPerQuarter & 0x8000) fail('SMPTE division is not supported');
@@ -355,23 +351,10 @@ export const parseMidi = (data: Uint8Array): ParsedMidi => {
 		for (const event of raw.meterEvents) meterEvents.push(event);
 		offset = raw.nextOffset;
 	}
-	// Reject any extra MTrk chunks beyond the declared trackCount while
-	// continuing to skip complete unknown chunks.
-	while (offset < data.length) {
-		if (offset + 8 > data.length) {
-			fail('truncated trailing chunk header');
-		}
-		const chunkType = String.fromCharCode(...data.slice(offset, offset + 4));
-		const chunkLength = readUint32(offset + 4);
-		offset += 8;
-		if (offset + chunkLength > data.length) {
-			fail(`chunk ${chunkType} extends past end of file`);
-		}
-		if (chunkType === 'MTrk') {
-			fail(`unexpected extra MTrk chunk beyond declared track count ${trackCount}`);
-		}
-		offset += chunkLength;
-	}
+	// Bytes after the declared tracks are outside the SMF streams this parser
+	// represents. Legacy exporters sometimes append padding or undeclared chunks;
+	// the previous in-page parsers ignored them, so keep that compatibility.
+	// Truncation inside declared chunks above remains a hard error.
 
 	tempoEvents.sort((a, b) => a.tick - b.tick);
 	meterEvents.sort((a, b) => a.tick - b.tick);

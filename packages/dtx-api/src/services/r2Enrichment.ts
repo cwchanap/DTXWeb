@@ -203,16 +203,24 @@ const probeChartHeaderLevel = async (
 	bucket: R2Bucket,
 	key: string,
 	logger: WorkerLogger,
-	maxBytes: number = CHART_LEVEL_PROBE_BYTES
+	maxBytes: number = CHART_LEVEL_PROBE_BYTES,
+	expectedEtag?: string
 ): Promise<number | null | undefined> => {
 	try {
 		// Request one byte past the window: a short reply means EOF was
 		// reached and the scan was complete, while a full reply proves
-		// the file continues and a miss is only "unprobed".
+		// the file continues and a miss is only "unprobed". When the
+		// listing supplied an etag, pin the read to that object version:
+		// an overwrite between listing and GET must not cache the
+		// replacement's rating under the old version's identity.
 		const body = await bucket.get(key, {
-			range: { offset: 0, length: maxBytes + 1 }
+			range: { offset: 0, length: maxBytes + 1 },
+			...(expectedEtag ? { onlyIf: { etagMatches: expectedEtag } } : {})
 		});
 		if (!body) return undefined;
+		// A failed R2 precondition returns metadata without a body. Comparing
+		// the etag as well keeps nonstandard test adapters honest.
+		if (expectedEtag && (!('body' in body) || body.etag !== expectedEtag)) return undefined;
 		const buffer = await body.arrayBuffer();
 		const truncated =
 			typeof body.size === 'number'
@@ -398,7 +406,13 @@ export const discoverCatalogFiles = async (
 			].join('|');
 			probe = object?.etag ? sharedChartLevelProbes.get(sharedKey) : undefined;
 			if (!probe) {
-				const readProbe = probeChartHeaderLevel(bucket, key, logger, maxBytes);
+				const readProbe = probeChartHeaderLevel(
+					bucket,
+					key,
+					logger,
+					maxBytes,
+					object?.etag
+				);
 				// R2 listings always carry an etag in production. Test doubles and
 				// nonstandard adapters can omit it; without that immutable object
 				// identity, content probes must stay request-local rather than
@@ -655,9 +669,10 @@ export const discoverCatalogFiles = async (
 			}
 		};
 		if (exactOnly) {
-			// Coordinate exact matches: process the most constrained row (fewest
-			// remaining unused exact refs) first so a multi-choice row does not
-			// consume a shared alias needed by another row. Within a row,
+			// Coordinate exact matches: raw-filename ownership outranks alias
+			// claims, then process the most constrained row (fewest remaining
+			// unused exact refs) so a multi-choice row does not consume a shared
+			// alias needed by another row. Within a row,
 			// preserve raw-filename ownership, then a directly resolved ref
 			// over one that only matched through the ambiguous-ID fallback —
 			// the nested object lives below the catalog directory and cannot
@@ -725,10 +740,9 @@ export const discoverCatalogFiles = async (
 					const bestIsDirect = isDirectRawRef(refs[matchingIndexes[0]], bestRefKey);
 					if (
 						!bestChoice ||
-						matchingIndexes.length < bestChoice.candidateCount ||
-						(matchingIndexes.length === bestChoice.candidateCount &&
-							bestIsDirect &&
-							!bestChoice.bestIsDirect)
+						(bestIsDirect && !bestChoice.bestIsDirect) ||
+						(bestIsDirect === bestChoice.bestIsDirect &&
+							matchingIndexes.length < bestChoice.candidateCount)
 					) {
 						bestChoice = {
 							rowIndex: index,
@@ -809,6 +823,7 @@ export const discoverCatalogFiles = async (
 			(file, index) => !rowsClaimedBySetDef.has(index) && normalizeLevel(file.level) === 0
 		);
 	const probedLevelByKey = new Map<string, number>();
+	const keysLeftForExactMatch = new Set<string>();
 	const retainedLevelZeroRootKeys = new Set<string>();
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
@@ -863,7 +878,21 @@ export const discoverCatalogFiles = async (
 						stemRowIndexes.push(index);
 					}
 				});
-				if (stemRowIndexes.length === 1) {
+				const stemRowIndex = stemRowIndexes.length === 1 ? stemRowIndexes[0] : -1;
+				const leftoverNamesAnotherRow =
+					typeof leftoverLevel === 'number' &&
+					leftoverLevel !== 0 &&
+					dtxFiles.some(
+						(file, index) =>
+							index !== stemRowIndex &&
+							!rowsClaimedBySetDef.has(index) &&
+							normalizeLevel(file.level) === leftoverLevel
+					);
+				if (leftoverNamesAnotherRow && typeof leftoverLevel === 'number') {
+					keysLeftForExactMatch.add(object.key);
+					probedLevelByKey.set(object.key, leftoverLevel);
+				}
+				if (stemRowIndexes.length === 1 && !leftoverNamesAnotherRow) {
 					let claimObject = object;
 					if (!isTopLevelR2Key(object.key, prefix)) {
 						const rootCandidate = dtxObjects.find(
@@ -940,7 +969,10 @@ export const discoverCatalogFiles = async (
 			}
 			// Preserve unrated objects while a level-zero row stays unclaimed
 			// so zero-level exact/positional matching can still bind them.
-			if (!isUnratedLeftover || !hasUnclaimedLevelZeroRow()) {
+			if (
+				!keysLeftForExactMatch.has(object.key) &&
+				(!isUnratedLeftover || !hasUnclaimedLevelZeroRow())
+			) {
 				usedDtxKeys.add(object.key);
 			}
 		}

@@ -800,6 +800,35 @@ describe('SimFile', () => {
 			expect(simFile.levels[6]?.file.getFileName()).toBe('sub/lead#take2.dtx');
 		});
 
+		it('preserves explicit-relative SET.def references through def regeneration', async () => {
+			vi.stubGlobal(
+				'fetch',
+				vi.fn().mockResolvedValue({
+					ok: true,
+					blob: () => Promise.resolve(new Blob(['dtx'])),
+					clone() {
+						return this;
+					}
+				})
+			);
+
+			const simFile = await SimFile.parseFromRemoteURLWithMetadata(
+				'42',
+				'https://cdn.example',
+				{
+					title: 'Round Trip Song',
+					levels: {
+						1: { label: 'EXT', fileName: './42/nested.dtx' },
+						2: { label: 'BASIC', fileName: 'bas.dtx' }
+					}
+				}
+			);
+
+			const content = simFile.generateDefFileContent();
+			expect(content).toContain('#L1FILE ./42/nested.dtx');
+			expect(content).toContain('#L2FILE bas.dtx');
+		});
+
 		it('falls back to the nested simfile-relative key when a bare ID-prefixed path returns 404', async () => {
 			const fetchSpy = vi.fn(async (url: string) => {
 				if (url === 'https://cdn.example/42/42/lead.dtx') {

@@ -59,7 +59,7 @@ const encodeUtf16LeNoBom = (text: string): ArrayBuffer => encodeUtf16LeWithBom(t
 const encodeUtf16BeNoBom = (text: string): ArrayBuffer => encodeUtf16BeWithBom(text).slice(2);
 
 const makeBucket = (
-	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date }>>
+	objectsPerCall: Array<Array<{ key: string; size: number; uploaded: Date; etag?: string }>>
 ): R2Bucket => {
 	let call = 0;
 	return {
@@ -2606,6 +2606,60 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('leaves a leftover stem object available when its rating names another row', async () => {
+		// SET.def names basic.dtx only under EXTRA, so no row exact-claims it.
+		// The file stem names Basic/30, but its header rates 80 — Expert's
+		// level — while 01.dtx rates 30. The stem heuristic must not consume
+		// Expert's exact-rated chart before exact matching runs.
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL EXTRA\n#L1FILE ./basic.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+			'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/01.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Basic',
+				level: 30,
+				fileUrl: 'https://cdn.example.test/42/01.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'Expert',
+				level: 80,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 500,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('keeps a leftover set.def ref reserved when its stem matches multiple rows', async () => {
 		// Two unclaimed rows can share the stem label — the leftover
 		// object could belong to either, so reserving it beats guessing.
@@ -4052,7 +4106,9 @@ describe('discoverCatalogFiles', () => {
 		const bucket = {
 			...makeBucket([[object]]),
 			get: vi.fn(async () => ({
-				arrayBuffer: async () => encodeToBuffer('#TITLE: Song\n#DLEVEL: 60\n')
+				arrayBuffer: async () => encodeToBuffer('#TITLE: Song\n#DLEVEL: 60\n'),
+				body: new ReadableStream(),
+				etag: 'etag-before'
 			}))
 		} as unknown as R2Bucket;
 		const options = {
@@ -4178,6 +4234,54 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('settles raw filename claims before competing aliases take their keys', async () => {
+		// Two BASIC rows own a.dtx and b.dtx by the uploader's raw-filename
+		// label lookup. OTHER only aliases a.dtx through SET.def while its real
+		// chart is the unlisted other.dtx; the alias must not win merely because
+		// it is the more constrained exact candidate.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE b.dtx\n#L3LABEL OTHER\n#L3FILE ./a.dtx\n',
+			'42/a.dtx': '#TITLE: A\n#DLEVEL: 60\n',
+			'42/b.dtx': '#TITLE: B\n#DLEVEL: 60\n',
+			'42/other.dtx': '#TITLE: Other\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 120, uploaded: new Date() },
+					{ key: '42/a.dtx', size: 300, uploaded: new Date() },
+					{ key: '42/b.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/other.dtx', size: 500, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'BASIC', level: 60 },
+					{ label: 'OTHER', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const urls = discovery.charts.map((chart) => chart.fileUrl);
+		expect(urls.slice(0, 2).sort()).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+		expect(urls[2]).toBe('https://cdn.example.test/42/other.dtx');
+	});
+
 	it('lets a row use an aliased chart after the other label exact-claims a different file', async () => {
 		// SET.def names BASIC a.dtx, EXPERT b.dtx, then a second EXPERT
 		// alias ./a.dtx. Re-uploading a.dtx at EXPERT's rating makes
@@ -4269,6 +4373,48 @@ describe('discoverCatalogFiles', () => {
 		);
 
 		expect(get.mock.calls.filter(([key]) => key === '42/a.dtx')).toHaveLength(1);
+	});
+
+	it('reads chart header probes conditionally on the listed object etag', async () => {
+		const chartBodies: Record<string, string> = {
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE basic.dtx\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+			'42/other.dtx': '#TITLE: Other\n#DLEVEL: 30\n'
+		};
+		const get = vi.fn(async (key: string) => ({
+			arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? ''),
+			body: new ReadableStream(),
+			etag: 'listed-etag',
+			size: 32
+		}));
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/basic.dtx', size: 300, uploaded: new Date(), etag: 'listed-etag' },
+					{ key: '42/other.dtx', size: 300, uploaded: new Date(), etag: 'other-etag' }
+				]
+			]),
+			get
+		} as unknown as R2Bucket;
+
+		await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 30 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(get).toHaveBeenCalledWith(
+			'42/basic.dtx',
+			expect.objectContaining({
+				onlyIf: { etagMatches: 'listed-etag' },
+				range: expect.objectContaining({ offset: 0 })
+			})
+		);
 	});
 
 	it('keeps filename order among probed and unprobed keys for equal-rated rows', async () => {

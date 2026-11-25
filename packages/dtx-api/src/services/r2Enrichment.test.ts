@@ -2893,6 +2893,105 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers a re-rated root chart over an unrated nested leftover for a level-zero row', async () => {
+		// Legacy/manual rows can carry level 0, so an unrated nested leftover is
+		// allowed to claim one by stem. When the same-stem root file was re-rated
+		// in place, though, the root location is the row's original chart and the
+		// nested copy must not displace it.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 0 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('leaves a re-rated root chart for the row its rating names', async () => {
+		// The root same-stem file is not automatically the level-zero row's
+		// re-rated replacement: when its probe exactly matches another catalog
+		// row, that rating is stronger ownership evidence. The nested unrated
+		// leftover remains the level-zero row's positional candidate while the
+		// rated row claims the root file.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 0 },
+					{ label: 'BASIC', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
+				fileSizeBytes: 200,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers a rated nested set.def sibling over an unrated root chart sharing its stem', async () => {
 		// Same layout as the root-preference test with the ratings swapped:
 		// the nested sibling of the leftover ref carries #DLEVEL 60, while

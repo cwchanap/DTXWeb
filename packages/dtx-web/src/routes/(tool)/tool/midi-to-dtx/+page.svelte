@@ -30,6 +30,21 @@
 	// MIDI note -> DTX lane mapping (customizable), seeded from the shared
 	// GM import aliases so extra GM notes fold into the right lanes.
 	let midiToDtxMap = $state<Record<number, string>>({ ...GM_IMPORT_LANE });
+	let newMidiNote = $state<number | undefined>(undefined);
+	let newMidiLane = $state(PLAYABLE_DRUM_LANES[0]);
+	const canAddMidiNote = $derived(
+		typeof newMidiNote === 'number' &&
+			Number.isInteger(newMidiNote) &&
+			newMidiNote >= 0 &&
+			newMidiNote <= 127 &&
+			midiToDtxMap[newMidiNote] === undefined
+	);
+
+	const addMidiNoteMapping = () => {
+		if (!canAddMidiNote || newMidiNote === undefined) return;
+		midiToDtxMap[newMidiNote] = newMidiLane;
+		newMidiNote = undefined;
+	};
 
 	// DTX metadata settings
 	let title = $state('Converted from MIDI');
@@ -248,10 +263,15 @@
 		goto(resolve('/tool'));
 	};
 
-	// Row label: the GM note's aliased lane instrument name from the shared
-	// import map (e.g. 36 -> Bass), not a second hardcoded drum table.
-	const getNoteLabel = (noteNumber: number): string =>
-		laneToStaff(GM_IMPORT_LANE[noteNumber])?.instrumentName ?? `Note ${noteNumber}`;
+	// Row label: the default import lane's instrument name when one exists
+	// (e.g. 36 -> Bass), otherwise the note number for custom mappings.
+	const getNoteLabel = (noteNumber: number): string => {
+		const defaultLane = GM_IMPORT_LANE[noteNumber];
+		return (
+			(defaultLane ? laneToStaff(defaultLane)?.instrumentName : undefined) ??
+			`Note ${noteNumber}`
+		);
+	};
 
 	const getLaneName = (laneId: string): string =>
 		laneToStaff(laneId)?.instrumentName ?? `Lane ${laneId}`;
@@ -503,6 +523,52 @@
 						<p class="mb-4 text-sm text-slate-400">
 							Configure which DTX lane each MIDI drum note should map to:
 						</p>
+
+						<div class="mb-4 flex flex-col gap-3 md:flex-row md:items-end">
+							<div>
+								<label
+									for="add-midi-note"
+									class="block text-sm font-medium text-slate-300"
+								>
+									Add MIDI note
+								</label>
+								<input
+									id="add-midi-note"
+									type="number"
+									min="0"
+									max="127"
+									bind:value={newMidiNote}
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20"
+								/>
+							</div>
+							<div>
+								<label
+									for="add-midi-lane"
+									class="block text-sm font-medium text-slate-300"
+								>
+									Add target lane
+								</label>
+								<select
+									id="add-midi-lane"
+									bind:value={newMidiLane}
+									class="mt-1 w-full rounded border border-purple-500/30 bg-slate-900/50 px-2 py-1 text-sm text-slate-200 transition-all duration-300 focus:border-purple-400 focus:ring-2 focus:ring-purple-500/20 md:w-44"
+								>
+									{#each PLAYABLE_DRUM_LANES as lane (lane)}
+										<option value={lane} class="bg-slate-900 text-slate-200">
+											{lane} - {getLaneName(lane)}
+										</option>
+									{/each}
+								</select>
+							</div>
+							<button
+								type="button"
+								onclick={addMidiNoteMapping}
+								disabled={!canAddMidiNote}
+								class="music-btn-secondary px-3 py-1 text-sm font-medium transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								Add mapping
+							</button>
+						</div>
 
 						<div class="grid grid-cols-1 gap-3 md:grid-cols-2">
 							{#each Object.entries(midiToDtxMap) as [midiNote] (midiNote)}

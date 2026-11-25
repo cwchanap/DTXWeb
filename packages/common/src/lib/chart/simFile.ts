@@ -7,9 +7,17 @@ import { dedupedFetch } from '../utils/dedupedFetch';
 interface DtxLevel {
 	label: string;
 	file: DTXFile;
+	/** Canonical #LxFILE reference when an explicit ./ prefix affects round-trip resolution. */
+	setDefFileName?: string;
 }
 
 const encodeR2Path = (path: string): string => path.split('/').map(encodeURIComponent).join('/');
+
+// Normalization strips the explicit-current-directory marker because R2 keys
+// cannot contain it. Keep a canonical copy for SET.def round-trips: without
+// it, `./42/lead.dtx` reloads as the bare ambiguous key `42/lead.dtx`.
+const explicitRelativeSetDefFileName = (fileName: string): string | undefined =>
+	/^\.[\\/]/.test(fileName.trim()) ? `./${normalizeSetDefFileName(fileName)}` : undefined;
 
 /**
  * Resolve a SET.def chart reference against the remote simfile root. Bare
@@ -140,7 +148,11 @@ export class SimFile {
 				}
 				const dtx = new DTXFile(file, label);
 				await dtx.parse();
-				simFile.levels[level] = { label, file: dtx };
+				simFile.levels[level] = {
+					label,
+					file: dtx,
+					setDefFileName: explicitRelativeSetDefFileName(fileName)
+				};
 			} catch (error) {
 				console.error(`Failed to load DTX file ${fileName}:`, error);
 			}
@@ -242,7 +254,11 @@ export class SimFile {
 			}
 			const dtx = new DTXFile(dtxSourceFile, label);
 			await dtx.parse();
-			this.levels[level] = { label, file: dtx };
+			this.levels[level] = {
+				label,
+				file: dtx,
+				setDefFileName: explicitRelativeSetDefFileName(fileName)
+			};
 		});
 
 		await Promise.all(promises);
@@ -321,7 +337,8 @@ export class SimFile {
 				// Use existing level data
 				lines.push(`#L${level}LABEL ${levelData.label}`);
 				// Try to get filename from the DTXFile using the safe getFileName method
-				const fileName = levelData.file.getFileName() || defaultFile;
+				const fileName =
+					levelData.setDefFileName || levelData.file.getFileName() || defaultFile;
 				lines.push(`#L${level}FILE ${fileName}`);
 			} else {
 				// Use default values
@@ -341,7 +358,7 @@ export class SimFile {
 			.sort((a, b) => a - b);
 		for (const level of extraLevels) {
 			const levelData = this.levels[level];
-			const fileName = levelData?.file.getFileName();
+			const fileName = levelData?.setDefFileName || levelData?.file.getFileName();
 			if (!levelData || !fileName) continue;
 			lines.push(`#L${level}LABEL ${levelData.label}`);
 			lines.push(`#L${level}FILE ${fileName}`);

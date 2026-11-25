@@ -930,6 +930,40 @@ describe('midiToDtx', () => {
 		expect(result.warnings.some((w) => w.includes('non-drum channels ignored'))).toBe(true);
 	});
 
+	it('excludes repeated effective tempo events from the DTX measure-range check', () => {
+		// Kick at tick 0 plus a redundant 120 BPM event at tick 1,920,000:
+		// the repeat changes no playback timing, so it must not manufacture a
+		// measure-1000 chart boundary and reject an otherwise one-hit chart.
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
+					...evTempo(1_920_000 - 60, 120),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		expect(result.notes['13'][0].notes).toEqual([{ noteID: '01', position: 0 }]);
+	});
+
+	it('keeps genuine tempo changes in the DTX measure-range check', () => {
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
+					...evTempo(1_920_000 - 60, 240),
+					...evEndOfTrack
+				]
+			])
+		);
+		expect(() => midiToDtx(midi)).toThrow(/measure/i);
+	});
+
 	it('rolls a hit that quantizes onto the barline into the next bar slot 0', () => {
 		// slot = 10 ticks at 480 PPQ 4/4: tick 1917 -> raw slot 191.7 -> 192.
 		const midi = parseMidi(
@@ -1145,6 +1179,35 @@ describe('midiToDtx', () => {
 		expect(result.warnings).toContain(
 			'1 tempo change(s) snapped to the 1/192 DTX grid; timing shifts up to 1 tick(s)'
 		);
+	});
+
+	it('keeps distinct slow MIDI tempos distinct when rounded BPM would collide', () => {
+		const tempoBytes = (delta: number, mpq: number): number[] => [
+			...vlq(delta),
+			0xff,
+			0x51,
+			0x03,
+			(mpq >> 16) & 0xff,
+			(mpq >> 8) & 0xff,
+			mpq & 0xff
+		];
+		const firstMpq = 6_000_000; // exactly 10 BPM
+		const secondMpq = 6_000_200; // distinct, but rounds to 10 BPM at 3 decimals
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...tempoBytes(0, firstMpq),
+					...evNoteOn(0, 36),
+					...evNoteOff(60, 36),
+					...tempoBytes(1920 - 60, secondMpq),
+					...evEndOfTrack
+				]
+			])
+		);
+
+		const result = midiToDtx(midi);
+		expect(result.bpm).toBe(10);
+		expect(result.controls.bpmChanges).toEqual({ '01': 60000000 / secondMpq });
 	});
 
 	it('preserves full BPM precision for maximum 3-byte MIDI tempo (0xFFFFFF) on round trip', () => {

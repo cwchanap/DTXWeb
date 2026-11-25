@@ -409,6 +409,35 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	const isConvertibleNote = (channel: number, note: number): boolean =>
 		(useAllChannels || channel === DRUM_CHANNEL) && isLaneMapped(note);
 
+	// Tempo: first event -> base #BPM (or override); later effective changes ->
+	// #BPMxx defs + channel-08 refs quantized like drum hits. Resolve same-tick
+	// and repeated effective values before the measure bound: a no-op tempo
+	// meta event does not extend the playable chart.
+	const bpmOf = (mpq: number): number => {
+		const rounded = Math.round((60000000 / mpq) * 1000) / 1000;
+		// Keep 3-decimal rounding only when it round-trips to the source MPQ
+		// (recovering exact integer tempos like 140/180). Otherwise two
+		// distinct slow tempos can collapse onto the same rounded BPM.
+		return rounded > 0 && Math.round(60000000 / rounded) === mpq ? rounded : 60000000 / mpq;
+	};
+	const tempoEvents: { tick: number; bpm: number }[] = [];
+	for (const event of midi.tempoEvents) {
+		const last = tempoEvents[tempoEvents.length - 1];
+		if (last && last.tick === event.tick) last.bpm = bpmOf(event.microsecondsPerQuarter);
+		else tempoEvents.push({ tick: event.tick, bpm: bpmOf(event.microsecondsPerQuarter) });
+	}
+	// Only a tempo event AT tick 0 sets the base; a first event later in the
+	// file is a real tempo change and the file's start defaults to 120.
+	const firstAtStart = tempoEvents[0]?.tick === 0;
+	const bpm = options.bpm ?? (firstAtStart ? tempoEvents[0].bpm : 120);
+	const effectiveTempoEvents: typeof tempoEvents = [];
+	let effectiveBpm = bpm;
+	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
+		if (event.bpm === effectiveBpm) continue;
+		effectiveBpm = event.bpm;
+		effectiveTempoEvents.push(event);
+	}
+
 	const lastNoteTick = midi.tracks.reduce(
 		(max, t) =>
 			t.notes.reduce(
@@ -419,7 +448,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	);
 	const endTick = Math.max(
 		lastNoteTick,
-		midi.tempoEvents[midi.tempoEvents.length - 1]?.tick ?? 0,
+		effectiveTempoEvents[effectiveTempoEvents.length - 1]?.tick ?? 0,
 		meterChanges[meterChanges.length - 1]?.tick ?? 0
 	);
 
@@ -553,33 +582,9 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		warnings.push(`${skippedChannels} note(s) on non-drum channels ignored`);
 	}
 
-	// Tempo: first event -> base #BPM (or override); later effective changes ->
-	// #BPMxx defs + channel-08 refs quantized like drum hits.
-	const MAX_MIDI_MPQ = 0xffffff;
-	const bpmOf = (mpq: number): number => {
-		const rounded = Math.round((60000000 / mpq) * 1000) / 1000;
-		// Keep 3-decimal rounding for normal tempos (recovering exact 140/180
-		// from integer MPQ), but fall back to full precision when rounding
-		// drops below the 24-bit MIDI tempo floor (e.g. mpq = 0xFFFFFF).
-		return rounded > 0 && Math.round(60000000 / rounded) <= MAX_MIDI_MPQ
-			? rounded
-			: 60000000 / mpq;
-	};
-	const tempoEvents: { tick: number; bpm: number }[] = [];
-	for (const event of midi.tempoEvents) {
-		const last = tempoEvents[tempoEvents.length - 1];
-		if (last && last.tick === event.tick) last.bpm = bpmOf(event.microsecondsPerQuarter);
-		else tempoEvents.push({ tick: event.tick, bpm: bpmOf(event.microsecondsPerQuarter) });
-	}
-	// Only a tempo event AT tick 0 sets the base; a first event later in the
-	// file is a real tempo change and the file's start defaults to 120.
-	const firstAtStart = tempoEvents[0]?.tick === 0;
-	const bpm = options.bpm ?? (firstAtStart ? tempoEvents[0].bpm : 120);
-
 	const bpmChanges: Record<string, number> = {};
 	const bpmIds = new Map<number, string>();
 	let idCounter = 0;
-	let effectiveBpm = bpm;
 	let tempoCollisions = 0;
 	// Resolve cell collisions (last wins per 1/192 cell) before allocating
 	// #BPMxx IDs so overwritten intermediate values do not exhaust the 2-char
@@ -588,9 +593,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		string,
 		{ measure: number; position: number; bpm: number; drift: number }
 	>();
-	for (const event of tempoEvents.slice(firstAtStart ? 1 : 0)) {
-		if (event.bpm === effectiveBpm) continue;
-		effectiveBpm = event.bpm;
+	for (const event of effectiveTempoEvents) {
 		let { measure, position } = quantize(event.tick);
 		// Keep positive-tick tempo changes out of cell 0 so they cannot
 		// overwrite the base #BPM (or user BPM override) at t = 0.

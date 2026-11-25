@@ -113,9 +113,10 @@ test.describe('MIDI to DTX Converter Tool', () => {
 				timeout: 10000
 			});
 
-			// One row per GM import-lane entry, each labelled with the aliased
-			// instrument name (never "Unknown").
-			const selects = page.locator('select');
+			// One mapping row per GM import-lane entry, each labelled with the
+			// aliased instrument name (never "Unknown"); exclude the separate
+			// add-note lane control above the rows.
+			const selects = page.locator('select:not(#add-midi-lane)');
 			await expect(selects).toHaveCount(Object.keys(GM_IMPORT_LANE).length);
 			await expect(page.getByText('Bass (36):', { exact: true })).toBeVisible();
 			await expect(page.getByText('Snare (38):', { exact: true })).toBeVisible();
@@ -125,7 +126,7 @@ test.describe('MIDI to DTX Converter Tool', () => {
 			// Every select offers exactly the playable drum lanes — no control
 			// lanes (01/02/03/08) and no duplicate GM-name targets.
 			const optionValues = await page
-				.locator('select option')
+				.locator('select:not(#add-midi-lane) option')
 				.evaluateAll((els) => els.map((el) => (el as HTMLOptionElement).value));
 			expect(optionValues).toHaveLength(
 				Object.keys(GM_IMPORT_LANE).length * PLAYABLE_DRUM_LANES.length

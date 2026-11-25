@@ -2992,6 +2992,115 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers a root chart when its stem and rating agree despite a shared row rating', async () => {
+		// SOLO and BASIC share a rating, but the root file's stem and probe both
+		// agree with the SOLO row. That agreement is stronger than the nested
+		// extra's different rating, even though BASIC shares the root rating too.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 40\n',
+			'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+			'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/basic.dtx', size: 400, uploaded: new Date() },
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'BASIC', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 60,
+				fileUrl: 'https://cdn.example.test/42/basic.dtx',
+				fileSizeBytes: 400,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
+	it('keeps an unrated root chart available for another level-zero row', async () => {
+		// The nested unrated leftover claims SOLO by stem. The unrated root file
+		// cannot claim that row too, but a second level-zero row can still use it
+		// as the remaining exact-level candidate. The root omits #DLEVEL entirely,
+		// so its complete-read probe must surface null as normalized level zero.
+		const chartBodies: Record<string, string> = {
+			'42/extras/set.def': '#L1LABEL EXTRA\n#L1FILE ./solo.dtx\n',
+			'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 0\n',
+			'42/solo.dtx': '#TITLE: Song\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/extras/set.def', size: 60, uploaded: new Date() },
+					{ key: '42/extras/solo.dtx', size: 200, uploaded: new Date() },
+					{ key: '42/solo.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 0 },
+					{ label: 'BASIC', level: 0 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'SOLO',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/extras/solo.dtx',
+				fileSizeBytes: 200,
+				fileEncoding: 'SHIFT_JIS'
+			},
+			{
+				label: 'BASIC',
+				level: 0,
+				fileUrl: 'https://cdn.example.test/42/solo.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers a rated nested set.def sibling over an unrated root chart sharing its stem', async () => {
 		// Same layout as the root-preference test with the ratings swapped:
 		// the nested sibling of the leftover ref carries #DLEVEL 60, while

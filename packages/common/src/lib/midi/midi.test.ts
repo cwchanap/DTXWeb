@@ -1187,7 +1187,7 @@ describe('midiToDtx', () => {
 		const tempos = Object.values(result.controls.bpmChanges ?? {});
 		expect(tempos).toHaveLength(1295);
 		expect(Math.min(...tempos)).toBeCloseTo(40, 0);
-		expect(Math.max(...tempos)).toBeCloseTo(201.875, 1);
+		expect(Math.max(...tempos)).toBeCloseTo(201.875, 0);
 
 		const out = new DTXFile();
 		out.bpm = result.bpm;

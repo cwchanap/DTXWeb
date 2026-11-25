@@ -433,19 +433,29 @@ export const discoverCatalogFiles = async (
 	// the R2 key is basic.dtx. Without these fallbacks the row is marked
 	// as claimed-but-missing, which surfaces as an INTERNAL error via
 	// requireCatalogChart even though the chart object exists.
+	// Refs that resolve only through the ambiguous-ID retry land in a
+	// subfolder beside set.def — below the directory the uploader's
+	// top-level-only catalog scans — so they can never be a row's
+	// cataloged chart. Track them so an equal-rating exact-match tie
+	// prefers a directly resolved ref over the deeper fallback object.
+	const refsResolvedViaIdFallback = new Set<SetDefFileRef>();
 	const resolveSetDefObject = (setDefRef: SetDefFileRef): R2ObjectMeta | undefined => {
 		const relativeCandidates =
 			setDefBaseDir === prefix
 				? [`${prefix}${setDefRef.file}`]
 				: [`${setDefBaseDir}${setDefRef.file}`, `${prefix}${setDefRef.file}`];
-		const candidates =
-			!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix)
-				? [setDefRef.file, ...relativeCandidates]
-				: relativeCandidates;
-		for (const candidateKey of candidates) {
+		const hasDirectCandidate =
+			!setDefRef.explicitlyRelative && setDefRef.file.startsWith(prefix);
+		const candidates = hasDirectCandidate
+			? [setDefRef.file, ...relativeCandidates]
+			: relativeCandidates;
+		for (const [index, candidateKey] of candidates.entries()) {
 			const matchedObject =
 				objectsByKey.get(candidateKey) ?? objectsByKeyLower.get(candidateKey.toLowerCase());
-			if (matchedObject) return matchedObject;
+			if (matchedObject) {
+				if (hasDirectCandidate && index > 0) refsResolvedViaIdFallback.add(setDefRef);
+				return matchedObject;
+			}
 		}
 		return undefined;
 	};
@@ -598,8 +608,11 @@ export const discoverCatalogFiles = async (
 			// Coordinate exact matches: process the most constrained row (fewest
 			// remaining unused exact refs) first so a multi-choice row does not
 			// consume a shared alias needed by another row. Within a row,
-			// preserve raw-filename ownership before ranking by contender count
-			// or uploader filename (dtxObjectKeys) order so shared aliases do
+			// preserve raw-filename ownership, then a directly resolved ref
+			// over one that only matched through the ambiguous-ID fallback —
+			// the nested object lives below the catalog directory and cannot
+			// be the row's chart — before ranking by contender count or
+			// uploader filename (dtxObjectKeys) order so shared aliases do
 			// not swap equally rated charts behind distinct labels.
 			while (true) {
 				let bestChoice: {
@@ -646,8 +659,12 @@ export const discoverCatalogFiles = async (
 						const directDiff =
 							Number(isDirectRawRef(refs[b], keyB)) -
 							Number(isDirectRawRef(refs[a], keyA));
+						const fallbackDiff =
+							Number(refsResolvedViaIdFallback.has(refs[a])) -
+							Number(refsResolvedViaIdFallback.has(refs[b]));
 						return (
 							directDiff ||
+							fallbackDiff ||
 							contendersForKey(keyA) - contendersForKey(keyB) ||
 							(dtxKeyOrder.get(keyA) ?? Number.MAX_SAFE_INTEGER) -
 								(dtxKeyOrder.get(keyB) ?? Number.MAX_SAFE_INTEGER) ||

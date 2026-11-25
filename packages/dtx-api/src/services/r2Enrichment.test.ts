@@ -933,6 +933,54 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 
+	it('prefers a directly resolved ref over a nested object reached only through the ID-prefixed fallback', async () => {
+		// Repeated label, one catalog row, two path-qualified refs probing
+		// the same #DLEVEL. `42/alternate.dtx` resolves only via the bare
+		// ID-prefixed fallback (no direct key exists) to `42/42/…` — a
+		// subfolder the uploader's top-level-only catalog never scanned,
+		// so it cannot be the row's chart. Ranking the refs by resolved
+		// key alone sorts `42/42/alternate.dtx` before `42/novice.dtx` and
+		// hands the claim to the alternate, stealing the cataloged chart.
+		const chartBodies: Record<string, string> = {
+			'42/set.def':
+				'#L1LABEL NOVICE\n#L1FILE ./novice.dtx\n#L2LABEL NOVICE\n#L2FILE 42/alternate.dtx\n',
+			'42/novice.dtx': '#TITLE: Song\n#DLEVEL: 10\n',
+			'42/42/alternate.dtx': '#TITLE: Song\n#DLEVEL: 10\n'
+		};
+		const bucket = {
+			...makeBucket([
+				[
+					{ key: '42/set.def', size: 90, uploaded: new Date() },
+					{ key: '42/42/alternate.dtx', size: 700, uploaded: new Date() },
+					{ key: '42/novice.dtx', size: 300, uploaded: new Date() }
+				]
+			]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Novice', level: 10 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts).toEqual([
+			{
+				label: 'Novice',
+				level: 10,
+				fileUrl: 'https://cdn.example.test/42/novice.dtx',
+				fileSizeBytes: 300,
+				fileEncoding: 'SHIFT_JIS'
+			}
+		]);
+	});
+
 	it('prefers the canonical top-level set.def over a nested asset with the same basename', async () => {
 		// DTX simfiles routinely ship packaged assets under `assets/`.
 		// When both `42/set.def` and `42/assets/set.def` exist, R2 lists

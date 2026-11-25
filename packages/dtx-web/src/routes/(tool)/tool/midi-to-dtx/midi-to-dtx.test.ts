@@ -701,14 +701,43 @@ describe('MIDI to DTX Component Rendering', () => {
 		const midiFile = new File(['midi data'], 'song.mid', { type: 'audio/midi' });
 		await fireEvent.change(input, { target: { files: [midiFile] } });
 
-		// The mapping section is rendered when uploadedFile is set, one row per
-		// GM_IMPORT_LANE entry; each select offers the playable drum lanes.
+		// The mapping section is rendered when uploadedFile is set: one add-control
+		// lane select plus one row per GM_IMPORT_LANE entry.
 		const selects = container.querySelectorAll('select');
-		expect(selects.length).toBe(Object.keys(GM_IMPORT_LANE).length);
+		expect(selects.length).toBe(Object.keys(GM_IMPORT_LANE).length + 1);
 
-		const firstSelect = selects[0] as HTMLSelectElement;
+		const firstSelect = selects[1] as HTMLSelectElement;
 		await fireEvent.change(firstSelect, { target: { value: '12' } });
 		expect(firstSelect.value).toBe('12');
+	});
+
+	it('adds a custom MIDI note mapping and applies it at download', async () => {
+		const exportSpy = vi.spyOn(DTXFile.prototype, 'export');
+
+		const { container } = render(MidiToDtx);
+		const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+		const midiFile = drumMidiFile({ hits: [{ tick: 0, note: 60 }] });
+		await fireEvent.change(input, { target: { files: [midiFile] } });
+
+		expect(screen.queryByText(/\(60\):/)).toBeNull();
+		await fireEvent.input(screen.getByLabelText('Add MIDI note'), {
+			target: { value: '60' }
+		});
+		await fireEvent.change(screen.getByLabelText('Add target lane'), {
+			target: { value: '1C' }
+		});
+		await fireEvent.click(screen.getByRole('button', { name: 'Add mapping' }));
+		expect(screen.getByText(/\(60\):/)).toBeTruthy();
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Convert to DTX' }));
+		await vi.waitFor(() => screen.getByText('Conversion Complete!'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Download DTX File' }));
+		await vi.waitFor(() => expect(exportSpy).toHaveBeenCalled());
+
+		const notes = exportSpy.mock.calls[0][0] ?? {};
+		expect(notes['1C']).toBeDefined();
+
+		exportSpy.mockRestore();
 	});
 
 	it('clicking Choose File button triggers handleUploadClick', async () => {

@@ -808,6 +808,7 @@ export const discoverCatalogFiles = async (
 		dtxFiles.some(
 			(file, index) => !rowsClaimedBySetDef.has(index) && normalizeLevel(file.level) === 0
 		);
+	const probedLevelByKey = new Map<string, number>();
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
 	// reserve their objects so the sorted fallback cannot bind them to
@@ -862,7 +863,7 @@ export const discoverCatalogFiles = async (
 				});
 				if (stemRowIndexes.length === 1) {
 					let claimObject = object;
-					if (!isUnratedLeftover && !isTopLevelR2Key(object.key, prefix)) {
+					if (!isTopLevelR2Key(object.key, prefix)) {
 						const rootCandidate = dtxObjects.find(
 							(candidate) =>
 								isTopLevelR2Key(candidate.key, prefix) &&
@@ -881,9 +882,24 @@ export const discoverCatalogFiles = async (
 								rootCandidate.key,
 								CHART_LEVEL_DEEP_PROBE_BYTES
 							);
-							if (typeof rootLevel === 'number' && rootLevel !== 0) {
+							if (typeof rootLevel === 'number') {
+								probedLevelByKey.set(rootCandidate.key, rootLevel);
+							}
+							const rootNamesAnotherRow =
+								typeof rootLevel === 'number' &&
+								rootLevel !== 0 &&
+								dtxFiles.some(
+									(file, index) =>
+										index !== stemRowIndexes[0] &&
+										normalizeLevel(file.level) === rootLevel
+								);
+							if (
+								typeof rootLevel === 'number' &&
+								rootLevel !== 0 &&
+								!rootNamesAnotherRow
+							) {
 								claimObject = rootCandidate;
-							} else {
+							} else if (!rootNamesAnotherRow) {
 								// Unrated (explicit #DLEVEL 0 or a
 								// complete-read miss) or unprobed: the
 								// sibling keeps the row either way, but
@@ -894,6 +910,9 @@ export const discoverCatalogFiles = async (
 								// to an unrelated difficulty instead.
 								usedDtxKeys.add(rootCandidate.key);
 							}
+							// A positive rating naming another row is stronger ownership
+							// evidence than the stem: leave the root unused so the exact-
+							// rating fallback can bind it to that row.
 						}
 					}
 					rowsClaimedBySetDef.add(stemRowIndexes[0]);
@@ -937,7 +956,6 @@ export const discoverCatalogFiles = async (
 	// exact-rating claims have settled and the stem heuristic applies
 	// only to leftover rows and files.
 	const allRowLevels = new Set(dtxFiles.map((file) => normalizeLevel(file.level)));
-	const probedLevelByKey = new Map<string, number>();
 	const stemDeepProbedKeys = new Set<string>();
 	const claimStemMatchedRows = async (exactOnly: boolean): Promise<void> => {
 		const unusedKeysByStem = new Map<string, string[]>();

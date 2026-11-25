@@ -619,29 +619,63 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		}
 	}
 	// A dense tempo ramp can carry more distinct MPQs than the two-character
-	// #BPMxx id space. Tempos differing below the DTX BPM resolution are
-	// indistinguishable in playback, so coarsen them onto the 3-decimal grid
-	// (then 2/1/whole BPM) instead of failing the conversion. A file whose
-	// tempos stay distinct even at whole-BPM resolution is unrepresentable.
-	const distinctTempoValues = (quantizeBpm: (bpm: number) => number): number =>
-		new Set([...resolvedTempoCells.values()].map((cell) => quantizeBpm(cell.bpm))).size;
-	if (distinctTempoValues((bpm) => bpm) > MAX_BPM_ID) {
-		let quantizeTempo: ((bpm: number) => number) | undefined;
-		for (const scale of [1000, 100, 10, 1]) {
-			const quantizeBpm = (bpm: number): number => Math.round(bpm * scale) / scale;
-			if (distinctTempoValues(quantizeBpm) <= MAX_BPM_ID) {
-				quantizeTempo = quantizeBpm;
-				break;
+	// #BPMxx id space. Merge only the closest neighbouring tempos until the
+	// ids fit, so a steady tempo away from the ramp keeps its exact BPM
+	// instead of being rounded to the ramp's coarsest scale. Gaps of 1 BPM or
+	// more are audible; a file with more than MAX_BPM_ID such values is
+	// unrepresentable.
+	const uniqueTempos = [
+		...new Set([...resolvedTempoCells.values()].map((cell) => cell.bpm))
+	].sort((a, b) => a - b);
+	if (uniqueTempos.length > MAX_BPM_ID) {
+		const mergeableGaps = uniqueTempos
+			.slice(1)
+			.map((bpm, i) => bpm - uniqueTempos[i])
+			.filter((gap) => gap < 1)
+			.sort((a, b) => a - b);
+		const clusterCount = (threshold: number): number => {
+			let count = 1;
+			for (let i = 1; i < uniqueTempos.length; i++) {
+				if (uniqueTempos[i] - uniqueTempos[i - 1] > threshold) count++;
 			}
-		}
-		if (!quantizeTempo) {
+			return count;
+		};
+		if (
+			mergeableGaps.length === 0 ||
+			clusterCount(mergeableGaps[mergeableGaps.length - 1]) > MAX_BPM_ID
+		) {
 			throw new Error(
 				`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
 			);
 		}
-		for (const cell of resolvedTempoCells.values()) cell.bpm = quantizeTempo(cell.bpm);
+		let lo = 0;
+		let hi = mergeableGaps.length - 1;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if (clusterCount(mergeableGaps[mid]) <= MAX_BPM_ID) hi = mid;
+			else lo = mid + 1;
+		}
+		const threshold = mergeableGaps[lo];
+		const mergedTempos = new Map<number, number>();
+		let clusterStart = 0;
+		for (let i = 1; i <= uniqueTempos.length; i++) {
+			if (i === uniqueTempos.length || uniqueTempos[i] - uniqueTempos[i - 1] > threshold) {
+				const representative = (uniqueTempos[clusterStart] + uniqueTempos[i - 1]) / 2;
+				for (let j = clusterStart; j < i; j++) {
+					mergedTempos.set(uniqueTempos[j], representative);
+				}
+				clusterStart = i;
+			}
+		}
+		let maxTempoError = 0;
+		for (const cell of resolvedTempoCells.values()) {
+			const merged = mergedTempos.get(cell.bpm);
+			if (merged === undefined) continue;
+			maxTempoError = Math.max(maxTempoError, Math.abs(merged - cell.bpm));
+			cell.bpm = merged;
+		}
 		warnings.push(
-			`MIDI has more than ${MAX_BPM_ID} distinct tempo changes; tempo values were rounded to fit the DTX #BPM id space`
+			`MIDI has more than ${MAX_BPM_ID} distinct tempo changes; tempo values within ${Number(threshold.toPrecision(3))} BPM were merged (up to ${Number(maxTempoError.toPrecision(3))} BPM) to fit the DTX #BPM id space`
 		);
 	}
 	let tempoSnapped = 0;

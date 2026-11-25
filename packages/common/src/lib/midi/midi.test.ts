@@ -1073,11 +1073,12 @@ describe('midiToDtx', () => {
 
 	it('throws instead of emitting a 3-char id when the BPM id space is exhausted', () => {
 		// 'ZZ' is id 1295; the 1296th distinct tempo has no valid #BPMxx def.
+		// Two BPM apart so no pair falls inside the mergeable sub-1-BPM gap.
 		const midi = parseMidi(
 			buildMidi(480, [
 				[
 					...evTempo(0, 120),
-					...Array.from({ length: 1296 }, (_, i) => evTempo(10, 5 + i)).flat(),
+					...Array.from({ length: 1296 }, (_, i) => evTempo(10, 10 + i * 2)).flat(),
 					...evEndOfTrack
 				]
 			])
@@ -1085,10 +1086,10 @@ describe('midiToDtx', () => {
 		expect(() => midiToDtx(midi)).toThrow(/BPM|id/i);
 	});
 
-	it('rounds a dense tempo ramp to fit the DTX BPM id space instead of failing', () => {
+	it('merges a dense tempo ramp to fit the DTX BPM id space instead of failing', () => {
 		// 1,296 distinct MPQs 10 ticks apart — one per 1/192 cell at 480 PPQ.
 		// They differ below the 3-decimal BPM resolution, so exact values
-		// would need 1,296 #BPMxx ids; rounding merges them and converts.
+		// would need 1,296 #BPMxx ids; merging them converts.
 		const midi = parseMidi(
 			buildMidi(480, [
 				[
@@ -1103,7 +1104,54 @@ describe('midiToDtx', () => {
 		expect(ids.length).toBeGreaterThan(1);
 		expect(ids.length).toBeLessThanOrEqual(1295);
 		expect(ids.every((id) => /^[0-9A-Z]{2}$/.test(id))).toBe(true);
-		expect(result.warnings.some((w) => w.includes('rounded to fit'))).toBe(true);
+		expect(result.warnings.some((w) => w.includes('merged'))).toBe(true);
+	});
+
+	it('keeps a steady tempo exact when a dense ramp exhausts the BPM id space', () => {
+		// 1,296 ramp values spanning 130 BPM need whole-BPM rounding under a
+		// global scale. The steady 40.49 BPM is far below the ramp, so it must
+		// not be dragged to 40 — 200 beats at 40 would drift by ~3.6 s.
+		const ramp = Array.from({ length: 1296 }, (_, i) => 60 + (i * 130) / 1295);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...ramp.map((bpm) => evTempo(10, bpm)).flat(),
+					...evTempo(10, 40.49),
+					...evNoteOn(96000, 36),
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+		const tempos = Object.values(result.controls.bpmChanges ?? {});
+		expect(tempos).toContain(40.49);
+		expect(tempos.length).toBeLessThanOrEqual(1295);
+		expect(result.warnings.some((w) => w.includes('merged'))).toBe(true);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+
+		const noteTick = 108970;
+		let expectedSeconds = 0;
+		let previousTick = 0;
+		let mpq = 500000;
+		for (const event of midi.tempoEvents) {
+			if (event.tick >= noteTick) break;
+			expectedSeconds += ((event.tick - previousTick) * mpq) / 1e6 / 480;
+			previousTick = event.tick;
+			mpq = event.microsecondsPerQuarter;
+		}
+		expectedSeconds += ((noteTick - previousTick) * mpq) / 1e6 / 480;
+
+		const kick = result.notes['13'][0];
+		expect(
+			Math.abs(timing.positionToTime(kick.measure, kick.notes[0].position) - expectedSeconds)
+		).toBeLessThan(0.1);
 	});
 
 	it('allocates BPM ids only for surviving values after cell collisions', () => {

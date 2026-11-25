@@ -619,93 +619,101 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		}
 	}
 	// A dense tempo ramp can carry more distinct MPQs than the two-character
-	// #BPMxx id space. Merge only the closest neighbouring tempos until the
-	// ids fit, so a steady tempo away from the ramp keeps its exact BPM
-	// instead of being rounded to the ramp's coarsest scale. A merge that
-	// spans 1 BPM or more is audible, so a file needing one is unrepresentable.
+	// #BPMxx id space. Partition the sorted tempos into at most MAX_BPM_ID
+	// contiguous groups while minimising the widest group, so a steady tempo
+	// away from the ramp keeps its exact BPM instead of being rounded to the
+	// ramp's coarsest scale. A group spanning 1 BPM or more is audible, so a
+	// file that needs one is unrepresentable.
 	const uniqueTempos = [
 		...new Set([...resolvedTempoCells.values()].map((cell) => cell.bpm))
 	].sort((a, b) => a - b);
 	if (uniqueTempos.length > MAX_BPM_ID) {
-		const clusters = uniqueTempos.map((_, i) => ({
-			start: i,
-			end: i,
-			next: i + 1 < uniqueTempos.length ? i + 1 : -1,
-			alive: true
-		}));
-		const heap: { gap: number; left: number; right: number }[] = [];
-		const pushGap = (gap: number, left: number, right: number): void => {
-			heap.push({ gap, left, right });
-			let i = heap.length - 1;
-			while (i > 0) {
-				const parent = (i - 1) >> 1;
-				if (heap[parent].gap <= heap[i].gap) break;
-				[heap[parent], heap[i]] = [heap[i], heap[parent]];
-				i = parent;
+		const spanOf = (start: number, end: number): number =>
+			uniqueTempos[end] - uniqueTempos[start];
+		// Fewest groups a span limit allows: pack each group until the next
+		// value would widen it past the limit.
+		const groupsAt = (span: number): number => {
+			let groups = 1;
+			let start = 0;
+			for (let i = 1; i < uniqueTempos.length; i++) {
+				if (uniqueTempos[i] - uniqueTempos[start] > span) {
+					groups++;
+					start = i;
+				}
 			}
+			return groups;
 		};
-		const popGap = (): { gap: number; left: number; right: number } | undefined => {
-			const top = heap[0];
-			if (top === undefined) return undefined;
-			const last = heap.pop();
-			if (last === undefined || heap.length === 0) return top;
-			heap[0] = last;
-			let i = 0;
-			for (;;) {
-				const left = i * 2 + 1;
-				const right = left + 1;
-				let smallest = i;
-				if (left < heap.length && heap[left].gap < heap[smallest].gap) smallest = left;
-				if (right < heap.length && heap[right].gap < heap[smallest].gap) smallest = right;
-				if (smallest === i) break;
-				[heap[i], heap[smallest]] = [heap[smallest], heap[i]];
-				i = smallest;
-			}
-			return top;
-		};
-		for (let i = 0; i < uniqueTempos.length - 1; i++) {
-			pushGap(uniqueTempos[i + 1] - uniqueTempos[i], i, i + 1);
+		let lo = 0;
+		let hi = spanOf(0, uniqueTempos.length - 1);
+		for (let i = 0; i < 64; i++) {
+			const mid = (lo + hi) / 2;
+			if (groupsAt(mid) <= MAX_BPM_ID) hi = mid;
+			else lo = mid;
 		}
-		let clusterCount = uniqueTempos.length;
-		while (clusterCount > MAX_BPM_ID) {
-			const entry = popGap();
-			if (!entry) break;
-			const { left, right } = entry;
-			if (!clusters[left].alive || !clusters[right].alive || clusters[left].next !== right) {
-				continue;
-			}
-			const merged = clusters[left];
-			const removed = clusters[right];
-			// Cluster spans only grow, so a blocked pair stays blocked.
-			if (uniqueTempos[removed.end] - uniqueTempos[merged.start] >= 1) continue;
-			merged.end = removed.end;
-			merged.next = removed.next;
-			removed.alive = false;
-			clusterCount--;
-			if (merged.next !== -1) {
-				pushGap(
-					uniqueTempos[clusters[merged.next].start] - uniqueTempos[merged.end],
-					left,
-					merged.next
-				);
-			}
-		}
-		if (clusterCount > MAX_BPM_ID) {
+		if (hi >= 1) {
 			throw new Error(
 				`MIDI has more than ${MAX_BPM_ID} distinct BPM changes; the two-character DTX id space is exhausted`
+			);
+		}
+		const groups: { start: number; end: number }[] = [];
+		let start = 0;
+		for (let i = 1; i <= uniqueTempos.length; i++) {
+			if (i === uniqueTempos.length || uniqueTempos[i] - uniqueTempos[start] > hi) {
+				groups.push({ start, end: i - 1 });
+				start = i;
+			}
+		}
+		// A span limit can pack several values per group when gaps tie; split
+		// the widest groups until every available id is used.
+		while (groups.length < MAX_BPM_ID) {
+			let widest = 0;
+			for (let i = 1; i < groups.length; i++) {
+				if (
+					spanOf(groups[i].start, groups[i].end) >
+					spanOf(groups[widest].start, groups[widest].end)
+				) {
+					widest = i;
+				}
+			}
+			const group = groups[widest];
+			if (group.start === group.end) break;
+			// Split where the two halves' widest spans cross.
+			let a = group.start + 1;
+			let b = group.end;
+			while (a < b) {
+				const mid = (a + b) >> 1;
+				if (
+					uniqueTempos[mid - 1] - uniqueTempos[group.start] <
+					uniqueTempos[group.end] - uniqueTempos[mid]
+				) {
+					a = mid + 1;
+				} else {
+					b = mid;
+				}
+			}
+			let split = a;
+			let bestSpan = Math.max(spanOf(group.start, a - 1), spanOf(a, group.end));
+			if (a - 1 > group.start) {
+				const previousSpan = Math.max(spanOf(group.start, a - 2), spanOf(a - 1, group.end));
+				if (previousSpan < bestSpan) {
+					bestSpan = previousSpan;
+					split = a - 1;
+				}
+			}
+			groups.splice(
+				widest,
+				1,
+				{ start: group.start, end: split - 1 },
+				{ start: split, end: group.end }
 			);
 		}
 		const mergedTempos = new Map<number, number>();
 		let maxTempoError = 0;
 		let maxClusterSpan = 0;
-		for (const cluster of clusters) {
-			if (!cluster.alive) continue;
-			const representative = (uniqueTempos[cluster.start] + uniqueTempos[cluster.end]) / 2;
-			maxClusterSpan = Math.max(
-				maxClusterSpan,
-				uniqueTempos[cluster.end] - uniqueTempos[cluster.start]
-			);
-			for (let i = cluster.start; i <= cluster.end; i++) {
+		for (const group of groups) {
+			const representative = (uniqueTempos[group.start] + uniqueTempos[group.end]) / 2;
+			maxClusterSpan = Math.max(maxClusterSpan, spanOf(group.start, group.end));
+			for (let i = group.start; i <= group.end; i++) {
 				mergedTempos.set(uniqueTempos[i], representative);
 				maxTempoError = Math.max(maxTempoError, Math.abs(representative - uniqueTempos[i]));
 			}

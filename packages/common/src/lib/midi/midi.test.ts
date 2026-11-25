@@ -1298,6 +1298,41 @@ describe('midiToDtx', () => {
 		expect(Math.abs(snareSeconds(withMapping) - snareSeconds(without))).toBeLessThan(1e-6);
 	});
 
+	it('ignores melodic outro notes when weighting shared tempos', () => {
+		// The late note is on a melodic channel, which can never export. The
+		// shared 40/40.98 tempo should be weighted only through the drum
+		// snare, preserving the snare's source playback time.
+		const ramp = Array.from({ length: 1294 }, (_, i) => 100 + i * 2);
+		const midi = parseMidi(
+			buildMidi(480, [
+				[
+					...evTempo(0, 120),
+					...ramp.map((bpm) => evTempo(10, bpm)).flat(),
+					...evTempo(10, 40),
+					...evTempo(23040, 40.98),
+					...evNoteOn(23040, 38), // tick 59,030
+					...evNoteOn(92160, 60, 100, 0), // melodic outro at tick 151,190
+					...evEndOfTrack
+				]
+			])
+		);
+		const result = midiToDtx(midi);
+
+		const out = new DTXFile();
+		out.bpm = result.bpm;
+		const text = out.toDtxText(result.notes, result.controls);
+		const reparsed = new DTXFile(text);
+		reparsed.parseFromText(text);
+		const timing = buildChartTiming(buildTimingInput(reparsed));
+		const snare = result.notes['12'][0];
+		const expectedSeconds = secondsAtTick(midi.tempoEvents, 59030, 480);
+		expect(
+			Math.abs(
+				timing.positionToTime(snare.measure, snare.notes[0].position) - expectedSeconds
+			)
+		).toBeLessThan(0.001);
+	});
+
 	it('merges the final tempo pair without reading past the cluster list', () => {
 		// 1,296 values: 1,295 two-BPM steps, then a 0.5-BPM step at the end.
 		// The smallest gap is the last pair, which has no following cluster.

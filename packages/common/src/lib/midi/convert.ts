@@ -452,15 +452,16 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		meterChanges[meterChanges.length - 1]?.tick ?? 0
 	);
 	// Tempo weights must stay independent of lane mappings: mapping a late
-	// hit extends endTick, but it must not reweight a shared tempo definition
-	// and shift earlier hits. The source timeline includes every note.
+	// hit extends endTick, but it must not reweight a shared tempo definition.
+	// Use the last drum-eligible note-on and ignore pitches that never map.
 	let sourceEndTick = Math.max(
 		effectiveTempoEvents[effectiveTempoEvents.length - 1]?.tick ?? 0,
 		meterChanges[meterChanges.length - 1]?.tick ?? 0
 	);
 	for (const track of midi.tracks) {
 		for (const note of track.notes) {
-			sourceEndTick = Math.max(sourceEndTick, note.startTime + note.duration);
+			if (!useAllChannels && note.channel !== DRUM_CHANNEL) continue;
+			sourceEndTick = Math.max(sourceEndTick, note.startTime);
 		}
 	}
 

@@ -331,6 +331,9 @@ export class NoteMove {
 					newCellOffset >= 0 &&
 					newCellOffset < 1
 				) {
+					const originalNoteId = originalNoteIds.get(noteKey);
+					if (!originalNoteId) return;
+
 					const newLaneId = this.editor.getLaneConfigs()[newLaneIndex].id;
 					const newKey = `note-${newLaneIndex}-${newMeasure}-${newCellOffset}`;
 					const existingNote = this.editor.getPanelContainer().getByName(newKey);
@@ -386,7 +389,7 @@ export class NoteMove {
 							measure: newMeasure,
 							cellOffset: newCellOffset,
 							laneId: newLaneId,
-							originalNoteId: originalNoteIds.get(noteKey) || '01'
+							originalNoteId
 						});
 						const addDraggedDep = (occupantKey: string) => {
 							const deps = draggedDeps.get(noteKey);

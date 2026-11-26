@@ -429,6 +429,7 @@ describe('NoteBuffer', () => {
 					group.notes.some((chip) => chip.noteID === '11' && chip.position === 0.5)
 				)
 			).toBe(true);
+			expect(mockEditor.reconcileSharedNoteVisual).toHaveBeenCalledWith(1, 0, 0.5, 'lane1');
 		});
 	});
 
@@ -776,6 +777,7 @@ describe('NoteBuffer', () => {
 			expect(groups.some((group) => group.notes.some((chip) => chip.noteID === '12'))).toBe(
 				true
 			);
+			expect(mockEditor.reconcileSharedNoteVisual).toHaveBeenCalledWith(1, 0, 0.5, 'lane1');
 		});
 
 		it('preserves originalMeasureLength in both addNoteToEditor and restoreChipData paths', () => {

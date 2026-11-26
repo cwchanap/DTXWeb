@@ -338,6 +338,12 @@ export class NoteBuffer {
 					noteId,
 					measureLength
 				});
+				editor.reconcileSharedNoteVisual(
+					originalMeasure,
+					originalLaneIndex,
+					originalCellOffset,
+					originalLaneId
+				);
 			}
 		});
 
@@ -427,6 +433,7 @@ export class NoteBuffer {
 			);
 			if (!restored && editor.getByName(cutNote.noteKey)) {
 				this.restoreChipData(editor, cutNote);
+				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);
 			}
 		});
 

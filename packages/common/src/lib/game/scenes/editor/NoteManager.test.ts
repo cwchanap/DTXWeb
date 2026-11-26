@@ -491,7 +491,7 @@ describe('NoteManager', () => {
 	});
 
 	describe('pointer event handling', () => {
-		const createMockPointer = (x = 100, y = 200) =>
+		const createMockPointer = (x = 100, y = 190) =>
 			({
 				x,
 				y,
@@ -1217,6 +1217,23 @@ describe('NoteManager', () => {
 			noteManager.handlePointerDown(pointer);
 
 			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(false);
+		});
+
+		it('should reject a clipped note hit below the chart viewport', () => {
+			const graphics = createMockGraphics();
+			graphics.name = 'note-0-0-0';
+			const panel = mockEditor.getPanelContainer();
+			panel.list.push(graphics);
+			panel.y = 10;
+
+			// Scrolling shifts the drawn bounds to y=194..208, but the chart
+			// viewport ends at getOffsetY()=200. The lower clipped slice must
+			// not select the chip or start a drag selection.
+			const result = noteManager.handlePointerDown(createMockPointer(110, 205));
+
+			expect(result).toBe(false);
+			expect(noteManager.selectedNotes.has('note-0-0-0')).toBe(false);
+			expect(noteManager.isSelecting).toBe(false);
 		});
 
 		it('should return topmost note when multiple notes overlap', () => {

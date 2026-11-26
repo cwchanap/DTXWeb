@@ -30,12 +30,21 @@ const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
  */
 export const parseSetDef = (text: string): ParsedSetDef => {
 	const lines = text.split(/\r?\n/).map((line) => line.trimStart());
+	const titleIndexes = lines
+		.map((line, index) => (titlePattern.test(line) ? index : -1))
+		.filter((index) => index >= 0);
+	// SET.def can concatenate multiple songs. This single-song shape describes
+	// the first #TITLE section only; files with no #TITLE keep their legacy
+	// flat parsing behavior.
+	const sectionLines = titleIndexes.length
+		? lines.slice(titleIndexes[0], titleIndexes[1] ?? lines.length)
+		: lines;
 
-	const titleLine = lines.find((line) => titlePattern.test(line));
+	const titleLine = sectionLines.find((line) => titlePattern.test(line));
 	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/i, '').trim() : '';
 
 	const entries = new Map<number, { label?: string; fileName?: string }>();
-	for (const line of lines) {
+	for (const line of sectionLines) {
 		const match = line.match(levelPattern);
 		if (!match) continue;
 		const level = parseInt(match[1], 10);

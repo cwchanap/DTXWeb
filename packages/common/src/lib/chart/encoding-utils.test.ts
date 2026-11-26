@@ -648,6 +648,33 @@ describe('encoding-utils', () => {
 			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
 		});
 
+		it('accepts a legitimate U+FFFD character in valid UTF-16 probe bytes', () => {
+			const text = `#TITLE: 漢\uFFFD\n#DLEVEL: 60\n`;
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				const codeUnit = text.charCodeAt(i);
+				utf16Bytes[i * 2] = codeUnit & 0xff;
+				utf16Bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+			}
+
+			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+		});
+
+		it('searches past the first probe when a long UTF-16 comment delays every directive', () => {
+			// U+4E00 in LE bytes is 00 4E, so a long comment skews the zero-byte
+			// parity toward BE. The first 2048 bytes contain no directive at all;
+			// trusting parity there decodes the chart in the wrong byte order.
+			const text = `;${'一'.repeat(1100)}\n#DLEVEL: 60\n`;
+			const utf16Bytes = new Uint8Array(text.length * 2);
+			for (let i = 0; i < text.length; i++) {
+				const codeUnit = text.charCodeAt(i);
+				utf16Bytes[i * 2] = codeUnit & 0xff;
+				utf16Bytes[i * 2 + 1] = (codeUnit >> 8) & 0xff;
+			}
+
+			expect(decodeArrayBufferWithBomDetection(utf16Bytes.buffer)).toBe(text);
+		});
+
 		it('returns empty string for empty buffer', () => {
 			expect(decodeArrayBufferWithBomDetection(new ArrayBuffer(0))).toBe('');
 		});

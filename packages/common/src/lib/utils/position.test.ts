@@ -141,6 +141,12 @@ describe('canonicalizeCellOffset', () => {
 		expect(canonicalizeCellOffset(0.0250000000001)).not.toBe(0.025);
 	});
 
+	it('is idempotent at the grid-snap boundary', () => {
+		const once = canonicalizeCellOffset(0.500000001000001);
+
+		expect(canonicalizeCellOffset(once)).toBe(once);
+	});
+
 	it('leaves non-grid positions as their 15-digit canonical form', () => {
 		expect(canonicalizeCellOffset(0.123456789012345)).toBe(0.123456789012345);
 	});

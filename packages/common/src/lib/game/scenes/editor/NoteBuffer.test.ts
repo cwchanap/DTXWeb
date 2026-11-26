@@ -41,6 +41,12 @@ interface MockEditor {
 	getByName: (name: string) => MockNoteGraphics | null;
 	highlightSelectedNote: (noteGraphics: MockNoteGraphics) => void;
 	deleteNoteByKey: (noteKey: string) => void;
+	reconcileSharedNoteVisual: (
+		measure: number,
+		laneIndex: number,
+		cellOffset: number,
+		laneId: string
+	) => void;
 	getPanelContainer: () => {
 		getByName: (name: string) => { destroy: () => void } | null;
 	};
@@ -92,6 +98,7 @@ describe('NoteBuffer', () => {
 			getByName: vi.fn().mockReturnValue({ name: 'mockNote' }),
 			highlightSelectedNote: vi.fn(),
 			deleteNoteByKey: vi.fn(),
+			reconcileSharedNoteVisual: vi.fn(),
 			getPanelContainer: vi.fn().mockReturnValue({
 				getByName: vi.fn().mockReturnValue({ destroy: vi.fn() })
 			})

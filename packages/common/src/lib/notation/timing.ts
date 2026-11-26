@@ -39,11 +39,18 @@ export const normalizeTempoEvents = (input: TimingInput): NotationTempoEvent[] =
 	const initialBpm = Number.isFinite(input.bpm) && input.bpm > 0 ? input.bpm : 120;
 	const changes: OrderedTempoChange[] = [];
 	let order = 0;
+	// DTX object ids are case-insensitive base36 text. Normalize both sides of
+	// the lookup here so #BPMAa and #00108: AA resolve together. Synthetic
+	// channel-03 keys keep their `03:` namespace through the same uppercase
+	// rule and cannot collide with a two-character #BPMxx id.
+	const bpmValueMap = Object.fromEntries(
+		Object.entries(input.bpmValueMap).map(([id, value]) => [id.toUpperCase(), value])
+	);
 
 	for (const laneMeasure of input.bpmChanges) {
 		for (const note of laneMeasure.notes) {
 			if (note.noteID === '00') continue;
-			const bpm = input.bpmValueMap[note.noteID];
+			const bpm = bpmValueMap[note.noteID.toUpperCase()];
 			if (!Number.isFinite(bpm) || bpm <= 0) continue;
 			if (laneMeasure.measure < 0 || laneMeasure.measure >= input.measureCount) continue;
 			if (note.position < 0 || note.position > 1) continue;

@@ -105,7 +105,7 @@ const CHART_LEVEL_DEEP_PROBE_BYTES = 1024 * 1024;
  * The small FIFO bound keeps a large bucket corpus from growing isolate memory.
  */
 const MAX_SHARED_CHART_LEVEL_PROBES = 512;
-const sharedChartLevelProbes = new Map<string, Promise<number | null | undefined>>();
+const sharedChartLevelProbeValues = new Map<string, number | null>();
 
 type SetDefFileRef = {
 	file: string;
@@ -404,7 +404,9 @@ export const discoverCatalogFiles = async (
 				object?.size ?? '',
 				uploaded
 			].join('|');
-			probe = object?.etag ? sharedChartLevelProbes.get(sharedKey) : undefined;
+			if (object?.etag && sharedChartLevelProbeValues.has(sharedKey)) {
+				probe = Promise.resolve(sharedChartLevelProbeValues.get(sharedKey));
+			}
 			if (!probe) {
 				const readProbe = probeChartHeaderLevel(
 					bucket,
@@ -413,22 +415,19 @@ export const discoverCatalogFiles = async (
 					maxBytes,
 					object?.etag
 				);
-				// R2 listings always carry an etag in production. Test doubles and
-				// nonstandard adapters can omit it; without that immutable object
-				// identity, content probes must stay request-local rather than
-				// risking cross-request contamination.
 				if (!object?.etag) {
 					probe = readProbe;
 				} else {
 					probe = readProbe.then((level) => {
-						if (level === undefined) sharedChartLevelProbes.delete(sharedKey);
+						if (level !== undefined) {
+							sharedChartLevelProbeValues.set(sharedKey, level);
+							if (sharedChartLevelProbeValues.size > MAX_SHARED_CHART_LEVEL_PROBES) {
+								const oldest = sharedChartLevelProbeValues.keys().next().value;
+								if (oldest) sharedChartLevelProbeValues.delete(oldest);
+							}
+						}
 						return level;
 					});
-					sharedChartLevelProbes.set(sharedKey, probe);
-					if (sharedChartLevelProbes.size > MAX_SHARED_CHART_LEVEL_PROBES) {
-						const oldest = sharedChartLevelProbes.keys().next().value;
-						if (oldest) sharedChartLevelProbes.delete(oldest);
-					}
 				}
 			}
 			probeCache.set(cacheKey, probe);
@@ -508,6 +507,7 @@ export const discoverCatalogFiles = async (
 			? [setDefRef.file, ...relativeCandidates]
 			: relativeCandidates;
 		for (const [index, candidateKey] of candidates.entries()) {
+			if (!candidateKey.toLowerCase().endsWith('.dtx')) continue;
 			const matchedObject =
 				objectsByKey.get(candidateKey) ?? objectsByKeyLower.get(candidateKey.toLowerCase());
 			if (matchedObject) {
@@ -669,93 +669,105 @@ export const discoverCatalogFiles = async (
 			}
 		};
 		if (exactOnly) {
-			// Coordinate exact matches: raw-filename ownership outranks alias
-			// claims, then process the most constrained row (fewest remaining
-			// unused exact refs) so a multi-choice row does not consume a shared
-			// alias needed by another row. Within a row,
-			// preserve raw-filename ownership, then a directly resolved ref
-			// over one that only matched through the ambiguous-ID fallback —
-			// the nested object lives below the catalog directory and cannot
-			// be the row's chart — before ranking by contender count or
-			// uploader filename (dtxObjectKeys) order so shared aliases do
-			// not swap equally rated charts behind distinct labels.
-			while (true) {
-				let bestChoice: {
-					rowIndex: number;
-					refs: SetDefFileRef[];
-					bestRefIndex: number;
-					candidateCount: number;
-					bestIsDirect: boolean;
-				} | null = null;
-				for (const { file, index } of claimOrder) {
-					if (rowsClaimedBySetDef.has(index)) continue;
-					const label = file.label.toLowerCase();
-					const refs = filesByLabel.get(label);
-					if (!refs?.length) continue;
-					const rowLevel = normalizeLevel(file.level);
-					const matchingIndexes: number[] = [];
-					for (let i = 0; i < refs.length; i++) {
-						const ref = refs[i];
-						if (isRefUnused(ref) && fileLevelByRef.get(ref) === rowLevel) {
-							matchingIndexes.push(i);
-						}
-					}
-					if (matchingIndexes.length === 0) continue;
-					const contendersForKey = (key: string): number => {
-						if (!key) return 0;
-						let count = 0;
-						for (const { file: otherFile, index: otherIndex } of claimOrder) {
-							if (otherIndex === index || rowsClaimedBySetDef.has(otherIndex))
-								continue;
-							const otherRefs = filesByLabel.get(otherFile.label.toLowerCase());
-							if (
-								otherRefs?.some(
-									(r) => isRefUnused(r) && resolveSetDefObject(r)?.key === key
-								)
-							) {
-								count += 1;
-							}
-						}
-						return count;
-					};
-					matchingIndexes.sort((a, b) => {
-						const keyA = resolveSetDefObject(refs[a])?.key ?? '';
-						const keyB = resolveSetDefObject(refs[b])?.key ?? '';
-						const directDiff =
-							Number(isDirectRawRef(refs[b], keyB)) -
-							Number(isDirectRawRef(refs[a], keyA));
-						const fallbackDiff =
-							Number(refsResolvedViaIdFallback.has(refs[a])) -
-							Number(refsResolvedViaIdFallback.has(refs[b]));
-						return (
-							directDiff ||
-							fallbackDiff ||
-							contendersForKey(keyA) - contendersForKey(keyB) ||
-							(dtxKeyOrder.get(keyA) ?? Number.MAX_SAFE_INTEGER) -
-								(dtxKeyOrder.get(keyB) ?? Number.MAX_SAFE_INTEGER) ||
-							a - b
-						);
-					});
-					const bestRefKey = resolveSetDefObject(refs[matchingIndexes[0]])?.key ?? '';
-					const bestIsDirect = isDirectRawRef(refs[matchingIndexes[0]], bestRefKey);
-					if (
-						!bestChoice ||
-						(bestIsDirect && !bestChoice.bestIsDirect) ||
-						(bestIsDirect === bestChoice.bestIsDirect &&
-							matchingIndexes.length < bestChoice.candidateCount)
-					) {
-						bestChoice = {
-							rowIndex: index,
-							refs,
-							bestRefIndex: matchingIndexes[0],
-							candidateCount: matchingIndexes.length,
-							bestIsDirect
-						};
-						if (bestChoice.candidateCount === 1 && bestChoice.bestIsDirect) break;
+			// Exact aliases form a bipartite assignment problem. Greedy claiming can
+			// strand a row after an earlier row takes a shared alias; augmenting paths
+			// move a prior exact claim only to another exact candidate it owns.
+			const candidatesByRow = new Map<number, { refs: SetDefFileRef[]; indexes: number[] }>();
+			for (const { file, index } of claimOrder) {
+				if (rowsClaimedBySetDef.has(index)) continue;
+				const refs = filesByLabel.get(file.label.toLowerCase());
+				if (!refs?.length) continue;
+				const rowLevel = normalizeLevel(file.level);
+				const indexes: number[] = [];
+				for (let i = 0; i < refs.length; i++) {
+					if (isRefUnused(refs[i]) && fileLevelByRef.get(refs[i]) === rowLevel)
+						indexes.push(i);
+				}
+				if (indexes.length > 0) candidatesByRow.set(index, { refs, indexes });
+			}
+			for (const candidate of candidatesByRow.values()) {
+				candidate.indexes.sort((a, b) => {
+					const keyA = resolveSetDefObject(candidate.refs[a])?.key ?? '';
+					const keyB = resolveSetDefObject(candidate.refs[b])?.key ?? '';
+					return (
+						Number(isDirectRawRef(candidate.refs[b], keyB)) -
+							Number(isDirectRawRef(candidate.refs[a], keyA)) ||
+						Number(refsResolvedViaIdFallback.has(candidate.refs[a])) -
+							Number(refsResolvedViaIdFallback.has(candidate.refs[b])) ||
+						(dtxKeyOrder.get(keyA) ?? Number.MAX_SAFE_INTEGER) -
+							(dtxKeyOrder.get(keyB) ?? Number.MAX_SAFE_INTEGER) ||
+						a - b
+					);
+				});
+			}
+			const keyOwner = new Map<string, number>();
+			const assignment = new Map<number, { refs: SetDefFileRef[]; ref: SetDefFileRef }>();
+			const tryAssign = (
+				rowIndex: number,
+				seenRows: Set<number>,
+				seenKeys: Set<string>
+			): boolean => {
+				if (seenRows.has(rowIndex)) return false;
+				seenRows.add(rowIndex);
+				const candidate = candidatesByRow.get(rowIndex);
+				if (!candidate) return false;
+				for (const refIndex of candidate.indexes) {
+					const key = resolveSetDefObject(candidate.refs[refIndex])?.key;
+					if (!key || seenKeys.has(key)) continue;
+					seenKeys.add(key);
+					const owner = keyOwner.get(key);
+					if (owner === undefined || tryAssign(owner, seenRows, seenKeys)) {
+						keyOwner.set(key, rowIndex);
+						assignment.set(rowIndex, {
+							refs: candidate.refs,
+							ref: candidate.refs[refIndex]
+						});
+						return true;
 					}
 				}
-				if (!bestChoice) break;
-				commitClaim(bestChoice.rowIndex, bestChoice.refs, bestChoice.bestRefIndex);
+				return false;
+			};
+			for (const rowIndex of candidatesByRow.keys())
+				tryAssign(rowIndex, new Set(), new Set());
+			// Rows sharing the identical exact candidate set are indistinguishable.
+			// Pair those rows to their matched keys in uploader order rather than in
+			// augmenting-path order, which is an implementation artifact.
+			const rowsBySignature = new Map<string, number[]>();
+			for (const [rowIndex, candidate] of candidatesByRow) {
+				if (!assignment.has(rowIndex)) continue;
+				const signature = candidate.indexes
+					.map((i) => resolveSetDefObject(candidate.refs[i])?.key ?? '')
+					.sort()
+					.join('\0');
+				const rows = rowsBySignature.get(signature);
+				if (rows) rows.push(rowIndex);
+				else rowsBySignature.set(signature, [rowIndex]);
+			}
+			for (const rows of rowsBySignature.values()) {
+				if (rows.length < 2) continue;
+				const keys = rows
+					.map(
+						(row) =>
+							resolveSetDefObject(assignment.get(row)?.ref as SetDefFileRef)?.key ??
+							''
+					)
+					.sort(
+						(a, b) =>
+							(dtxKeyOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+							(dtxKeyOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+					);
+				rows.sort((a, b) => a - b);
+				for (const [position, rowIndex] of rows.entries()) {
+					const candidate = candidatesByRow.get(rowIndex);
+					const ref = candidate?.refs.find(
+						(r) => resolveSetDefObject(r)?.key === keys[position]
+					);
+					if (candidate && ref) assignment.set(rowIndex, { refs: candidate.refs, ref });
+				}
+			}
+			for (const [rowIndex, claim] of assignment) {
+				const refIndex = claim.refs.indexOf(claim.ref);
+				if (refIndex >= 0) commitClaim(rowIndex, claim.refs, refIndex);
 			}
 			return;
 		}
@@ -852,6 +864,7 @@ export const discoverCatalogFiles = async (
 			const object = resolveSetDefObject(ref);
 			if (!object || usedDtxKeys.has(object.key)) continue;
 			let isUnratedLeftover = false;
+			let deferForStemRow = false;
 			if (isTopLevelR2Key(object.key, prefix) || isTopLevelR2Key(object.key, setDefBaseDir)) {
 				let leftoverLevel: number | null | undefined = fileLevelByRef.get(ref);
 				if (leftoverLevel === undefined) {
@@ -901,7 +914,17 @@ export const discoverCatalogFiles = async (
 					keysLeftForExactMatch.add(object.key);
 					probedLevelByKey.set(object.key, leftoverLevel);
 				}
-				if (stemRowIndexes.length === 1 && !leftoverNamesAnotherRow) {
+				const leftoverRatingAgrees =
+					typeof leftoverLevel === 'number' && leftoverLevel === stemRowLevel;
+				deferForStemRow =
+					stemRowIndexes.length === 1 &&
+					!leftoverNamesAnotherRow &&
+					!leftoverRatingAgrees;
+				if (
+					stemRowIndexes.length === 1 &&
+					!leftoverNamesAnotherRow &&
+					leftoverRatingAgrees
+				) {
 					let claimObject = object;
 					if (!isTopLevelR2Key(object.key, prefix)) {
 						const rootCandidate = dtxObjects.find(
@@ -979,6 +1002,7 @@ export const discoverCatalogFiles = async (
 			// so zero-level exact/positional matching can still bind them.
 			if (
 				!keysLeftForExactMatch.has(object.key) &&
+				!deferForStemRow &&
 				(!isUnratedLeftover || !hasUnclaimedLevelZeroRow())
 			) {
 				usedDtxKeys.add(object.key);

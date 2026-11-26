@@ -577,10 +577,20 @@ describe('dtxToMidi', () => {
 		lanes.forEach((lane, i) => lines.push(`#0${String(i).padStart(2, '0')}${lane}: 01`));
 		const { data } = dtxToMidi(dtxFromText(lines.join('\r\n')));
 
-		const notes = noteOnTicks(data)
-			.map((e) => e.note ?? -1)
-			.sort((a, b) => a - b);
-		expect(notes).toEqual([35, 36, 38, 42, 43, 44, 46, 48, 49, 50, 51, 57]);
+		expect(noteOnTicks(data)).toEqual([
+			{ tick: 0, note: 42, channel: 9 },
+			{ tick: 1920, note: 38, channel: 9 },
+			{ tick: 3840, note: 36, channel: 9 },
+			{ tick: 5760, note: 50, channel: 9 },
+			{ tick: 7680, note: 48, channel: 9 },
+			{ tick: 9600, note: 49, channel: 9 },
+			{ tick: 11520, note: 43, channel: 9 },
+			{ tick: 13440, note: 46, channel: 9 },
+			{ tick: 15360, note: 51, channel: 9 },
+			{ tick: 17280, note: 57, channel: 9 },
+			{ tick: 19200, note: 44, channel: 9 },
+			{ tick: 21120, note: 35, channel: 9 }
+		]);
 	});
 
 	it('keeps hit ticks for unrepresentable meters and warns nonfatally', () => {
@@ -873,7 +883,7 @@ describe('midiToDtx', () => {
 		expect(result.notes['13']).toBeDefined();
 	});
 
-	it('falls back to all channels when channel 10 has no note-ons', () => {
+	it('imports non-drum channels when explicitly opted in', () => {
 		const midi = parseMidi(
 			buildMidi(480, [
 				[
@@ -883,7 +893,7 @@ describe('midiToDtx', () => {
 				]
 			])
 		);
-		const result = midiToDtx(midi);
+		const result = midiToDtx(midi, { includeNonDrumChannels: true });
 		expect(result.notes['13']?.[0].notes).toEqual([{ noteID: '01', position: 0 }]);
 		expect(result.warnings.some((warning) => warning.includes('non-drum channels'))).toBe(
 			false
@@ -1835,5 +1845,61 @@ describe('round trips', () => {
 					srcTiming.positionToTime(1, 0)
 			)
 		).toBeLessThanOrEqual(halfSlotSeconds);
+	});
+});
+
+describe('PR365 review regressions', () => {
+	const dtxFromText = (text: string) => {
+		const dtx = new DTXFile(text);
+		dtx.parseFromText(text);
+		return dtx;
+	};
+
+	it('emits denominator-1 MIDI meter for a 64x DTX bar multiplier', () => {
+		const dtx = dtxFromText(['#BPM: 120', '#00002: 64', '#00113: 01'].join('\r\n'));
+
+		const { data, warnings } = dtxToMidi(dtx);
+
+		expect(warnings).toEqual([]);
+		expect(meterEventsOf(data)[0]).toEqual({
+			tick: 0,
+			numerator: 64,
+			denominator: 1,
+			notated32ndsPerQuarter: 8
+		});
+	});
+
+	it('raises PPQ enough to keep close effective tempo changes on distinct ticks', () => {
+		const tempoCellPattern = `0001${'00'.repeat(766)}`;
+		expect(tempoCellPattern).toHaveLength(768 * 2);
+		const dtx = dtxFromText(
+			[
+				'#BPM: 120',
+				'#BPM01: 180',
+				'#00002: 0.0625',
+				`#00008: ${tempoCellPattern}`,
+				'#00013: 01'
+			].join('\r\n')
+		);
+
+		const { data, warnings } = dtxToMidi(dtx);
+		const tempos = tempoEventsOf(data);
+
+		expect(tempos).toHaveLength(2);
+		expect(tempos[1].tick).toBeGreaterThan(tempos[0].tick);
+		expect(warnings.some((w) => w.includes('tempo'))).toBe(false);
+	});
+
+	it('does not treat non-drum channels as percussion without an explicit opt-in', () => {
+		const midi = parseMidi(
+			buildMidi(480, [[...evNoteOn(0, 36, 100, 1), ...evNoteOff(60, 36, 1), ...evEndOfTrack]])
+		);
+
+		const strict = midiToDtx(midi);
+		expect(strict.notes['13']).toBeUndefined();
+		expect(strict.warnings.some((w) => w.includes('non-drum channels ignored'))).toBe(true);
+
+		const optedIn = midiToDtx(midi, { includeNonDrumChannels: true });
+		expect(optedIn.notes['13']?.[0].notes).toEqual([{ noteID: '01', position: 0 }]);
 	});
 });

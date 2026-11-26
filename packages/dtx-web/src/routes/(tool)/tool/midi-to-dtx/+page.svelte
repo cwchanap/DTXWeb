@@ -30,6 +30,7 @@
 	// MIDI note -> DTX lane mapping (customizable), seeded from the shared
 	// GM import aliases so extra GM notes fold into the right lanes.
 	let midiToDtxMap = $state<Record<number, string>>({ ...GM_IMPORT_LANE });
+	let includeNonDrumChannels = $state(false);
 	let newMidiNote = $state<number | undefined>(undefined);
 	let newMidiLane = $state(PLAYABLE_DRUM_LANES[0]);
 	const canAddMidiNote = $derived(
@@ -116,7 +117,11 @@
 		if (!parsedMidi) throw new Error('No MIDI file parsed');
 		if (bpmInvalid) throw new Error('BPM must be a positive number');
 		const effectiveBpm = isValidPositiveBpm(bpm) ? bpm : undefined;
-		return midiToDtx(parsedMidi, { noteToLane: midiToDtxMap, bpm: effectiveBpm });
+		return midiToDtx(parsedMidi, {
+			noteToLane: midiToDtxMap,
+			bpm: effectiveBpm,
+			includeNonDrumChannels
+		});
 	};
 
 	const conversion = $derived.by<MidiToDtxResult | null>(() => {
@@ -176,7 +181,8 @@
 			const overrideBpm = bpmTouched && isValidPositiveBpm(bpm) ? bpm : undefined;
 			const result = midiToDtx(nextParsedMidi, {
 				noteToLane: midiToDtxMap,
-				bpm: overrideBpm
+				bpm: overrideBpm,
+				includeNonDrumChannels
 			});
 			parsedMidi = nextParsedMidi;
 			dtxFile = nextDtxFile;
@@ -527,6 +533,14 @@
 						<p class="mb-4 text-sm text-slate-400">
 							Configure which DTX lane each MIDI drum note should map to:
 						</p>
+						<label class="mb-4 flex items-center gap-2 text-sm text-slate-300">
+							<input
+								type="checkbox"
+								bind:checked={includeNonDrumChannels}
+								class="rounded border-purple-500/30 bg-slate-900/50"
+							/>
+							Import notes outside MIDI channel 10 (non-drum channels)
+						</label>
 
 						<div class="mb-4 flex flex-col gap-3 md:flex-row md:items-end">
 							<div>

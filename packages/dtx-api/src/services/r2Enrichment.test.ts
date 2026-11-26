@@ -5544,3 +5544,97 @@ describe('discoverCatalogFiles', () => {
 		]);
 	});
 });
+
+describe('PR365 review assignment regressions', () => {
+	const makeChartBucket = (
+		chartBodies: Record<string, string>,
+		sizes: Record<string, number> = {}
+	): R2Bucket => {
+		const objects = Object.keys(chartBodies).map((key) => ({
+			key,
+			size: sizes[key] ?? chartBodies[key].length,
+			uploaded: new Date()
+		}));
+		return {
+			...makeBucket([objects]),
+			get: vi.fn(async (key: string) => ({
+				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
+			}))
+		} as unknown as R2Bucket;
+	};
+
+	it('does not resolve a SET.def reference to a non-chart audio object', async () => {
+		const bucket = makeChartBucket({
+			'42/set.def': '#L1LABEL BASIC\n#L1FILE 42/sample.wav\n',
+			'42/42/sample.wav': 'not a chart'
+		});
+		const discovery = await discoverCatalogFiles(
+			bucket,
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'Basic', level: 30 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts[0].fileUrl).toBeNull();
+	});
+
+	it('uses augmenting exact-alias assignments so no row is stranded', async () => {
+		const refs = [
+			['A', 'a.dtx'],
+			['A', 'b.dtx'],
+			['B', 'a.dtx'],
+			['B', 'c.dtx'],
+			['C', 'a.dtx'],
+			['C', 'c.dtx'],
+			['D', 'b.dtx'],
+			['D', 'd.dtx'],
+			['D', 'e.dtx'],
+			['E', 'b.dtx'],
+			['E', 'd.dtx'],
+			['E', 'e.dtx']
+		];
+		const setDef = refs
+			.map(([label, file], i) => `#L${i + 1}LABEL ${label}\n#L${i + 1}FILE ${file}\n`)
+			.join('');
+		const bodies: Record<string, string> = { '42/set.def': setDef };
+		for (const stem of ['a', 'b', 'c', 'd', 'e']) {
+			bodies[`42/${stem}.dtx`] = '#TITLE: Song\n#DLEVEL: 30\n';
+		}
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket(bodies),
+			{
+				simfileId: 42,
+				dtxFiles: ['A', 'B', 'C', 'D', 'E'].map((label) => ({ label, level: 30 })),
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.every((chart) => chart.fileUrl !== null)).toBe(true);
+		expect(new Set(discovery.charts.map((chart) => chart.fileUrl)).size).toBe(5);
+	});
+
+	it('defers a re-rated leftover stem until exact-rated charts claim their rows', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL EXTRA\n#L1FILE ./basic.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/basic.dtx'
+		]);
+	});
+});

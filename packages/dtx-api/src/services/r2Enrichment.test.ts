@@ -5817,4 +5817,72 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/zztop.dtx'
 		]);
 	});
+
+	it('lets a nested same-stem copy fill another row’s exact rating match', async () => {
+		// SOLO takes the root solo.dtx by stem and rating. The nested copy rates
+		// 70 and is HARD's only exact rating match, so reserving it as a duplicate
+		// would drop HARD from the preview.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
+
+	it('keeps same-label rows in uploader order when another label shares their candidates', async () => {
+		// B owns a.dtx, and both A rows reach all three keys. Direct claims pin
+		// B to a.dtx, but the two A rows must still pair with b.dtx and c.dtx in
+		// uploader order rather than each other's files.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL B',
+					'#L1FILE a.dtx',
+					'#L2LABEL B',
+					'#L2FILE ./b.dtx',
+					'#L3LABEL B',
+					'#L3FILE ./c.dtx',
+					'#L4LABEL A',
+					'#L4FILE ./a.dtx',
+					'#L5LABEL A',
+					'#L5FILE b.dtx',
+					'#L6LABEL A',
+					'#L6FILE c.dtx'
+				].join('\n'),
+				'42/a.dtx': '#TITLE: A\n#DLEVEL: 60\n',
+				'42/b.dtx': '#TITLE: B\n#DLEVEL: 60\n',
+				'42/c.dtx': '#TITLE: C\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'B', level: 60 },
+					{ label: 'A', level: 60 },
+					{ label: 'A', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx',
+			'https://cdn.example.test/42/c.dtx'
+		]);
+	});
 });

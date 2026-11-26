@@ -748,6 +748,28 @@ export const discoverCatalogFiles = async (
 			// Rows sharing the identical exact candidate set are indistinguishable.
 			// Pair those rows to their matched keys in uploader order rather than in
 			// augmenting-path order, which is an implementation artifact.
+			const reorderAssignedRows = (groupRows: number[]): void => {
+				if (groupRows.length < 2) return;
+				const keys = groupRows
+					.map(
+						(row) =>
+							resolveSetDefObject(assignment.get(row)?.ref as SetDefFileRef)?.key ??
+							''
+					)
+					.sort(
+						(a, b) =>
+							(dtxKeyOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+							(dtxKeyOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+					);
+				groupRows.sort((a, b) => a - b);
+				for (const [position, rowIndex] of groupRows.entries()) {
+					const candidate = candidatesByRow.get(rowIndex);
+					const ref = candidate?.refs.find(
+						(r) => resolveSetDefObject(r)?.key === keys[position]
+					);
+					if (candidate && ref) assignment.set(rowIndex, { refs: candidate.refs, ref });
+				}
+			};
 			const rowsBySignature = new Map<string, number[]>();
 			for (const [rowIndex, candidate] of candidatesByRow) {
 				if (!assignment.has(rowIndex)) continue;
@@ -773,27 +795,20 @@ export const discoverCatalogFiles = async (
 				});
 				// Raw-filename ownership is a cross-label constraint: reordering
 				// indistinguishable duplicate rows is fine, but it must not move a
-				// directly owned file to another label's alias-only row.
-				if (hasDirectClaim && labels.size > 1) continue;
-				const keys = rows
-					.map(
-						(row) =>
-							resolveSetDefObject(assignment.get(row)?.ref as SetDefFileRef)?.key ??
-							''
-					)
-					.sort(
-						(a, b) =>
-							(dtxKeyOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
-							(dtxKeyOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
-					);
-				rows.sort((a, b) => a - b);
-				for (const [position, rowIndex] of rows.entries()) {
-					const candidate = candidatesByRow.get(rowIndex);
-					const ref = candidate?.refs.find(
-						(r) => resolveSetDefObject(r)?.key === keys[position]
-					);
-					if (candidate && ref) assignment.set(rowIndex, { refs: candidate.refs, ref });
+				// directly owned file to another label's alias-only row. Direct
+				// claims pin each label's key set, so reorder only within a label.
+				if (hasDirectClaim && labels.size > 1) {
+					const rowsByLabel = new Map<string, number[]>();
+					for (const row of rows) {
+						const label = dtxFiles[row].label.toLowerCase();
+						const labelRows = rowsByLabel.get(label);
+						if (labelRows) labelRows.push(row);
+						else rowsByLabel.set(label, [row]);
+					}
+					for (const labelRows of rowsByLabel.values()) reorderAssignedRows(labelRows);
+					continue;
 				}
+				reorderAssignedRows(rows);
 			}
 			for (const [rowIndex, claim] of assignment) {
 				const refIndex = claim.refs.indexOf(claim.ref);
@@ -866,6 +881,10 @@ export const discoverCatalogFiles = async (
 		);
 	const probedLevelByKey = new Map<string, number>();
 	const keysLeftForExactMatch = new Set<string>();
+	// A nested same-stem copy that a leftover SET.def ref reserved for another
+	// row's exact rating stays claimable by that rating, but is still a
+	// duplicate for positional pairing.
+	const sameStemAlternativeKeys = new Set<string>();
 	const retainedLevelZeroRootKeys = new Set<string>();
 	// Unclaimed refs (surplus files, or provably another row's chart that
 	// was never claimed) still name charts under a set.def label —
@@ -1127,10 +1146,15 @@ export const discoverCatalogFiles = async (
 				usedDtxKeys.add(stemKey);
 				// When a root chart wins a stem shared with a set.def-sibling copy,
 				// the copy is the same filename in another directory — a duplicate,
-				// not a positional candidate for a different row.
+				// not a positional candidate for a different row. A copy the
+				// leftover-ref pass reserved for another row's exact rating keeps
+				// that claim; positional pairing still ranks it last.
 				if (rootKeys.length === 1) {
 					for (const duplicateKey of keys) {
-						if (duplicateKey !== stemKey) usedDtxKeys.add(duplicateKey);
+						if (duplicateKey === stemKey) continue;
+						if (keysLeftForExactMatch.has(duplicateKey))
+							sameStemAlternativeKeys.add(duplicateKey);
+						else usedDtxKeys.add(duplicateKey);
 					}
 				}
 			} else if (
@@ -1358,6 +1382,11 @@ export const discoverCatalogFiles = async (
 	if (fallbackKeys.length === 0 && unusedKeys.length === positionalRows.length) {
 		fallbackKeys.push(...unusedKeys);
 	}
+	// Duplicate same-stem copies fill a positional slot only after every
+	// ordinary candidate.
+	fallbackKeys.sort(
+		(a, b) => Number(sameStemAlternativeKeys.has(a)) - Number(sameStemAlternativeKeys.has(b))
+	);
 	for (const [fallbackIndex, row] of positionalRows.entries()) {
 		const key = fallbackKeys[fallbackIndex];
 		if (key) {

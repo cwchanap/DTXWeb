@@ -5844,6 +5844,69 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('prefers an ordinary exact-rated chart over a retained nested same-stem copy', async () => {
+		// SOLO claims root solo.dtx (60). extras/solo.dtx rates 70 and is
+		// retained for HARD, but zztop.dtx also rates 70 and is the
+		// catalogued uploader file — the nested copy must not win on key order.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/zztop.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/zztop.dtx'
+		]);
+	});
+
+	it('keeps retained nested copies out of equal-rated shortage positions', async () => {
+		// SOLO and HARD take their root charts. extras/solo.dtx (70) stays
+		// retained, but it is not an uploader file: z02.dtx is BASIC's
+		// positional match and must not shift to ADVANCED.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/z01.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/z02.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/z03.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 50 },
+					{ label: 'HARD', level: 70 },
+					{ label: 'EXPERT', level: 40 },
+					{ label: 'BASIC', level: 60 },
+					{ label: 'ADVANCED', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/z01.dtx',
+			'https://cdn.example.test/42/z02.dtx',
+			'https://cdn.example.test/42/z03.dtx'
+		]);
+	});
+
 	it('keeps same-label rows in uploader order when another label shares their candidates', async () => {
 		// B owns a.dtx, and both A rows reach all three keys. Direct claims pin
 		// B to a.dtx, but the two A rows must still pair with b.dtx and c.dtx in

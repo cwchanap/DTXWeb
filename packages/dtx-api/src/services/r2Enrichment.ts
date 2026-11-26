@@ -1244,15 +1244,14 @@ export const discoverCatalogFiles = async (
 			levelGroups.push(fallbackRows.slice(groupStart, groupEnd));
 			groupStart = groupEnd;
 		}
-		// Retained same-stem root copies are duplicates; try ordinary zero-level
-		// charts first and use a copy only to fill a shortage.
-		const orderExactCandidates = (groupLevel: number, keys: string[]): string[] =>
-			groupLevel === 0
-				? [
-						...keys.filter((key) => !retainedLevelZeroRootKeys.has(key)),
-						...keys.filter((key) => retainedLevelZeroRootKeys.has(key))
-					]
-				: keys;
+		// Retained same-stem copies are duplicates; try ordinary charts first and
+		// use a copy only to fill a shortage.
+		const orderExactCandidates = (groupLevel: number, keys: string[]): string[] => {
+			const isCopy = (key: string): boolean =>
+				sameStemAlternativeKeys.has(key) ||
+				(groupLevel === 0 && retainedLevelZeroRootKeys.has(key));
+			return [...keys.filter((key) => !isCopy(key)), ...keys.filter(isCopy)];
+		};
 		// Pass 1: claim groups whose full row count can be satisfied by exact
 		// probed matches before any shortage fill runs, so a later exact match
 		// (e.g. Expert/80) clears its slot and key before equal-rated shortage
@@ -1297,13 +1296,20 @@ export const discoverCatalogFiles = async (
 			const remainingEligibleKeys = dtxObjectKeys.filter(
 				(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
 			);
+			// A retained nested copy is not an uploader file, so it must not
+			// occupy a positional slot: rank copies after ordinary keys exactly
+			// like the final fallback before mapping key positions to rows.
+			const positionalKeys = [...remainingEligibleKeys].sort(
+				(a, b) =>
+					Number(sameStemAlternativeKeys.has(a)) - Number(sameStemAlternativeKeys.has(b))
+			);
 			const selectedKeys = new Set<string>();
 			for (const key of orderExactCandidates(groupLevel, remainingEligibleKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
 			if (selectedKeys.size < groupSize) {
-				for (const [pos, key] of remainingEligibleKeys.entries()) {
+				for (const [pos, key] of positionalKeys.entries()) {
 					if (selectedKeys.size === groupSize) break;
 					if (selectedKeys.has(key) || probedLevelByKey.has(key)) continue;
 					const positionalRow = remainingRowsByPos[pos];
@@ -1316,7 +1322,7 @@ export const discoverCatalogFiles = async (
 				groupLevel,
 				remainingEligibleKeys.filter((key) => selectedKeys.has(key))
 			);
-			const posByKey = new Map(remainingEligibleKeys.map((key, pos) => [key, pos]));
+			const posByKey = new Map(positionalKeys.map((key, pos) => [key, pos]));
 			const unassignedCandidates: string[] = [];
 			// Keep candidates whose uploader position belongs to a row in this
 			// group with that positional owner first, so a short candidate list

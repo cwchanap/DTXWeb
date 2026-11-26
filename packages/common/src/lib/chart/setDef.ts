@@ -13,17 +13,18 @@ const titlePattern = /^#TITLE(?:\s*:\s*|\s+|$)/i;
 // The space-only separator must not retry a colon that the colon branch
 // already rejected (e.g. `#L1FILE :   `): `\s+` would otherwise consume the
 // spaces before ':' and capture the colon itself as the value.
-const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
+const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(.*)$/i;
 
-const collectLevels = (lines: string[]): SetDefLevel[] => {
+const collectLevels = (lines: string[], foldBlankValues = false): SetDefLevel[] => {
 	const entries = new Map<number, { label?: string; fileName?: string }>();
 	for (const line of lines) {
 		const match = line.match(levelPattern);
 		if (!match) continue;
 		const level = parseInt(match[1], 10);
 		if (!Number.isSafeInteger(level) || level <= 0) continue;
-		const entry = entries.get(level) ?? {};
 		const value = match[3].trim();
+		if (!foldBlankValues && !value) continue;
+		const entry = entries.get(level) ?? {};
 		if (match[2].toUpperCase() === 'LABEL') {
 			entry.label = value;
 		} else {
@@ -83,7 +84,7 @@ export const parseSetDef = (text: string): ParsedSetDef => {
  * unlike parseSetDef, which describes only the first song for the editor.
  */
 export const parseSetDefDocumentLevels = (text: string): SetDefLevel[] =>
-	collectLevels(splitSetDefLines(text));
+	collectLevels(splitSetDefLines(text), true);
 
 /**
  * Resolve an #LxFILE reference to the form File names and R2 object keys

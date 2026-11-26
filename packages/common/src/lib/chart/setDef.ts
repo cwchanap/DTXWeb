@@ -15,36 +15,9 @@ const titlePattern = /^#TITLE(?:\s*:\s*|\s+|$)/i;
 // spaces before ':' and capture the colon itself as the value.
 const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(\S.*)$/i;
 
-/**
- * Pure SET.def parser shared by the local SimFile parser, the web editor's
- * server-side metadata load, and the dtx-api R2 catalog matcher. Accepts both
- * space and colon directive separators, case-insensitive keys, LF or CRLF
- * line endings, and leading whitespace before a directive — the desktop
- * uploader's parse_set_def_labels trims each line before matching, so an
- * indented directive still produced a row label at upload time. Labels and
- * file names are captured whole (multiword values, subdirectories); path
- * normalization is left to consumers.
- *
- * Only complete label+file pairs on positive numeric slots are returned,
- * sorted by level — slots above the conventional L1–L5 range are kept.
- */
-export const parseSetDef = (text: string): ParsedSetDef => {
-	const lines = text.split(/\r?\n/).map((line) => line.trimStart());
-	const titleIndexes = lines
-		.map((line, index) => (titlePattern.test(line) ? index : -1))
-		.filter((index) => index >= 0);
-	// SET.def can concatenate multiple songs. This single-song shape describes
-	// the first #TITLE section only; files with no #TITLE keep their legacy
-	// flat parsing behavior.
-	const sectionLines = titleIndexes.length
-		? lines.slice(titleIndexes[0], titleIndexes[1] ?? lines.length)
-		: lines;
-
-	const titleLine = sectionLines.find((line) => titlePattern.test(line));
-	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/i, '').trim() : '';
-
+const collectLevels = (lines: string[]): SetDefLevel[] => {
 	const entries = new Map<number, { label?: string; fileName?: string }>();
-	for (const line of sectionLines) {
+	for (const line of lines) {
 		const match = line.match(levelPattern);
 		if (!match) continue;
 		const level = parseInt(match[1], 10);
@@ -65,10 +38,52 @@ export const parseSetDef = (text: string): ParsedSetDef => {
 			levels.push({ level, label: entry.label, fileName: entry.fileName });
 		}
 	}
-	levels.sort((a, b) => a.level - b.level);
-
-	return { title, levels };
+	return levels.sort((a, b) => a.level - b.level);
 };
+
+const splitSetDefLines = (text: string): string[] =>
+	text.split(/\r?\n/).map((line) => line.trimStart());
+
+/**
+ * Pure SET.def parser shared by the local SimFile parser, the web editor's
+ * server-side metadata load, and the dtx-api R2 catalog matcher. Accepts both
+ * space and colon directive separators, case-insensitive keys, LF or CRLF
+ * line endings, and leading whitespace before a directive — the desktop
+ * uploader's parse_set_def_labels trims each line before matching, so an
+ * indented directive still produced a row label at upload time. Labels and
+ * file names are captured whole (multiword values, subdirectories); path
+ * normalization is left to consumers.
+ *
+ * Only complete label+file pairs on positive numeric slots are returned,
+ * sorted by level — slots above the conventional L1–L5 range are kept.
+ */
+export const parseSetDef = (text: string): ParsedSetDef => {
+	const lines = splitSetDefLines(text);
+	const titleIndexes = lines
+		.map((line, index) => (titlePattern.test(line) ? index : -1))
+		.filter((index) => index >= 0);
+	// SET.def can concatenate multiple songs. This single-song shape describes
+	// the first #TITLE section only; files with no #TITLE keep their legacy
+	// flat parsing behavior.
+	const sectionLines = titleIndexes.length
+		? lines.slice(titleIndexes[0], titleIndexes[1] ?? lines.length)
+		: lines;
+
+	const titleLine = sectionLines.find((line) => titlePattern.test(line));
+	const title = titleLine ? titleLine.replace(/^#TITLE\s*:?\s*/i, '').trim() : '';
+
+	return { title, levels: collectLevels(sectionLines) };
+};
+
+/**
+ * Whole-document slot view of a SET.def, ignoring #TITLE section boundaries.
+ * The desktop uploader's parse_set_def_labels scans every line into one
+ * slot map (a later section's slot overwrites an earlier one), so catalog
+ * matching must see the same slots the uploader catalogued rows from —
+ * unlike parseSetDef, which describes only the first song for the editor.
+ */
+export const parseSetDefDocumentLevels = (text: string): SetDefLevel[] =>
+	collectLevels(splitSetDefLines(text));
 
 /**
  * Resolve an #LxFILE reference to the form File names and R2 object keys

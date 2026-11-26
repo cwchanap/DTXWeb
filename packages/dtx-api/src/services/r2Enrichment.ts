@@ -1,6 +1,6 @@
 import {
 	decodeArrayBufferWithBomDetection,
-	parseSetDef,
+	parseSetDefDocumentLevels,
 	normalizeSetDefFileName,
 	normalizeLevel
 } from '@dtx/common/encoding';
@@ -126,11 +126,13 @@ const parseSetDefFilesByLabel = (setDefText: string): Map<string, SetDefFileRef[
 	// than a single value keyed by label alone — preserves every distinct
 	// file so the consumer can assign one file per matching DB row instead
 	// of overwriting earlier entries and silently collapsing two rows onto
-	// the same R2 object. parseSetDef returns slots sorted by numeric level,
-	// so each array stays in L-slot order (L1 before L2 …) regardless of the
-	// line order inside set.def.
+	// the same R2 object. The slots are sorted by numeric level, so each
+	// array stays in L-slot order (L1 before L2 …) regardless of the line
+	// order inside set.def. The whole document is read, not just the first
+	// #TITLE section: the desktop uploader's parse_set_def_labels folds every
+	// section into one slot map, so rows exist for later sections' charts.
 	const filesByLabel = new Map<string, SetDefFileRef[]>();
-	for (const { label, fileName } of parseSetDef(setDefText).levels) {
+	for (const { label, fileName } of parseSetDefDocumentLevels(setDefText)) {
 		// Store the normalized filename plus the explicit-relative marker.
 		// Path resolution is deferred to the caller (discoverCatalogFiles),
 		// which has access to the R2 object map and can try the set.def's
@@ -702,33 +704,47 @@ export const discoverCatalogFiles = async (
 			}
 			const keyOwner = new Map<string, number>();
 			const assignment = new Map<number, { refs: SetDefFileRef[]; ref: SetDefFileRef }>();
+			// A row holding a raw-filename claim (the uploader labelled it from
+			// that very file) may only be moved onto another raw-filename
+			// candidate, never onto an alias. Direct claims settle first; alias
+			// claims then augment around them.
+			const directRows = new Set<number>();
 			const tryAssign = (
 				rowIndex: number,
 				seenRows: Set<number>,
-				seenKeys: Set<string>
+				seenKeys: Set<string>,
+				directOnly: boolean
 			): boolean => {
 				if (seenRows.has(rowIndex)) return false;
 				seenRows.add(rowIndex);
 				const candidate = candidatesByRow.get(rowIndex);
 				if (!candidate) return false;
 				for (const refIndex of candidate.indexes) {
-					const key = resolveSetDefObject(candidate.refs[refIndex])?.key;
+					const ref = candidate.refs[refIndex];
+					const key = resolveSetDefObject(ref)?.key;
 					if (!key || seenKeys.has(key)) continue;
+					const isDirect = isDirectRawRef(ref, key);
+					if (directOnly && !isDirect) continue;
 					seenKeys.add(key);
 					const owner = keyOwner.get(key);
-					if (owner === undefined || tryAssign(owner, seenRows, seenKeys)) {
+					if (
+						owner === undefined ||
+						tryAssign(owner, seenRows, seenKeys, directRows.has(owner))
+					) {
 						keyOwner.set(key, rowIndex);
-						assignment.set(rowIndex, {
-							refs: candidate.refs,
-							ref: candidate.refs[refIndex]
-						});
+						assignment.set(rowIndex, { refs: candidate.refs, ref });
+						if (isDirect) directRows.add(rowIndex);
+						else directRows.delete(rowIndex);
 						return true;
 					}
 				}
 				return false;
 			};
 			for (const rowIndex of candidatesByRow.keys())
-				tryAssign(rowIndex, new Set(), new Set());
+				tryAssign(rowIndex, new Set(), new Set(), true);
+			for (const rowIndex of candidatesByRow.keys())
+				if (!assignment.has(rowIndex)) tryAssign(rowIndex, new Set(), new Set(), false);
+
 			// Rows sharing the identical exact candidate set are indistinguishable.
 			// Pair those rows to their matched keys in uploader order rather than in
 			// augmenting-path order, which is an implementation artifact.
@@ -1064,14 +1080,22 @@ export const discoverCatalogFiles = async (
 		// so the file must not claim this row on its stem alone.
 		for (const [stem, keys] of unusedKeysByStem) {
 			const rows = unclaimedRowsByLabel.get(stem);
-			if (keys.length !== 1 || rows?.length !== 1) continue;
+			// A root chart and a set.def-sibling copy sharing the stem are not
+			// interchangeable: parse_dtx_folder catalogs the root file, so the
+			// lone root key is the row's candidate and the nested copy stays
+			// out of the positional fallback's reach.
+			const rootKeys =
+				keys.length > 1 ? keys.filter((k) => isTopLevelR2Key(k, prefix)) : keys;
+			const stemKeys = rootKeys.length === 1 ? rootKeys : keys;
+			if (stemKeys.length !== 1 || rows?.length !== 1) continue;
+			const stemKey = stemKeys[0];
 			// Read deeper than the pairing window like the root stem-claim
 			// path — a #DLEVEL behind a long header is still a valid rating.
-			let probed: number | null | undefined = probedLevelByKey.get(keys[0]);
-			if (probed === undefined && !stemDeepProbedKeys.has(keys[0])) {
-				stemDeepProbedKeys.add(keys[0]);
-				probed = await probeChartLevel(keys[0], CHART_LEVEL_DEEP_PROBE_BYTES);
-				if (typeof probed === 'number') probedLevelByKey.set(keys[0], probed);
+			let probed: number | null | undefined = probedLevelByKey.get(stemKey);
+			if (probed === undefined && !stemDeepProbedKeys.has(stemKey)) {
+				stemDeepProbedKeys.add(stemKey);
+				probed = await probeChartLevel(stemKey, CHART_LEVEL_DEEP_PROBE_BYTES);
+				if (typeof probed === 'number') probedLevelByKey.set(stemKey, probed);
 			}
 			const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
 			const effectiveProbed = probed === null ? 0 : probed;
@@ -1085,14 +1109,14 @@ export const discoverCatalogFiles = async (
 				(exactOnly ? effectiveProbed === rowLevel : effectiveProbed !== 0 || rowLevel === 0)
 			) {
 				rowsClaimedBySetDef.add(rows[0]);
-				matchedKeysByRowIndex.set(rows[0], keys[0]);
-				usedDtxKeys.add(keys[0]);
+				matchedKeysByRowIndex.set(rows[0], stemKey);
+				usedDtxKeys.add(stemKey);
 			} else if (
 				(probed === 0 || probed === null) &&
 				rowLevel !== 0 &&
 				!hasUnclaimedLevelZeroRow()
 			) {
-				usedDtxKeys.add(keys[0]);
+				usedDtxKeys.add(stemKey);
 			}
 			// An unprobed read or a rating that names a different chart proves
 			// nothing either way — leave the row and the key to the fallback.

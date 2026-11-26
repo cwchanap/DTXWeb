@@ -239,7 +239,15 @@ export class DTXFile {
 			// `parseFloat('Infinity')` and `parseFloat('1e309')` (which overflows
 			// to Infinity) pass `!isNaN`, so the `isFinite` guard mirrors
 			// parseMeasureLengths' finite-number check.
-			if (!isNaN(value) && isFinite(value)) bpmNotes[noteID] = value;
+			if (isNaN(value) || !isFinite(value)) return;
+			// DTX ids are case-insensitive, so `#BPMAA` and `#BPMAa` name one
+			// tempo and the later directive wins. Reassigning an existing key
+			// keeps its original property position, which would let a
+			// case-variant spelling defined in between outrank the final
+			// definition once consumers fold ids to one case. Re-inserting moves
+			// the key to the end so insertion order is definition order.
+			delete bpmNotes[noteID];
+			bpmNotes[noteID] = value;
 		});
 		return bpmNotes;
 	}

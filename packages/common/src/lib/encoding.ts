@@ -9,6 +9,7 @@ export {
 } from './chart/encoding-utils';
 export {
 	parseSetDef,
+	parseSetDefDocumentLevels,
 	normalizeSetDefFileName,
 	type ParsedSetDef,
 	type SetDefLevel

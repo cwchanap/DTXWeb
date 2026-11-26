@@ -658,6 +658,15 @@ export const discoverCatalogFiles = async (
 		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
 	const keysDeferredForExactMatch = new Set<string>();
 	const pendingSetDefClaims = new Set<number>();
+	// `usedDtxKeys` also carries leftover reservations. SET.def retries must
+	// exclude only keys actually bound to a row, or a deferred row's own later
+	// reference becomes unavailable before its retry.
+	const keyIsAssignedToRow = (key: string): boolean => {
+		for (const assignedKey of matchedKeysByRowIndex.values()) {
+			if (assignedKey === key) return true;
+		}
+		return false;
+	};
 
 	const keyHasUnclaimedRawOwner = (key: string): boolean => {
 		for (const [ownerIndex, owner] of dtxFiles.entries()) {
@@ -680,15 +689,15 @@ export const discoverCatalogFiles = async (
 		deferBlockedClaims = false,
 		onlyPendingClaims = false
 	): void => {
-		const isRefUnused = (ref: SetDefFileRef): boolean => {
+		const isRefUnassigned = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
-			return !object || !usedDtxKeys.has(object.key);
+			return !object || !keyIsAssignedToRow(object.key);
 		};
 		const commitClaim = (rowIndex: number, refs: SetDefFileRef[], refIndex: number): void => {
 			rowsClaimedBySetDef.add(rowIndex);
 			const [setDefRef] = refs.splice(refIndex, 1);
 			const matchedObject = resolveSetDefObject(setDefRef);
-			if (matchedObject && !usedDtxKeys.has(matchedObject.key)) {
+			if (matchedObject && !keyIsAssignedToRow(matchedObject.key)) {
 				matchedKeysByRowIndex.set(rowIndex, matchedObject.key);
 				usedDtxKeys.add(matchedObject.key);
 			}
@@ -705,7 +714,7 @@ export const discoverCatalogFiles = async (
 				const rowLevel = normalizeLevel(file.level);
 				const indexes: number[] = [];
 				for (let i = 0; i < refs.length; i++) {
-					if (isRefUnused(refs[i]) && fileLevelByRef.get(refs[i]) === rowLevel)
+					if (isRefUnassigned(refs[i]) && fileLevelByRef.get(refs[i]) === rowLevel)
 						indexes.push(i);
 				}
 				if (indexes.length > 0) candidatesByRow.set(index, { refs, indexes });
@@ -849,12 +858,8 @@ export const discoverCatalogFiles = async (
 			let refIndex = -1;
 			let deferClaim = false;
 			for (const [candidateIndex, ref] of refs.entries()) {
-				if (!isRefUnused(ref)) continue;
+				if (!isRefUnassigned(ref)) continue;
 				const probed = fileLevelByRef.get(ref);
-				if (probed === undefined) {
-					refIndex = candidateIndex;
-					break;
-				}
 				// A probed level of zero names a chart the uploader never
 				// catalogued — parse_dtx_folder skips unrated charts
 				// (#DLEVEL 0 or absent) — so no row can own it. Left in

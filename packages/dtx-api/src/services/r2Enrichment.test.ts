@@ -5557,9 +5557,28 @@ describe('PR365 review assignment regressions', () => {
 		}));
 		return {
 			...makeBucket([objects]),
-			get: vi.fn(async (key: string) => ({
-				arrayBuffer: async () => encodeToBuffer(chartBodies[key] ?? '')
-			}))
+			get: vi.fn(
+				async (
+					key: string,
+					options?: { range?: { offset?: number; length?: number; suffix?: number } }
+				) => {
+					const bytes = new TextEncoder().encode(chartBodies[key] ?? '');
+					let start = 0;
+					let end = bytes.byteLength;
+					const range = options?.range;
+					if (range?.suffix !== undefined) {
+						start = Math.max(0, end - range.suffix);
+					} else if (range) {
+						start = range.offset ?? 0;
+						if (range.length !== undefined) end = Math.min(end, start + range.length);
+					}
+					const bodyBytes = bytes.slice(start, end);
+					return {
+						size: bytes.byteLength,
+						arrayBuffer: async () => bodyBytes.buffer
+					};
+				}
+			)
 		} as unknown as R2Bucket;
 	};
 
@@ -5705,6 +5724,34 @@ describe('PR365 review assignment regressions', () => {
 			makeChartBucket({
 				'42/set.def': '#L1LABEL A\n#L1FILE a.dtx\n#L2LABEL B\n#L2FILE ./a.dtx\n',
 				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 80 },
+					{ label: 'B', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
+	it('checks raw-filename ownership before accepting an unprobed alias', async () => {
+		// The first 16 KiB probe of a.dtx ends before its #DLEVEL, so B's
+		// lower-rated alias is unprobed when non-exact SET.def claims run.
+		// That missing probe must not let B take A's raw-filename chart.
+		const lateRatedChart = `${'#COMMENT padding\n'.repeat(1100)}#DLEVEL: 70\n`;
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL A\n#L1FILE a.dtx\n#L2LABEL B\n#L2FILE ./a.dtx\n',
+				'42/a.dtx': lateRatedChart,
 				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
 			}),
 			{
@@ -6148,6 +6195,73 @@ describe('PR365 review assignment regressions', () => {
 		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
 			'https://cdn.example.test/42/shared.dtx',
 			'https://cdn.example.test/42/abexpert.dtx'
+		]);
+	});
+
+	it('keeps a deferred row’s later reference available when another row takes the blocked alias', async () => {
+		// BASIC first aliases SHARED's exact-rated shared.dtx, so it defers.
+		// Its later z-alt.dtx reference is BASIC's own re-rated chart: reserving
+		// that reference as an unrelated leftover must not make the retry skip it.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./shared.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE z-alt.dtx'
+				].join('\n'),
+				'42/shared.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/z-alt.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'SHARED', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/z-alt.dtx',
+			'https://cdn.example.test/42/shared.dtx'
+		]);
+	});
+
+	it('consumes a reserved deferred reference only once across duplicate labels', async () => {
+		// Both BASIC rows defer behind SHARED's shared.dtx. z-alt.dtx is one
+		// reserved SET.def candidate, not a key both rows may claim; the second
+		// row still needs its own unlisted chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./shared.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE z-alt.dtx',
+					'#L3LABEL BASIC',
+					'#L3FILE z-alt.dtx'
+				].join('\n'),
+				'42/other.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/shared.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/z-alt.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'SHARED', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/z-alt.dtx',
+			'https://cdn.example.test/42/other.dtx',
+			'https://cdn.example.test/42/shared.dtx'
 		]);
 	});
 

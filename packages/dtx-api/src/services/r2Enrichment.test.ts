@@ -6058,4 +6058,146 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/c.dtx'
 		]);
 	});
+
+	it('retries a blocked alias after its raw owner settles on another file', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': [
+					'#L1LABEL A',
+					'#L1FILE ./a.dtx',
+					'#L2LABEL A',
+					'#L2FILE ./bonus/alt.dtx',
+					'#L3LABEL C',
+					'#L3FILE c.dtx',
+					'#L4LABEL C',
+					'#L4FILE a.dtx'
+				].join('\n'),
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/c.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/extras/bonus/alt.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 30 },
+					{ label: 'C', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/c.dtx'
+		]);
+	});
+
+	it('retries a rating-deferred alias after the matching row claims its own stem chart', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./basic.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE ./bonus/alt.dtx'
+				].join('\n'),
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/bonus/alt.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('retries a rating-deferred alias after exact-rating assignment settles the other row', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./shared.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE ./bonus/alt.dtx'
+				].join('\n'),
+				'42/abexpert.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/aapositional.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/shared.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/bonus/alt.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/shared.dtx',
+			'https://cdn.example.test/42/abexpert.dtx'
+		]);
+	});
+
+	it('prefers a re-rated root stem chart over a nested same-stem exact copy', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE other.dtx\n',
+				'42/extras/other.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('does not let a same-stem copy suppress the legacy deep-chart fallback', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE other.dtx\n',
+				'42/extras/other.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/old/archive/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/old/archive/hard.dtx'
+		]);
+	});
 });

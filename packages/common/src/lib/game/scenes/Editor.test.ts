@@ -3046,4 +3046,71 @@ describe('Editor Scene', () => {
 			updateCellHeightSpy.mockRestore();
 		});
 	});
+
+	it('redraws a shared-position visual with the restored owner chip', () => {
+		const laneId = '18';
+		const laneIndex = 2;
+		const measure = 0;
+		const cellOffset = 0.25;
+		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+		const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+		editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+		editorScene['notes'] = {
+			[laneId]: [
+				new LaneMeasureNote(measure, laneId, [{ noteID: '01', position: cellOffset }], 1),
+				new LaneMeasureNote(measure, laneId, [{ noteID: '02', position: cellOffset }], 1)
+			]
+		};
+
+		const objects: any[] = [];
+		const makeVisual = (text?: string) => {
+			const visual: any = { name: '', text };
+			const chain = () => visual;
+			visual.lineStyle = vi.fn(chain);
+			visual.fillStyle = vi.fn(chain);
+			visual.fillRect = vi.fn(chain);
+			visual.strokeRect = vi.fn(chain);
+			visual.setOrigin = vi.fn(chain);
+			visual.setName = vi.fn((name: string) => {
+				visual.name = name;
+				return visual;
+			});
+			visual.destroy = vi.fn(() => {
+				const index = objects.indexOf(visual);
+				if (index >= 0) objects.splice(index, 1);
+			});
+			return visual;
+		};
+		const panelContainer: any = {
+			y: 0,
+			list: objects,
+			add: vi.fn((object: any) => {
+				objects.push(object);
+				return panelContainer;
+			}),
+			getAll: vi.fn(() => objects),
+			getByName: vi.fn(
+				(name: string) => objects.find((object) => object.name === name) ?? null
+			)
+		};
+		editorScene['panelContainer'] = panelContainer;
+		(editorScene.add.graphics as ReturnType<typeof vi.fn>).mockImplementation(() =>
+			makeVisual()
+		);
+		(editorScene.add.text as ReturnType<typeof vi.fn>).mockImplementation(
+			(_x: number, _y: number, value: string) => makeVisual(value)
+		);
+
+		const staleNote = makeVisual();
+		staleNote.setName(noteKey);
+		objects.push(staleNote);
+		const staleText = makeVisual('02');
+		staleText.setName(textKey);
+		objects.push(staleText);
+
+		editorScene.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);
+
+		expect(panelContainer.getByName(textKey)?.text).toBe('01');
+		expect(objects.filter((object) => object.name === noteKey)).toHaveLength(1);
+	});
 });

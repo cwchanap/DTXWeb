@@ -657,6 +657,7 @@ export const discoverCatalogFiles = async (
 		Boolean(key) &&
 		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
 	const keysDeferredForExactMatch = new Set<string>();
+	const pendingSetDefClaims = new Set<number>();
 
 	const keyHasUnclaimedRawOwner = (key: string): boolean => {
 		for (const [ownerIndex, owner] of dtxFiles.entries()) {
@@ -674,7 +675,11 @@ export const discoverCatalogFiles = async (
 		return false;
 	};
 
-	const claimSetDefRows = (exactOnly: boolean): void => {
+	const claimSetDefRows = (
+		exactOnly: boolean,
+		deferBlockedClaims = false,
+		onlyPendingClaims = false
+	): void => {
 		const isRefUnused = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
 			return !object || !usedDtxKeys.has(object.key);
@@ -836,24 +841,35 @@ export const discoverCatalogFiles = async (
 		}
 		for (const { file, index } of claimOrder) {
 			if (rowsClaimedBySetDef.has(index)) continue;
+			if (onlyPendingClaims && !pendingSetDefClaims.has(index)) continue;
 			const label = file.label.toLowerCase();
 			const refs = filesByLabel.get(label);
 			if (!refs?.length) continue;
 			const rowLevel = normalizeLevel(file.level);
-			const refIndex = refs.findIndex((ref) => {
-				if (!isRefUnused(ref)) return false;
+			let refIndex = -1;
+			let deferClaim = false;
+			for (const [candidateIndex, ref] of refs.entries()) {
+				if (!isRefUnused(ref)) continue;
 				const probed = fileLevelByRef.get(ref);
-				if (probed === undefined) return true;
+				if (probed === undefined) {
+					refIndex = candidateIndex;
+					break;
+				}
 				// A probed level of zero names a chart the uploader never
 				// catalogued — parse_dtx_folder skips unrated charts
 				// (#DLEVEL 0 or absent) — so no row can own it. Left in
 				// refs it stays reserved; a non-exact claim must not let
 				// it displace an unlisted file that is a row's real chart.
-				if (probed === 0) return false;
+				if (probed === 0) continue;
 				const levels = rowLevelsByLabel.get(label);
+				let namesAnotherRowInLabel = false;
 				for (const level of levels ?? []) {
-					if (level === probed && level !== rowLevel) return false;
+					if (level === probed && level !== rowLevel) {
+						namesAnotherRowInLabel = true;
+						break;
+					}
 				}
+				if (namesAnotherRowInLabel) continue;
 				// The resolved object can be shared with another label's
 				// ref: its probed rating may name a row in THAT label,
 				// whose own ref will exact-claim the shared key. A
@@ -868,7 +884,11 @@ export const discoverCatalogFiles = async (
 					!isDirectRawRef(ref, sharedObject.key) &&
 					keyHasUnclaimedRawOwner(sharedObject.key)
 				) {
-					return false;
+					if (deferBlockedClaims) {
+						deferClaim = true;
+						break;
+					}
+					continue;
 				}
 				if (
 					sharedObject &&
@@ -885,12 +905,17 @@ export const discoverCatalogFiles = async (
 					)
 				) {
 					keysDeferredForExactMatch.add(sharedObject.key);
-					return false;
+					if (deferBlockedClaims) {
+						deferClaim = true;
+						break;
+					}
+					continue;
 				}
 				const sharedLabels = sharedObject
 					? labelsByResolvedKey.get(sharedObject.key)
 					: undefined;
 				if (sharedLabels && sharedLabels.size > 1) {
+					let stillNeededElsewhere = false;
 					for (const otherLabel of sharedLabels) {
 						if (otherLabel === label) continue;
 						const stillNeedsKey = dtxFiles.some(
@@ -899,20 +924,31 @@ export const discoverCatalogFiles = async (
 								other.label.toLowerCase() === otherLabel &&
 								normalizeLevel(other.level) === probed
 						);
-						if (stillNeedsKey) return false;
+						if (stillNeedsKey) {
+							stillNeededElsewhere = true;
+							break;
+						}
 					}
+					if (stillNeededElsewhere) continue;
 				}
-				return true;
-			});
+				refIndex = candidateIndex;
+				break;
+			}
+			if (deferClaim) {
+				pendingSetDefClaims.add(index);
+				continue;
+			}
 			// Every remaining ref is provably another row's chart — leave
 			// them for their true rows and let this row fall through to
 			// the sorted fallback.
 			if (refIndex === -1) continue;
+			pendingSetDefClaims.delete(index);
 			commitClaim(index, refs, refIndex);
 		}
 	};
 	claimSetDefRows(true);
-	claimSetDefRows(false);
+	claimSetDefRows(false, true);
+	claimSetDefRows(false, true, true);
 	// Legacy/manual catalog rows can carry level 0 even though the desktop
 	// uploader now skips unrated charts. While such a row remains unclaimed an
 	// unrated object is a possible exact/positional match, not a placeholder to
@@ -1145,7 +1181,10 @@ export const discoverCatalogFiles = async (
 	// only to leftover rows and files.
 	const allRowLevels = new Set(dtxFiles.map((file) => normalizeLevel(file.level)));
 	const stemDeepProbedKeys = new Set<string>();
-	const claimStemMatchedRows = async (exactOnly: boolean): Promise<void> => {
+	const claimStemMatchedRows = async (
+		exactOnly: boolean,
+		skipRowsWithOrdinaryExactMatches = false
+	): Promise<void> => {
 		const unusedKeysByStem = new Map<string, string[]>();
 		for (const key of dtxObjectKeys) {
 			if (usedDtxKeys.has(key)) continue;
@@ -1193,9 +1232,21 @@ export const discoverCatalogFiles = async (
 				typeof effectiveProbed === 'number' &&
 				effectiveProbed !== rowLevel &&
 				allRowLevels.has(effectiveProbed);
+			const hasOrdinaryExactMatch =
+				skipRowsWithOrdinaryExactMatches &&
+				dtxObjectKeys.some(
+					(key) =>
+						key !== stemKey &&
+						!usedDtxKeys.has(key) &&
+						!sameStemAlternativeKeys.has(key) &&
+						!(rowLevel === 0 && retainedLevelZeroRootKeys.has(key)) &&
+						(isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir)) &&
+						probedLevelByKey.get(key) === rowLevel
+				);
 			if (
 				typeof effectiveProbed === 'number' &&
 				!namesDifferentRow &&
+				!hasOrdinaryExactMatch &&
 				(exactOnly ? effectiveProbed === rowLevel : effectiveProbed !== 0 || rowLevel === 0)
 			) {
 				rowsClaimedBySetDef.add(rows[0]);
@@ -1224,6 +1275,7 @@ export const discoverCatalogFiles = async (
 		}
 	};
 	await claimStemMatchedRows(true);
+	claimSetDefRows(false, true, true);
 
 	// Content-verify the remaining charts before pairing positionally:
 	// filename order is not a difficulty signal (numbered exports like
@@ -1273,6 +1325,10 @@ export const discoverCatalogFiles = async (
 				probedLevelByKey.set(key, level);
 			})
 		);
+		await claimStemMatchedRows(false, true);
+		const exactFallbackRows = fallbackRows.filter(
+			({ index }) => !rowsClaimedBySetDef.has(index)
+		);
 		// Rows sharing a normalized level are indistinguishable by rating
 		// alone, so within an equal-rated group an unprobed key is as
 		// plausible a match as a probed one — but only on a shortage.
@@ -1287,16 +1343,16 @@ export const discoverCatalogFiles = async (
 		// rated row still requires an exact probed match; unprobed keys
 		// stay positional there.
 		const levelGroups: (typeof fallbackRows)[] = [];
-		for (let groupStart = 0; groupStart < fallbackRows.length;) {
-			const groupLevel = normalizeLevel(fallbackRows[groupStart].file.level);
+		for (let groupStart = 0; groupStart < exactFallbackRows.length;) {
+			const groupLevel = normalizeLevel(exactFallbackRows[groupStart].file.level);
 			let groupEnd = groupStart + 1;
 			while (
-				groupEnd < fallbackRows.length &&
-				normalizeLevel(fallbackRows[groupEnd].file.level) === groupLevel
+				groupEnd < exactFallbackRows.length &&
+				normalizeLevel(exactFallbackRows[groupEnd].file.level) === groupLevel
 			) {
 				groupEnd += 1;
 			}
-			levelGroups.push(fallbackRows.slice(groupStart, groupEnd));
+			levelGroups.push(exactFallbackRows.slice(groupStart, groupEnd));
 			groupStart = groupEnd;
 		}
 		// Retained same-stem copies are duplicates; try ordinary charts first and
@@ -1409,6 +1465,8 @@ export const discoverCatalogFiles = async (
 		}
 	}
 
+	claimSetDefRows(false, true, true);
+
 	// Re-rated leftovers: with exact-rating claims settled, a unique stem
 	// match whose probed rating names no catalog row is still likely the
 	// row's own re-rated file — the uploader replaces charts in place, so
@@ -1416,6 +1474,7 @@ export const discoverCatalogFiles = async (
 	// Claiming it earlier would let the weaker name match displace another
 	// file's exact rating.
 	await claimStemMatchedRows(false);
+	claimSetDefRows(false, true, true);
 	if (!hasUnclaimedLevelZeroRow()) {
 		for (const key of dtxObjectKeys) {
 			if (!usedDtxKeys.has(key) && probedLevelByKey.get(key) === 0) usedDtxKeys.add(key);
@@ -1439,15 +1498,16 @@ export const discoverCatalogFiles = async (
 		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
 		.sort((a, b) => a.index - b.index);
 	const unusedKeys = dtxObjectKeys.filter((key) => !usedDtxKeys.has(key));
-	const fallbackKeys = unusedKeys.filter(isCatalogEligibleKey);
-	if (fallbackKeys.length === 0 && unusedKeys.length === positionalRows.length) {
-		fallbackKeys.push(...unusedKeys);
+	const sameStemCopyKeys = unusedKeys.filter((key) => sameStemAlternativeKeys.has(key));
+	const ordinaryUnusedKeys = unusedKeys.filter((key) => !sameStemAlternativeKeys.has(key));
+	const fallbackKeys = ordinaryUnusedKeys.filter(isCatalogEligibleKey);
+	if (fallbackKeys.length === 0 && ordinaryUnusedKeys.length === positionalRows.length) {
+		fallbackKeys.push(...ordinaryUnusedKeys);
 	}
-	// Duplicate same-stem copies fill a positional slot only after every
-	// ordinary candidate.
-	fallbackKeys.sort(
-		(a, b) => Number(sameStemAlternativeKeys.has(a)) - Number(sameStemAlternativeKeys.has(b))
-	);
+	// Duplicate same-stem copies are never uploader positional candidates:
+	// they neither occupy an ordinary slot nor suppress the legacy deep-chart
+	// one-to-one fallback, but remain available when nothing better remains.
+	fallbackKeys.push(...sameStemCopyKeys);
 	for (const [fallbackIndex, row] of positionalRows.entries()) {
 		const key = fallbackKeys[fallbackIndex];
 		if (key) {

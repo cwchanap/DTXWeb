@@ -327,11 +327,21 @@ export class NoteManager {
 	}
 
 	/**
+	 * Whether a pointer position lies inside the chart viewport above the footer.
+	 */
+	public isInChartViewport(pointer: Phaser.Input.Pointer): boolean {
+		return pointer.y >= 0 && pointer.y < this.editor.getOffsetY();
+	}
+
+	/**
 	 * Handle pointer down events for note operations
 	 */
 	handlePointerDown(pointer: Phaser.Input.Pointer): boolean {
 		if (this.editor.getIsEditing()) {
 			return false; // Don't handle note operations in edit mode
+		}
+		if (!this.isInChartViewport(pointer)) {
+			return false;
 		}
 
 		// Check if user clicked on an existing note for single selection

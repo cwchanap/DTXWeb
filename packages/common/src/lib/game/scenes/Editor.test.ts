@@ -1235,6 +1235,57 @@ describe('Editor Scene', () => {
 			syncNotesToStoreSpy.mockRestore();
 		});
 
+		it('should not delete a note by right-clicking its clipped area in the footer', () => {
+			editorScene.create();
+			editorScene['isEditing'] = true;
+
+			Object.defineProperty(editorScene, 'offsetX', { get: () => 0, configurable: true });
+			Object.defineProperty(editorScene, 'offsetY', { get: () => 600, configurable: true });
+			editorScene['cellWidth'] = 50;
+			editorScene.getTotalMesaureOffest = vi.fn().mockReturnValue(0);
+
+			const laneId = '18';
+			const laneMeasureNote = new LaneMeasureNote(
+				0,
+				laneId,
+				[{ noteID: '01', position: 0.25 }],
+				1
+			);
+			editorScene['notes'] = { [laneId]: [laneMeasureNote] };
+
+			const mockNote = { destroy: vi.fn(), name: 'note-2-0-0.25' };
+			editorScene['panelContainer'] = {
+				y: 110,
+				list: [mockNote],
+				getAll: vi.fn().mockReturnValue([mockNote]),
+				getByName: vi.fn().mockReturnValue(mockNote)
+			} as any;
+
+			const handlePointerDownSpy = vi
+				.spyOn(editorScene['noteManager'], 'handlePointerDown')
+				.mockReturnValue(false);
+			const syncNotesToStoreSpy = vi
+				.spyOn(editorScene as any, 'syncNotesToStore')
+				.mockImplementation(() => {});
+
+			const inputOnMock = editorScene.input.on as MockedFn;
+			const pointerdownHandler = inputOnMock.mock.calls.find(
+				(call) => call[0] === 'pointerdown'
+			)?.[1];
+
+			// Scrolling shifts the chip bounds to y=587..608. y=605 is inside
+			// those unclipped bounds but below the chart viewport ending at 600.
+			const mockPointer = { x: 110, y: 605, rightButtonDown: vi.fn().mockReturnValue(true) };
+			pointerdownHandler?.(mockPointer);
+
+			expect(mockNote.destroy).not.toHaveBeenCalled();
+			expect(laneMeasureNote.notes).toEqual([{ noteID: '01', position: 0.25 }]);
+			expect(syncNotesToStoreSpy).not.toHaveBeenCalled();
+
+			handlePointerDownSpy.mockRestore();
+			syncNotesToStoreSpy.mockRestore();
+		});
+
 		it('should iterate through measures when click is in measure 1 (covering currentY += measureHeight)', () => {
 			editorScene.create();
 			editorScene['isEditing'] = true;

@@ -479,6 +479,57 @@ describe('NoteMove', () => {
 			expect(internals.collectOriginalNoteIds().get(key)).toBe('02');
 		});
 
+		it('should not place a dragged note when its source chip no longer exists', () => {
+			const selectedNotes = new Set(['note-0-1-0']);
+			mockEditor._setMockNotes({
+				lane1: [new LaneMeasureNote(1, 'lane1', [{ noteID: '11', position: 0 }])]
+			});
+			mockEditor.input.activePointer = { x: 150, y: 50 } as any;
+
+			noteMove.startDrag(createMockPointer(100, -400), 'note-0-1-0', selectedNotes);
+			// Undoing the add during the drag removes the source chip and live selection.
+			mockEditor._setMockNotes({});
+			selectedNotes.clear();
+			mockEditor.drawNote.mockClear();
+			const deleteNoteByKey = vi.fn();
+
+			noteMove.completeDrag(selectedNotes, vi.fn(), vi.fn(), deleteNoteByKey);
+
+			expect(deleteNoteByKey).not.toHaveBeenCalled();
+			expect(mockEditor.drawNote).not.toHaveBeenCalled();
+			expect(mockRecordMoveAction).not.toHaveBeenCalled();
+		});
+
+		it('should refuse a move dependent on a dragged destination whose source is missing', () => {
+			mockEditor._setMockNotes({
+				lane1: [new LaneMeasureNote(1, 'lane1', [{ noteID: '02', position: 0.25 }])]
+			});
+			mockEditor._addMockGameObject('note-0-1-0');
+
+			const internals = noteMove as unknown as {
+				draggedNotes: Set<string>;
+				calculateNewPositions: (
+					laneOffsetDelta: number,
+					measureOffsetDelta: number,
+					cellOffsetDelta: number,
+					originalNoteIds: Map<string, string>,
+					notesToMove: Array<{ oldKey: string; newKey: string }>
+				) => void;
+			};
+			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.25']);
+
+			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
+			internals.calculateNewPositions(
+				0,
+				0,
+				-0.25,
+				new Map([['note-0-1-0.25', '02']]),
+				notesToMove
+			);
+
+			expect(notesToMove).toEqual([]);
+		});
+
 		it('should refuse a destination whose dragged graphic leaves a survivor chip', () => {
 			// Two pattern lines share cell 0.5: '02' is dragged away but '03'
 			// keeps the graphic alive, so '01'@0 moving there would be deleted
@@ -502,7 +553,16 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.5']);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, 0.5, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				0.5,
+				new Map([
+					['note-0-1-0', '01'],
+					['note-0-1-0.5', '02']
+				]),
+				notesToMove
+			);
 
 			expect(notesToMove.map((n) => n.oldKey)).toEqual(['note-0-1-0.5']);
 			expect(notesToMove[0].newKey).toBe('note-0-2-0');
@@ -536,7 +596,17 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.25', 'note-0-1-0.5']);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, 0.25, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				0.25,
+				new Map([
+					['note-0-1-0', '01'],
+					['note-0-1-0.25', '02'],
+					['note-0-1-0.5', '03']
+				]),
+				notesToMove
+			);
 
 			expect(notesToMove.map((n) => n.oldKey)).toEqual(['note-0-1-0.5']);
 			expect(notesToMove[0].newKey).toBe('note-0-1-0.75');
@@ -571,7 +641,17 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set(['note-0-1-0', 'note-0-1-0.25', 'note-0-1-0.5']);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, 0.25, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				0.25,
+				new Map([
+					['note-0-1-0', '01'],
+					['note-0-1-0.25', '02'],
+					['note-0-1-0.5', '03']
+				]),
+				notesToMove
+			);
 
 			expect(notesToMove).toEqual([]);
 		});
@@ -610,7 +690,16 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set([key37, key47]);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				-p37,
+				new Map([
+					[key37, '02'],
+					[key47, '03']
+				]),
+				notesToMove
+			);
 
 			// The 3/7 note lands on empty offset 0; the 4/7 note is refused
 			// instead of duplicating the drifted 1/7 cell.
@@ -647,7 +736,7 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set([key18]);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, -pos9, new Map(), notesToMove);
+			internals.calculateNewPositions(0, 0, -pos9, new Map([[key18, '02']]), notesToMove);
 
 			expect(notesToMove).toEqual([]);
 		});
@@ -686,7 +775,17 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set([key17, key37, key47]);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				-p37,
+				new Map([
+					[key17, '01'],
+					[key37, '02'],
+					[key47, '03']
+				]),
+				notesToMove
+			);
 
 			expect(notesToMove.map((n) => n.oldKey)).toEqual([key17, key37, key47]);
 			expect(notesToMove.map((n) => n.newKey)).toEqual([
@@ -728,7 +827,17 @@ describe('NoteMove', () => {
 			internals.draggedNotes = new Set([key17, key37, key47]);
 
 			const notesToMove: Array<{ oldKey: string; newKey: string }> = [];
-			internals.calculateNewPositions(0, 0, -p37, new Map(), notesToMove);
+			internals.calculateNewPositions(
+				0,
+				0,
+				-p37,
+				new Map([
+					[key17, '01'],
+					[key37, '02'],
+					[key47, '03']
+				]),
+				notesToMove
+			);
 
 			expect(notesToMove.map((n) => n.oldKey)).toEqual([key37]);
 			expect(notesToMove[0].newKey).toBe('note-0-0-0');
@@ -824,6 +933,7 @@ describe('NoteMove', () => {
 				clearSelection: vi.fn(() => selectedNotes.clear()),
 				selectedNotes,
 				highlightSelectedNote: vi.fn(),
+				reconcileSharedNoteVisual: vi.fn(),
 				input: { activePointer: { x: 100, y: -600 } }
 			};
 
@@ -950,6 +1060,7 @@ describe('NoteMove', () => {
 				clearSelection: vi.fn(() => selectedNotes.clear()),
 				selectedNotes,
 				highlightSelectedNote: vi.fn(),
+				reconcileSharedNoteVisual: vi.fn(),
 				input: { activePointer: { x: 100, y: -150 } }
 			};
 

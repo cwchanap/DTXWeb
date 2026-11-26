@@ -5670,6 +5670,60 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('defers an alias whose rating names a row without a set.def reference', async () => {
+		// BASIC aliases expert.dtx, but the uploader cataloged basic.dtx and
+		// expert.dtx by filename stem. The alias must not take EXPERT's exact-rated
+		// chart before the stem/exact fallback can assign both rows.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./expert.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'Basic', level: 30 },
+					{ label: 'Expert', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('preserves raw-filename ownership when a re-rated chart is not an exact match', async () => {
+		// A owns a.dtx by raw filename and B only aliases it. After a.dtx is
+		// re-rated away from both rows, lower-rated B must not claim it before
+		// A's non-exact raw-filename claim runs.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL A\n#L1FILE a.dtx\n#L2LABEL B\n#L2FILE ./a.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 80 },
+					{ label: 'B', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
 	it('never lets an alias displace a raw-filename claim during reassignment', async () => {
 		// A owns a.dtx by raw filename; B only aliases it as ./a.dtx and has
 		// ./sub/c.dtx available. B must take c, not move A onto ./b.dtx.
@@ -5815,6 +5869,33 @@ describe('PR365 review assignment regressions', () => {
 		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
 			'https://cdn.example.test/42/solo.dtx',
 			'https://cdn.example.test/42/zztop.dtx'
+		]);
+	});
+
+	it('lets an unreferenced nested same-stem copy fill another row’s exact rating match', async () => {
+		// The sibling copy is not named by SET.def, so nothing puts it in
+		// keysLeftForExactMatch. It is still the only chart whose rating matches HARD.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE other.dtx\n',
+				'42/extras/other.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
 		]);
 	});
 

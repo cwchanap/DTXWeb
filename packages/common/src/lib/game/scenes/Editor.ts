@@ -275,6 +275,7 @@ export class Editor extends BaseGame {
 
 					// Check if it's a right-click (pointer.rightButtonDown())
 					if (pointer.rightButtonDown()) {
+						if (!this.noteManager.isInChartViewport(pointer)) return;
 						// Hit-test the drawn rectangles rather than distance to
 						// a timing anchor: the graphic sits above its anchor, so
 						// anchor distance can pick an adjacent chip or delete

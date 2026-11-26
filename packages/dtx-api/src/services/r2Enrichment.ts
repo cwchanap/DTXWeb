@@ -656,6 +656,24 @@ export const discoverCatalogFiles = async (
 		!ref.explicitlyRelative &&
 		Boolean(key) &&
 		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
+	const keysDeferredForExactMatch = new Set<string>();
+
+	const keyHasUnclaimedRawOwner = (key: string): boolean => {
+		for (const [ownerIndex, owner] of dtxFiles.entries()) {
+			if (rowsClaimedBySetDef.has(ownerIndex)) continue;
+			const ownerRefs = filesByLabel.get(owner.label.toLowerCase());
+			if (
+				ownerRefs?.some(
+					(ownerRef) =>
+						resolveSetDefObject(ownerRef)?.key === key && isDirectRawRef(ownerRef, key)
+				)
+			) {
+				return true;
+			}
+		}
+		return false;
+	};
+
 	const claimSetDefRows = (exactOnly: boolean): void => {
 		const isRefUnused = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
@@ -845,6 +863,30 @@ export const discoverCatalogFiles = async (
 				// Exact claims have already settled by this pass, so only
 				// a still-unclaimed row can need the shared object.
 				const sharedObject = resolveSetDefObject(ref);
+				if (
+					sharedObject &&
+					!isDirectRawRef(ref, sharedObject.key) &&
+					keyHasUnclaimedRawOwner(sharedObject.key)
+				) {
+					return false;
+				}
+				if (
+					sharedObject &&
+					!isDirectRawRef(ref, sharedObject.key) &&
+					typeof probed === 'number' &&
+					probed !== 0 &&
+					(isTopLevelR2Key(sharedObject.key, prefix) ||
+						isTopLevelR2Key(sharedObject.key, setDefBaseDir)) &&
+					dtxFiles.some(
+						(other, otherIndex) =>
+							otherIndex !== index &&
+							!rowsClaimedBySetDef.has(otherIndex) &&
+							normalizeLevel(other.level) === probed
+					)
+				) {
+					keysDeferredForExactMatch.add(sharedObject.key);
+					return false;
+				}
 				const sharedLabels = sharedObject
 					? labelsByResolvedKey.get(sharedObject.key)
 					: undefined;
@@ -963,6 +1005,20 @@ export const discoverCatalogFiles = async (
 					keysLeftForExactMatch.add(object.key);
 					probedLevelByKey.set(object.key, leftoverLevel);
 				}
+				if (
+					keysDeferredForExactMatch.has(object.key) &&
+					typeof leftoverLevel === 'number'
+				) {
+					const exactOwnerStillNeedsKey = dtxFiles.some(
+						(file, index) =>
+							!rowsClaimedBySetDef.has(index) &&
+							normalizeLevel(file.level) === leftoverLevel
+					);
+					if (exactOwnerStillNeedsKey) {
+						keysLeftForExactMatch.add(object.key);
+						probedLevelByKey.set(object.key, leftoverLevel);
+					}
+				}
 				const leftoverRatingAgrees =
 					typeof leftoverLevel === 'number' && leftoverLevel === stemRowLevel;
 				deferForStemRow =
@@ -1051,6 +1107,7 @@ export const discoverCatalogFiles = async (
 			// so zero-level exact/positional matching can still bind them.
 			if (
 				!keysLeftForExactMatch.has(object.key) &&
+				!keysDeferredForExactMatch.has(object.key) &&
 				!deferForStemRow &&
 				(!isUnratedLeftover || !hasUnclaimedLevelZeroRow())
 			) {
@@ -1152,9 +1209,7 @@ export const discoverCatalogFiles = async (
 				if (rootKeys.length === 1) {
 					for (const duplicateKey of keys) {
 						if (duplicateKey === stemKey) continue;
-						if (keysLeftForExactMatch.has(duplicateKey))
-							sameStemAlternativeKeys.add(duplicateKey);
-						else usedDtxKeys.add(duplicateKey);
+						sameStemAlternativeKeys.add(duplicateKey);
 					}
 				}
 			} else if (

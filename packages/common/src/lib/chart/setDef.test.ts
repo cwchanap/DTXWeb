@@ -158,4 +158,15 @@ describe('parseSetDefDocumentLevels', () => {
 		]);
 		expect(parseSetDef(text).levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'z.dtx' }]);
 	});
+
+	it('lets explicit empty labels and filenames clear slots when folding document sections', () => {
+		const text =
+			'#TITLE One\n#L1LABEL BASIC\n#L1FILE basic.dtx\n#L2LABEL EXTREME\n#L2FILE extreme.dtx\n#TITLE Two\n#L1LABEL:\n#L1FILE extras/alternate.dtx\n#L2LABEL EXTREME\n#L2FILE:\n';
+
+		expect(parseSetDefDocumentLevels(text)).toEqual([]);
+		expect(parseSetDef(text).levels).toEqual([
+			{ level: 1, label: 'BASIC', fileName: 'basic.dtx' },
+			{ level: 2, label: 'EXTREME', fileName: 'extreme.dtx' }
+		]);
+	});
 });

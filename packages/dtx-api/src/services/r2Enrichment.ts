@@ -761,6 +761,20 @@ export const discoverCatalogFiles = async (
 			}
 			for (const rows of rowsBySignature.values()) {
 				if (rows.length < 2) continue;
+				const labels = new Set(rows.map((row) => dtxFiles[row].label.toLowerCase()));
+				const hasDirectClaim = rows.some((row) => {
+					const assignedRef = assignment.get(row)?.ref;
+					const assignedKey = assignedRef
+						? resolveSetDefObject(assignedRef)?.key
+						: undefined;
+					return Boolean(
+						assignedRef && assignedKey && isDirectRawRef(assignedRef, assignedKey)
+					);
+				});
+				// Raw-filename ownership is a cross-label constraint: reordering
+				// indistinguishable duplicate rows is fine, but it must not move a
+				// directly owned file to another label's alias-only row.
+				if (hasDirectClaim && labels.size > 1) continue;
 				const keys = rows
 					.map(
 						(row) =>
@@ -1111,6 +1125,14 @@ export const discoverCatalogFiles = async (
 				rowsClaimedBySetDef.add(rows[0]);
 				matchedKeysByRowIndex.set(rows[0], stemKey);
 				usedDtxKeys.add(stemKey);
+				// When a root chart wins a stem shared with a set.def-sibling copy,
+				// the copy is the same filename in another directory — a duplicate,
+				// not a positional candidate for a different row.
+				if (rootKeys.length === 1) {
+					for (const duplicateKey of keys) {
+						if (duplicateKey !== stemKey) usedDtxKeys.add(duplicateKey);
+					}
+				}
 			} else if (
 				(probed === 0 || probed === null) &&
 				rowLevel !== 0 &&

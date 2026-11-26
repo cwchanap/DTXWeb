@@ -5705,6 +5705,70 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('keeps raw-filename claims when identical candidate sets are reordered', async () => {
+		// A owns a.dtx by raw filename while B reaches the same resolved keys
+		// only through aliases. Even when the nested key sorts first, the
+		// identical-candidate reordering must not take a.dtx away from A.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL A',
+					'#L1FILE a.dtx',
+					'#L2LABEL A',
+					'#L2FILE ./0/c.dtx',
+					'#L3LABEL B',
+					'#L3FILE ./a.dtx',
+					'#L4LABEL B',
+					'#L4FILE ./0/c.dtx'
+				].join('\n'),
+				'42/0/c.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 60 },
+					{ label: 'B', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/0/c.dtx'
+		]);
+	});
+
+	it('drops a set.def slot when a later section clears its label', async () => {
+		// The desktop uploader folds sections and discards incomplete slots.
+		// BASIC is therefore the root basic.dtx by filename stem, not the
+		// replacement file named beside the cleared label.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#TITLE One',
+					'#L1LABEL BASIC',
+					'#L1FILE basic.dtx',
+					'#TITLE Two',
+					'#L1LABEL:',
+					'#L1FILE extras/alternate.dtx'
+				].join('\n'),
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/extras/alternate.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx'
+		]);
+	});
+
 	it('prefers the root chart over a nested same-stem copy when both rate off the row', async () => {
 		// solo.dtx was re-rated to 80 after upload; extras/set.def names its
 		// sibling extras/solo.dtx (70). Neither matches the row's 60, and the
@@ -5724,6 +5788,33 @@ describe('PR365 review assignment regressions', () => {
 		);
 		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
 			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('reserves a nested same-stem copy after the root chart claims the stem row', async () => {
+		// Once SOLO claims the catalogued root solo.dtx, the nested copy is a
+		// duplicate, not a positional chart for another row. ZEN must pair with
+		// the remaining top-level chart even though the nested key sorts first.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/zztop.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'ZEN', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/zztop.dtx'
 		]);
 	});
 });

@@ -10,27 +10,48 @@ export interface ParsedSetDef {
 }
 
 const titlePattern = /^#TITLE(?:\s*:\s*|\s+|$)/i;
-// The space-only separator must not retry a colon that the colon branch
-// already rejected (e.g. `#L1FILE :   `): `\s+` would otherwise consume the
-// spaces before ':' and capture the colon itself as the value.
-const levelPattern = /^#L(\d+)(LABEL|FILE)(?:\s*:\s*|\s+(?!:))(.*)$/i;
+const levelPrefixPattern = /^#L(\d+)(LABEL|FILE)/i;
+
+// Parse separators imperatively: a regex that can divide a whitespace run
+// between the separator and value capture is a polynomial-regex risk.
+const parseLevelDirective = (
+	line: string
+): { level: number; directive: 'LABEL' | 'FILE'; value: string } | null => {
+	const match = line.match(levelPrefixPattern);
+	if (!match) return null;
+	const level = parseInt(match[1], 10);
+	if (!Number.isSafeInteger(level) || level <= 0) return null;
+
+	const rest = line.slice(match[0].length);
+	let rawValue: string;
+	if (rest.startsWith(':')) {
+		rawValue = rest.slice(1);
+	} else {
+		if (!/^\s/.test(rest)) return null;
+		const afterWhitespace = rest.trimStart();
+		rawValue = afterWhitespace.startsWith(':') ? afterWhitespace.slice(1) : afterWhitespace;
+	}
+
+	return {
+		level,
+		directive: match[2].toUpperCase() === 'LABEL' ? 'LABEL' : 'FILE',
+		value: rawValue.trim()
+	};
+};
 
 const collectLevels = (lines: string[], foldBlankValues = false): SetDefLevel[] => {
 	const entries = new Map<number, { label?: string; fileName?: string }>();
 	for (const line of lines) {
-		const match = line.match(levelPattern);
-		if (!match) continue;
-		const level = parseInt(match[1], 10);
-		if (!Number.isSafeInteger(level) || level <= 0) continue;
-		const value = match[3].trim();
-		if (!foldBlankValues && !value) continue;
-		const entry = entries.get(level) ?? {};
-		if (match[2].toUpperCase() === 'LABEL') {
-			entry.label = value;
+		const directive = parseLevelDirective(line);
+		if (!directive) continue;
+		if (!foldBlankValues && !directive.value) continue;
+		const entry = entries.get(directive.level) ?? {};
+		if (directive.directive === 'LABEL') {
+			entry.label = directive.value;
 		} else {
-			entry.fileName = value;
+			entry.fileName = directive.value;
 		}
-		entries.set(level, entry);
+		entries.set(directive.level, entry);
 	}
 
 	const levels: SetDefLevel[] = [];

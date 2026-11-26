@@ -388,6 +388,17 @@ describe('DTXFile', () => {
 			expect(bpmChanges['']).toBe(120);
 		});
 
+		it('lets the last definition win across case-variant ids', () => {
+			dtxFile.lines = ['#BPMAA: 140', '#BPMAa: 180', '#BPMAA: 210'];
+
+			const bpmChanges = dtxFile.parseBPMChanges();
+			const folded = Object.fromEntries(
+				Object.entries(bpmChanges).map(([id, bpm]) => [id.toUpperCase(), bpm])
+			);
+
+			expect(folded['AA']).toBe(210);
+		});
+
 		it('should handle empty BPM lines', () => {
 			dtxFile.lines = ['#TITLE: Test'];
 

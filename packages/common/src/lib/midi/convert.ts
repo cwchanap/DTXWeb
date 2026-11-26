@@ -420,11 +420,11 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 		const lane = laneOf[note]?.toUpperCase();
 		return Boolean(lane && laneToStaff(lane));
 	};
-	// Drum-only MIDI exports are not consistently written to channel 10. The
-	// pre-shared importer mapped notes on every channel, so treat all channels
-	// as drum input when channel 10 has no nonzero-velocity note-ons at all;
-	// when channel 10 does have note-ons (even unmapped percussion), keep the
-	// stricter filter so melodic channels are not turned into drum hits.
+	// Drum-only MIDI exports are not consistently written to channel 10, but
+	// guessing is unsafe: converting melodic channels yields phantom drum
+	// hits. Only channel 10 is imported unless the caller opts in with
+	// includeNonDrumChannels; ignored channels are reported in a warning so
+	// the user can enable the option.
 	const useAllChannels = options.includeNonDrumChannels === true;
 	const isConvertibleNote = (channel: number, note: number): boolean =>
 		(useAllChannels || channel === DRUM_CHANNEL) && isLaneMapped(note);

@@ -5637,4 +5637,93 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/basic.dtx'
 		]);
 	});
+	it('keeps later SET.def sections visible so equal-rated rows pair in uploader order', async () => {
+		// The desktop uploader folds every #TITLE section into one slot map, so
+		// it catalogs BASIC rows for both a.dtx and z.dtx (filename order).
+		// Reading only the first section would hand the first row z.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#TITLE One',
+					'#L1LABEL BASIC',
+					'#L1FILE z.dtx',
+					'#TITLE Two',
+					'#L2LABEL BASIC',
+					'#L2FILE a.dtx'
+				].join('\n'),
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'BASIC', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
+	it('never lets an alias displace a raw-filename claim during reassignment', async () => {
+		// A owns a.dtx by raw filename; B only aliases it as ./a.dtx and has
+		// ./sub/c.dtx available. B must take c, not move A onto ./b.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL A',
+					'#L1FILE a.dtx',
+					'#L2LABEL A',
+					'#L2FILE ./b.dtx',
+					'#L3LABEL B',
+					'#L3FILE ./a.dtx',
+					'#L4LABEL B',
+					'#L4FILE ./sub/c.dtx'
+				].join('\n'),
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/sub/c.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'A', level: 60 },
+					{ label: 'B', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/sub/c.dtx'
+		]);
+	});
+
+	it('prefers the root chart over a nested same-stem copy when both rate off the row', async () => {
+		// solo.dtx was re-rated to 80 after upload; extras/set.def names its
+		// sibling extras/solo.dtx (70). Neither matches the row's 60, and the
+		// nested copy sorts first — the uploader's catalogued root file wins.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'SOLO', level: 60 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
 });

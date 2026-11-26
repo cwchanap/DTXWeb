@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseSetDef, normalizeSetDefFileName } from './setDef';
+import { parseSetDef, parseSetDefDocumentLevels, normalizeSetDefFileName } from './setDef';
 
 describe('parseSetDef', () => {
 	it('parses title and levels from space-separated directives', () => {
@@ -145,5 +145,17 @@ describe('normalizeSetDefFileName', () => {
 		expect(normalizeSetDefFileName('./bas.dtx')).toBe('bas.dtx');
 		expect(normalizeSetDefFileName('././bas.dtx')).toBe('bas.dtx');
 		expect(normalizeSetDefFileName('dir/sub/bas.dtx')).toBe('dir/sub/bas.dtx');
+	});
+});
+
+describe('parseSetDefDocumentLevels', () => {
+	it('collects slots from every #TITLE section while parseSetDef keeps only the first', () => {
+		const text =
+			'#TITLE One\n#L1LABEL BASIC\n#L1FILE z.dtx\n#TITLE Two\n#L2LABEL BASIC\n#L2FILE a.dtx\n';
+		expect(parseSetDefDocumentLevels(text)).toEqual([
+			{ level: 1, label: 'BASIC', fileName: 'z.dtx' },
+			{ level: 2, label: 'BASIC', fileName: 'a.dtx' }
+		]);
+		expect(parseSetDef(text).levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'z.dtx' }]);
 	});
 });

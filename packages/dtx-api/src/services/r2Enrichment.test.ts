@@ -5871,6 +5871,35 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('pairs ordinary and retained-copy exact matches in equal-rated row order', async () => {
+		// HARD and EXTREME both rate 70. zztop.dtx is the ordinary uploader
+		// chart and extras/solo.dtx is the retained duplicate; both are needed,
+		// so the ordinary chart belongs on the earlier equal-rated row.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/zztop.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 70 },
+					{ label: 'EXTREME', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/zztop.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
+
 	it('keeps retained nested copies out of equal-rated shortage positions', async () => {
 		// SOLO and HARD take their root charts. extras/solo.dtx (70) stays
 		// retained, but it is not an uploader file: z02.dtx is BASIC's

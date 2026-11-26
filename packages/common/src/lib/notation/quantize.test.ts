@@ -1108,3 +1108,27 @@ describe('buildTimingInput', () => {
 		expect(fromInput.totalDuration).toBe(timing.totalDuration);
 	});
 });
+
+describe('buildTimingInput tempo id case handling', () => {
+	it('resolves channel-08 references and #BPMxx definitions by the same case-insensitive id', () => {
+		const dtx = makeDtx(['#BPMAa: 180', '#00108: AA'], 120);
+		const events = buildChartTiming(buildTimingInput(dtx)).tempoEvents;
+
+		expect(events).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 1, fraction: 0, bpm: 180 }
+		]);
+	});
+
+	it('keeps synthetic channel-03 ids in their own case-insensitive namespace', () => {
+		const dtx = makeDtx(['#BPMF0: 180', '#00103: f0'], 120);
+		const input = buildTimingInput(dtx);
+		const events = buildChartTiming(input).tempoEvents;
+
+		expect(events).toEqual([
+			{ measure: 0, fraction: 0, bpm: 120 },
+			{ measure: 1, fraction: 0, bpm: 240 }
+		]);
+		expect(input.bpmValueMap['F0']).toBe(180);
+	});
+});

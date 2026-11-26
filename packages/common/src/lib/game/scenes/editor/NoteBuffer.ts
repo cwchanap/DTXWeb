@@ -231,6 +231,7 @@ export class NoteBuffer {
 			);
 			if (!restored && editor.getByName(deletedNote.noteKey)) {
 				this.restoreChipData(editor, deletedNote);
+				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);
 			}
 		});
 

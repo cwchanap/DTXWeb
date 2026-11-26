@@ -269,6 +269,13 @@ export class NoteCopy {
 				newCellOffset = canonicalizeCellOffset(newCellOffset + 1.0);
 			}
 			newCellOffset = snapCellOffsetToBarline(newCellOffset);
+			// The negative-wrap loop can exit at exactly 1, which is the next
+			// measure's zero cell. Carry it so occupancy validation scans the
+			// measure where the hit will actually land.
+			if (newCellOffset >= 1.0) {
+				newMeasure += 1;
+				newCellOffset = 0;
+			}
 
 			// Validate target position
 			if (

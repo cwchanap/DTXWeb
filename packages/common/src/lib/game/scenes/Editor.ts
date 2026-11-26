@@ -868,6 +868,31 @@ export class Editor extends BaseGame {
 	}
 
 	/**
+	 * Reassign a shared position graphic to the first stored chip at that key.
+	 * Duplicate pattern lines share one graphic; undo can restore the chip that
+	 * originally owned it while the visible label still belongs to a survivor.
+	 */
+	reconcileSharedNoteVisual(
+		measure: number,
+		laneIndex: number,
+		cellOffset: number,
+		laneId: string
+	): void {
+		const owner = (this.notes[laneId] ?? [])
+			.filter((group) => group.measure === measure)
+			.flatMap((group) => group.notes)
+			.find((chip) => chip.position === cellOffset);
+		if (!owner) return;
+
+		const noteKey = `note-${laneIndex}-${measure}-${cellOffset}`;
+		const textKey = `text-${laneIndex}-${measure}-${cellOffset}`;
+		const label = this.panelContainer.getByName(textKey) as Phaser.GameObjects.Text | null;
+		if (label?.text === owner.noteID) return;
+		this.noteManager.cleanupNoteVisuals(noteKey);
+		this.drawNote(measure, laneIndex, cellOffset, owner.noteID);
+	}
+
+	/**
 	 * Public teardown entry point. Auto-invoked by the SHUTDOWN and DESTROY
 	 * listeners registered in BaseGame.init(). Delegates to tearDown()
 	 * which is idempotent, so repeated calls (SHUTDOWN then DESTROY, or

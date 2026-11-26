@@ -133,47 +133,56 @@ export function decodeArrayBufferWithBomDetection(buffer: ArrayBuffer): string {
 		let encoding: 'utf-8' | 'utf-16le' | 'utf-16be' = 'utf-8';
 		const directiveRegex =
 			/^\s*#(?:TITLE|ARTIST|BPM|DLEVEL|COMMENT|WAV|BMP|PREVIEW|L\d+(?:LABEL|FILE|FONT))/im;
-		const probeEnd = Math.min(uint8.length & ~1, 2048);
-		const isValidUtf16Probe = (candidate: 'utf-16le' | 'utf-16be'): boolean => {
+		const initialProbeEnd = Math.min(uint8.length & ~1, 2048);
+		const maxProbeEnd = Math.min(uint8.length & ~1, 16 * 1024);
+		const isValidUtf16Probe = (
+			candidate: 'utf-16le' | 'utf-16be',
+			probeEnd = initialProbeEnd
+		): boolean => {
 			if (probeEnd < 2) return false;
 			// The even-byte cut can still split a surrogate pair: a non-BMP
 			// char (emoji, CJK ext-B) straddling probeEnd leaves a lone
-			// high surrogate that decodes as U+FFFD and falsely rejects
-			// this byte order even when the probe holds a valid
-			// directive. Drop the half pair before sniffing.
+			// high surrogate that fatal decoding rejects even when the probe
+			// holds a valid directive. Drop the half pair before sniffing.
 			let end = probeEnd;
 			const lastUnit =
 				candidate === 'utf-16le'
 					? uint8[end - 2] | (uint8[end - 1] << 8)
 					: (uint8[end - 2] << 8) | uint8[end - 1];
 			if (lastUnit >= 0xd800 && lastUnit <= 0xdbff) end -= 2;
-			const decoded = new TextDecoder(candidate).decode(uint8.subarray(0, end));
-			return (
-				!decoded.includes('\u0000') &&
-				!decoded.includes('\uFFFD') &&
-				directiveRegex.test(decoded)
-			);
+			let decoded: string;
+			try {
+				// Fatal decoding rejects malformed bytes without confusing a real
+				// U+FFFD in the chart (a valid scalar value) for a decode failure.
+				decoded = new TextDecoder(candidate, { fatal: true }).decode(
+					uint8.subarray(0, end)
+				);
+			} catch {
+				return false;
+			}
+			return !decoded.includes('\u0000') && directiveRegex.test(decoded);
+		};
+		const chooseUtf16 = (
+			preferred: 'utf-16le' | 'utf-16be',
+			other: 'utf-16le' | 'utf-16be'
+		): 'utf-16le' | 'utf-16be' | undefined => {
+			if (isValidUtf16Probe(preferred)) return preferred;
+			if (isValidUtf16Probe(other)) return other;
+			if (maxProbeEnd > initialProbeEnd) {
+				if (isValidUtf16Probe(preferred, maxProbeEnd)) return preferred;
+				if (isValidUtf16Probe(other, maxProbeEnd)) return other;
+			}
+			return undefined;
 		};
 		if (oddZeros > evenZeros && oddZeros * 4 > pairs) {
-			encoding =
-				!isValidUtf16Probe('utf-16le') && isValidUtf16Probe('utf-16be')
-					? 'utf-16be'
-					: 'utf-16le';
+			encoding = chooseUtf16('utf-16le', 'utf-16be') ?? 'utf-16le';
 		} else if (evenZeros > oddZeros && evenZeros * 4 > pairs) {
-			encoding =
-				!isValidUtf16Probe('utf-16be') && isValidUtf16Probe('utf-16le')
-					? 'utf-16le'
-					: 'utf-16be';
+			encoding = chooseUtf16('utf-16be', 'utf-16le') ?? 'utf-16be';
 		} else if (uint8.length >= 2) {
 			// Sparse-zero UTF-16 (e.g. #TITLE: followed by hundreds of CJK chars)
 			// fails the zero-byte density test; sniff valid directives in both
 			// UTF-16 byte orders before falling back to UTF-8.
-			for (const candidate of ['utf-16le', 'utf-16be'] as const) {
-				if (isValidUtf16Probe(candidate)) {
-					encoding = candidate;
-					break;
-				}
-			}
+			encoding = chooseUtf16('utf-16le', 'utf-16be') ?? 'utf-8';
 		}
 		text = new TextDecoder(encoding).decode(buffer);
 	}

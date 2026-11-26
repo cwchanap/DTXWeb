@@ -34,11 +34,12 @@ const encodeVlq = (value: number): number[] => {
  * undefined for lengths like 0.96 that no power-of-two meter expresses.
  */
 const meterFor = (measureLength: number): { numerator: number; dd: number } | undefined => {
-	for (let dd = 2; dd <= 7; dd++) {
-		const numerator = measureLength * 2 ** dd;
+	for (let dd = 2; dd <= 9; dd++) {
+		const exponent = dd <= 7 ? dd : dd - 8;
+		const numerator = measureLength * 2 ** exponent;
 		const rounded = Math.round(numerator);
 		if (Math.abs(numerator - rounded) < 1e-9 && rounded >= 1 && rounded <= 255) {
-			return { numerator: rounded, dd };
+			return { numerator: rounded, dd: exponent };
 		}
 	}
 	return undefined;
@@ -127,6 +128,8 @@ export const dtxToMidi = (
 		onsetFractions.set(groupKey, group);
 	}
 
+	const normalizedTempoEvents = normalizeTempoEvents(timing);
+
 	// Two things decide the division: every bar still needs 192 ticks for
 	// the DTX slot grid, and every emitted same-note onset needs its own
 	// tick — widened 384/768-cell patterns space hits finer than 1/192.
@@ -163,11 +166,30 @@ export const dtxToMidi = (
 			`${mergedSamePitch} hit(s) share the same MIDI note and tick with another hit and may merge on reimport`
 		);
 	}
+	// Effective tempo changes are events too. Measure their positions in
+	// quarter notes (independent of PPQ); the division must be fine enough
+	// that neighboring tempo changes do not round onto one tick.
+	const measureStartQuarters: number[] = new Array(measureCount);
+	let quarterAcc = 0;
+	for (let m = 0; m < measureCount; m++) {
+		measureStartQuarters[m] = quarterAcc;
+		quarterAcc += 4 * (measureLengths[m] ?? 1);
+	}
+	const tempoQuarterPositions = normalizedTempoEvents.map(
+		(event) =>
+			measureStartQuarters[event.measure] +
+			event.fraction * 4 * (measureLengths[event.measure] ?? 1)
+	);
+	let tempoPpq = 0;
+	for (let i = 1; i < tempoQuarterPositions.length; i++) {
+		const gap = tempoQuarterPositions[i] - tempoQuarterPositions[i - 1];
+		if (gap > 0) tempoPpq = Math.max(tempoPpq, 1 / gap);
+	}
 	const ppq = Math.min(
 		0x7fe0,
 		Math.max(
 			MIDI_PPQ,
-			Math.ceil(Math.max(48 / Math.max(minBarLength, 1e-9), onsetPpq) / 32) * 32
+			Math.ceil(Math.max(48 / Math.max(minBarLength, 1e-9), onsetPpq, tempoPpq) / 32) * 32
 		)
 	);
 	// Integer ticks only — encodeVlq truncates deltas, so a fractional release
@@ -194,10 +216,16 @@ export const dtxToMidi = (
 			'some hits are spaced closer than the MIDI PPQ limit separates; distinct onsets may merge'
 		);
 	}
+	const tempoTicks = tempoQuarterPositions.map((position) => Math.round(position * ppq));
+	if (new Set(tempoTicks).size < tempoTicks.length) {
+		warnings.push(
+			'some tempo changes are closer than the MIDI PPQ limit separates; distinct tempos may merge'
+		);
+	}
 
 	// Tempo events from the normalized timing seam (base BPM at tick 0 plus
 	// every effective change); the first event lands on tick 0 by construction.
-	for (const event of normalizeTempoEvents(timing)) {
+	for (const [index, event] of normalizedTempoEvents.entries()) {
 		const mpq = Math.round(60000000 / event.bpm);
 		// MPQ is a 24-bit field; anything larger would silently wrap into a
 		// different, valid-looking tempo (~6.2 BPM for a 1 BPM source).
@@ -205,7 +233,7 @@ export const dtxToMidi = (
 			throw new Error(`tempo ${event.bpm} BPM is outside the 24-bit MIDI range`);
 		}
 		events.push({
-			tick: Math.round(tickInMeasure(event.measure, event.fraction)),
+			tick: tempoTicks[index],
 			order: 0,
 			seq: seq++,
 			bytes: [0xff, 0x51, 0x03, (mpq >> 16) & 0xff, (mpq >> 8) & 0xff, mpq & 0xff]
@@ -313,6 +341,8 @@ export interface MidiToDtxOptions {
 	noteToLane?: Record<number, string>;
 	/** Override for the detected initial tempo (base #BPM). */
 	bpm?: number;
+	/** Explicitly treat every MIDI channel as percussion input. Defaults to channel 10 only. */
+	includeNonDrumChannels?: boolean;
 }
 
 export interface MidiToDtxResult {
@@ -395,17 +425,7 @@ export const midiToDtx = (midi: ParsedMidi, options: MidiToDtxOptions = {}): Mid
 	// as drum input when channel 10 has no nonzero-velocity note-ons at all;
 	// when channel 10 does have note-ons (even unmapped percussion), keep the
 	// stricter filter so melodic channels are not turned into drum hits.
-	const hasDrumChannelNote = midi.tracks.some((track) =>
-		track.events.some(
-			(event) =>
-				event.type === 'channel' &&
-				event.command === 0x90 &&
-				event.note !== undefined &&
-				Boolean(event.velocity) &&
-				event.channel === DRUM_CHANNEL
-		)
-	);
-	const useAllChannels = !hasDrumChannelNote;
+	const useAllChannels = options.includeNonDrumChannels === true;
 	const isConvertibleNote = (channel: number, note: number): boolean =>
 		(useAllChannels || channel === DRUM_CHANNEL) && isLaneMapped(note);
 

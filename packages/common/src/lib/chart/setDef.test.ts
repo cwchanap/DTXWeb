@@ -108,6 +108,15 @@ describe('parseSetDef', () => {
 		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'bas.dtx' }]);
 	});
 
+	it('keeps level directives within the first #TITLE section', () => {
+		const result = parseSetDef(
+			'#TITLE A\n#L1LABEL BASIC\n#L1FILE a.dtx\n#TITLE B\n#L1LABEL OTHER\n#L1FILE b.dtx\n'
+		);
+
+		expect(result.title).toBe('A');
+		expect(result.levels).toEqual([{ level: 1, label: 'BASIC', fileName: 'a.dtx' }]);
+	});
+
 	it('returns an empty title when #TITLE is absent', () => {
 		expect(parseSetDef('#L1LABEL BASIC\n#L1FILE bas.dtx\n').title).toBe('');
 	});

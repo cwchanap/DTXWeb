@@ -1004,4 +1004,36 @@ describe('NoteCopy', () => {
 			expect(mockNoteMove.addNoteToEditor).toHaveBeenCalledWith(0, 0, 0, 'lane1', '11');
 		});
 	});
+
+	describe('barline carry after negative wrap', () => {
+		it('does not paste a duplicate when a negative wrap lands exactly on the next barline', () => {
+			vi.mocked(mockEditor.getNotes).mockReturnValue({
+				lane1: [new LaneMeasureNote(5, 'lane1', [{ noteID: '01', position: 0 }])]
+			});
+			vi.mocked(mockEditor.getPanelContainer).mockReturnValue({
+				getByName: vi.fn((key: string) => (key === 'note-0-5-0' ? { name: key } : null))
+			} as never);
+			(
+				noteCopy as unknown as { copiedNotes: unknown[]; hasClipboardData: boolean }
+			).copiedNotes = [
+				{
+					noteKey: 'note-0-1-0',
+					laneIndex: 0,
+					measure: 1,
+					cellOffset: 0,
+					laneId: 'lane1',
+					noteId: '11',
+					relativeLaneIndex: 0,
+					relativeMeasure: 0,
+					relativeCellOffset: -1.0000000272e-9
+				}
+			];
+			(noteCopy as unknown as { hasClipboardData: boolean }).hasClipboardData = true;
+
+			const result = noteCopy.pasteNotes(0, 5, 0, mockEditor);
+
+			expect(result).toBe(false);
+			expect(mockNoteMove.addNoteToEditor).not.toHaveBeenCalled();
+		});
+	});
 });

@@ -61,7 +61,13 @@ export const canonicalizeCellOffset = (cellOffset: number): number => {
 		Number.EPSILON * CELL_OFFSET_CANONICAL_ULP_BUDGET * Math.max(1, Math.abs(canonical));
 	for (let digits = 1; digits < 15; digits++) {
 		const shorter = Number(canonical.toPrecision(digits));
-		if (Math.abs(shorter - canonical) <= ulpTolerance) return shorter;
+		if (Math.abs(shorter - canonical) > ulpTolerance) continue;
+		// Do not collapse onto a decimal that a second canonicalization would
+		// snap to the grid. That makes the stored form unstable across paste and
+		// insertion, so undo records one key while the chip is drawn at another.
+		const shorterGrid = Math.round(shorter * 2304) / 2304;
+		if (shorter !== shorterGrid && Math.abs(shorter - shorterGrid) < 1e-9) continue;
+		return shorter;
 	}
 	return canonical;
 };

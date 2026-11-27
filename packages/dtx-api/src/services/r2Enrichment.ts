@@ -1003,11 +1003,21 @@ export const discoverCatalogFiles = async (
 					}
 					continue;
 				}
+				// A bare filename in a single-row label is the uploader's direct
+				// ownership evidence. Rating conflicts still matter for aliases and
+				// for repeated labels, where one shared ref list cannot show which
+				// row owns which file, but they must not swap explicit cross-label
+				// mappings after both charts are re-rated.
+				const unambiguousDirectClaim =
+					sharedObject !== undefined &&
+					isDirectRawRef(ref, sharedObject.key) &&
+					(rowCountByLabel.get(label) ?? 0) === 1;
 				if (
 					sharedObject &&
 					typeof probed === 'number' &&
 					probed !== 0 &&
 					isCatalogEligibleKey(sharedObject.key) &&
+					!unambiguousDirectClaim &&
 					(ratingNamesUnclaimedRow ||
 						(!exactRatingFallbackComplete && ratingNamesAnotherRow))
 				) {
@@ -1319,7 +1329,6 @@ export const discoverCatalogFiles = async (
 	// when 01.dtx probes the Basic level), so those claims defer until
 	// exact-rating claims have settled and the stem heuristic applies
 	// only to leftover rows and files.
-	const allRowLevels = new Set(dtxFiles.map((file) => normalizeLevel(file.level)));
 	const stemDeepProbedKeys = new Set<string>();
 	const claimStemMatchedRows = async (
 		exactOnly: boolean,
@@ -1344,8 +1353,8 @@ export const discoverCatalogFiles = async (
 			if (rows) rows.push(index);
 			else unclaimedRowsByLabel.set(label, [index]);
 		});
-		// A probed rating equal to a DIFFERENT row's level names that row's
-		// chart — the same disqualification the set.def claim loop applies —
+		// A probed rating equal to a DIFFERENT unclaimed row's level names that
+		// row's chart — the same disqualification the set.def claim loop applies —
 		// so the file must not claim this row on its stem alone.
 		for (const [stem, keys] of unusedKeysByStem) {
 			const rows = unclaimedRowsByLabel.get(stem);
@@ -1372,7 +1381,11 @@ export const discoverCatalogFiles = async (
 			const namesDifferentRow =
 				typeof effectiveProbed === 'number' &&
 				effectiveProbed !== rowLevel &&
-				allRowLevels.has(effectiveProbed);
+				dtxFiles.some(
+					(file, index) =>
+						!rowsClaimedBySetDef.has(index) &&
+						normalizeLevel(file.level) === effectiveProbed
+				);
 			const hasOrdinaryExactMatch =
 				skipRowsWithOrdinaryExactMatches &&
 				dtxObjectKeys.some(

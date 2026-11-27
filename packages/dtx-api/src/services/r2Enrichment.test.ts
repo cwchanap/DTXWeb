@@ -5743,6 +5743,34 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('preserves direct filename mappings when re-rated difficulties cross labels', async () => {
+		// SET.def explicitly maps BASIC to a.dtx and EXTREME to b.dtx. Both
+		// charts were later re-rated into each other's stored level, but the
+		// direct filename mapping is stronger evidence than the stale ratings.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL EXTREME\n#L2FILE b.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/bonus.dtx': '#TITLE: Bonus\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXTREME', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
 	it('checks raw-filename ownership before accepting an unprobed alias', async () => {
 		// The first 16 KiB probe of a.dtx ends before its #DLEVEL, so B's
 		// lower-rated alias is unprobed when non-exact SET.def claims run.
@@ -6600,9 +6628,9 @@ describe('PR365 review assignment regressions', () => {
 			{
 				simfileId: 42,
 				dtxFiles: [
-					{ label: 'EXPERT', level: 70 },
+					{ label: 'OTHER', level: 75 },
 					{ label: 'BASIC', level: 30 },
-					{ label: 'OTHER', level: 75 }
+					{ label: 'EXPERT', level: 70 }
 				],
 				publicBaseUrl: 'https://cdn.example.test'
 			},
@@ -6610,9 +6638,9 @@ describe('PR365 review assignment regressions', () => {
 		);
 
 		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
-			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/other.dtx',
 			null,
-			'https://cdn.example.test/42/other.dtx'
+			'https://cdn.example.test/42/expert.dtx'
 		]);
 	});
 

@@ -15,6 +15,25 @@
 	type Padding = 'none' | '1' | '2' | '3' | '4' | '6' | '8';
 	type Position = 'static' | 'relative' | 'absolute' | 'fixed' | 'sticky';
 
+	interface Props {
+		variant?: Variant;
+		size?: Size;
+		disabled?: boolean;
+		type?: 'button' | 'submit' | 'reset';
+		class?: string;
+		ariaLabel?: string;
+		ariaDescribedBy?: string;
+		role?: string;
+		fullWidth?: boolean;
+		justify?: Justify;
+		padding?: Padding;
+		position?: Position;
+		centered?: boolean;
+		children?: import('svelte').Snippet;
+		iconRight?: import('svelte').Snippet;
+		onclick?: () => void;
+	}
+
 	let {
 		variant = 'default',
 		size = 'md',
@@ -32,24 +51,7 @@
 		children,
 		iconRight,
 		onclick
-	} = $props<{
-		variant?: Variant;
-		size?: Size;
-		disabled?: boolean;
-		type?: 'button' | 'submit' | 'reset';
-		class?: string;
-		ariaLabel?: string;
-		ariaDescribedBy?: string;
-		role?: string;
-		fullWidth?: boolean;
-		justify?: Justify;
-		padding?: Padding;
-		position?: Position;
-		centered?: boolean;
-		children?: import('svelte').Snippet;
-		iconRight?: import('svelte').Snippet;
-		onclick?: () => void;
-	}>();
+	}: Props = $props();
 
 	const base =
 		'inline-flex items-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none';

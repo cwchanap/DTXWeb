@@ -1,6 +1,7 @@
 <script lang="ts">
-	type Snippet = () => unknown;
-	let { trigger, content } = $props<{ trigger?: Snippet; content?: Snippet }>();
+	import type { Snippet } from 'svelte';
+	type Props = { trigger?: Snippet; content?: Snippet };
+	let { trigger, content }: Props = $props();
 </script>
 
 {@render trigger?.()}

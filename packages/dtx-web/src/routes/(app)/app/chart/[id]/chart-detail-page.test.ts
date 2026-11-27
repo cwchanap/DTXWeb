@@ -66,7 +66,11 @@ vi.mock('@dtx/common/components', () => ({
 		const props = (args.length > 1 ? args[1] : args[0]) as Record<string, unknown> | undefined;
 		if (props?.loadAssetFiles) {
 			capturedLoadAssetFiles.mockImplementation(
-				props.loadAssetFiles as ReturnType<typeof vi.fn>
+				props.loadAssetFiles as (
+					simfileId: string
+				) => Promise<
+					{ fileName: string; size: number; lastModified: string; key: string }[]
+				>
 			);
 		}
 		return {};

@@ -273,7 +273,9 @@ describe('ChartListItem Component Logic', () => {
 			const popoverContent = container.querySelector('.py-2');
 			expect(popoverContent).not.toBeNull();
 			expect(
-				within(popoverContent!).queryByRole('button', { name: 'chart_actions.play_audio' })
+				within(popoverContent as HTMLElement).queryByRole('button', {
+					name: 'chart_actions.play_audio'
+				})
 			).not.toBeInTheDocument();
 		});
 

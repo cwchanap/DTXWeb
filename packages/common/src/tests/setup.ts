@@ -136,7 +136,7 @@ global.Image = vi.fn().mockImplementation(() => {
 
 // Mock Audio for Phaser audio
 // ponytail: vitest 4+ constructable-mock rule — `new Audio(...)` in app code
-global.Audio = vi.fn().mockImplementation(function (this: unknown) {
+global.Audio = vi.fn().mockImplementation(function (this: object) {
 	Object.assign(this, {
 		play: vi.fn(),
 		pause: vi.fn(),
@@ -190,9 +190,9 @@ const audioContextProps = () => ({
 	close: vi.fn(),
 	decodeAudioData: vi.fn(() => Promise.resolve({}))
 });
-global.AudioContext = vi.fn(function (this: unknown) {
+global.AudioContext = vi.fn(function (this: object) {
 	Object.assign(this, audioContextProps());
-});
+}) as unknown as typeof AudioContext;
 
 // Mock File.prototype.arrayBuffer for encoding tests
 if (typeof File !== 'undefined' && !File.prototype.arrayBuffer) {

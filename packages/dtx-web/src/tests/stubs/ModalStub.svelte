@@ -1,19 +1,20 @@
 <script lang="ts">
-	type Snippet = () => unknown;
-	let {
-		open = $bindable(false),
-		title = '',
-		children,
-		onConfirm,
-		confirmText = 'Confirm'
-	} = $props<{
+	import type { Snippet } from 'svelte';
+	type Props = {
 		open?: boolean;
 		title?: string;
 		children?: Snippet;
 		onConfirm?: () => void;
 		confirmText?: string;
 		confirmVariant?: string;
-	}>();
+	};
+	let {
+		open = $bindable(false),
+		title = '',
+		children,
+		onConfirm,
+		confirmText = 'Confirm'
+	}: Props = $props();
 
 	function handleConfirm() {
 		onConfirm?.();

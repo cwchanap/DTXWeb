@@ -13,7 +13,7 @@
 		isDesktop = false,
 		songFolderPath = '',
 		disableUploads = false
-	} = $props<{
+	}: {
 		simfileId?: string;
 		userFiles?: Array<File>;
 		simfileBucketUrl: string;
@@ -28,7 +28,7 @@
 		isDesktop?: boolean;
 		songFolderPath?: string; // Song folder path for desktop uploads
 		disableUploads?: boolean; // Disable upload functionality
-	}>();
+	} = $props();
 
 	// Ensure userFiles is always an array of File objects with valid extensions
 	const safeUserFiles = $derived<File[]>(

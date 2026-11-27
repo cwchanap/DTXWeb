@@ -5,12 +5,7 @@
 	// fires onPageChange with { page } on click. The active page (from the
 	// `page` prop) is marked with `aria-current="page"` so tests can assert
 	// which page the pagination presents as active.
-	let {
-		count = 0,
-		pageSize = 10,
-		page = 1,
-		onPageChange
-	} = $props<{
+	type Props = {
 		data?: unknown[];
 		count?: number;
 		pageSize?: number;
@@ -18,7 +13,8 @@
 		onPageChange?: (event: { page: number }) => void;
 		siblingCount?: number;
 		showFirstLastButtons?: boolean;
-	}>();
+	};
+	let { count = 0, pageSize = 10, page = 1, onPageChange }: Props = $props();
 
 	const totalPages = $derived(Math.max(1, Math.ceil(count / pageSize)));
 	const go = (p: number): void => {

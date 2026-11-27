@@ -3,17 +3,14 @@
 	import { downloadSimfile } from '$lib/api';
 	import { _ } from 'svelte-i18n';
 
-	let {
-		simfileId,
-		externalUrl,
-		hasUploadedFiles,
-		compact = false
-	} = $props<{
+	type Props = {
 		simfileId: number;
 		externalUrl: string | null;
 		hasUploadedFiles?: boolean;
 		compact?: boolean;
-	}>();
+	};
+
+	let { simfileId, externalUrl, hasUploadedFiles, compact = false }: Props = $props();
 
 	const showUploadedDownload = $derived(hasUploadedFiles === true);
 

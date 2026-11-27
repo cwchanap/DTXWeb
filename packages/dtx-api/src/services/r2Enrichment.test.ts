@@ -6473,6 +6473,64 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('keeps a re-rated stem-owned root chart behind a ./ alias', async () => {
+		// BASIC's ./expert.dtx alias misses the uploader's SET.def label lookup,
+		// so EXPERT owns expert.dtx by filename stem even after the chart is
+		// re-rated away from the stored row level.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE ./expert.dtx\n#L3LABEL BASIC\n#L3FILE a.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 45\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('looks past a missing reference after saving a nested fallback', async () => {
+		// z.dtx exact-claims BASIC/80. Once extras/c.dtx is only a fallback,
+		// the missing gone.dtx reference must not end BASIC/30's search before
+		// the available re-rated root a.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE gone.dtx\n#L3LABEL BASIC\n#L3FILE a.dtx\n#L4LABEL BASIC\n#L4FILE z.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
 	it('defers an exact-rated alias owned by another row’s unique filename stem', async () => {
 		// BASIC aliases expert.dtx, while both rows and both charts rate 60.
 		// Rating alone cannot distinguish the rows, so EXPERT's unique stem

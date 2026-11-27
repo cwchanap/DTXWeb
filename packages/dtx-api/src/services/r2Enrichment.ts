@@ -688,6 +688,48 @@ export const discoverCatalogFiles = async (
 		return false;
 	};
 
+	const uniqueUnclaimedStemOwnerIndex = (key: string): number => {
+		if (!isCatalogEligibleKey(key)) return -1;
+		const stem = r2FileName(key)
+			.replace(/\.dtx$/i, '')
+			.toLowerCase();
+		const keys = dtxObjectKeys.filter(
+			(candidate) =>
+				isCatalogEligibleKey(candidate) &&
+				r2FileName(candidate)
+					.replace(/\.dtx$/i, '')
+					.toLowerCase() === stem
+		);
+		const rootKeys =
+			keys.length > 1 ? keys.filter((candidate) => isTopLevelR2Key(candidate, prefix)) : keys;
+		const stemKeys = rootKeys.length === 1 ? rootKeys : keys;
+		if (stemKeys.length !== 1 || stemKeys[0] !== key) return -1;
+		const ownerRowIndexes = dtxFiles.flatMap((owner, ownerIndex) =>
+			owner.label.toLowerCase() === stem && !rowsClaimedBySetDef.has(ownerIndex)
+				? [ownerIndex]
+				: []
+		);
+		return ownerRowIndexes.length === 1 ? ownerRowIndexes[0] : -1;
+	};
+
+	const keyHasStemOwnerWithoutRatingConflict = (
+		key: string,
+		probed: number | undefined,
+		claimingRowIndex: number
+	): boolean => {
+		const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
+		if (ownerIndex === -1 || ownerIndex === claimingRowIndex) return false;
+		const ownerLevel = normalizeLevel(dtxFiles[ownerIndex].level);
+		if (probed === 0 && ownerLevel !== 0) return false;
+		if (typeof probed !== 'number') return true;
+		return !(
+			probed !== ownerLevel &&
+			dtxFiles.some(
+				(file, index) => index !== ownerIndex && normalizeLevel(file.level) === probed
+			)
+		);
+	};
+
 	const claimSetDefRows = (
 		exactOnly: boolean,
 		deferBlockedClaims = false,
@@ -715,32 +757,11 @@ export const discoverCatalogFiles = async (
 				rowLevel: number,
 				claimingRowIndex: number
 			): boolean => {
-				if (!isCatalogEligibleKey(key)) return false;
-				const stem = r2FileName(key)
-					.replace(/\.dtx$/i, '')
-					.toLowerCase();
-				const keys = dtxObjectKeys.filter(
-					(candidate) =>
-						isCatalogEligibleKey(candidate) &&
-						r2FileName(candidate)
-							.replace(/\.dtx$/i, '')
-							.toLowerCase() === stem
-				);
-				const rootKeys =
-					keys.length > 1
-						? keys.filter((candidate) => isTopLevelR2Key(candidate, prefix))
-						: keys;
-				const stemKeys = rootKeys.length === 1 ? rootKeys : keys;
-				if (stemKeys.length !== 1 || stemKeys[0] !== key) return false;
-				const ownerRowIndexes = dtxFiles.flatMap((owner, ownerIndex) =>
-					owner.label.toLowerCase() === stem && !rowsClaimedBySetDef.has(ownerIndex)
-						? [ownerIndex]
-						: []
-				);
+				const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
 				return (
-					ownerRowIndexes.length === 1 &&
-					ownerRowIndexes[0] !== claimingRowIndex &&
-					normalizeLevel(dtxFiles[ownerRowIndexes[0]].level) === rowLevel
+					ownerIndex !== -1 &&
+					ownerIndex !== claimingRowIndex &&
+					normalizeLevel(dtxFiles[ownerIndex].level) === rowLevel
 				);
 			};
 			const candidatesByRow = new Map<number, { refs: SetDefFileRef[]; indexes: number[] }>();
@@ -908,6 +929,9 @@ export const discoverCatalogFiles = async (
 			for (const [candidateIndex, ref] of refs.entries()) {
 				if (!isRefUnassigned(ref)) continue;
 				const sharedObject = resolveSetDefObject(ref);
+				// A missing reference is stronger than no fallback, but it must not
+				// hide a resolved preferred candidate once a nested alias is waiting.
+				if (!sharedObject && firstIneligibleAliasIndex !== -1) continue;
 				// A later stem pass can learn a definitive rating by object key
 				// after the short per-ref probe proved inconclusive. Retries must
 				// honor that object-level evidence — especially a confirmed zero —
@@ -1000,6 +1024,15 @@ export const discoverCatalogFiles = async (
 					}
 					if (stillNeededElsewhere) continue;
 				}
+				// A ./ alias does not transfer the uploader's filename-stem
+				// ownership to this label. Leave a unique stem owner's chart
+				// available unless its rating names a different row.
+				if (
+					sharedObject &&
+					!isDirectRawRef(ref, sharedObject.key) &&
+					keyHasStemOwnerWithoutRatingConflict(sharedObject.key, probed, index)
+				)
+					continue;
 				// A nested copy can still serve a row with no better SET.def
 				// candidate, but catalog-eligible/raw references later in slot
 				// order are the uploader's ownership evidence. Look past the

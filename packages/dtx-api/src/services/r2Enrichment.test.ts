@@ -6417,4 +6417,85 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/old/archive/hard.dtx'
 		]);
 	});
+	it('checks only unclaimed same-label rows when rejecting a mismatched rating', async () => {
+		// z.dtx was re-rated in place after upload, so both probes name the
+		// already-satisfied BASIC/80 row. That claimed row must not make the
+		// remaining BASIC/30 row reject z.dtx and lose its own file.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./a.dtx\n#L2LABEL BASIC\n#L2FILE ./z.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 80 },
+					{ label: 'BASIC', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
+	it('defers an exact-rated alias owned by another row’s unique filename stem', async () => {
+		// BASIC aliases expert.dtx, while both rows and both charts rate 60.
+		// Rating alone cannot distinguish the rows, so EXPERT's unique stem
+		// ownership must keep expert.dtx from the alias; basic.dtx is BASIC's
+		// own stem chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./expert.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'EXPERT', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('keeps a root-displaced same-stem sibling available for an exact match', async () => {
+		// The leftover SET.def reference makes extras/solo.dtx the stem-row
+		// candidate, but the catalogued root solo.dtx wins SOLO. The displaced
+		// sibling still rates 60 and is HARD's only remaining exact chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
 });

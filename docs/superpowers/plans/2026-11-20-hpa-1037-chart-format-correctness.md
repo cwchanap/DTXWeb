@@ -56,7 +56,7 @@ Only one PR, no separate implementation ticket/PR, no art/SFX work. Suggested co
 
 ### 6 — CI and lean MCP acceptance on this same PR
 
-Run the relevant package checks against the **implementation commit**:
+Run the relevant package checks against the **implementation commit**. Run them from a disposable checkout or worktree with its own Worker state: the Playwright setup in `packages/e2e-web/setup/prepare-stack.ts` recursively deletes `packages/dtx-api/.wrangler/state` before seeding test data, so running this sequence in a normal development checkout can destroy local D1/R2 data.
 
 ```bash
 bun install --frozen-lockfile

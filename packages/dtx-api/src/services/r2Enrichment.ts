@@ -464,6 +464,13 @@ export const discoverCatalogFiles = async (
 	const setDefBaseDir = setDefKey
 		? setDefKey.slice(0, setDefKey.lastIndexOf('/') + 1) || prefix
 		: prefix;
+	// Catalog-eligible charts sit directly at the simfile root or beside
+	// the selected set.def — parse_dtx_folder catalogs only top-level
+	// files, so a deeper-nested .dtx can never be a row's chart and must
+	// not claim one by rating or take a positional slot while an
+	// eligible candidate remains.
+	const isCatalogEligibleKey = (key: string): boolean =>
+		isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
 
 	const matchedKeysByRowIndex = new Map<number, string>();
 	// Rows with an explicit set.def label→file mapping are "claimed" by
@@ -534,13 +541,9 @@ export const discoverCatalogFiles = async (
 	// parsed carry no probed level — the claim loop treats them as
 	// possible matches only after exact-level matches fail.
 	const rowCountByLabel = new Map<string, number>();
-	const rowLevelsByLabel = new Map<string, Set<number>>();
 	for (const file of dtxFiles) {
 		const label = file.label.toLowerCase();
 		rowCountByLabel.set(label, (rowCountByLabel.get(label) ?? 0) + 1);
-		let levels = rowLevelsByLabel.get(label);
-		if (!levels) rowLevelsByLabel.set(label, (levels = new Set()));
-		levels.add(normalizeLevel(file.level));
 	}
 	// A one-row/one-ref label is deterministic only when SET.def names
 	// every .dtx object in the folder. When an unlisted chart exists, the
@@ -707,6 +710,39 @@ export const discoverCatalogFiles = async (
 			// Exact aliases form a bipartite assignment problem. Greedy claiming can
 			// strand a row after an earlier row takes a shared alias; augmenting paths
 			// move a prior exact claim only to another exact candidate it owns.
+			const keyHasUniqueUnclaimedStemOwner = (
+				key: string,
+				rowLevel: number,
+				claimingRowIndex: number
+			): boolean => {
+				if (!isCatalogEligibleKey(key)) return false;
+				const stem = r2FileName(key)
+					.replace(/\.dtx$/i, '')
+					.toLowerCase();
+				const keys = dtxObjectKeys.filter(
+					(candidate) =>
+						isCatalogEligibleKey(candidate) &&
+						r2FileName(candidate)
+							.replace(/\.dtx$/i, '')
+							.toLowerCase() === stem
+				);
+				const rootKeys =
+					keys.length > 1
+						? keys.filter((candidate) => isTopLevelR2Key(candidate, prefix))
+						: keys;
+				const stemKeys = rootKeys.length === 1 ? rootKeys : keys;
+				if (stemKeys.length !== 1 || stemKeys[0] !== key) return false;
+				const ownerRowIndexes = dtxFiles.flatMap((owner, ownerIndex) =>
+					owner.label.toLowerCase() === stem && !rowsClaimedBySetDef.has(ownerIndex)
+						? [ownerIndex]
+						: []
+				);
+				return (
+					ownerRowIndexes.length === 1 &&
+					ownerRowIndexes[0] !== claimingRowIndex &&
+					normalizeLevel(dtxFiles[ownerRowIndexes[0]].level) === rowLevel
+				);
+			};
 			const candidatesByRow = new Map<number, { refs: SetDefFileRef[]; indexes: number[] }>();
 			for (const { file, index } of claimOrder) {
 				if (rowsClaimedBySetDef.has(index)) continue;
@@ -715,8 +751,18 @@ export const discoverCatalogFiles = async (
 				const rowLevel = normalizeLevel(file.level);
 				const indexes: number[] = [];
 				for (let i = 0; i < refs.length; i++) {
-					if (isRefUnassigned(refs[i]) && fileLevelByRef.get(refs[i]) === rowLevel)
-						indexes.push(i);
+					if (!isRefUnassigned(refs[i]) || fileLevelByRef.get(refs[i]) !== rowLevel)
+						continue;
+					const object = resolveSetDefObject(refs[i]);
+					if (
+						object &&
+						!isDirectRawRef(refs[i], object.key) &&
+						keyHasUniqueUnclaimedStemOwner(object.key, rowLevel, index)
+					) {
+						keysDeferredForExactMatch.add(object.key);
+						continue;
+					}
+					indexes.push(i);
 				}
 				if (indexes.length > 0) candidatesByRow.set(index, { refs, indexes });
 			}
@@ -874,14 +920,14 @@ export const discoverCatalogFiles = async (
 				// refs it stays reserved; a non-exact claim must not let
 				// it displace an unlisted file that is a row's real chart.
 				if (probed === 0) continue;
-				const levels = rowLevelsByLabel.get(label);
-				let namesAnotherRowInLabel = false;
-				for (const level of levels ?? []) {
-					if (level === probed && level !== rowLevel) {
-						namesAnotherRowInLabel = true;
-						break;
-					}
-				}
+				const namesAnotherRowInLabel = dtxFiles.some(
+					(other, otherIndex) =>
+						otherIndex !== index &&
+						other.label.toLowerCase() === label &&
+						!rowsClaimedBySetDef.has(otherIndex) &&
+						normalizeLevel(other.level) === probed &&
+						probed !== rowLevel
+				);
 				if (namesAnotherRowInLabel) continue;
 				// The resolved object can be shared with another label's
 				// ref: its probed rating may name a row in THAT label,
@@ -1155,6 +1201,12 @@ export const discoverCatalogFiles = async (
 							// rating fallback can bind it to that row.
 						}
 					}
+					if (claimObject !== object) {
+						sameStemAlternativeKeys.add(object.key);
+						if (typeof leftoverLevel === 'number') {
+							probedLevelByKey.set(object.key, leftoverLevel);
+						}
+					}
 					rowsClaimedBySetDef.add(stemRowIndexes[0]);
 					matchedKeysByRowIndex.set(stemRowIndexes[0], claimObject.key);
 					usedDtxKeys.add(claimObject.key);
@@ -1165,6 +1217,7 @@ export const discoverCatalogFiles = async (
 			if (
 				!keysLeftForExactMatch.has(object.key) &&
 				!keysDeferredForExactMatch.has(object.key) &&
+				!sameStemAlternativeKeys.has(object.key) &&
 				!deferForStemRow &&
 				(!isUnratedLeftover || !hasUnclaimedLevelZeroRow())
 			) {
@@ -1320,13 +1373,6 @@ export const discoverCatalogFiles = async (
 			(a, b) =>
 				normalizeLevel(a.file.level) - normalizeLevel(b.file.level) || a.index - b.index
 		);
-	// Catalog-eligible charts sit directly at the simfile root or beside
-	// the selected set.def — parse_dtx_folder catalogs only top-level
-	// files, so a deeper-nested .dtx can never be a row's chart and must
-	// not claim one by rating or take a positional slot while an
-	// eligible candidate remains.
-	const isCatalogEligibleKey = (key: string): boolean =>
-		isTopLevelR2Key(key, prefix) || isTopLevelR2Key(key, setDefBaseDir);
 	if (fallbackRows.length > 0) {
 		await Promise.all(
 			dtxObjectKeys.map(async (key) => {

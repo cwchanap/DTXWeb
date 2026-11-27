@@ -251,7 +251,7 @@ describe('DTXFile to MIDI via shared dtxToMidi', () => {
 			{ tick: 196, numerator: 4, denominator: 4, notated32ndsPerQuarter: 8 }
 		]);
 		expect(parsed.tracks[0].notes.map((n) => n.startTime)).toEqual([0, 196, 3780, 7364]);
-		expect(parsed.tracks[0].notes.every((n) => n.duration === 224)).toBe(true);
+		expect(parsed.tracks[0].notes.map((n) => n.duration)).toEqual([196, 224, 224, 224]);
 
 		// The exported file reimports without a mid-bar meter rejection.
 		expect(() => midiToDtx(parsed)).not.toThrow();

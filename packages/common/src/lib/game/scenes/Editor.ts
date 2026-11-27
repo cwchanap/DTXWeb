@@ -361,7 +361,8 @@ export class Editor extends BaseGame {
 								cellOffset: notePosition,
 								laneId: hitLaneId,
 								noteId: noteID,
-								measureLength: measureNote.measureLength
+								measureLength: measureNote.measureLength,
+								groupIndex: this.notes[hitLaneId]?.indexOf(measureNote)
 							};
 							this.noteManager.recordDeleteAction([deletedNoteData]);
 
@@ -409,7 +410,8 @@ export class Editor extends BaseGame {
 								);
 							}
 							this.syncNotesToStore();
-							// Note: dirty state and auto-save handled by NoteManager callback
+							this.setDirty(true);
+							this.debouncedAutoSave();
 						}
 					} else {
 						// Left-click: Add a note using the shared addNoteToEditor method

@@ -142,6 +142,7 @@ export class NoteCopy {
 				laneId: string;
 				noteId: string;
 				measureLength?: number;
+				groupIndex?: number;
 			}>
 		) => void
 	): boolean {
@@ -158,6 +159,7 @@ export class NoteCopy {
 				laneId: string;
 				noteId: string;
 				measureLength?: number;
+				groupIndex?: number;
 			}> = [];
 
 			const notes = editor.getNotes();
@@ -191,7 +193,8 @@ export class NoteCopy {
 									cellOffset, // Use the exact position from note key (same as noteChip.position)
 									laneId,
 									noteId: noteChip.noteID,
-									measureLength: existingNote.measureLength
+									measureLength: existingNote.measureLength,
+									groupIndex: notes[laneId].indexOf(existingNote)
 								});
 							}
 						}

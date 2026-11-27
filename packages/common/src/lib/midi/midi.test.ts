@@ -571,6 +571,26 @@ describe('dtxToMidi', () => {
 		expect([...times].sort((a, b) => a - b)).toEqual(times);
 	});
 
+	it('releases each same-pitch hit before the next distinct onset', () => {
+		const cells = `0101${'00'.repeat(30)}`;
+		const { data } = dtxToMidi(dtxFromText(['#BPM: 120', `#00013: ${cells}`].join('\r\n')));
+
+		const pitchEvents = parseMidi(data)
+			.tracks[0].events.filter(
+				(e) =>
+					e.type === 'channel' &&
+					e.note === 36 &&
+					(e.command === 0x90 || e.command === 0x80)
+			)
+			.map((e) => [e.command === 0x90 ? 'on' : 'off', e.absoluteTime]);
+		expect(pitchEvents).toEqual([
+			['on', 0],
+			['off', 60],
+			['on', 60],
+			['off', 180]
+		]);
+	});
+
 	it('maps every playable lane 11-1C to its own GM note', () => {
 		const lines = ['#BPM: 120'];
 		const lanes = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '1A', '1B', '1C'];

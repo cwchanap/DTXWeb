@@ -46,6 +46,7 @@ export interface DeletedNoteData {
 	laneId: string;
 	noteId: string;
 	measureLength?: number;
+	groupIndex?: number;
 }
 
 /**
@@ -91,6 +92,7 @@ export interface CutNoteData {
 	laneId: string;
 	noteId: string;
 	measureLength?: number;
+	groupIndex?: number;
 }
 
 /**
@@ -252,6 +254,7 @@ export class NoteBuffer {
 			laneId: string;
 			noteId: string;
 			measureLength?: number;
+			groupIndex?: number;
 		}
 	): void {
 		const groups = (editor.getNotes()[note.laneId] ??= []);
@@ -266,7 +269,7 @@ export class NoteBuffer {
 		}
 		const group = new LaneMeasureNote(note.measure, note.laneId, [], note.measureLength ?? 1);
 		group.addNote(note.noteId, note.cellOffset);
-		groups.push(group);
+		groups.splice(Math.min(note.groupIndex ?? groups.length, groups.length), 0, group);
 	}
 
 	/**

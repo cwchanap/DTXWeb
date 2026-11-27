@@ -400,6 +400,25 @@ describe('NoteBuffer', () => {
 			).toBe(true);
 		});
 
+		it('should restore a pruned shared-position owner at its original group slot', () => {
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+			const deletedWithGroupSlot = {
+				...mockDeletedNoteData,
+				groupIndex: 0
+			};
+
+			noteBuffer.recordAction('delete', [deletedWithGroupSlot]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const groups = mockEditor.notes['lane1'];
+			expect(groups[0].notes).toContainEqual({ noteID: '11', position: 0.5 });
+			expect(groups[1].notes).toContainEqual({ noteID: '12', position: 0.5 });
+			expect(mockEditor.reconcileSharedNoteVisual).toHaveBeenCalledWith(1, 0, 0.5, 'lane1');
+		});
+
 		it('should restore a chip into its pattern line when that line still exists', () => {
 			mockEditor.notes['lane1'] = [
 				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }]),

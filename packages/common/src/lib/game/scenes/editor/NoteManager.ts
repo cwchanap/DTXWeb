@@ -305,6 +305,7 @@ export class NoteManager {
 			laneId: string;
 			noteId: string;
 			measureLength?: number;
+			groupIndex?: number;
 		}>
 	): void {
 		this.noteBuffer.recordAction('cut', cutNotes);
@@ -439,7 +440,8 @@ export class NoteManager {
 								cellOffset, // Use exact position from note key
 								laneId,
 								noteId: noteChip.noteID,
-								measureLength: existingNote.measureLength
+								measureLength: existingNote.measureLength,
+								groupIndex: notes[laneId].indexOf(existingNote)
 							};
 							deletedNotes.push(deletedNoteData);
 							notesToDelete.push({ noteKey, deletedNoteData });

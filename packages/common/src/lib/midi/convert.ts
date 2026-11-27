@@ -281,25 +281,39 @@ export const dtxToMidi = (
 		});
 	}
 
+	const noteAttacks: { tick: number; noteNumber: number }[] = [];
 	for (const { lm, noteNumber } of emissionGroups) {
 		for (const note of lm.notes) {
 			if (note.noteID === '00') continue;
-			const tick = Math.round(tickInMeasure(lm.measure, note.position / lm.measureLength));
-			events.push(
-				{
-					tick,
-					order: 2,
-					seq: seq++,
-					bytes: [0x90 | DRUM_CHANNEL, noteNumber, 100]
-				},
-				{
-					tick: tick + noteDurationTicks,
-					order: 1,
-					seq: seq++,
-					bytes: [0x80 | DRUM_CHANNEL, noteNumber, 0]
-				}
-			);
+			noteAttacks.push({
+				tick: Math.round(tickInMeasure(lm.measure, note.position / lm.measureLength)),
+				noteNumber
+			});
 		}
+	}
+	const onsetTicksByNote = new Map<number, number[]>();
+	for (const { tick, noteNumber } of noteAttacks) {
+		const ticks = onsetTicksByNote.get(noteNumber) ?? [];
+		if (!ticks.includes(tick)) ticks.push(tick);
+		onsetTicksByNote.set(noteNumber, ticks);
+	}
+	for (const ticks of onsetTicksByNote.values()) ticks.sort((a, b) => a - b);
+	for (const { tick, noteNumber } of noteAttacks) {
+		const nextOnset = onsetTicksByNote.get(noteNumber)?.find((onset) => onset > tick);
+		events.push(
+			{
+				tick,
+				order: 2,
+				seq: seq++,
+				bytes: [0x90 | DRUM_CHANNEL, noteNumber, 100]
+			},
+			{
+				tick: Math.min(tick + noteDurationTicks, nextOnset ?? Infinity),
+				order: 1,
+				seq: seq++,
+				bytes: [0x80 | DRUM_CHANNEL, noteNumber, 0]
+			}
+		);
 	}
 
 	// Sort by absolute tick; same-tick controls (tempo/meter) first, then

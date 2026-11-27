@@ -592,11 +592,18 @@ describe('dtxToMidi', () => {
 	});
 
 	it('exports dense same-pitch charts without rescanning every onset', { timeout: 4000 }, () => {
-		// Dense charts are a supported input from the browser converter. The
+		// Dense charts are a supported input from the browser converter. Spread
+		// the hits across measures so distinct onsets exercise lookup growth. The
 		// timeout is the regression assertion: per-hit linear onset lookups
 		// take many seconds here, while indexed lookups stay linearithmic.
-		const count = 64_000;
-		const dtx = dtxFromText(['#BPM: 120', `#00013: ${'01'.repeat(count)}`].join('\r\n'));
+		const measureCount = 64;
+		const hitsPerMeasure = 1_000;
+		const count = measureCount * hitsPerMeasure;
+		const lines = ['#BPM: 120'];
+		for (let measure = 0; measure < measureCount; measure++) {
+			lines.push(`#${String(measure).padStart(3, '0')}13: ${'01'.repeat(hitsPerMeasure)}`);
+		}
+		const dtx = dtxFromText(lines.join('\r\n'));
 
 		const { data, warnings } = dtxToMidi(dtx);
 

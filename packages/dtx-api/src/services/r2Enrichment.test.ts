@@ -6444,6 +6444,35 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('keeps a nested alias behind an available re-rated root reference', async () => {
+		// z.dtx exact-claims BASIC/80. BASIC/30 was re-rated in a.dtx to 40,
+		// so neither root reference exact-matches it; the nested 80-rated alias
+		// must not consume the row before that available root reference.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE a.dtx\n#L3LABEL BASIC\n#L3FILE z.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
 	it('defers an exact-rated alias owned by another row’s unique filename stem', async () => {
 		// BASIC aliases expert.dtx, while both rows and both charts rate 60.
 		// Rating alone cannot distinguish the rows, so EXPERT's unique stem

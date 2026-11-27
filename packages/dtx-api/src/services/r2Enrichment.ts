@@ -903,6 +903,7 @@ export const discoverCatalogFiles = async (
 			if (!refs?.length) continue;
 			const rowLevel = normalizeLevel(file.level);
 			let refIndex = -1;
+			let firstIneligibleAliasIndex = -1;
 			let deferClaim = false;
 			for (const [candidateIndex, ref] of refs.entries()) {
 				if (!isRefUnassigned(ref)) continue;
@@ -999,8 +1000,24 @@ export const discoverCatalogFiles = async (
 					}
 					if (stillNeededElsewhere) continue;
 				}
+				// A nested copy can still serve a row with no better SET.def
+				// candidate, but catalog-eligible/raw references later in slot
+				// order are the uploader's ownership evidence. Look past the
+				// alias first instead of letting it displace that chart.
+				if (
+					sharedObject &&
+					!isCatalogEligibleKey(sharedObject.key) &&
+					!isDirectRawRef(ref, sharedObject.key)
+				) {
+					if (firstIneligibleAliasIndex === -1)
+						firstIneligibleAliasIndex = candidateIndex;
+					continue;
+				}
 				refIndex = candidateIndex;
 				break;
+			}
+			if (refIndex === -1 && firstIneligibleAliasIndex !== -1) {
+				refIndex = firstIneligibleAliasIndex;
 			}
 			if (deferClaim) {
 				pendingSetDefClaims.add(index);

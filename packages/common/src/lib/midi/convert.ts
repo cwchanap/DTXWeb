@@ -291,15 +291,31 @@ export const dtxToMidi = (
 			});
 		}
 	}
-	const onsetTicksByNote = new Map<number, number[]>();
+	const onsetTicksByNote = new Map<number, Set<number>>();
 	for (const { tick, noteNumber } of noteAttacks) {
-		const ticks = onsetTicksByNote.get(noteNumber) ?? [];
-		if (!ticks.includes(tick)) ticks.push(tick);
+		const ticks = onsetTicksByNote.get(noteNumber) ?? new Set<number>();
+		ticks.add(tick);
 		onsetTicksByNote.set(noteNumber, ticks);
 	}
-	for (const ticks of onsetTicksByNote.values()) ticks.sort((a, b) => a - b);
+	const sortedOnsetTicksByNote = new Map<number, number[]>();
+	for (const [noteNumber, ticks] of onsetTicksByNote) {
+		sortedOnsetTicksByNote.set(
+			noteNumber,
+			[...ticks].sort((a, b) => a - b)
+		);
+	}
+	const firstGreaterThan = (values: number[], target: number): number | undefined => {
+		let low = 0;
+		let high = values.length;
+		while (low < high) {
+			const mid = (low + high) >>> 1;
+			if (values[mid] <= target) low = mid + 1;
+			else high = mid;
+		}
+		return values[low];
+	};
 	for (const { tick, noteNumber } of noteAttacks) {
-		const nextOnset = onsetTicksByNote.get(noteNumber)?.find((onset) => onset > tick);
+		const nextOnset = firstGreaterThan(sortedOnsetTicksByNote.get(noteNumber) ?? [], tick);
 		events.push(
 			{
 				tick,

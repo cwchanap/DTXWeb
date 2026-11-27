@@ -591,6 +591,25 @@ describe('dtxToMidi', () => {
 		]);
 	});
 
+	it('exports dense same-pitch charts without rescanning every onset', { timeout: 4000 }, () => {
+		// Dense charts are a supported input from the browser converter. The
+		// timeout is the regression assertion: per-hit linear onset lookups
+		// take many seconds here, while indexed lookups stay linearithmic.
+		const count = 64_000;
+		const dtx = dtxFromText(['#BPM: 120', `#00013: ${'01'.repeat(count)}`].join('\r\n'));
+
+		const { data, warnings } = dtxToMidi(dtx);
+
+		expect(warnings).toEqual([]);
+		// Count serialized note-ons directly; parsing every event here would
+		// measure the reader rather than the exporter under parallel test load.
+		let noteOns = 0;
+		for (let i = 0; i < data.length - 2; i++) {
+			if (data[i] === 0x99 && data[i + 1] === 36 && data[i + 2] === 100) noteOns++;
+		}
+		expect(noteOns).toBe(count);
+	});
+
 	it('maps every playable lane 11-1C to its own GM note', () => {
 		const lines = ['#BPM: 120'];
 		const lanes = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '1A', '1B', '1C'];

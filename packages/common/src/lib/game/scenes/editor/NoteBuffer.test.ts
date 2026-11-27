@@ -419,6 +419,95 @@ describe('NoteBuffer', () => {
 			expect(mockEditor.reconcileSharedNoteVisual).toHaveBeenCalledWith(1, 0, 0.5, 'lane1');
 		});
 
+		it('should restore a shared-position owner at its group slot when a third group exists', () => {
+			mockEditor.notes['lane1'] = [
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }]),
+				new LaneMeasureNote(1, 'lane1', [{ noteID: '13', position: 0.25 }])
+			];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+			const deletedWithGroupSlot = {
+				...mockDeletedNoteData,
+				groupIndex: 0
+			};
+
+			noteBuffer.recordAction('delete', [deletedWithGroupSlot]);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const groups = mockEditor.notes['lane1'];
+			expect(groups).toHaveLength(3);
+			expect(groups[0].notes).toEqual([{ noteID: '11', position: 0.5 }]);
+			expect(groups[1].notes).toEqual([{ noteID: '12', position: 0.5 }]);
+			expect(groups[2].notes).toEqual([{ noteID: '13', position: 0.25 }]);
+		});
+
+		it('should restore deleted groups in ascending group slot order', () => {
+			const survivor = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '99', position: 0 },
+				{ noteID: '98', position: 0.5 }
+			]);
+			mockEditor.notes['lane1'] = [survivor];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+			const deletedNotes = [
+				{
+					...mockDeletedNoteData,
+					noteKey: 'note-b',
+					noteId: '12',
+					cellOffset: 0.5,
+					groupIndex: 1
+				},
+				{
+					...mockDeletedNoteData,
+					noteKey: 'note-a',
+					noteId: '11',
+					cellOffset: 0,
+					groupIndex: 0
+				}
+			];
+
+			noteBuffer.recordAction('delete', deletedNotes);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const groups = mockEditor.notes['lane1'];
+			expect(groups).toHaveLength(3);
+			expect(groups[0].notes).toEqual([{ noteID: '11', position: 0 }]);
+			expect(groups[1].notes).toEqual([{ noteID: '12', position: 0.5 }]);
+			expect(groups[2]).toBe(survivor);
+		});
+
+		it('should restore cut groups in ascending group slot order', () => {
+			const survivor = new LaneMeasureNote(1, 'lane1', [
+				{ noteID: '99', position: 0 },
+				{ noteID: '98', position: 0.5 }
+			]);
+			mockEditor.notes['lane1'] = [survivor];
+			vi.mocked(mockNoteMove.addNoteToEditor).mockReturnValue(false);
+			const cutNotes = [
+				{
+					...mockDeletedNoteData,
+					noteKey: 'note-b',
+					noteId: '12',
+					cellOffset: 0.5,
+					groupIndex: 1
+				},
+				{
+					...mockDeletedNoteData,
+					noteKey: 'note-a',
+					noteId: '11',
+					cellOffset: 0,
+					groupIndex: 0
+				}
+			];
+
+			noteBuffer.recordAction('cut', cutNotes);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			const groups = mockEditor.notes['lane1'];
+			expect(groups).toHaveLength(3);
+			expect(groups[0].notes).toEqual([{ noteID: '11', position: 0 }]);
+			expect(groups[1].notes).toEqual([{ noteID: '12', position: 0.5 }]);
+			expect(groups[2]).toBe(survivor);
+		});
+
 		it('should restore a chip into its pattern line when that line still exists', () => {
 			mockEditor.notes['lane1'] = [
 				new LaneMeasureNote(1, 'lane1', [{ noteID: '12', position: 0.5 }]),

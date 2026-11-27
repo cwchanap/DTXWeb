@@ -218,7 +218,10 @@ export class NoteBuffer {
 		}
 
 		// Use the shared note placement logic to restore each note
-		deletedNotes.forEach((deletedNote) => {
+		const restorationOrder = [...deletedNotes].sort(
+			(a, b) => (a.groupIndex ?? Infinity) - (b.groupIndex ?? Infinity)
+		);
+		restorationOrder.forEach((deletedNote) => {
 			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = deletedNote;
 
 			// Use the exact stored position without normalization to preserve high-resolution positioning
@@ -258,14 +261,21 @@ export class NoteBuffer {
 		}
 	): void {
 		const groups = (editor.getNotes()[note.laneId] ??= []);
-		const target = groups.find(
-			(group) =>
-				group.measure === note.measure &&
-				!group.notes.some((chip) => chip.position === note.cellOffset)
-		);
-		if (target) {
-			target.addNote(note.noteId, note.cellOffset);
-			return;
+		const hasFreePosition = (group: LaneMeasureNote): boolean =>
+			group.measure === note.measure &&
+			!group.notes.some((chip) => chip.position === note.cellOffset);
+		if (note.groupIndex !== undefined) {
+			const indexedTarget = groups[note.groupIndex];
+			if (indexedTarget && hasFreePosition(indexedTarget)) {
+				indexedTarget.addNote(note.noteId, note.cellOffset);
+				return;
+			}
+		} else {
+			const target = groups.find(hasFreePosition);
+			if (target) {
+				target.addNote(note.noteId, note.cellOffset);
+				return;
+			}
 		}
 		const group = new LaneMeasureNote(note.measure, note.laneId, [], note.measureLength ?? 1);
 		group.addNote(note.noteId, note.cellOffset);
@@ -421,7 +431,10 @@ export class NoteBuffer {
 		}
 
 		// Restore each cut note using the shared note addition logic
-		cutNotes.forEach((cutNote) => {
+		const restorationOrder = [...cutNotes].sort(
+			(a, b) => (a.groupIndex ?? Infinity) - (b.groupIndex ?? Infinity)
+		);
+		restorationOrder.forEach((cutNote) => {
 			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = cutNote;
 
 			// Use the stored normalized position (no need to normalize again)

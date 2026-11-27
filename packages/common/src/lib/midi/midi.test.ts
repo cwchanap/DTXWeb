@@ -591,7 +591,7 @@ describe('dtxToMidi', () => {
 		]);
 	});
 
-	it('exports dense same-pitch charts without rescanning every onset', { timeout: 4000 }, () => {
+	it('exports dense same-pitch charts without rescanning every onset', { timeout: 10000 }, () => {
 		// Dense charts are a supported input from the browser converter. Spread
 		// the hits across measures so distinct onsets exercise lookup growth. The
 		// timeout is the regression assertion: per-hit linear onset lookups

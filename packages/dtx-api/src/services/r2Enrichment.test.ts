@@ -6585,4 +6585,118 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/extras/solo.dtx'
 		]);
 	});
+
+	it('does not count a claimed row as a stem-ownership rating conflict', async () => {
+		// other.dtx exact-claims OTHER/75 first. Although expert.dtx duplicates
+		// that 75 rating, the satisfied OTHER row no longer needs expert.dtx, so
+		// the EXPERT stem owner must still win it over BASIC's alias.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./expert.dtx\n#L2LABEL OTHER\n#L2FILE other.dtx\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/other.dtx': '#TITLE: Song\n#DLEVEL: 75\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'OTHER', level: 75 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/expert.dtx',
+			null,
+			'https://cdn.example.test/42/other.dtx'
+		]);
+	});
+
+	it('retries a stem-owned alias after the stem owner claims another chart', async () => {
+		// BASIC's only SET.def file is expert.dtx, whose filename stem belongs to
+		// the EXPERT row. That row's exact-rated chart is hard.dtx instead, so
+		// the blocked BASIC claim must retry after EXPERT settles.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./expert.dtx\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'FREE', level: 10 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			null,
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('defers a duplicate-rated SET.def claim behind an exact-rated fallback chart', async () => {
+		// z.dtx duplicates the already-satisfied BASIC/80 rating. BASIC/30 may
+		// still use it when nothing better exists, but b.dtx probes exactly 30
+		// and must win before that non-exact SET.def claim settles.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE z.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 80 },
+					{ label: 'BASIC', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
+	it('keeps a root-displaced same-stem sibling out of positional fallback', async () => {
+		// The displaced sibling is only a duplicate of SOLO's chart. When no row
+		// carries its exact 60 rating, EXTREME must stay missing rather than
+		// previewing another row's chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 60\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'EXTREME', level: 90 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			null
+		]);
+	});
 });

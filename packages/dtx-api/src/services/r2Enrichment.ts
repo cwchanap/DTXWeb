@@ -658,6 +658,7 @@ export const discoverCatalogFiles = async (
 		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
 	const keysDeferredForExactMatch = new Set<string>();
 	const pendingSetDefClaims = new Set<number>();
+	const probedLevelByKey = new Map<string, number>();
 	// `usedDtxKeys` also carries leftover reservations. SET.def retries must
 	// exclude only keys actually bound to a row, or a deferred row's own later
 	// reference becomes unavailable before its retry.
@@ -859,7 +860,14 @@ export const discoverCatalogFiles = async (
 			let deferClaim = false;
 			for (const [candidateIndex, ref] of refs.entries()) {
 				if (!isRefUnassigned(ref)) continue;
-				const probed = fileLevelByRef.get(ref);
+				const sharedObject = resolveSetDefObject(ref);
+				// A later stem pass can learn a definitive rating by object key
+				// after the short per-ref probe proved inconclusive. Retries must
+				// honor that object-level evidence — especially a confirmed zero —
+				// rather than treating the reference as still unprobed.
+				const probed =
+					fileLevelByRef.get(ref) ??
+					(sharedObject ? probedLevelByKey.get(sharedObject.key) : undefined);
 				// A probed level of zero names a chart the uploader never
 				// catalogued — parse_dtx_folder skips unrated charts
 				// (#DLEVEL 0 or absent) — so no row can own it. Left in
@@ -883,12 +891,21 @@ export const discoverCatalogFiles = async (
 				// the positional fallback — the alias steals its chart.
 				// Exact claims have already settled by this pass, so only
 				// a still-unclaimed row can need the shared object.
-				const sharedObject = resolveSetDefObject(ref);
 				if (
 					sharedObject &&
 					!isDirectRawRef(ref, sharedObject.key) &&
 					keyHasUnclaimedRawOwner(sharedObject.key)
 				) {
+					// Raw ownership is meaningful only across labels. When this
+					// label also names the same key bare, the alias would defer
+					// behind the row's own later reference forever; skip the alias
+					// so that reference can be evaluated on its own.
+					const labelHasDirectRawRef = refs.some(
+						(candidateRef) =>
+							resolveSetDefObject(candidateRef)?.key === sharedObject.key &&
+							isDirectRawRef(candidateRef, sharedObject.key)
+					);
+					if (labelHasDirectRawRef) continue;
 					if (deferBlockedClaims) {
 						deferClaim = true;
 						break;
@@ -962,7 +979,6 @@ export const discoverCatalogFiles = async (
 		dtxFiles.some(
 			(file, index) => !rowsClaimedBySetDef.has(index) && normalizeLevel(file.level) === 0
 		);
-	const probedLevelByKey = new Map<string, number>();
 	const keysLeftForExactMatch = new Set<string>();
 	// A nested same-stem copy that a leftover SET.def ref reserved for another
 	// row's exact rating stays claimable by that rating, but is still a
@@ -1230,6 +1246,7 @@ export const discoverCatalogFiles = async (
 				stemDeepProbedKeys.add(stemKey);
 				probed = await probeChartLevel(stemKey, CHART_LEVEL_DEEP_PROBE_BYTES);
 				if (typeof probed === 'number') probedLevelByKey.set(stemKey, probed);
+				else if (probed === null) probedLevelByKey.set(stemKey, 0);
 			}
 			const rowLevel = normalizeLevel(dtxFiles[rows[0]].level);
 			const effectiveProbed = probed === null ? 0 : probed;

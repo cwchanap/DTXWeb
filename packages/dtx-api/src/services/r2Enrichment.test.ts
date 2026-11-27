@@ -6229,6 +6229,35 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('evaluates a same-row bare reference instead of deferring behind its alias', async () => {
+		// Both SET.def slots name the same chart for the same BASIC row. The
+		// explicit ./ alias comes first, but the later bare spelling is the
+		// uploader's raw-filename ownership evidence; a late #DLEVEL makes the
+		// short probe inconclusive rather than proving the row has no chart.
+		const lateRatedChart = `${'#COMMENT padding\n'.repeat(1100)}#DLEVEL: 30\n`;
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./song.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE song.dtx'
+				].join('\n'),
+				'42/song.dtx': lateRatedChart
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [{ label: 'BASIC', level: 30 }],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/song.dtx'
+		]);
+	});
+
 	it('consumes a reserved deferred reference only once across duplicate labels', async () => {
 		// Both BASIC rows defer behind SHARED's shared.dtx. z-alt.dtx is one
 		// reserved SET.def candidate, not a key both rows may claim; the second
@@ -6262,6 +6291,80 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/z-alt.dtx',
 			'https://cdn.example.test/42/other.dtx',
 			'https://cdn.example.test/42/shared.dtx'
+		]);
+	});
+
+	it('rejects a deferred SET.def candidate proven unrated by the deep stem probe', async () => {
+		// BASIC defers behind SHARED's exact-rated shared.dtx. While that
+		// deferral is pending, the deep stem probe proves solo.dtx is now
+		// unrated even though its short SET.def probe was inconclusive. The
+		// retry must not bind that placeholder before BASIC's own re-rated
+		// stem chart can claim the row.
+		const lateUnratedChart = `${'#COMMENT padding\n'.repeat(1100)}#DLEVEL: 0\n`;
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./shared.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE ./solo.dtx'
+				].join('\n'),
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/shared.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/solo.dtx': lateUnratedChart
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'SHARED', level: 80 },
+					{ label: 'SOLO', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/shared.dtx',
+			null
+		]);
+	});
+
+	it('rejects a deferred SET.def candidate proven rating-less by the deep stem probe', async () => {
+		// A large chart with no #DLEVEL at all is only unprobed in the short
+		// SET.def window. Once the deep stem probe reads the whole object, the
+		// complete-read miss is as definitive as an explicit zero rating.
+		const lateUnratedChart = '#COMMENT padding\n'.repeat(1100);
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': [
+					'#L1LABEL BASIC',
+					'#L1FILE ./shared.dtx',
+					'#L2LABEL BASIC',
+					'#L2FILE ./solo.dtx'
+				].join('\n'),
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/shared.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/solo.dtx': lateUnratedChart
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'SHARED', level: 80 },
+					{ label: 'SOLO', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/shared.dtx',
+			null
 		]);
 	});
 

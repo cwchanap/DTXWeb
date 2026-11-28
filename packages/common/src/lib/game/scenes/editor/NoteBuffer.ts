@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '../../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -47,6 +47,7 @@ export interface DeletedNoteData {
 	noteId: string;
 	measureLength?: number;
 	groupIndex?: number;
+	groupNoteId?: number;
 }
 
 /**
@@ -93,6 +94,7 @@ export interface CutNoteData {
 	noteId: string;
 	measureLength?: number;
 	groupIndex?: number;
+	groupNoteId?: number;
 }
 
 /**
@@ -258,12 +260,24 @@ export class NoteBuffer {
 			noteId: string;
 			measureLength?: number;
 			groupIndex?: number;
+			groupNoteId?: number;
 		}
 	): void {
 		const groups = (editor.getNotes()[note.laneId] ??= []);
 		const hasFreePosition = (group: LaneMeasureNote): boolean =>
 			group.measure === note.measure &&
 			!group.notes.some((chip) => chip.position === note.cellOffset);
+		// Earlier restored groups can be appended, shifting indexes; prefer
+		// the surviving group's identity before falling back to the slot.
+		if (note.groupNoteId !== undefined) {
+			const identityTarget = groups.find(
+				(group) => getGroupNoteId(group) === note.groupNoteId && hasFreePosition(group)
+			);
+			if (identityTarget) {
+				identityTarget.addNote(note.noteId, note.cellOffset);
+				return;
+			}
+		}
 		if (note.groupIndex !== undefined) {
 			const indexedTarget = groups[note.groupIndex];
 			if (indexedTarget && hasFreePosition(indexedTarget)) {

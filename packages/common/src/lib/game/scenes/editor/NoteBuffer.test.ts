@@ -10,7 +10,7 @@ import {
 	type PastedNoteData,
 	type CutNoteData
 } from './NoteBuffer';
-import { LaneMeasureNote } from '../../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
 import { normalizePosition } from '../../../utils/position';
 import type { Editor } from '../Editor';
 import { NoteMove } from './NoteMove';
@@ -472,6 +472,75 @@ describe('NoteBuffer', () => {
 			expect(groups[0].notes).toEqual([{ noteID: '11', position: 0 }]);
 			expect(groups[1].notes).toEqual([{ noteID: '12', position: 0.5 }]);
 			expect(groups[2]).toBe(survivor);
+		});
+
+		it('should restore a surviving group by identity after earlier pruned groups append', () => {
+			const earlyA = new LaneMeasureNote(0, 'lane1', [{ noteID: '01', position: 0.25 }]);
+			const earlyB = new LaneMeasureNote(0, 'lane1', [{ noteID: '02', position: 0.5 }]);
+			const target = new LaneMeasureNote(2, 'lane1', [
+				{ noteID: '11', position: 0.25 },
+				{ noteID: '12', position: 0.5 }
+			]);
+			const duplicate = new LaneMeasureNote(2, 'lane1', [{ noteID: '13', position: 0.5 }]);
+			const later = new LaneMeasureNote(2, 'lane1', [{ noteID: '14', position: 0.75 }]);
+			mockEditor.notes['lane1'] = [target, duplicate, later];
+			target.removeNote(0.5);
+
+			// Simulate addNoteToEditor appending the two pruned early groups,
+			// which shifts the surviving group's original index.
+			vi.mocked(mockNoteMove.addNoteToEditor).mockImplementation(
+				(measure, _laneIndex, cellOffset, laneId, noteId, measureLength) => {
+					if (noteId === '01' || noteId === '02') {
+						mockEditor.notes[laneId].push(
+							new LaneMeasureNote(
+								measure,
+								laneId,
+								[{ noteID: noteId, position: cellOffset }],
+								measureLength
+							)
+						);
+						return true;
+					}
+					return false;
+				}
+			);
+
+			const deletedNotes = [
+				{
+					...mockDeletedNoteData,
+					noteKey: 'early-a',
+					measure: 0,
+					cellOffset: 0.25,
+					noteId: '01',
+					groupIndex: 0,
+					groupNoteId: getGroupNoteId(earlyA)
+				},
+				{
+					...mockDeletedNoteData,
+					noteKey: 'early-b',
+					measure: 0,
+					cellOffset: 0.5,
+					noteId: '02',
+					groupIndex: 1,
+					groupNoteId: getGroupNoteId(earlyB)
+				},
+				{
+					...mockDeletedNoteData,
+					noteKey: 'target',
+					measure: 2,
+					cellOffset: 0.5,
+					noteId: '12',
+					groupIndex: 2,
+					groupNoteId: getGroupNoteId(target)
+				}
+			];
+
+			noteBuffer.recordAction('delete', deletedNotes);
+			noteBuffer.undoLastAction(mockEditor as unknown as Editor);
+
+			expect(target.notes).toContainEqual({ noteID: '12', position: 0.5 });
+			expect(duplicate.notes).not.toContainEqual({ noteID: '12', position: 0.5 });
+			expect(later.notes).not.toContainEqual({ noteID: '12', position: 0.5 });
 		});
 
 		it('should restore cut groups in ascending group slot order', () => {

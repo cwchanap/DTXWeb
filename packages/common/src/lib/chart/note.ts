@@ -264,3 +264,20 @@ export class LaneMeasureNote {
 		return pattern.join('');
 	}
 }
+
+const groupNoteIds = new WeakMap<LaneMeasureNote, number>();
+let nextGroupNoteId = 0;
+
+/**
+ * Returns a stable identity for a pattern line within this session. Undo
+ * restoration uses it to find the original group after earlier groups are
+ * re-appended and array indexes shift.
+ */
+export const getGroupNoteId = (group: LaneMeasureNote): number => {
+	let id = groupNoteIds.get(group);
+	if (id === undefined) {
+		id = nextGroupNoteId++;
+		groupNoteIds.set(group, id);
+	}
+	return id;
+};

@@ -6,7 +6,7 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '../../store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote } from '../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../chart/note';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import { calculateHighResolutionPosition, HIGH_RESOLUTION_CELLS } from '../utils/notePositioning';
@@ -362,7 +362,8 @@ export class Editor extends BaseGame {
 								laneId: hitLaneId,
 								noteId: noteID,
 								measureLength: measureNote.measureLength,
-								groupIndex: this.notes[hitLaneId]?.indexOf(measureNote)
+								groupIndex: this.notes[hitLaneId]?.indexOf(measureNote),
+								groupNoteId: getGroupNoteId(measureNote)
 							};
 							this.noteManager.recordDeleteAction([deletedNoteData]);
 

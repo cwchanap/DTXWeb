@@ -8,6 +8,7 @@ import {
 	HIGH_RESOLUTION_CELLS
 } from '../../utils/notePositioning';
 import { canonicalizeCellOffset, parseNoteKey } from '../../../utils/position';
+import { getGroupNoteId } from '../../../chart/note';
 
 /**
  * Manages all note-related operations in the DTX editor including:
@@ -306,6 +307,7 @@ export class NoteManager {
 			noteId: string;
 			measureLength?: number;
 			groupIndex?: number;
+			groupNoteId?: number;
 		}>
 	): void {
 		this.noteBuffer.recordAction('cut', cutNotes);
@@ -441,7 +443,8 @@ export class NoteManager {
 								laneId,
 								noteId: noteChip.noteID,
 								measureLength: existingNote.measureLength,
-								groupIndex: notes[laneId].indexOf(existingNote)
+								groupIndex: notes[laneId].indexOf(existingNote),
+								groupNoteId: getGroupNoteId(existingNote)
 							};
 							deletedNotes.push(deletedNoteData);
 							notesToDelete.push({ noteKey, deletedNoteData });

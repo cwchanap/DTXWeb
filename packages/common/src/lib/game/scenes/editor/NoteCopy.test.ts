@@ -851,7 +851,8 @@ describe('NoteCopy', () => {
 					laneId: 'lane1',
 					noteId: '11',
 					measureLength: 1,
-					groupIndex: 0
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				},
 				{
 					noteKey: 'note-1-1-0',
@@ -861,7 +862,8 @@ describe('NoteCopy', () => {
 					laneId: 'lane2',
 					noteId: '12',
 					measureLength: 1,
-					groupIndex: 0
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				}
 			]);
 		});
@@ -917,7 +919,8 @@ describe('NoteCopy', () => {
 					laneId: 'lane1',
 					noteId: '11',
 					measureLength: 1,
-					groupIndex: 0
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				}
 			]);
 		});

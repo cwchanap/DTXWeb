@@ -1667,10 +1667,13 @@ export const discoverCatalogFiles = async (
 					isCatalogEligibleKey(key) &&
 					!sameStemAlternativeKeys.has(key)
 			).length;
-			const aliasRowsMustYield =
-				groupAliasKeys.size === groupSize &&
+			const aliasGroupNeedsDeferredAssignment =
+				groupAliasKeys.size > 0 &&
 				ordinaryKeyCount - groupSize < ordinaryDemandCountExcluding(groupRowIndexes);
-			if (aliasRowsMustYield) continue;
+			if (aliasGroupNeedsDeferredAssignment) {
+				deferredGroups.push(groupRows);
+				continue;
+			}
 			const selectedKeys = new Set<string>();
 			for (const key of orderExactCandidates(groupLevel, dtxObjectKeys)) {
 				if (selectedKeys.size === groupSize) break;
@@ -1817,6 +1820,15 @@ export const discoverCatalogFiles = async (
 					const remainingEligibleKeys = dtxObjectKeys.filter(
 						(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
 					);
+					const ordinaryKeyCount = remainingEligibleKeys.filter(
+						(key) => !sameStemAlternativeKeys.has(key)
+					).length;
+					const outsideOrdinaryDemand = ordinaryDemandCountExcluding(groupRowIndexes);
+					const ordinaryConsumptionCap =
+						outsideOrdinaryDemand > 0
+							? Math.max(0, ordinaryKeyCount - outsideOrdinaryDemand)
+							: Number.MAX_SAFE_INTEGER;
+					let ordinaryKeysClaimed = 0;
 					const positionalKeys = [...remainingEligibleKeys].sort(
 						(a, b) =>
 							Number(sameStemAlternativeKeys.has(a)) -
@@ -1947,6 +1959,7 @@ export const discoverCatalogFiles = async (
 					// reclaim one later if its slot owner has an alternative.
 					for (const row of rowsByIndex) {
 						if (rowsClaimedBySetDef.has(row.index)) continue;
+						if (outsideOrdinaryDemand > 0 && needScore(row.index) !== 0) continue;
 						const slotKey = slotKeyFor(row.index);
 						if (
 							slotKey === undefined ||
@@ -1959,6 +1972,7 @@ export const discoverCatalogFiles = async (
 						rowsClaimedBySetDef.add(row.index);
 						matchedKeysByRowIndex.set(row.index, slotKey);
 						usedDtxKeys.add(slotKey);
+						if (!isRetainedCopyKey(slotKey, groupLevel)) ordinaryKeysClaimed += 1;
 					}
 					const rowsByNeed = [...unclaimedGroupRows].sort(
 						(a, b) => needScore(a.index) - needScore(b.index) || a.index - b.index
@@ -1967,13 +1981,18 @@ export const discoverCatalogFiles = async (
 						if (rowsClaimedBySetDef.has(row.index)) continue;
 						const key = exactCandidates.find(
 							(candidate) =>
-								!assignedKeys.has(candidate) && candidateRank(candidate) === 0
+								!assignedKeys.has(candidate) &&
+								candidateRank(candidate) === 0 &&
+								(needScore(row.index) === 0 ||
+									isRetainedCopyKey(candidate, groupLevel) ||
+									ordinaryKeysClaimed < ordinaryConsumptionCap)
 						);
 						if (!key) break;
 						assignedKeys.add(key);
 						rowsClaimedBySetDef.add(row.index);
 						matchedKeysByRowIndex.set(row.index, key);
 						usedDtxKeys.add(key);
+						if (!isRetainedCopyKey(key, groupLevel)) ordinaryKeysClaimed += 1;
 					}
 					// Move an exact file from a fallback row to a row with no
 					// fallback, so the fallback row can use its own chart.

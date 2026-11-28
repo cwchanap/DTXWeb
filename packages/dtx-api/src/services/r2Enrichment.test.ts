@@ -7447,4 +7447,32 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/05.dtx'
 		]);
 	});
+
+	it('lets a row with a usable alias yield a scarce exact chart', async () => {
+		// BASIC/50 has a nested alias extras/01.dtx (now rated 60), while
+		// HARD/50 has no SET.def entry and only 02.dtx at 50. The sole exact
+		// chart must go to HARD, and BASIC must use its alias instead of
+		// taking 02.dtx and leaving HARD without a preview.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE extras/01.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/02.dtx'
+		]);
+	});
 });

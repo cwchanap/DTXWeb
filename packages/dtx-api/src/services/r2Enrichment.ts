@@ -666,7 +666,7 @@ export const discoverCatalogFiles = async (
 	// conflict, not to one hidden behind an earlier alias block.
 	const pendingSetDefClaimDeferrals = new Map<
 		number,
-		{ ref: SetDefFileRef; reason: 'rating' | 'rawOwner' }
+		{ ref: SetDefFileRef; reason: 'rating' | 'rawOwner' | 'ineligibleAlias' }
 	>();
 	// Rows whose mismatched stem claim yielded to a pending direct SET.def
 	// reference. The direct reference must retry before retained copies or
@@ -1100,11 +1100,15 @@ export const discoverCatalogFiles = async (
 					refIndex = firstIneligibleAliasIndex;
 				} else {
 					deferIneligibleAlias = true;
+					pendingSetDefClaimDeferrals.set(index, {
+						ref: refs[firstIneligibleAliasIndex],
+						reason: 'ineligibleAlias'
+					});
 				}
 			}
 			if (deferClaim || deferIneligibleAlias || (refIndex === -1 && stemOwnerBlockedClaim)) {
 				pendingSetDefClaims.add(index);
-				if (!deferClaim) pendingSetDefClaimDeferrals.delete(index);
+				if (!deferClaim && !deferIneligibleAlias) pendingSetDefClaimDeferrals.delete(index);
 				continue;
 			}
 			pendingSetDefClaimDeferrals.delete(index);
@@ -1699,9 +1703,24 @@ export const discoverCatalogFiles = async (
 				(row) => !rowsClaimedBySetDef.has(row.index)
 			);
 			if (unclaimedGroupRows.length === 0) continue;
-			const groupLevel = normalizeLevel(unclaimedGroupRows[0].file.level);
-			const groupSize = unclaimedGroupRows.length;
-			const groupRowIndexes = new Set(unclaimedGroupRows.map((row) => row.index));
+			const hasUsableDeferredAlias = (rowIndex: number): boolean => {
+				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+				if (!deferral || deferral.reason !== 'ineligibleAlias') return false;
+				const object = resolveSetDefObject(deferral.ref);
+				return Boolean(object && !keyIsAssignedToRow(object.key));
+			};
+			// A row with its own usable alias yields a scarce exact file to a
+			// row that has no alternative; the alias row retries at the end.
+			const rowsWithAlias = unclaimedGroupRows.filter((row) =>
+				hasUsableDeferredAlias(row.index)
+			);
+			const effectiveGroupRows =
+				rowsWithAlias.length > 0 && rowsWithAlias.length < unclaimedGroupRows.length
+					? unclaimedGroupRows.filter((row) => !hasUsableDeferredAlias(row.index))
+					: unclaimedGroupRows;
+			const groupLevel = normalizeLevel(effectiveGroupRows[0].file.level);
+			const groupSize = effectiveGroupRows.length;
+			const groupRowIndexes = new Set(effectiveGroupRows.map((row) => row.index));
 			const remainingRowsByPos = fallbackRows
 				.filter((row) => !rowsClaimedBySetDef.has(row.index))
 				.sort((a, b) => a.index - b.index);
@@ -1833,7 +1852,7 @@ export const discoverCatalogFiles = async (
 				}
 			}
 			let unassignedIndex = 0;
-			for (const row of unclaimedGroupRows) {
+			for (const row of effectiveGroupRows) {
 				if (rowsClaimedBySetDef.has(row.index)) continue;
 				const key = unassignedCandidates[unassignedIndex++];
 				if (!key) break;

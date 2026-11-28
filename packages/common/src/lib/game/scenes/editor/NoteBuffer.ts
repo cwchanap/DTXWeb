@@ -1,4 +1,4 @@
-import { LaneMeasureNote, getGroupNoteId } from '$lib/chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 

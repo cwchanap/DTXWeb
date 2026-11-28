@@ -6,7 +6,7 @@ import {
 	parseNoteKey,
 	snapCellOffsetToBarline
 } from '../../../utils/position';
-import { getGroupNoteId } from '$lib/chart/note';
+import { getGroupNoteId } from '../../../chart/note';
 
 /**
  * Represents a copied note with its position and properties

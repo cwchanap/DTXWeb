@@ -6,7 +6,7 @@ import { Preview } from './Preview';
 import { get } from 'svelte/store';
 import store from '../../store';
 import type { LaneConfig } from '../interface';
-import { LaneMeasureNote, getGroupNoteId } from '$lib/chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../chart/note';
 import type { DeletedNoteData } from './editor/NoteBuffer';
 import { NoteManager } from './editor/NoteManager';
 import { calculateHighResolutionPosition, HIGH_RESOLUTION_CELLS } from '../utils/notePositioning';

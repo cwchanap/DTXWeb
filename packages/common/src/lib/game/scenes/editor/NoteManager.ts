@@ -8,7 +8,7 @@ import {
 	HIGH_RESOLUTION_CELLS
 } from '../../utils/notePositioning';
 import { canonicalizeCellOffset, parseNoteKey } from '../../../utils/position';
-import { getGroupNoteId } from '$lib/chart/note';
+import { getGroupNoteId } from '../../../chart/note';
 
 /**
  * Manages all note-related operations in the DTX editor including:

@@ -6760,4 +6760,110 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/expert.dtx'
 		]);
 	});
+
+	it('retries a pending direct reference before a retained same-stem copy', async () => {
+		// BASIC/30's 01.dtx probes 70, so its direct claim waits until
+		// exact-rating fallback completes. SOLO/30 takes the root solo.dtx
+		// and retains extras/solo.dtx as a same-stem copy rated 30. The copy
+		// must not claim BASIC/30 before 01.dtx gets its retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('keeps stem matches for pending rows blocked by an earlier alias', async () => {
+		// Each label lists an alias to the other's direct reference first, so
+		// both rows stay pending on a raw-owner block rather than a rating
+		// conflict. advanced.dtx and basic.dtx rate no catalog row and must
+		// still claim their stem rows instead of falling to positional pairing.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./02.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL ADVANCED\n#L3FILE ./01.dtx\n#L4LABEL ADVANCED\n#L4FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 55\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n',
+				'42/00.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'ADVANCED', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/advanced.dtx'
+		]);
+	});
+
+	it('keeps a stem match when an alias blocks a direct reference with a claimed rating', async () => {
+		// BASIC's first ref is an alias blocked by ADVANCED's direct 02.dtx,
+		// so the later 01.dtx direct reference is never evaluated. Its 70
+		// rating names the claimed EXPERT row, but the raw-owner block cannot
+		// be cleared by the retry; basic.dtx must still claim BASIC/30.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./02.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL ADVANCED\n#L3FILE ./01.dtx\n#L4LABEL ADVANCED\n#L4FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 55\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/00.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'ADVANCED', level: 50 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/advanced.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
 });

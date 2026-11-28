@@ -661,6 +661,17 @@ export const discoverCatalogFiles = async (
 		ref.file.toLowerCase() === r2FileName(key).toLowerCase();
 	const keysDeferredForExactMatch = new Set<string>();
 	const pendingSetDefClaims = new Set<number>();
+	// The reference that stopped the last claim attempt for a pending row.
+	// The stem guard only yields to a direct reference deferred by a rating
+	// conflict, not to one hidden behind an earlier alias block.
+	const pendingSetDefClaimDeferrals = new Map<
+		number,
+		{ ref: SetDefFileRef; reason: 'rating' | 'rawOwner' }
+	>();
+	// Rows whose mismatched stem claim yielded to a pending direct SET.def
+	// reference. The direct reference must retry before retained copies or
+	// unprobed shortage fillers reach the fallback.
+	const pendingDirectRefRows = new Set<number>();
 	const probedLevelByKey = new Map<string, number>();
 	let exactRatingFallbackComplete = false;
 	// `usedDtxKeys` also carries leftover reservations. SET.def retries must
@@ -737,7 +748,8 @@ export const discoverCatalogFiles = async (
 	const claimSetDefRows = (
 		exactOnly: boolean,
 		deferBlockedClaims = false,
-		onlyPendingClaims = false
+		onlyPendingClaims = false,
+		settledRatingConflicts?: ReadonlySet<number>
 	): void => {
 		const isRefUnassigned = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
@@ -998,6 +1010,7 @@ export const discoverCatalogFiles = async (
 					);
 					if (labelHasDirectRawRef) continue;
 					if (deferBlockedClaims) {
+						pendingSetDefClaimDeferrals.set(index, { ref, reason: 'rawOwner' });
 						deferClaim = true;
 						break;
 					}
@@ -1019,10 +1032,13 @@ export const discoverCatalogFiles = async (
 					isCatalogEligibleKey(sharedObject.key) &&
 					!unambiguousDirectClaim &&
 					(ratingNamesUnclaimedRow ||
-						(!exactRatingFallbackComplete && ratingNamesAnotherRow))
+						(!exactRatingFallbackComplete &&
+							ratingNamesAnotherRow &&
+							!settledRatingConflicts?.has(index)))
 				) {
 					keysDeferredForExactMatch.add(sharedObject.key);
 					if (deferBlockedClaims) {
+						pendingSetDefClaimDeferrals.set(index, { ref, reason: 'rating' });
 						deferClaim = true;
 						break;
 					}
@@ -1080,8 +1096,10 @@ export const discoverCatalogFiles = async (
 			}
 			if (deferClaim || (refIndex === -1 && stemOwnerBlockedClaim)) {
 				pendingSetDefClaims.add(index);
+				if (!deferClaim) pendingSetDefClaimDeferrals.delete(index);
 				continue;
 			}
+			pendingSetDefClaimDeferrals.delete(index);
 			// Every remaining ref is provably another row's chart — leave
 			// them for their true rows and let this row fall through to
 			// the sorted fallback.
@@ -1358,32 +1376,42 @@ export const discoverCatalogFiles = async (
 		// filename-stem claim; let the pending-claim retry run first.
 		const hasPendingDirectRefDeferredByClaimedRating = (rowIndex: number): boolean => {
 			if (!pendingSetDefClaims.has(rowIndex)) return false;
+			const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+			if (!deferral || deferral.reason !== 'rating') return false;
+			const object = resolveSetDefObject(deferral.ref);
+			if (!object || keyIsAssignedToRow(object.key)) return false;
+			if (!isDirectRawRef(deferral.ref, object.key) || !isCatalogEligibleKey(object.key))
+				return false;
 			const row = dtxFiles[rowIndex];
 			const refs = filesByLabel.get(row.label.toLowerCase());
 			if (!refs) return false;
-			const rowLevel = normalizeLevel(row.level);
-			const deferredDirectRefs = refs.filter((ref) => {
-				const object = resolveSetDefObject(ref);
-				if (!object || keyIsAssignedToRow(object.key)) return false;
-				if (!isDirectRawRef(ref, object.key) || !isCatalogEligibleKey(object.key))
-					return false;
-				const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(object.key);
-				if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
-				const namesUnclaimedRow = dtxFiles.some(
-					(other, otherIndex) =>
-						otherIndex !== rowIndex &&
-						!rowsClaimedBySetDef.has(otherIndex) &&
-						normalizeLevel(other.level) === probed
+			const remainingDirectRefs = refs.filter((ref) => {
+				const refObject = resolveSetDefObject(ref);
+				return Boolean(
+					refObject &&
+					!keyIsAssignedToRow(refObject.key) &&
+					isDirectRawRef(ref, refObject.key) &&
+					isCatalogEligibleKey(refObject.key)
 				);
-				const namesClaimedRow = dtxFiles.some(
-					(other, otherIndex) =>
-						otherIndex !== rowIndex &&
-						rowsClaimedBySetDef.has(otherIndex) &&
-						normalizeLevel(other.level) === probed
-				);
-				return !namesUnclaimedRow && namesClaimedRow;
 			});
-			return deferredDirectRefs.length === 1;
+			if (remainingDirectRefs.length !== 1 || remainingDirectRefs[0] !== deferral.ref)
+				return false;
+			const rowLevel = normalizeLevel(row.level);
+			const probed = fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
+			if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
+			const namesUnclaimedRow = dtxFiles.some(
+				(other, otherIndex) =>
+					otherIndex !== rowIndex &&
+					!rowsClaimedBySetDef.has(otherIndex) &&
+					normalizeLevel(other.level) === probed
+			);
+			const namesClaimedRow = dtxFiles.some(
+				(other, otherIndex) =>
+					otherIndex !== rowIndex &&
+					rowsClaimedBySetDef.has(otherIndex) &&
+					normalizeLevel(other.level) === probed
+			);
+			return !namesUnclaimedRow && namesClaimedRow;
 		};
 		// A probed rating equal to a DIFFERENT unclaimed row's level names that
 		// row's chart — the same disqualification the set.def claim loop applies —
@@ -1431,8 +1459,10 @@ export const discoverCatalogFiles = async (
 				);
 			const defersForPendingDirectRef =
 				!exactOnly &&
+				!hasOrdinaryExactMatch &&
 				effectiveProbed !== rowLevel &&
 				hasPendingDirectRefDeferredByClaimedRating(rows[0]);
+			if (defersForPendingDirectRef) pendingDirectRefRows.add(rows[0]);
 			if (
 				typeof effectiveProbed === 'number' &&
 				!namesDifferentRow &&
@@ -1510,6 +1540,12 @@ export const discoverCatalogFiles = async (
 			})
 		);
 		await claimStemMatchedRows(false, true);
+		// Ordinary exact matches settle in the fallback below; rows that only
+		// had a retained copy or an unprobed filler available get their
+		// pending direct reference back first.
+		if (pendingDirectRefRows.size > 0) {
+			claimSetDefRows(false, true, true, pendingDirectRefRows);
+		}
 		const exactFallbackRows = fallbackRows.filter(
 			({ index }) => !rowsClaimedBySetDef.has(index)
 		);

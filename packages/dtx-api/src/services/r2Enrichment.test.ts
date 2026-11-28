@@ -6866,4 +6866,80 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/expert.dtx'
 		]);
 	});
+
+	it('does not count an unrated placeholder as a competing direct reference', async () => {
+		// BASIC/30's 01.dtx probes 70, so its direct claim waits until
+		// exact-rating fallback completes. The extra placeholder.dtx slot is
+		// confirmed unrated and can never own a row; it must not make the
+		// guard treat BASIC/30 as having multiple direct candidates.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE placeholder.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/placeholder.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('settles a shared ordinary exact match before a pending direct retry', async () => {
+		// HARD/30 and BASIC/30 share one ordinary exact chart, common.dtx,
+		// while extras/solo.dtx is a retained copy. BASIC/30 also has a
+		// pending direct reference 01.dtx. HARD must take common.dtx, then
+		// BASIC must retry 01.dtx instead of accepting the copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/common.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'HARD', level: 30 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/common.dtx',
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/50.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
 });

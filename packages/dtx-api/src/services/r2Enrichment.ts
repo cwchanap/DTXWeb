@@ -1387,12 +1387,15 @@ export const discoverCatalogFiles = async (
 			if (!refs) return false;
 			const remainingDirectRefs = refs.filter((ref) => {
 				const refObject = resolveSetDefObject(ref);
-				return Boolean(
-					refObject &&
-					!keyIsAssignedToRow(refObject.key) &&
-					isDirectRawRef(ref, refObject.key) &&
-					isCatalogEligibleKey(refObject.key)
-				);
+				if (
+					!refObject ||
+					keyIsAssignedToRow(refObject.key) ||
+					!isDirectRawRef(ref, refObject.key) ||
+					!isCatalogEligibleKey(refObject.key)
+				)
+					return false;
+				const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(refObject.key);
+				return probed !== 0;
 			});
 			if (remainingDirectRefs.length !== 1 || remainingDirectRefs[0] !== deferral.ref)
 				return false;
@@ -1459,7 +1462,6 @@ export const discoverCatalogFiles = async (
 				);
 			const defersForPendingDirectRef =
 				!exactOnly &&
-				!hasOrdinaryExactMatch &&
 				effectiveProbed !== rowLevel &&
 				hasPendingDirectRefDeferredByClaimedRating(rows[0]);
 			if (defersForPendingDirectRef) pendingDirectRefRows.add(rows[0]);
@@ -1540,12 +1542,6 @@ export const discoverCatalogFiles = async (
 			})
 		);
 		await claimStemMatchedRows(false, true);
-		// Ordinary exact matches settle in the fallback below; rows that only
-		// had a retained copy or an unprobed filler available get their
-		// pending direct reference back first.
-		if (pendingDirectRefRows.size > 0) {
-			claimSetDefRows(false, true, true, pendingDirectRefRows);
-		}
 		const exactFallbackRows = fallbackRows.filter(
 			({ index }) => !rowsClaimedBySetDef.has(index)
 		);
@@ -1577,10 +1573,11 @@ export const discoverCatalogFiles = async (
 		}
 		// Retained same-stem copies are duplicates; try ordinary charts first and
 		// use a copy only to fill a shortage.
+		const isRetainedCopyKey = (key: string, groupLevel: number): boolean =>
+			sameStemAlternativeKeys.has(key) ||
+			(groupLevel === 0 && retainedLevelZeroRootKeys.has(key));
 		const orderExactCandidates = (groupLevel: number, keys: string[]): string[] => {
-			const isCopy = (key: string): boolean =>
-				sameStemAlternativeKeys.has(key) ||
-				(groupLevel === 0 && retainedLevelZeroRootKeys.has(key));
+			const isCopy = (key: string): boolean => isRetainedCopyKey(key, groupLevel);
 			return [...keys.filter((key) => !isCopy(key)), ...keys.filter(isCopy)];
 		};
 		// Pass 1: claim groups whose full row count can be satisfied by exact
@@ -1608,10 +1605,18 @@ export const discoverCatalogFiles = async (
 			for (const [candidateIndex, row] of groupRows.entries()) {
 				const key = candidates[candidateIndex];
 				if (!key) break;
+				// A row waiting on its direct SET.def reference may take an
+				// ordinary exact match, but not a retained copy; the pending
+				// retry below gets that reference back first.
+				if (pendingDirectRefRows.has(row.index) && isRetainedCopyKey(key, groupLevel))
+					continue;
 				rowsClaimedBySetDef.add(row.index);
 				matchedKeysByRowIndex.set(row.index, key);
 				usedDtxKeys.add(key);
 			}
+		}
+		if (pendingDirectRefRows.size > 0) {
+			claimSetDefRows(false, true, true, pendingDirectRefRows);
 		}
 		// Pass 2: for equal-rated groups with an exact-match shortage, only fill
 		// from unprobed keys whose remaining uploader-position slot belongs to

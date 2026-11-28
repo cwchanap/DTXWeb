@@ -1678,6 +1678,7 @@ export const discoverCatalogFiles = async (
 			for (const key of orderExactCandidates(groupLevel, dtxObjectKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
+				if (keyIsOnlyFilenameMatchForOtherRow(key, groupRowIndexes)) continue;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
 			if (selectedKeys.size < groupSize && groupSize > 1) {
@@ -2255,6 +2256,26 @@ export const discoverCatalogFiles = async (
 		}
 	}
 
+	const canUseLateExactKeyForRow = (key: string, rowIndex: number): boolean => {
+		const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
+		return ownerIndex === -1 || ownerIndex === rowIndex || rowsClaimedBySetDef.has(ownerIndex);
+	};
+	const lateExactRows = fallbackRows
+		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
+		.sort((a, b) => a.index - b.index);
+	const lateExactSlotKeys = dtxObjectKeys.filter(
+		(key) =>
+			!usedDtxKeys.has(key) && isCatalogEligibleKey(key) && !sameStemAlternativeKeys.has(key)
+	);
+	for (const [slotIndex, row] of lateExactRows.entries()) {
+		const key = lateExactSlotKeys[slotIndex];
+		if (!key || probedLevelByKey.get(key) !== normalizeLevel(row.file.level)) continue;
+		if (!canUseLateExactKeyForRow(key, row.index)) continue;
+		rowsClaimedBySetDef.add(row.index);
+		matchedKeysByRowIndex.set(row.index, key);
+		usedDtxKeys.add(key);
+	}
+
 	for (const row of fallbackRows) {
 		if (rowsClaimedBySetDef.has(row.index)) continue;
 		const rowLevel = normalizeLevel(row.file.level);
@@ -2274,14 +2295,7 @@ export const discoverCatalogFiles = async (
 					(dtxKeyOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
 						(dtxKeyOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
 			)
-			.find((candidate) => {
-				const ownerIndex = uniqueUnclaimedStemOwnerIndex(candidate);
-				return (
-					ownerIndex === -1 ||
-					ownerIndex === row.index ||
-					rowsClaimedBySetDef.has(ownerIndex)
-				);
-			});
+			.find((candidate) => canUseLateExactKeyForRow(candidate, row.index));
 		if (key) {
 			rowsClaimedBySetDef.add(row.index);
 			matchedKeysByRowIndex.set(row.index, key);

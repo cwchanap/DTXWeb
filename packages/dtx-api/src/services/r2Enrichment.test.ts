@@ -7878,6 +7878,59 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('uses a later exact chart when the first exact chart is filename-owned', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/zzz.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/zzz.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('keeps a released exact chart in its uploader slot for equal-rated rows', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L2LABEL ADV\n#L2FILE nested/03.dtx\n#L3LABEL HARD\n#L3FILE nested/03.dtx\n',
+				'42/nested/03.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/nested/03.dtx'
+		]);
+	});
+
 	it('protects a filename owner when a surplus chart is present', async () => {
 		const discovery = await discoverCatalogFiles(
 			makeChartBucket({

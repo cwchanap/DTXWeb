@@ -10,7 +10,7 @@ import {
 	type PastedNoteData,
 	type CutNoteData
 } from './NoteBuffer';
-import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '$lib/chart/note';
 import { normalizePosition } from '../../../utils/position';
 import type { Editor } from '../Editor';
 import { NoteMove } from './NoteMove';

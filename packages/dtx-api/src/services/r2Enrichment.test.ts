@@ -7540,4 +7540,42 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/hard.dtx'
 		]);
 	});
+
+	it('keeps a rating deferral when an earlier nested alias is present', async () => {
+		// BASIC/30's first slot is a nested alias rated 91, followed by the
+		// bare 01.dtx whose 70 rating conflicts with EXPERT/70. The rating
+		// deferral must survive the alias bookkeeping so the direct retry
+		// claims 01.dtx before the retained solo copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/c.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE 02.dtx\n#L4LABEL OTHER\n#L4FILE solo.dtx\n',
+				'42/extras/nested/c.dtx': '#TITLE: Song\n#DLEVEL: 91\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
 });

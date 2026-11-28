@@ -7475,4 +7475,69 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/02.dtx'
 		]);
 	});
+
+	it('keeps a shared alias from hiding the retained exact chart', async () => {
+		// Two BASIC rows share one nested alias. They must stay in the
+		// shortage group so the ordinary 50 chart and the retained copy are
+		// both offered; one BASIC row then takes the shared alias.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL OTHER\n#L2FILE solo.dtx\n',
+				'42/extras/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'SOLO', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const level50Urls = discovery.charts
+			.filter((chart) => chart.label === 'BASIC' || chart.label === 'HARD')
+			.map((chart) => chart.fileUrl)
+			.sort();
+		expect(level50Urls).toEqual([
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/extras/nested/01.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
+
+	it('keeps an exact slot when the peer has a re-rated filename', async () => {
+		// BASIC/50 has a nested alias, but HARD/50 still has hard.dtx (rated
+		// 70) as its filename fallback. BASIC must keep its exact slot 01.dtx
+		// instead of yielding it to HARD.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
 });

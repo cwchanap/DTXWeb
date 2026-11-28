@@ -8067,6 +8067,35 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('counts multiple aliases on one row as coverage for only that row', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/basic.dtx\n#L2LABEL ADV\n#L2FILE nested/a.dtx\n#L3LABEL ADV\n#L3FILE nested/b.dtx\n',
+				'42/nested/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/nested/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/nested/b.dtx': '#TITLE: Song\n#DLEVEL: 81\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/basic.dtx',
+			'https://cdn.example.test/42/nested/a.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
 	it('protects a filename owner when a surplus chart is present', async () => {
 		const discovery = await discoverCatalogFiles(
 			makeChartBucket({

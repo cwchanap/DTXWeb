@@ -1667,15 +1667,28 @@ export const discoverCatalogFiles = async (
 			}
 			return keys;
 		};
+		const maximumAliasCoverage = (rowIndexes: readonly number[]): number => {
+			const keyOwner = new Map<string, number>();
+			const assign = (rowIndex: number, seenKeys: Set<string>): boolean => {
+				for (const key of usableAliasKeysFor(rowIndex)) {
+					if (seenKeys.has(key)) continue;
+					seenKeys.add(key);
+					const owner = keyOwner.get(key);
+					if (owner === undefined || assign(owner, seenKeys)) {
+						keyOwner.set(key, rowIndex);
+						return true;
+					}
+				}
+				return false;
+			};
+			for (const rowIndex of rowIndexes) assign(rowIndex, new Set());
+			return keyOwner.size;
+		};
 		const ordinaryDemandCountExcluding = (excludedRowIndexes: ReadonlySet<number>): number => {
 			const demandRows = fallbackRows.filter(
 				(row) => !rowsClaimedBySetDef.has(row.index) && !excludedRowIndexes.has(row.index)
 			);
-			const aliasCoverage = new Set<string>();
-			for (const row of demandRows) {
-				for (const aliasKey of usableAliasKeysFor(row.index)) aliasCoverage.add(aliasKey);
-			}
-			return demandRows.length - aliasCoverage.size;
+			return demandRows.length - maximumAliasCoverage(demandRows.map((row) => row.index));
 		};
 		const keyIsOnlyFilenameMatchForOtherRow = (
 			key: string,
@@ -1943,11 +1956,10 @@ export const discoverCatalogFiles = async (
 					const rowsWithAliasCount = unclaimedGroupRows.filter(
 						(row) => usableAliasKeysFor(row.index).length > 0
 					).length;
-					const distinctGroupAliasKeys = new Set(
-						unclaimedGroupRows.flatMap((row) => usableAliasKeysFor(row.index))
-					);
 					const aliasesCanCoverEveryAliasedRow =
-						rowsWithAliasCount > 0 && distinctGroupAliasKeys.size >= rowsWithAliasCount;
+						rowsWithAliasCount > 0 &&
+						maximumAliasCoverage(unclaimedGroupRows.map((row) => row.index)) >=
+							rowsWithAliasCount;
 					const hasUniqueAlias = (rowIndex: number): boolean =>
 						aliasesCanCoverEveryAliasedRow
 							? usableAliasKeysFor(rowIndex).length > 0

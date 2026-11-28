@@ -6798,6 +6798,41 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('retries a pending direct reference without a stem candidate', async () => {
+		// Same fixture as above without basic.dtx: the stem pass has no
+		// candidate for BASIC/30, but its pending 01.dtx claim must still
+		// retry before the retained extras/solo.dtx copy can claim the row.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
 	it('keeps stem matches for pending rows blocked by an earlier alias', async () => {
 		// Each label lists an alias to the other's direct reference first, so
 		// both rows stay pending on a raw-owner block rather than a rating
@@ -7026,6 +7061,49 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('does not protect a relative alias as a direct reference', async () => {
+		// EASY/20's ./04.dtx alias is deferred for rating, but a relative
+		// alias is not uploader filename ownership. It must not push 04.dtx
+		// out of MEDIUM's slot: MEDIUM keeps 04.dtx and EASY falls to 03.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL EASY\n#L5FILE ./04.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EASY', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'EASY' || chart.label === 'MEDIUM')
+				.map((chart) => chart.fileUrl)
+		).toEqual(['https://cdn.example.test/42/03.dtx', 'https://cdn.example.test/42/04.dtx']);
+	});
+
 	it('keeps another row’s filename match when an earlier file is missing', async () => {
 		// 02a.dtx is present but unrated and dropped, so the remaining files
 		// start at 03.dtx while the remaining rows start at 02a/20. After the
@@ -7119,6 +7197,59 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/03.dtx',
 			'https://cdn.example.test/42/53.dtx',
 			'https://cdn.example.test/42/04.dtx'
+		]);
+	});
+
+	it('keeps a filename match when a later group can take its alternate reference', async () => {
+		// 04/40 owns 04.dtx by filename and has a deferred bare reference to
+		// 06.dtx. A later level-60 group can take 06.dtx, so MEDIUM must not
+		// relax that protection and consume 04.dtx; MEDIUM takes 03.dtx and
+		// 04/40 keeps its filename match.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL 04\n#L5FILE 05.dtx\n#L6LABEL 04\n#L6FILE 06.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 20\n',
+				'42/06.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '04', level: 20 },
+					{ label: '04', level: 40 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXTRA', level: 60 },
+					{ label: 'ANOTHER', level: 60 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual([
+			'https://cdn.example.test/42/05.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/03.dtx'
 		]);
 	});
 });

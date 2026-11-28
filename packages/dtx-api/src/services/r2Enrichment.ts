@@ -1347,6 +1347,52 @@ export const discoverCatalogFiles = async (
 	// when 01.dtx probes the Basic level), so those claims defer until
 	// exact-rating claims have settled and the stem heuristic applies
 	// only to leftover rows and files.
+
+	// A direct SET.def reference deferred only because an already claimed
+	// row shares its probed rating is stronger evidence than a mismatched
+	// filename-stem claim; let the pending-claim retry run first.
+	const hasPendingDirectRefDeferredByClaimedRating = (rowIndex: number): boolean => {
+		if (!pendingSetDefClaims.has(rowIndex)) return false;
+		const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+		if (!deferral || deferral.reason !== 'rating') return false;
+		const object = resolveSetDefObject(deferral.ref);
+		if (!object || keyIsAssignedToRow(object.key)) return false;
+		if (!isDirectRawRef(deferral.ref, object.key) || !isCatalogEligibleKey(object.key))
+			return false;
+		const row = dtxFiles[rowIndex];
+		const refs = filesByLabel.get(row.label.toLowerCase());
+		if (!refs) return false;
+		const remainingDirectRefs = refs.filter((ref) => {
+			const refObject = resolveSetDefObject(ref);
+			if (
+				!refObject ||
+				keyIsAssignedToRow(refObject.key) ||
+				!isDirectRawRef(ref, refObject.key) ||
+				!isCatalogEligibleKey(refObject.key)
+			)
+				return false;
+			const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(refObject.key);
+			return probed !== 0;
+		});
+		if (remainingDirectRefs.length !== 1 || remainingDirectRefs[0] !== deferral.ref)
+			return false;
+		const rowLevel = normalizeLevel(row.level);
+		const probed = fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
+		if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
+		const namesUnclaimedRow = dtxFiles.some(
+			(other, otherIndex) =>
+				otherIndex !== rowIndex &&
+				!rowsClaimedBySetDef.has(otherIndex) &&
+				normalizeLevel(other.level) === probed
+		);
+		const namesClaimedRow = dtxFiles.some(
+			(other, otherIndex) =>
+				otherIndex !== rowIndex &&
+				rowsClaimedBySetDef.has(otherIndex) &&
+				normalizeLevel(other.level) === probed
+		);
+		return !namesUnclaimedRow && namesClaimedRow;
+	};
 	const stemDeepProbedKeys = new Set<string>();
 	const claimStemMatchedRows = async (
 		exactOnly: boolean,
@@ -1371,51 +1417,6 @@ export const discoverCatalogFiles = async (
 			if (rows) rows.push(index);
 			else unclaimedRowsByLabel.set(label, [index]);
 		});
-		// A direct SET.def reference deferred only because an already claimed
-		// row shares its probed rating is stronger evidence than a mismatched
-		// filename-stem claim; let the pending-claim retry run first.
-		const hasPendingDirectRefDeferredByClaimedRating = (rowIndex: number): boolean => {
-			if (!pendingSetDefClaims.has(rowIndex)) return false;
-			const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
-			if (!deferral || deferral.reason !== 'rating') return false;
-			const object = resolveSetDefObject(deferral.ref);
-			if (!object || keyIsAssignedToRow(object.key)) return false;
-			if (!isDirectRawRef(deferral.ref, object.key) || !isCatalogEligibleKey(object.key))
-				return false;
-			const row = dtxFiles[rowIndex];
-			const refs = filesByLabel.get(row.label.toLowerCase());
-			if (!refs) return false;
-			const remainingDirectRefs = refs.filter((ref) => {
-				const refObject = resolveSetDefObject(ref);
-				if (
-					!refObject ||
-					keyIsAssignedToRow(refObject.key) ||
-					!isDirectRawRef(ref, refObject.key) ||
-					!isCatalogEligibleKey(refObject.key)
-				)
-					return false;
-				const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(refObject.key);
-				return probed !== 0;
-			});
-			if (remainingDirectRefs.length !== 1 || remainingDirectRefs[0] !== deferral.ref)
-				return false;
-			const rowLevel = normalizeLevel(row.level);
-			const probed = fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
-			if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
-			const namesUnclaimedRow = dtxFiles.some(
-				(other, otherIndex) =>
-					otherIndex !== rowIndex &&
-					!rowsClaimedBySetDef.has(otherIndex) &&
-					normalizeLevel(other.level) === probed
-			);
-			const namesClaimedRow = dtxFiles.some(
-				(other, otherIndex) =>
-					otherIndex !== rowIndex &&
-					rowsClaimedBySetDef.has(otherIndex) &&
-					normalizeLevel(other.level) === probed
-			);
-			return !namesUnclaimedRow && namesClaimedRow;
-		};
 		// A probed rating equal to a DIFFERENT unclaimed row's level names that
 		// row's chart — the same disqualification the set.def claim loop applies —
 		// so the file must not claim this row on its stem alone.
@@ -1542,6 +1543,13 @@ export const discoverCatalogFiles = async (
 			})
 		);
 		await claimStemMatchedRows(false, true);
+		// A pending row with no filename-stem candidate still needs its
+		// direct reference retried before retained copies reach the fallback.
+		for (const rowIndex of pendingSetDefClaims) {
+			if (hasPendingDirectRefDeferredByClaimedRating(rowIndex)) {
+				pendingDirectRefRows.add(rowIndex);
+			}
+		}
 		const exactFallbackRows = fallbackRows.filter(
 			({ index }) => !rowsClaimedBySetDef.has(index)
 		);
@@ -1622,7 +1630,7 @@ export const discoverCatalogFiles = async (
 		// from unprobed keys whose remaining uploader-position slot belongs to
 		// a row inside the group — never steal an unprobed key whose position
 		// maps to an unclaimed row outside the group.
-		for (const groupRows of deferredGroups) {
+		for (const [deferredIndex, groupRows] of deferredGroups.entries()) {
 			// The pending retry can fill part of a deferred group. Size the
 			// shortage against the rows that still need a chart, or an
 			// unprobed filler can displace the remaining row's exact match.
@@ -1655,6 +1663,18 @@ export const discoverCatalogFiles = async (
 				const positionalRow = pos !== undefined ? remainingRowsByPos[pos] : undefined;
 				return Boolean(positionalRow && groupRowIndexes.has(positionalRow.index));
 			};
+			const hasFutureGroupRowAtLevel = (level: number): boolean => {
+				for (let i = deferredIndex + 1; i < deferredGroups.length; i++) {
+					for (const row of deferredGroups[i]) {
+						if (
+							!rowsClaimedBySetDef.has(row.index) &&
+							normalizeLevel(row.file.level) === level
+						)
+							return true;
+					}
+				}
+				return false;
+			};
 			const hasViableDeferredDirectRef = (
 				rowIndex: number,
 				excludingKey: string
@@ -1665,6 +1685,12 @@ export const discoverCatalogFiles = async (
 				if (!deferral || deferral.reason !== 'rating') return false;
 				const object = resolveSetDefObject(deferral.ref);
 				if (!object || object.key === excludingKey) return false;
+				if (!isDirectRawRef(deferral.ref, object.key)) return false;
+				const probed = fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
+				if (typeof probed !== 'number' || probed === 0) return false;
+				// A later rating group can still take this reference before
+				// the owner's retry; keep the filename match protected then.
+				if (hasFutureGroupRowAtLevel(probed)) return false;
 				return !keyIsAssignedToRow(object.key) && isCatalogEligibleKey(object.key);
 			};
 			const consumesOtherRowsFilename = (key: string): boolean => {
@@ -1681,6 +1707,7 @@ export const discoverCatalogFiles = async (
 					if (deferral.reason !== 'rating') continue;
 					const object = resolveSetDefObject(deferral.ref);
 					if (!object || object.key !== key) continue;
+					if (!isDirectRawRef(deferral.ref, object.key)) continue;
 					if (keyIsAssignedToRow(object.key) || !isCatalogEligibleKey(object.key))
 						continue;
 					return true;

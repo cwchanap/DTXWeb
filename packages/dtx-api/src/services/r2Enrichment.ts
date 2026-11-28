@@ -1362,7 +1362,8 @@ export const discoverCatalogFiles = async (
 		const row = dtxFiles[rowIndex];
 		const refs = filesByLabel.get(row.label.toLowerCase());
 		if (!refs) return false;
-		const remainingDirectRefs = refs.filter((ref) => {
+		const remainingDirectRefKeys = new Set<string>();
+		for (const ref of refs) {
 			const refObject = resolveSetDefObject(ref);
 			if (
 				!refObject ||
@@ -1370,11 +1371,12 @@ export const discoverCatalogFiles = async (
 				!isDirectRawRef(ref, refObject.key) ||
 				!isCatalogEligibleKey(refObject.key)
 			)
-				return false;
+				continue;
 			const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(refObject.key);
-			return probed !== 0;
-		});
-		if (remainingDirectRefs.length !== 1 || remainingDirectRefs[0] !== deferral.ref)
+			if (probed === 0) continue;
+			remainingDirectRefKeys.add(refObject.key);
+		}
+		if (remainingDirectRefKeys.size !== 1 || !remainingDirectRefKeys.has(object.key))
 			return false;
 		const rowLevel = normalizeLevel(row.level);
 		const probed = fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
@@ -1637,9 +1639,13 @@ export const discoverCatalogFiles = async (
 						Number(sameStemAlternativeKeys.has(a)) -
 						Number(sameStemAlternativeKeys.has(b))
 				);
+			// Sorted rank proves a slot owner only when the remaining key and
+			// row counts match; a surplus file (e.g. an uncataloged chart)
+			// must not suppress a listed direct reference's retry.
+			const hasOneToOneSlots = positionalKeys.length === remainingRowsByPos.length;
 			const retryRows = new Set<number>();
 			for (const rowIndex of pendingDirectRefRows) {
-				if (!deferredGroupRowIndexes.has(rowIndex)) {
+				if (!deferredGroupRowIndexes.has(rowIndex) || !hasOneToOneSlots) {
 					retryRows.add(rowIndex);
 					continue;
 				}

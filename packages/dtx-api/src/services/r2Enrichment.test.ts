@@ -6833,6 +6833,42 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('deduplicates repeated direct slots before protecting a pending reference', async () => {
+		// The same 01.dtx slot appears twice under BASIC. Both resolve to one
+		// chart, so the pending row still has a single direct candidate and
+		// must retry before the retained extras/solo.dtx copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE 01.dtx\n#L4LABEL OTHER\n#L4FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
 	it('keeps stem matches for pending rows blocked by an earlier alias', async () => {
 		// Each label lists an alias to the other's direct reference first, so
 		// both rows stay pending on a raw-owner block rather than a rating
@@ -7281,6 +7317,43 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/01.dtx',
 			'https://cdn.example.test/42/04.dtx',
 			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
+
+	it('keeps a listed reference when a surplus uncataloged file sorts into the slot', async () => {
+		// 11.dtx and 12.dtx were re-rated to 40, leaving Basic/20 and Hard/20
+		// pending. The uncataloged 10a.dtx at 20 sorts into Basic/20's slot,
+		// but with more keys than rows sorted rank is not ownership; Basic/20
+		// must still retry its listed 11.dtx instead of taking 10a.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 10.dtx\n#L2LABEL BASIC\n#L2FILE 11.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 12.dtx\n#L4LABEL HARD\n#L4FILE 13.dtx\n',
+				'42/10.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/11.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/12.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/13.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/10a.dtx': '#TITLE: Song\n#DLEVEL: 20\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'BASIC', level: 20 },
+					{ label: 'HARD', level: 20 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/10.dtx',
+			'https://cdn.example.test/42/11.dtx',
+			'https://cdn.example.test/42/12.dtx',
+			'https://cdn.example.test/42/13.dtx'
 		]);
 	});
 });

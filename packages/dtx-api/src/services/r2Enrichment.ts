@@ -1623,9 +1623,16 @@ export const discoverCatalogFiles = async (
 		// a row inside the group — never steal an unprobed key whose position
 		// maps to an unclaimed row outside the group.
 		for (const groupRows of deferredGroups) {
-			const groupLevel = normalizeLevel(groupRows[0].file.level);
-			const groupSize = groupRows.length;
-			const groupRowIndexes = new Set(groupRows.map((row) => row.index));
+			// The pending retry can fill part of a deferred group. Size the
+			// shortage against the rows that still need a chart, or an
+			// unprobed filler can displace the remaining row's exact match.
+			const unclaimedGroupRows = groupRows.filter(
+				(row) => !rowsClaimedBySetDef.has(row.index)
+			);
+			if (unclaimedGroupRows.length === 0) continue;
+			const groupLevel = normalizeLevel(unclaimedGroupRows[0].file.level);
+			const groupSize = unclaimedGroupRows.length;
+			const groupRowIndexes = new Set(unclaimedGroupRows.map((row) => row.index));
 			const remainingRowsByPos = fallbackRows
 				.filter((row) => !rowsClaimedBySetDef.has(row.index))
 				.sort((a, b) => a.index - b.index);
@@ -1679,7 +1686,7 @@ export const discoverCatalogFiles = async (
 				}
 			}
 			let unassignedIndex = 0;
-			for (const row of groupRows) {
+			for (const row of unclaimedGroupRows) {
 				if (rowsClaimedBySetDef.has(row.index)) continue;
 				const key = unassignedCandidates[unassignedIndex++];
 				if (!key) break;

@@ -6942,4 +6942,40 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/solo.dtx'
 		]);
 	});
+
+	it('does not add a shortage filler after a pending direct retry', async () => {
+		// BASIC/30 and HARD/30 share one exact candidate, common.dtx, so the
+		// group defers. BASIC/30 then retries its SET.def file 01.dtx. The
+		// shortage pass must shrink to the remaining HARD/30 row instead of
+		// admitting unprobed 00.dtx and giving it the exact match's slot.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/common.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/00.dtx': `#TITLE: ${'x'.repeat(17000)}\n#DLEVEL: 90\n`
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/common.dtx',
+			'https://cdn.example.test/42/50.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
 });

@@ -1,4 +1,4 @@
-import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '$lib/chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -204,6 +204,27 @@ export class NoteBuffer {
 	}
 
 	/**
+	 * Finds the surviving group captured with a deleted or cut note.
+	 */
+	private preferredGroupFor(
+		editor: Editor,
+		note: {
+			laneId: string;
+			measure: number;
+			cellOffset: number;
+			groupNoteId?: number;
+		}
+	): LaneMeasureNote | undefined {
+		if (note.groupNoteId === undefined) return undefined;
+		return (editor.getNotes()[note.laneId] ?? []).find(
+			(group) =>
+				getGroupNoteId(group) === note.groupNoteId &&
+				group.measure === note.measure &&
+				!group.notes.some((chip) => chip.position === note.cellOffset)
+		);
+	}
+
+	/**
 	 * Restores deleted notes by recreating them in the editor
 	 * @param deletedNotes Array of deleted note data to restore
 	 * @param editor The editor instance to restore notes to
@@ -228,14 +249,17 @@ export class NoteBuffer {
 
 			// Use the exact stored position without normalization to preserve high-resolution positioning
 			// The cellOffset was already properly positioned when the note was originally created
-			const restored = this.noteMove!.addNoteToEditor(
+			const args: [number, number, number, string, string, number?, LaneMeasureNote?] = [
 				measure,
 				laneIndex,
 				cellOffset,
 				laneId,
 				noteId,
 				measureLength
-			);
+			];
+			const preferredGroup = this.preferredGroupFor(editor, deletedNote);
+			if (preferredGroup) args.push(preferredGroup);
+			const restored = this.noteMove!.addNoteToEditor(...args);
 			if (!restored && editor.getByName(deletedNote.noteKey)) {
 				this.restoreChipData(editor, deletedNote);
 				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);
@@ -453,14 +477,17 @@ export class NoteBuffer {
 
 			// Use the stored normalized position (no need to normalize again)
 			// since we already stored the actual position from the data structure
-			const restored = this.noteMove!.addNoteToEditor(
+			const args: [number, number, number, string, string, number?, LaneMeasureNote?] = [
 				measure,
 				laneIndex,
 				cellOffset,
 				laneId,
 				noteId,
 				measureLength
-			);
+			];
+			const preferredGroup = this.preferredGroupFor(editor, cutNote);
+			if (preferredGroup) args.push(preferredGroup);
+			const restored = this.noteMove!.addNoteToEditor(...args);
 			if (!restored && editor.getByName(cutNote.noteKey)) {
 				this.restoreChipData(editor, cutNote);
 				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);

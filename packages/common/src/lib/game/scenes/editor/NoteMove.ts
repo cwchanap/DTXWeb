@@ -715,7 +715,8 @@ export class NoteMove {
 		cellOffset: number,
 		laneId: string,
 		noteId: string,
-		forceMeasureLength?: number
+		forceMeasureLength?: number,
+		preferredGroup?: LaneMeasureNote
 	): boolean {
 		// One canonical stored form so the data position and the note key it
 		// produces always agree (drawNote embeds this value in the key).
@@ -734,11 +735,20 @@ export class NoteMove {
 			// pattern line may share the position, and overwriting it would
 			// silently drop that line's chip (e.g. undoing a cut/delete after
 			// another line survived).
-			const existingMeasureNote = notes[laneId].find(
-				(note) =>
-					note.measure === measure &&
-					!note.notes.some((chip) => chip.position === cellOffset)
-			);
+			const preferredTarget =
+				preferredGroup &&
+				notes[laneId].includes(preferredGroup) &&
+				preferredGroup.measure === measure &&
+				!preferredGroup.notes.some((chip) => chip.position === cellOffset)
+					? preferredGroup
+					: undefined;
+			const existingMeasureNote =
+				preferredTarget ??
+				notes[laneId].find(
+					(note) =>
+						note.measure === measure &&
+						!note.notes.some((chip) => chip.position === cellOffset)
+				);
 
 			if (existingMeasureNote) {
 				// Add note to existing measure using the notes array

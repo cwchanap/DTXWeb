@@ -1624,7 +1624,43 @@ export const discoverCatalogFiles = async (
 			}
 		}
 		if (pendingDirectRefRows.size > 0) {
-			claimSetDefRows(false, true, true, pendingDirectRefRows);
+			const deferredGroupRowIndexes = new Set(
+				deferredGroups.flatMap((group) => group.map((row) => row.index))
+			);
+			const remainingRowsByPos = fallbackRows
+				.filter((row) => !rowsClaimedBySetDef.has(row.index))
+				.sort((a, b) => a.index - b.index);
+			const positionalKeys = dtxObjectKeys
+				.filter((key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key))
+				.sort(
+					(a, b) =>
+						Number(sameStemAlternativeKeys.has(a)) -
+						Number(sameStemAlternativeKeys.has(b))
+				);
+			const retryRows = new Set<number>();
+			for (const rowIndex of pendingDirectRefRows) {
+				if (!deferredGroupRowIndexes.has(rowIndex)) {
+					retryRows.add(rowIndex);
+					continue;
+				}
+				const row = dtxFiles[rowIndex];
+				const rowLevel = normalizeLevel(row.level);
+				const pos = remainingRowsByPos.findIndex((entry) => entry.index === rowIndex);
+				const slotKey = pos >= 0 ? positionalKeys[pos] : undefined;
+				// An ordinary exact match in this row's uploader slot settles
+				// first; retrying the re-rated direct reference here would give
+				// the slot file to the other row.
+				if (
+					slotKey !== undefined &&
+					!isRetainedCopyKey(slotKey, rowLevel) &&
+					probedLevelByKey.get(slotKey) === rowLevel
+				)
+					continue;
+				retryRows.add(rowIndex);
+			}
+			if (retryRows.size > 0) {
+				claimSetDefRows(false, true, true, retryRows);
+			}
 		}
 		// Pass 2: for equal-rated groups with an exact-match shortage, only fill
 		// from unprobed keys whose remaining uploader-position slot belongs to

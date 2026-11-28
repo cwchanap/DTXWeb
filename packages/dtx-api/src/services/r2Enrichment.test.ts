@@ -7252,4 +7252,35 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/03.dtx'
 		]);
 	});
+
+	it('preserves an ordinary exact match before retrying a re-rated SET.def file', async () => {
+		// 05.dtx was re-rated from 50 to 30, so it defers for both label-04
+		// rows. The first row's uploader slot holds the ordinary exact 04.dtx;
+		// it must settle there before the pending retry gives 05.dtx to that
+		// row and swaps the two chart links.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL 04\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: '04', level: 50 },
+					{ label: '04', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
 });

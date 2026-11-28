@@ -571,6 +571,52 @@ describe('dtxToMidi', () => {
 		expect([...times].sort((a, b) => a - b)).toEqual(times);
 	});
 
+	it('releases each same-pitch hit before the next distinct onset', () => {
+		const cells = `0101${'00'.repeat(30)}`;
+		const { data } = dtxToMidi(dtxFromText(['#BPM: 120', `#00013: ${cells}`].join('\r\n')));
+
+		const pitchEvents = parseMidi(data)
+			.tracks[0].events.filter(
+				(e) =>
+					e.type === 'channel' &&
+					e.note === 36 &&
+					(e.command === 0x90 || e.command === 0x80)
+			)
+			.map((e) => [e.command === 0x90 ? 'on' : 'off', e.absoluteTime]);
+		expect(pitchEvents).toEqual([
+			['on', 0],
+			['off', 60],
+			['on', 60],
+			['off', 180]
+		]);
+	});
+
+	it('exports dense same-pitch charts without rescanning every onset', { timeout: 10000 }, () => {
+		// Dense charts are a supported input from the browser converter. Spread
+		// the hits across measures so distinct onsets exercise lookup growth. The
+		// timeout is the regression assertion: per-hit linear onset lookups
+		// take many seconds here, while indexed lookups stay linearithmic.
+		const measureCount = 64;
+		const hitsPerMeasure = 1_000;
+		const count = measureCount * hitsPerMeasure;
+		const lines = ['#BPM: 120'];
+		for (let measure = 0; measure < measureCount; measure++) {
+			lines.push(`#${String(measure).padStart(3, '0')}13: ${'01'.repeat(hitsPerMeasure)}`);
+		}
+		const dtx = dtxFromText(lines.join('\r\n'));
+
+		const { data, warnings } = dtxToMidi(dtx);
+
+		expect(warnings).toEqual([]);
+		// Count serialized note-ons directly; parsing every event here would
+		// measure the reader rather than the exporter under parallel test load.
+		let noteOns = 0;
+		for (let i = 0; i < data.length - 2; i++) {
+			if (data[i] === 0x99 && data[i + 1] === 36 && data[i + 2] === 100) noteOns++;
+		}
+		expect(noteOns).toBe(count);
+	});
+
 	it('maps every playable lane 11-1C to its own GM note', () => {
 		const lines = ['#BPM: 120'];
 		const lanes = ['11', '12', '13', '14', '15', '16', '17', '18', '19', '1A', '1B', '1C'];

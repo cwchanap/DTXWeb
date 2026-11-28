@@ -8,7 +8,7 @@ export default defineConfig({
 		globals: true,
 		setupFiles: ['./src/tests/setup.ts'],
 		pool: 'forks',
-		exclude: ['**/node_modules/**', '**/dist/**'],
+		exclude: ['**/node_modules/**', '**/dist/**', '**/.svelte-kit/**'],
 		server: {
 			deps: {
 				inline: [/^svelte/, /@testing-library\/svelte/],

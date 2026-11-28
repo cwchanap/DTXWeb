@@ -281,25 +281,55 @@ export const dtxToMidi = (
 		});
 	}
 
+	const noteAttacks: { tick: number; noteNumber: number }[] = [];
 	for (const { lm, noteNumber } of emissionGroups) {
 		for (const note of lm.notes) {
 			if (note.noteID === '00') continue;
-			const tick = Math.round(tickInMeasure(lm.measure, note.position / lm.measureLength));
-			events.push(
-				{
-					tick,
-					order: 2,
-					seq: seq++,
-					bytes: [0x90 | DRUM_CHANNEL, noteNumber, 100]
-				},
-				{
-					tick: tick + noteDurationTicks,
-					order: 1,
-					seq: seq++,
-					bytes: [0x80 | DRUM_CHANNEL, noteNumber, 0]
-				}
-			);
+			noteAttacks.push({
+				tick: Math.round(tickInMeasure(lm.measure, note.position / lm.measureLength)),
+				noteNumber
+			});
 		}
+	}
+	const onsetTicksByNote = new Map<number, Set<number>>();
+	for (const { tick, noteNumber } of noteAttacks) {
+		const ticks = onsetTicksByNote.get(noteNumber) ?? new Set<number>();
+		ticks.add(tick);
+		onsetTicksByNote.set(noteNumber, ticks);
+	}
+	const sortedOnsetTicksByNote = new Map<number, number[]>();
+	for (const [noteNumber, ticks] of onsetTicksByNote) {
+		sortedOnsetTicksByNote.set(
+			noteNumber,
+			[...ticks].sort((a, b) => a - b)
+		);
+	}
+	const firstGreaterThan = (values: number[], target: number): number | undefined => {
+		let low = 0;
+		let high = values.length;
+		while (low < high) {
+			const mid = (low + high) >>> 1;
+			if (values[mid] <= target) low = mid + 1;
+			else high = mid;
+		}
+		return values[low];
+	};
+	for (const { tick, noteNumber } of noteAttacks) {
+		const nextOnset = firstGreaterThan(sortedOnsetTicksByNote.get(noteNumber) ?? [], tick);
+		events.push(
+			{
+				tick,
+				order: 2,
+				seq: seq++,
+				bytes: [0x90 | DRUM_CHANNEL, noteNumber, 100]
+			},
+			{
+				tick: Math.min(tick + noteDurationTicks, nextOnset ?? Infinity),
+				order: 1,
+				seq: seq++,
+				bytes: [0x80 | DRUM_CHANNEL, noteNumber, 0]
+			}
+		);
 	}
 
 	// Sort by absolute tick; same-tick controls (tempo/meter) first, then

@@ -850,7 +850,9 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane1',
 					noteId: '11',
-					measureLength: 1
+					measureLength: 1,
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				},
 				{
 					noteKey: 'note-1-1-0',
@@ -859,7 +861,9 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane2',
 					noteId: '12',
-					measureLength: 1
+					measureLength: 1,
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				}
 			]);
 		});
@@ -914,7 +918,9 @@ describe('NoteCopy', () => {
 					cellOffset: 0, // This will be the normalized position from the data structure
 					laneId: 'lane1',
 					noteId: '11',
-					measureLength: 1
+					measureLength: 1,
+					groupIndex: 0,
+					groupNoteId: expect.any(Number)
 				}
 			]);
 		});

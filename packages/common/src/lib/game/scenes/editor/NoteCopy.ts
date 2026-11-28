@@ -6,6 +6,7 @@ import {
 	parseNoteKey,
 	snapCellOffsetToBarline
 } from '../../../utils/position';
+import { getGroupNoteId } from '../../../chart/note';
 
 /**
  * Represents a copied note with its position and properties
@@ -142,6 +143,8 @@ export class NoteCopy {
 				laneId: string;
 				noteId: string;
 				measureLength?: number;
+				groupIndex?: number;
+				groupNoteId?: number;
 			}>
 		) => void
 	): boolean {
@@ -158,6 +161,8 @@ export class NoteCopy {
 				laneId: string;
 				noteId: string;
 				measureLength?: number;
+				groupIndex?: number;
+				groupNoteId?: number;
 			}> = [];
 
 			const notes = editor.getNotes();
@@ -191,7 +196,9 @@ export class NoteCopy {
 									cellOffset, // Use the exact position from note key (same as noteChip.position)
 									laneId,
 									noteId: noteChip.noteID,
-									measureLength: existingNote.measureLength
+									measureLength: existingNote.measureLength,
+									groupIndex: notes[laneId].indexOf(existingNote),
+									groupNoteId: getGroupNoteId(existingNote)
 								});
 							}
 						}

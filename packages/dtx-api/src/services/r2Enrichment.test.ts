@@ -5743,6 +5743,34 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('preserves direct filename mappings when re-rated difficulties cross labels', async () => {
+		// SET.def explicitly maps BASIC to a.dtx and EXTREME to b.dtx. Both
+		// charts were later re-rated into each other's stored level, but the
+		// direct filename mapping is stronger evidence than the stale ratings.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL EXTREME\n#L2FILE b.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/bonus.dtx': '#TITLE: Bonus\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXTREME', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
 	it('checks raw-filename ownership before accepting an unprobed alias', async () => {
 		// The first 16 KiB probe of a.dtx ends before its #DLEVEL, so B's
 		// lower-rated alias is unprobed when non-exact SET.def claims run.
@@ -6415,6 +6443,1739 @@ describe('PR365 review assignment regressions', () => {
 		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
 			'https://cdn.example.test/42/solo.dtx',
 			'https://cdn.example.test/42/old/archive/hard.dtx'
+		]);
+	});
+	it('checks only unclaimed same-label rows when rejecting a mismatched rating', async () => {
+		// z.dtx was re-rated in place after upload, so both probes name the
+		// already-satisfied BASIC/80 row. That claimed row must not make the
+		// remaining BASIC/30 row reject z.dtx and lose its own file.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./a.dtx\n#L2LABEL BASIC\n#L2FILE ./z.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 80 },
+					{ label: 'BASIC', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
+	it('keeps a nested alias behind an available re-rated root reference', async () => {
+		// z.dtx exact-claims BASIC/80. BASIC/30 was re-rated in a.dtx to 40,
+		// so neither root reference exact-matches it; the nested 80-rated alias
+		// must not consume the row before that available root reference.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE a.dtx\n#L3LABEL BASIC\n#L3FILE z.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
+	it('keeps a re-rated stem-owned root chart behind a ./ alias', async () => {
+		// BASIC's ./expert.dtx alias misses the uploader's SET.def label lookup,
+		// so EXPERT owns expert.dtx by filename stem even after the chart is
+		// re-rated away from the stored row level.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE ./expert.dtx\n#L3LABEL BASIC\n#L3FILE a.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 45\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('looks past a missing reference after saving a nested fallback', async () => {
+		// z.dtx exact-claims BASIC/80. Once extras/c.dtx is only a fallback,
+		// the missing gone.dtx reference must not end BASIC/30's search before
+		// the available re-rated root a.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE extras/c.dtx\n#L2LABEL BASIC\n#L2FILE gone.dtx\n#L3LABEL BASIC\n#L3FILE a.dtx\n#L4LABEL BASIC\n#L4FILE z.dtx\n',
+				'42/extras/c.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 80 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/z.dtx'
+		]);
+	});
+
+	it('defers an exact-rated alias owned by another row’s unique filename stem', async () => {
+		// BASIC aliases expert.dtx, while both rows and both charts rate 60.
+		// Rating alone cannot distinguish the rows, so EXPERT's unique stem
+		// ownership must keep expert.dtx from the alias; basic.dtx is BASIC's
+		// own stem chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./expert.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'EXPERT', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('keeps a root-displaced same-stem sibling available for an exact match', async () => {
+		// The leftover SET.def reference makes extras/solo.dtx the stem-row
+		// candidate, but the catalogued root solo.dtx wins SOLO. The displaced
+		// sibling still rates 60 and is HARD's only remaining exact chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'HARD', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
+
+	it('does not count a claimed row as a stem-ownership rating conflict', async () => {
+		// other.dtx exact-claims OTHER/75 first. Although expert.dtx duplicates
+		// that 75 rating, the satisfied OTHER row no longer needs expert.dtx, so
+		// the EXPERT stem owner must still win it over BASIC's alias.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./expert.dtx\n#L2LABEL OTHER\n#L2FILE other.dtx\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/other.dtx': '#TITLE: Song\n#DLEVEL: 75\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'OTHER', level: 75 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/other.dtx',
+			null,
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('retries a stem-owned alias after the stem owner claims another chart', async () => {
+		// BASIC's only SET.def file is expert.dtx, whose filename stem belongs to
+		// the EXPERT row. That row's exact-rated chart is hard.dtx instead, so
+		// the blocked BASIC claim must retry after EXPERT settles.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE ./expert.dtx\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 75\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'FREE', level: 10 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			null,
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('defers a duplicate-rated SET.def claim behind an exact-rated fallback chart', async () => {
+		// z.dtx duplicates the already-satisfied BASIC/80 rating. BASIC/30 may
+		// still use it when nothing better exists, but b.dtx probes exactly 30
+		// and must win before that non-exact SET.def claim settles.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE a.dtx\n#L2LABEL BASIC\n#L2FILE z.dtx\n',
+				'42/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/b.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/z.dtx': '#TITLE: Song\n#DLEVEL: 80\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 80 },
+					{ label: 'BASIC', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/a.dtx',
+			'https://cdn.example.test/42/b.dtx'
+		]);
+	});
+
+	it('keeps a root-displaced same-stem sibling out of positional fallback', async () => {
+		// The displaced sibling is only a duplicate of SOLO's chart. When no row
+		// carries its exact 60 rating, EXTREME must stay missing rather than
+		// previewing another row's chart.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def': '#L1LABEL OTHER\n#L1FILE solo.dtx\n',
+				'42/extras/solo.dtx': '#TITLE: Copy\n#DLEVEL: 60\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SOLO', level: 60 },
+					{ label: 'EXTREME', level: 90 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/solo.dtx',
+			null
+		]);
+	});
+
+	it('retries a deferred direct SET.def reference before a mismatched stem claim', async () => {
+		// BASIC has two rows (30, 40). 02.dtx exact-claims BASIC/40 while
+		// expert.dtx exact-claims EXPERT/70. 01.dtx probes 70, so BASIC/30's
+		// direct reference is deferred until exact-rating fallback completes.
+		// The unlisted basic.dtx also probes 70; its filename stem must not
+		// claim BASIC/30 before 01.dtx gets its retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('retries a pending direct reference before a retained same-stem copy', async () => {
+		// BASIC/30's 01.dtx probes 70, so its direct claim waits until
+		// exact-rating fallback completes. SOLO/30 takes the root solo.dtx
+		// and retains extras/solo.dtx as a same-stem copy rated 30. The copy
+		// must not claim BASIC/30 before 01.dtx gets its retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('retries a pending direct reference without a stem candidate', async () => {
+		// Same fixture as above without basic.dtx: the stem pass has no
+		// candidate for BASIC/30, but its pending 01.dtx claim must still
+		// retry before the retained extras/solo.dtx copy can claim the row.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('deduplicates repeated direct slots before protecting a pending reference', async () => {
+		// The same 01.dtx slot appears twice under BASIC. Both resolve to one
+		// chart, so the pending row still has a single direct candidate and
+		// must retry before the retained extras/solo.dtx copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE 01.dtx\n#L4LABEL OTHER\n#L4FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('keeps stem matches for pending rows blocked by an earlier alias', async () => {
+		// Each label lists an alias to the other's direct reference first, so
+		// both rows stay pending on a raw-owner block rather than a rating
+		// conflict. advanced.dtx and basic.dtx rate no catalog row and must
+		// still claim their stem rows instead of falling to positional pairing.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./02.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL ADVANCED\n#L3FILE ./01.dtx\n#L4LABEL ADVANCED\n#L4FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 55\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n',
+				'42/00.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'ADVANCED', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/advanced.dtx'
+		]);
+	});
+
+	it('keeps a stem match when an alias blocks a direct reference with a claimed rating', async () => {
+		// BASIC's first ref is an alias blocked by ADVANCED's direct 02.dtx,
+		// so the later 01.dtx direct reference is never evaluated. Its 70
+		// rating names the claimed EXPERT row, but the raw-owner block cannot
+		// be cleared by the retry; basic.dtx must still claim BASIC/30.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE ./02.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL ADVANCED\n#L3FILE ./01.dtx\n#L4LABEL ADVANCED\n#L4FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/advanced.dtx': '#TITLE: Song\n#DLEVEL: 55\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 35\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/00.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'ADVANCED', level: 50 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/advanced.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('does not count an unrated placeholder as a competing direct reference', async () => {
+		// BASIC/30's 01.dtx probes 70, so its direct claim waits until
+		// exact-rating fallback completes. The extra placeholder.dtx slot is
+		// confirmed unrated and can never own a row; it must not make the
+		// guard treat BASIC/30 as having multiple direct candidates.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE placeholder.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/placeholder.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('settles a shared ordinary exact match before a pending direct retry', async () => {
+		// HARD/30 and BASIC/30 share one ordinary exact chart, common.dtx,
+		// while extras/solo.dtx is a retained copy. BASIC/30 also has a
+		// pending direct reference 01.dtx. HARD must take common.dtx, then
+		// BASIC must retry 01.dtx instead of accepting the copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL OTHER\n#L3FILE solo.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/common.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'HARD', level: 30 },
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/common.dtx',
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/50.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('does not add a shortage filler after a pending direct retry', async () => {
+		// BASIC/30 and HARD/30 share one exact candidate, common.dtx, so the
+		// group defers. BASIC/30 then retries its SET.def file 01.dtx. The
+		// shortage pass must shrink to the remaining HARD/30 row instead of
+		// admitting unprobed 00.dtx and giving it the exact match's slot.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/common.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/00.dtx': `#TITLE: ${'x'.repeat(17000)}\n#DLEVEL: 90\n`
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/common.dtx',
+			'https://cdn.example.test/42/50.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('prefers an on-slot exact match after pending retries', async () => {
+		// BASIC/30 and HARD/30 retry 01.dtx and 02.dtx, leaving MEDIUM/30
+		// alone in the deferred level-30 group. 03.dtx and 04.dtx both probe
+		// 30, but only 04.dtx maps to MEDIUM's remaining filename slot; the
+		// cap must not select 03.dtx just because it sorts first.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EASY', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/50.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/52.dtx',
+			'https://cdn.example.test/42/03.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('does not protect a relative alias as a direct reference', async () => {
+		// EASY/20's ./04.dtx alias is deferred for rating, but a relative
+		// alias is not uploader filename ownership. It must not push 04.dtx
+		// out of MEDIUM's slot: MEDIUM keeps 04.dtx and EASY falls to 03.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL EASY\n#L5FILE ./04.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EASY', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'EASY' || chart.label === 'MEDIUM')
+				.map((chart) => chart.fileUrl)
+		).toEqual(['https://cdn.example.test/42/03.dtx', 'https://cdn.example.test/42/04.dtx']);
+	});
+
+	it('keeps another row’s filename match when an earlier file is missing', async () => {
+		// 02a.dtx is present but unrated and dropped, so the remaining files
+		// start at 03.dtx while the remaining rows start at 02a/20. After the
+		// retries leave MEDIUM/30 alone, slot alignment alone would give it
+		// 04.dtx, which uniquely matches the later 04/40 row. MEDIUM must take
+		// the unowned 03.dtx so 04/40 keeps its filename match.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02a.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '02a', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: '04', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual(['https://cdn.example.test/42/03.dtx', 'https://cdn.example.test/42/04.dtx']);
+	});
+
+	it('keeps a deferred direct reference ahead of a competing stem match', async () => {
+		// The repeated label 04 lists 03.dtx and 53.dtx. 53.dtx matches the
+		// level-50 row, while 03.dtx stays deferred for the level-20 row
+		// because MEDIUM/30 also rates 30. 04.dtx only matches the level-20
+		// row by filename, so MEDIUM must take 04.dtx and let 03.dtx retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL 04\n#L5FILE 03.dtx\n#L6LABEL 04\n#L6FILE 53.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/53.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '04', level: 20 },
+					{ label: '04', level: 50 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual([
+			'https://cdn.example.test/42/03.dtx',
+			'https://cdn.example.test/42/53.dtx',
+			'https://cdn.example.test/42/04.dtx'
+		]);
+	});
+
+	it('keeps a filename match when a later group can take its alternate reference', async () => {
+		// 04/40 owns 04.dtx by filename and has a deferred bare reference to
+		// 06.dtx. A later level-60 group can take 06.dtx, so MEDIUM must not
+		// relax that protection and consume 04.dtx; MEDIUM takes 03.dtx and
+		// 04/40 keeps its filename match.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL 04\n#L5FILE 05.dtx\n#L6LABEL 04\n#L6FILE 06.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 20\n',
+				'42/06.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '04', level: 20 },
+					{ label: '04', level: 40 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXTRA', level: 60 },
+					{ label: 'ANOTHER', level: 60 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual([
+			'https://cdn.example.test/42/05.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/03.dtx'
+		]);
+	});
+
+	it('preserves an ordinary exact match before retrying a re-rated SET.def file', async () => {
+		// 05.dtx was re-rated from 50 to 30, so it defers for both label-04
+		// rows. The first row's uploader slot holds the ordinary exact 04.dtx;
+		// it must settle there before the pending retry gives 05.dtx to that
+		// row and swaps the two chart links.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL 04\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: '04', level: 50 },
+					{ label: '04', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
+
+	it('keeps a listed reference when a surplus uncataloged file sorts into the slot', async () => {
+		// 11.dtx and 12.dtx were re-rated to 40, leaving Basic/20 and Hard/20
+		// pending. The uncataloged 10a.dtx at 20 sorts into Basic/20's slot,
+		// but with more keys than rows sorted rank is not ownership; Basic/20
+		// must still retry its listed 11.dtx instead of taking 10a.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 10.dtx\n#L2LABEL BASIC\n#L2FILE 11.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 12.dtx\n#L4LABEL HARD\n#L4FILE 13.dtx\n',
+				'42/10.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/11.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/12.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/13.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/10a.dtx': '#TITLE: Song\n#DLEVEL: 20\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 40 },
+					{ label: 'BASIC', level: 20 },
+					{ label: 'HARD', level: 20 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/10.dtx',
+			'https://cdn.example.test/42/11.dtx',
+			'https://cdn.example.test/42/12.dtx',
+			'https://cdn.example.test/42/13.dtx'
+		]);
+	});
+
+	it('keeps row order when a surplus file follows the equal-rated slots', async () => {
+		// The two label-04 rows share the pending 05.dtx reference. 04.dtx is
+		// still in the first row's slot; the extra 99.dtx sorts after both
+		// slots and must not make the retry take 05.dtx for the first row.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL 04\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/99.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: '04', level: 50 },
+					{ label: '04', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
+
+	it('defers a nested alias until the exact-rated root chart can claim the row', async () => {
+		// EXPERT/40 takes basic.dtx; EXPERT/30's nested extras/expert.dtx is
+		// not cataloged, so it must wait for the exact-rated root expert.dtx
+		// instead of claiming the nested copy in the non-exact pass.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL EXPERT\n#L1FILE basic.dtx\n#L2LABEL EXPERT\n#L2FILE extras/expert.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/extras/expert.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'EXPERT', level: 40 },
+					{ label: 'EXPERT', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('keeps one-to-one duplicate difficulty order when the slot stem differs', async () => {
+		// Both BASIC rows are level 50 and 04.dtx/05.dtx are the only remaining
+		// keys. 04.dtx's stem does not match the BASIC label, but with
+		// one-to-one slots it still owns the first row; the second row retries
+		// 05.dtx instead of swapping the links.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
+
+	it('lets a row with a usable alias yield a scarce exact chart', async () => {
+		// BASIC/50 has a nested alias extras/01.dtx (now rated 60), while
+		// HARD/50 has no SET.def entry and only 02.dtx at 50. The sole exact
+		// chart must go to HARD, and BASIC must use its alias instead of
+		// taking 02.dtx and leaving HARD without a preview.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE extras/01.dtx\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/02.dtx'
+		]);
+	});
+
+	it('keeps a shared alias from hiding the retained exact chart', async () => {
+		// Two BASIC rows share one nested alias. They must stay in the
+		// shortage group so the ordinary 50 chart and the retained copy are
+		// both offered; one BASIC row then takes the shared alias.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL OTHER\n#L2FILE solo.dtx\n',
+				'42/extras/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'SOLO', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const hardUrl = discovery.charts.find((chart) => chart.label === 'HARD')?.fileUrl;
+		const basicUrls = discovery.charts
+			.filter((chart) => chart.label === 'BASIC')
+			.map((chart) => chart.fileUrl)
+			.sort();
+		expect(hardUrl).toBe('https://cdn.example.test/42/extras/02.dtx');
+		expect(basicUrls).toEqual([
+			'https://cdn.example.test/42/extras/nested/01.dtx',
+			'https://cdn.example.test/42/extras/solo.dtx'
+		]);
+	});
+
+	it('keeps an exact slot when the peer has a re-rated filename', async () => {
+		// BASIC/50 has a nested alias, but HARD/50 still has hard.dtx (rated
+		// 70) as its filename fallback. BASIC must keep its exact slot 01.dtx
+		// instead of yielding it to HARD.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('keeps a rating deferral when an earlier nested alias is present', async () => {
+		// BASIC/30's first slot is a nested alias rated 91, followed by the
+		// bare 01.dtx whose 70 rating conflicts with EXPERT/70. The rating
+		// deferral must survive the alias bookkeeping so the direct retry
+		// claims 01.dtx before the retained solo copy.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/extras/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/c.dtx\n#L2LABEL BASIC\n#L2FILE 01.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE 02.dtx\n#L4LABEL OTHER\n#L4FILE solo.dtx\n',
+				'42/extras/nested/c.dtx': '#TITLE: Song\n#DLEVEL: 91\n',
+				'42/extras/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/extras/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/extras/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/solo.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 },
+					{ label: 'SOLO', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/extras/01.dtx',
+			'https://cdn.example.test/42/extras/02.dtx',
+			'https://cdn.example.test/42/expert.dtx',
+			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('gives the only exact chart to a row with no fallback before an alias row', async () => {
+		// EXPERT has no alias or filename fallback; BASIC has a nested alias
+		// and HARD has a re-rated filename. The sole 50-rated 01.dtx must go
+		// to EXPERT, with BASIC and HARD using their own fallbacks.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/00.dtx\n',
+				'42/nested/00.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/00.dtx',
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('uses a usable alias before consuming another row’s only chart', async () => {
+		// BASIC/50 has a nested alias; HARD/40's only chart is hard.dtx,
+		// re-rated to 50. BASIC must not take hard.dtx in the exact pass.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('keeps an ADV exact slot when BASIC rows share an alias', async () => {
+		// BASIC, ADV, BASIC all rate 50. 01.dtx and 02.dtx are the exact
+		// slots for the first BASIC and ADV; the BASIC rows share nested/03.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/03.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/03.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const advUrl = discovery.charts.find((chart) => chart.label === 'ADV')?.fileUrl;
+		const basicUrls = discovery.charts
+			.filter((chart) => chart.label === 'BASIC')
+			.map((chart) => chart.fileUrl)
+			.sort();
+		expect(advUrl).toBe('https://cdn.example.test/42/02.dtx');
+		expect(basicUrls).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/03.dtx'
+		]);
+	});
+
+	it('keeps a shared-alias owner’s exact slot', async () => {
+		// SECOND owns 01.dtx; SECOND and BASIC share nested/01.dtx; ADV has
+		// its own nested/02.dtx and BASIC has basic.dtx as a stem fallback.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL SECOND\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE nested/01.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SECOND', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/basic.dtx'
+		]);
+	});
+
+	it('keeps a numbered chart for a row with no alias', async () => {
+		// BASIC/50 has a nested alias; HARD/40's only chart is 02.dtx rated
+		// 50. The numbered filename has no stem owner, but BASIC must still
+		// yield the only ordinary chart and use its alias.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/02.dtx'
+		]);
+	});
+
+	it('keeps every difficulty linked when aliases and a re-rated chart compete', async () => {
+		// BASIC and ADV have distinct aliases; EXPERT only has 01.dtx;
+		// HARD/40 only has hard.dtx re-rated to 50. Every row must get a URL.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'EXPERT', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('fills an unprobed chart from the row’s own uploader slot', async () => {
+		const longHeader = (level: number) => `#TITLE: ${'x'.repeat(16390)}\n#DLEVEL: ${level}\n`;
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': longHeader(40),
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': longHeader(50),
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'EASY', level: 40 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 50 },
+					{ label: 'ADV', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const expertUrl = discovery.charts.find((chart) => chart.label === 'EXPERT')?.fileUrl;
+		const easyUrl = discovery.charts.find((chart) => chart.label === 'EASY')?.fileUrl;
+		expect(expertUrl).toBe('https://cdn.example.test/42/03.dtx');
+		expect(easyUrl).not.toBeNull();
+	});
+
+	it('preserves fallback charts when multiple alias rows share a level', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/02.dtx'
+		]);
+	});
+
+	it('preserves a fallback chart when only one same-level row has an alias', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('preserves a fallback chart when same-level rows share one alias', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('uses a later exact chart when the first exact chart is filename-owned', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/zzz.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/zzz.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('keeps a released exact chart in its uploader slot for equal-rated rows', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L2LABEL ADV\n#L2FILE nested/03.dtx\n#L3LABEL HARD\n#L3FILE nested/03.dtx\n',
+				'42/nested/03.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/nested/03.dtx'
+		]);
+	});
+
+	it('preserves a complete nested positional fallback when exact roots fit the group', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/04.dtx\n',
+				'42/nested/04.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EXTREME', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx'
+		]);
+	});
+
+	it('keeps an exact uploader slot for its alias-backed owner when capacity allows', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('keeps a stem exact chart for a row without an alias', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L2LABEL HARD\n#L2FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/nested/01.dtx'
+		]);
+	});
+
+	it('uses distinct repeated-label aliases instead of counting only the first', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL BASIC\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('keeps crossed exact charts in uploader slots when one file is re-rated', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/adv.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'HARD', level: 80 },
+					{ label: 'ADV', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/adv.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('counts multiple aliases on one row as coverage for only that row', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/basic.dtx\n#L2LABEL ADV\n#L2FILE nested/a.dtx\n#L3LABEL ADV\n#L3FILE nested/b.dtx\n',
+				'42/nested/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/nested/a.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/nested/b.dtx': '#TITLE: Song\n#DLEVEL: 81\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/basic.dtx',
+			'https://cdn.example.test/42/nested/a.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('protects a filename owner when a surplus chart is present', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/zzz.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('uses an exact chart before an alias when other rows have their own aliases', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx'
+		]);
+	});
+
+	it('retries a released exact chart before positional fallback', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/basic.dtx\n#L2LABEL EXTRA\n#L2FILE nested/extra.dtx\n',
+				'42/nested/basic.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/extra.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/00.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 90\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 50 },
+					{ label: 'EXTRA', level: 70 },
+					{ label: 'HARD', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/basic.dtx',
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/nested/extra.dtx',
+			'https://cdn.example.test/42/00.dtx'
 		]);
 	});
 });

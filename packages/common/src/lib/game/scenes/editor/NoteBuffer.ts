@@ -1,4 +1,4 @@
-import { LaneMeasureNote } from '../../../chart/note';
+import { LaneMeasureNote, getGroupNoteId } from '../../../chart/note';
 import type { Editor } from '../Editor';
 import type { NoteMove } from './NoteMove';
 
@@ -46,6 +46,8 @@ export interface DeletedNoteData {
 	laneId: string;
 	noteId: string;
 	measureLength?: number;
+	groupIndex?: number;
+	groupNoteId?: number;
 }
 
 /**
@@ -91,6 +93,8 @@ export interface CutNoteData {
 	laneId: string;
 	noteId: string;
 	measureLength?: number;
+	groupIndex?: number;
+	groupNoteId?: number;
 }
 
 /**
@@ -200,6 +204,27 @@ export class NoteBuffer {
 	}
 
 	/**
+	 * Finds the surviving group captured with a deleted or cut note.
+	 */
+	private preferredGroupFor(
+		editor: Editor,
+		note: {
+			laneId: string;
+			measure: number;
+			cellOffset: number;
+			groupNoteId?: number;
+		}
+	): LaneMeasureNote | undefined {
+		if (note.groupNoteId === undefined) return undefined;
+		return (editor.getNotes()[note.laneId] ?? []).find(
+			(group) =>
+				getGroupNoteId(group) === note.groupNoteId &&
+				group.measure === note.measure &&
+				!group.notes.some((chip) => chip.position === note.cellOffset)
+		);
+	}
+
+	/**
 	 * Restores deleted notes by recreating them in the editor
 	 * @param deletedNotes Array of deleted note data to restore
 	 * @param editor The editor instance to restore notes to
@@ -216,19 +241,25 @@ export class NoteBuffer {
 		}
 
 		// Use the shared note placement logic to restore each note
-		deletedNotes.forEach((deletedNote) => {
+		const restorationOrder = [...deletedNotes].sort(
+			(a, b) => (a.groupIndex ?? Infinity) - (b.groupIndex ?? Infinity)
+		);
+		restorationOrder.forEach((deletedNote) => {
 			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = deletedNote;
 
 			// Use the exact stored position without normalization to preserve high-resolution positioning
 			// The cellOffset was already properly positioned when the note was originally created
-			const restored = this.noteMove!.addNoteToEditor(
+			const args: [number, number, number, string, string, number?, LaneMeasureNote?] = [
 				measure,
 				laneIndex,
 				cellOffset,
 				laneId,
 				noteId,
 				measureLength
-			);
+			];
+			const preferredGroup = this.preferredGroupFor(editor, deletedNote);
+			if (preferredGroup) args.push(preferredGroup);
+			const restored = this.noteMove!.addNoteToEditor(...args);
 			if (!restored && editor.getByName(deletedNote.noteKey)) {
 				this.restoreChipData(editor, deletedNote);
 				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);
@@ -252,21 +283,41 @@ export class NoteBuffer {
 			laneId: string;
 			noteId: string;
 			measureLength?: number;
+			groupIndex?: number;
+			groupNoteId?: number;
 		}
 	): void {
 		const groups = (editor.getNotes()[note.laneId] ??= []);
-		const target = groups.find(
-			(group) =>
-				group.measure === note.measure &&
-				!group.notes.some((chip) => chip.position === note.cellOffset)
-		);
-		if (target) {
-			target.addNote(note.noteId, note.cellOffset);
-			return;
+		const hasFreePosition = (group: LaneMeasureNote): boolean =>
+			group.measure === note.measure &&
+			!group.notes.some((chip) => chip.position === note.cellOffset);
+		// Earlier restored groups can be appended, shifting indexes; prefer
+		// the surviving group's identity before falling back to the slot.
+		if (note.groupNoteId !== undefined) {
+			const identityTarget = groups.find(
+				(group) => getGroupNoteId(group) === note.groupNoteId && hasFreePosition(group)
+			);
+			if (identityTarget) {
+				identityTarget.addNote(note.noteId, note.cellOffset);
+				return;
+			}
+		}
+		if (note.groupIndex !== undefined) {
+			const indexedTarget = groups[note.groupIndex];
+			if (indexedTarget && hasFreePosition(indexedTarget)) {
+				indexedTarget.addNote(note.noteId, note.cellOffset);
+				return;
+			}
+		} else {
+			const target = groups.find(hasFreePosition);
+			if (target) {
+				target.addNote(note.noteId, note.cellOffset);
+				return;
+			}
 		}
 		const group = new LaneMeasureNote(note.measure, note.laneId, [], note.measureLength ?? 1);
 		group.addNote(note.noteId, note.cellOffset);
-		groups.push(group);
+		groups.splice(Math.min(note.groupIndex ?? groups.length, groups.length), 0, group);
 	}
 
 	/**
@@ -418,19 +469,25 @@ export class NoteBuffer {
 		}
 
 		// Restore each cut note using the shared note addition logic
-		cutNotes.forEach((cutNote) => {
+		const restorationOrder = [...cutNotes].sort(
+			(a, b) => (a.groupIndex ?? Infinity) - (b.groupIndex ?? Infinity)
+		);
+		restorationOrder.forEach((cutNote) => {
 			const { measure, laneIndex, cellOffset, laneId, noteId, measureLength } = cutNote;
 
 			// Use the stored normalized position (no need to normalize again)
 			// since we already stored the actual position from the data structure
-			const restored = this.noteMove!.addNoteToEditor(
+			const args: [number, number, number, string, string, number?, LaneMeasureNote?] = [
 				measure,
 				laneIndex,
 				cellOffset,
 				laneId,
 				noteId,
 				measureLength
-			);
+			];
+			const preferredGroup = this.preferredGroupFor(editor, cutNote);
+			if (preferredGroup) args.push(preferredGroup);
+			const restored = this.noteMove!.addNoteToEditor(...args);
 			if (!restored && editor.getByName(cutNote.noteKey)) {
 				this.restoreChipData(editor, cutNote);
 				editor.reconcileSharedNoteVisual(measure, laneIndex, cellOffset, laneId);

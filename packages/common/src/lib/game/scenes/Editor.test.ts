@@ -1443,7 +1443,7 @@ describe('Editor Scene', () => {
 			syncNotesToStoreSpy.mockRestore();
 		});
 
-		it('should remove note from this.notes and clean up lane when last note is deleted via right-click', () => {
+		it('should remove the last right-clicked note and mark the editor dirty for autosave', () => {
 			editorScene.create();
 			editorScene['isEditing'] = true;
 
@@ -1479,6 +1479,10 @@ describe('Editor Scene', () => {
 			const syncNotesToStoreSpy = vi
 				.spyOn(editorScene as any, 'syncNotesToStore')
 				.mockImplementation(() => {});
+			const setDirtySpy = vi.spyOn(editorScene, 'setDirty').mockImplementation(() => {});
+			const debouncedAutoSaveSpy = vi
+				.spyOn(editorScene as any, 'debouncedAutoSave')
+				.mockImplementation(() => {});
 
 			const inputOnMock = editorScene.input.on as MockedFn;
 			const pointerdownHandler = inputOnMock.mock.calls.find(
@@ -1491,10 +1495,14 @@ describe('Editor Scene', () => {
 			// After deletion, the lane entry should be removed since it's the last note
 			expect(editorScene['notes'][laneId]).toBeUndefined();
 			expect(syncNotesToStoreSpy).toHaveBeenCalled();
+			expect(setDirtySpy).toHaveBeenCalledWith(true);
+			expect(debouncedAutoSaveSpy).toHaveBeenCalled();
 
 			handlePointerDownSpy.mockRestore();
 			recordDeleteActionSpy.mockRestore();
 			syncNotesToStoreSpy.mockRestore();
+			setDirtySpy.mockRestore();
+			debouncedAutoSaveSpy.mockRestore();
 		});
 
 		it('should delete the stored off-grid note when right-clicking its drawn position', () => {
@@ -1813,7 +1821,13 @@ describe('Editor Scene', () => {
 			pointerdownHandler?.(mockPointer);
 
 			expect(recordDeleteActionSpy).toHaveBeenCalledWith([
-				expect.objectContaining({ noteId: '01', laneId, measure: 0, cellOffset: 0.25 })
+				expect.objectContaining({
+					noteId: '01',
+					laneId,
+					measure: 0,
+					cellOffset: 0.25,
+					groupIndex: 0
+				})
 			]);
 			expect(drawnGroup.notes).toHaveLength(0);
 			expect(hiddenGroup.notes).toEqual([{ noteID: '02', position: 0.25 }]);

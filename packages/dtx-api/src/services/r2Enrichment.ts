@@ -1643,9 +1643,22 @@ export const discoverCatalogFiles = async (
 			// row counts match; a surplus file (e.g. an uncataloged chart)
 			// must not suppress a listed direct reference's retry.
 			const hasOneToOneSlots = positionalKeys.length === remainingRowsByPos.length;
+			const pendingKeyCounts = new Map<string, number>();
+			for (const rowIndex of pendingDirectRefRows) {
+				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+				const key = deferral ? resolveSetDefObject(deferral.ref)?.key : undefined;
+				if (key) pendingKeyCounts.set(key, (pendingKeyCounts.get(key) ?? 0) + 1);
+			}
 			const retryRows = new Set<number>();
 			for (const rowIndex of pendingDirectRefRows) {
-				if (!deferredGroupRowIndexes.has(rowIndex) || !hasOneToOneSlots) {
+				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+				const deferralKey = deferral ? resolveSetDefObject(deferral.ref)?.key : undefined;
+				const sharedPendingKey =
+					deferralKey !== undefined && (pendingKeyCounts.get(deferralKey) ?? 0) > 1;
+				if (
+					!deferredGroupRowIndexes.has(rowIndex) ||
+					(!hasOneToOneSlots && !sharedPendingKey)
+				) {
 					retryRows.add(rowIndex);
 					continue;
 				}
@@ -1655,11 +1668,23 @@ export const discoverCatalogFiles = async (
 				const slotKey = pos >= 0 ? positionalKeys[pos] : undefined;
 				// An ordinary exact match in this row's uploader slot settles
 				// first; retrying the re-rated direct reference here would give
-				// the slot file to the other row.
+				// the slot file to the other row. A shared pending key must
+				// still yield when its slot file has a catalog stem owner.
+				const slotHasStemOwner =
+					slotKey !== undefined &&
+					dtxFiles.some(
+						(file, index) =>
+							!rowsClaimedBySetDef.has(index) &&
+							file.label.toLowerCase() ===
+								r2FileName(slotKey)
+									.replace(/\.dtx$/i, '')
+									.toLowerCase()
+					);
 				if (
 					slotKey !== undefined &&
 					!isRetainedCopyKey(slotKey, rowLevel) &&
-					probedLevelByKey.get(slotKey) === rowLevel
+					probedLevelByKey.get(slotKey) === rowLevel &&
+					(!sharedPendingKey || slotHasStemOwner)
 				)
 					continue;
 				retryRows.add(rowIndex);

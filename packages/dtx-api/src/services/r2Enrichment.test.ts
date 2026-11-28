@@ -7356,4 +7356,35 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/13.dtx'
 		]);
 	});
+
+	it('keeps row order when a surplus file follows the equal-rated slots', async () => {
+		// The two label-04 rows share the pending 05.dtx reference. 04.dtx is
+		// still in the first row's slot; the extra 99.dtx sorts after both
+		// slots and must not make the retry take 05.dtx for the first row.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL 04\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/99.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: '04', level: 50 },
+					{ label: '04', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
 });

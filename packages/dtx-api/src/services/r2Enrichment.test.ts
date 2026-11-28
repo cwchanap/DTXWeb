@@ -7502,12 +7502,13 @@ describe('PR365 review assignment regressions', () => {
 			silentLogger
 		);
 
-		const level50Urls = discovery.charts
-			.filter((chart) => chart.label === 'BASIC' || chart.label === 'HARD')
+		const hardUrl = discovery.charts.find((chart) => chart.label === 'HARD')?.fileUrl;
+		const basicUrls = discovery.charts
+			.filter((chart) => chart.label === 'BASIC')
 			.map((chart) => chart.fileUrl)
 			.sort();
-		expect(level50Urls).toEqual([
-			'https://cdn.example.test/42/extras/02.dtx',
+		expect(hardUrl).toBe('https://cdn.example.test/42/extras/02.dtx');
+		expect(basicUrls).toEqual([
 			'https://cdn.example.test/42/extras/nested/01.dtx',
 			'https://cdn.example.test/42/extras/solo.dtx'
 		]);
@@ -7576,6 +7577,130 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/extras/02.dtx',
 			'https://cdn.example.test/42/expert.dtx',
 			'https://cdn.example.test/42/solo.dtx'
+		]);
+	});
+
+	it('gives the only exact chart to a row with no fallback before an alias row', async () => {
+		// EXPERT has no alias or filename fallback; BASIC has a nested alias
+		// and HARD has a re-rated filename. The sole 50-rated 01.dtx must go
+		// to EXPERT, with BASIC and HARD using their own fallbacks.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/00.dtx\n',
+				'42/nested/00.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'EXPERT', level: 50 },
+					{ label: 'HARD', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/00.dtx',
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('uses a usable alias before consuming another row’s only chart', async () => {
+		// BASIC/50 has a nested alias; HARD/40's only chart is hard.dtx,
+		// re-rated to 50. BASIC must not take hard.dtx in the exact pass.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
+	it('keeps an ADV exact slot when BASIC rows share an alias', async () => {
+		// BASIC, ADV, BASIC all rate 50. 01.dtx and 02.dtx are the exact
+		// slots for the first BASIC and ADV; the BASIC rows share nested/03.dtx.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/03.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/03.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		const advUrl = discovery.charts.find((chart) => chart.label === 'ADV')?.fileUrl;
+		const basicUrls = discovery.charts
+			.filter((chart) => chart.label === 'BASIC')
+			.map((chart) => chart.fileUrl)
+			.sort();
+		expect(advUrl).toBe('https://cdn.example.test/42/02.dtx');
+		expect(basicUrls).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/03.dtx'
+		]);
+	});
+
+	it('keeps a shared-alias owner’s exact slot', async () => {
+		// SECOND owns 01.dtx; SECOND and BASIC share nested/01.dtx; ADV has
+		// its own nested/02.dtx and BASIC has basic.dtx as a stem fallback.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL SECOND\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n' +
+					'#L3LABEL BASIC\n#L3FILE nested/01.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'SECOND', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/basic.dtx'
 		]);
 	});
 });

@@ -1614,10 +1614,22 @@ export const discoverCatalogFiles = async (
 		for (const groupRows of levelGroups) {
 			const groupLevel = normalizeLevel(groupRows[0].file.level);
 			const groupSize = groupRows.length;
+			const groupHasUsableAlias = groupRows.some((row) => {
+				const deferral = pendingSetDefClaimDeferrals.get(row.index);
+				if (!deferral || deferral.reason !== 'ineligibleAlias') return false;
+				const object = resolveSetDefObject(deferral.ref);
+				return Boolean(object && !keyIsAssignedToRow(object.key));
+			});
 			const selectedKeys = new Set<string>();
 			for (const key of orderExactCandidates(groupLevel, dtxObjectKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
+				// A lone alias row must not consume a unique filename owner's
+				// only chart; the owner cannot be recovered after this pass.
+				if (groupSize === 1 && groupHasUsableAlias) {
+					const owner = uniqueUnclaimedStemOwnerIndex(key);
+					if (owner !== -1 && !groupRows.some((row) => row.index === owner)) continue;
+				}
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
 			if (selectedKeys.size < groupSize && groupSize > 1) {
@@ -1716,6 +1728,230 @@ export const discoverCatalogFiles = async (
 				(row) => !rowsClaimedBySetDef.has(row.index)
 			);
 			if (unclaimedGroupRows.length === 0) continue;
+			{
+				const aliasCountForRow = (rowIndex: number): number => {
+					const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+					if (!deferral || deferral.reason !== 'ineligibleAlias') return 0;
+					const object = resolveSetDefObject(deferral.ref);
+					if (!object || keyIsAssignedToRow(object.key)) return 0;
+					return aliasKeyCounts.get(object.key) ?? 0;
+				};
+				const hasAnyFallback = unclaimedGroupRows.some((row) => {
+					if (aliasCountForRow(row.index) > 0) return true;
+					const deferral = pendingSetDefClaimDeferrals.get(row.index);
+					if (deferral?.reason === 'rating') {
+						const object = resolveSetDefObject(deferral.ref);
+						if (
+							object &&
+							!keyIsAssignedToRow(object.key) &&
+							isDirectRawRef(deferral.ref, object.key)
+						)
+							return true;
+					}
+					return dtxObjectKeys.some(
+						(key) =>
+							!usedDtxKeys.has(key) &&
+							isCatalogEligibleKey(key) &&
+							uniqueUnclaimedStemOwnerIndex(key) === row.index
+					);
+				});
+				if (hasAnyFallback) {
+					const groupLevel = normalizeLevel(unclaimedGroupRows[0].file.level);
+					const groupRowIndexes = new Set(unclaimedGroupRows.map((row) => row.index));
+					const remainingRowsByPos = fallbackRows
+						.filter((row) => !rowsClaimedBySetDef.has(row.index))
+						.sort((a, b) => a.index - b.index);
+					const remainingEligibleKeys = dtxObjectKeys.filter(
+						(key) => !usedDtxKeys.has(key) && isCatalogEligibleKey(key)
+					);
+					const positionalKeys = [...remainingEligibleKeys].sort(
+						(a, b) =>
+							Number(sameStemAlternativeKeys.has(a)) -
+							Number(sameStemAlternativeKeys.has(b))
+					);
+					const posByKey = new Map(positionalKeys.map((key, pos) => [key, pos]));
+					const isOnSlot = (key: string): boolean => {
+						const pos = posByKey.get(key);
+						const positionalRow =
+							pos !== undefined ? remainingRowsByPos[pos] : undefined;
+						return Boolean(positionalRow && groupRowIndexes.has(positionalRow.index));
+					};
+					const slotKeyFor = (rowIndex: number): string | undefined => {
+						const pos = remainingRowsByPos.findIndex((row) => row.index === rowIndex);
+						return pos >= 0 ? positionalKeys[pos] : undefined;
+					};
+					const hasFutureGroupRowAtLevel = (level: number): boolean => {
+						for (let i = deferredIndex + 1; i < deferredGroups.length; i++) {
+							for (const row of deferredGroups[i]) {
+								if (
+									!rowsClaimedBySetDef.has(row.index) &&
+									normalizeLevel(row.file.level) === level
+								)
+									return true;
+							}
+						}
+						return false;
+					};
+					const hasViableDeferredDirectRef = (rowIndex: number): boolean => {
+						if (rowsClaimedBySetDef.has(rowIndex)) return false;
+						const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+						if (!deferral || deferral.reason !== 'rating') return false;
+						const object = resolveSetDefObject(deferral.ref);
+						if (!object || !isDirectRawRef(deferral.ref, object.key)) return false;
+						const probed =
+							fileLevelByRef.get(deferral.ref) ?? probedLevelByKey.get(object.key);
+						if (typeof probed !== 'number' || probed === 0) return false;
+						if (hasFutureGroupRowAtLevel(probed)) return false;
+						return !keyIsAssignedToRow(object.key) && isCatalogEligibleKey(object.key);
+					};
+					const hasUniqueAlias = (rowIndex: number): boolean =>
+						aliasCountForRow(rowIndex) === 1;
+					const sharedAliasKeyFor = (rowIndex: number): string | undefined => {
+						const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+						if (!deferral || deferral.reason !== 'ineligibleAlias') return undefined;
+						const object = resolveSetDefObject(deferral.ref);
+						if (!object || keyIsAssignedToRow(object.key)) return undefined;
+						return (aliasKeyCounts.get(object.key) ?? 0) > 1 ? object.key : undefined;
+					};
+					const sharedAliasOwners = new Map<string, number>();
+					for (const row of [...unclaimedGroupRows].sort((a, b) => a.index - b.index)) {
+						const key = sharedAliasKeyFor(row.index);
+						if (key && !sharedAliasOwners.has(key))
+							sharedAliasOwners.set(key, row.index);
+					}
+					const hasSharedAliasFallback = (rowIndex: number): boolean => {
+						const key = sharedAliasKeyFor(rowIndex);
+						return key !== undefined && sharedAliasOwners.get(key) === rowIndex;
+					};
+					const hasStemFallback = (rowIndex: number): boolean => {
+						if (hasViableDeferredDirectRef(rowIndex)) return true;
+						const rowLevel = normalizeLevel(dtxFiles[rowIndex].level);
+						return dtxObjectKeys.some((key) => {
+							if (
+								usedDtxKeys.has(key) ||
+								keyIsAssignedToRow(key) ||
+								!isCatalogEligibleKey(key)
+							)
+								return false;
+							if (uniqueUnclaimedStemOwnerIndex(key) !== rowIndex) return false;
+							const probed = probedLevelByKey.get(key);
+							if (typeof probed !== 'number' || probed === 0) return true;
+							if (probed === rowLevel) return true;
+							return !dtxFiles.some(
+								(file, index) =>
+									index !== rowIndex &&
+									!rowsClaimedBySetDef.has(index) &&
+									normalizeLevel(file.level) === probed
+							);
+						});
+					};
+					const needScore = (rowIndex: number): number => {
+						const unique = hasUniqueAlias(rowIndex);
+						const shared = hasSharedAliasFallback(rowIndex);
+						const stem = hasStemFallback(rowIndex);
+						if (!unique && !shared && !stem) return 0;
+						if (!unique && !stem && shared) return 1;
+						return 2;
+					};
+					const consumesOtherRowsFilename = (key: string): boolean => {
+						const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
+						if (ownerIndex === -1 || groupRowIndexes.has(ownerIndex)) return false;
+						return !hasStemFallback(ownerIndex);
+					};
+					const isDeferredDirectRefOfOtherRow = (key: string): boolean => {
+						for (const [rowIndex, deferral] of pendingSetDefClaimDeferrals) {
+							if (groupRowIndexes.has(rowIndex) || rowsClaimedBySetDef.has(rowIndex))
+								continue;
+							if (deferral.reason !== 'rating') continue;
+							const object = resolveSetDefObject(deferral.ref);
+							if (!object || object.key !== key) continue;
+							if (!isDirectRawRef(deferral.ref, object.key)) continue;
+							if (keyIsAssignedToRow(object.key) || !isCatalogEligibleKey(object.key))
+								continue;
+							return true;
+						}
+						return false;
+					};
+					const candidateRank = (key: string): number => {
+						if (isDeferredDirectRefOfOtherRow(key)) return 2;
+						if (consumesOtherRowsFilename(key)) return 1;
+						return 0;
+					};
+					const exactCandidates = positionalKeys
+						.filter((key) => probedLevelByKey.get(key) === groupLevel)
+						.sort(
+							(a, b) =>
+								candidateRank(a) - candidateRank(b) ||
+								Number(isRetainedCopyKey(a, groupLevel)) -
+									Number(isRetainedCopyKey(b, groupLevel)) ||
+								Number(!isOnSlot(a)) - Number(!isOnSlot(b)) ||
+								(dtxKeyOrder.get(a) ?? Number.MAX_SAFE_INTEGER) -
+									(dtxKeyOrder.get(b) ?? Number.MAX_SAFE_INTEGER)
+						);
+					const assignedKeys = new Set<string>();
+					const rowsByIndex = [...unclaimedGroupRows].sort((a, b) => a.index - b.index);
+					// On-slot exacts settle first; a no-fallback row can still
+					// reclaim one later if its slot owner has an alternative.
+					for (const row of rowsByIndex) {
+						if (rowsClaimedBySetDef.has(row.index)) continue;
+						const slotKey = slotKeyFor(row.index);
+						if (
+							slotKey === undefined ||
+							assignedKeys.has(slotKey) ||
+							probedLevelByKey.get(slotKey) !== groupLevel
+						)
+							continue;
+						assignedKeys.add(slotKey);
+						rowsClaimedBySetDef.add(row.index);
+						matchedKeysByRowIndex.set(row.index, slotKey);
+						usedDtxKeys.add(slotKey);
+					}
+					const rowsByNeed = [...unclaimedGroupRows].sort(
+						(a, b) => needScore(a.index) - needScore(b.index) || a.index - b.index
+					);
+					for (const row of rowsByNeed) {
+						if (rowsClaimedBySetDef.has(row.index)) continue;
+						const key = exactCandidates.find(
+							(candidate) => !assignedKeys.has(candidate)
+						);
+						if (!key) break;
+						assignedKeys.add(key);
+						rowsClaimedBySetDef.add(row.index);
+						matchedKeysByRowIndex.set(row.index, key);
+						usedDtxKeys.add(key);
+					}
+					// Move an exact file from a fallback row to a row with no
+					// fallback, so the fallback row can use its own chart.
+					for (const row of rowsByIndex) {
+						if (rowsClaimedBySetDef.has(row.index)) continue;
+						if (needScore(row.index) !== 0) continue;
+						for (const [ownerIndex, key] of matchedKeysByRowIndex) {
+							if (!groupRowIndexes.has(ownerIndex)) continue;
+							if (ownerIndex === row.index) continue;
+							if (needScore(ownerIndex) === 0) continue;
+							if (!exactCandidates.includes(key)) continue;
+							matchedKeysByRowIndex.delete(ownerIndex);
+							rowsClaimedBySetDef.delete(ownerIndex);
+							matchedKeysByRowIndex.set(row.index, key);
+							rowsClaimedBySetDef.add(row.index);
+							break;
+						}
+					}
+					const unprobedKeys = positionalKeys.filter(
+						(key) => !probedLevelByKey.has(key) && !assignedKeys.has(key)
+					);
+					for (const row of rowsByNeed) {
+						if (rowsClaimedBySetDef.has(row.index)) continue;
+						if (needScore(row.index) !== 0) continue;
+						const key = unprobedKeys.shift();
+						if (!key) break;
+						rowsClaimedBySetDef.add(row.index);
+						matchedKeysByRowIndex.set(row.index, key);
+						usedDtxKeys.add(key);
+					}
+					continue;
+				}
+			}
 			const aliasCountForRow = (rowIndex: number): number => {
 				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
 				if (!deferral || deferral.reason !== 'ineligibleAlias') return 0;

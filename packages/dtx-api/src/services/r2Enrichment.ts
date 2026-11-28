@@ -749,7 +749,8 @@ export const discoverCatalogFiles = async (
 		exactOnly: boolean,
 		deferBlockedClaims = false,
 		onlyPendingClaims = false,
-		settledRatingConflicts?: ReadonlySet<number>
+		settledRatingConflicts?: ReadonlySet<number>,
+		allowIneligibleAliasFallback = false
 	): void => {
 		const isRefUnassigned = (ref: SetDefFileRef): boolean => {
 			const object = resolveSetDefObject(ref);
@@ -1091,10 +1092,17 @@ export const discoverCatalogFiles = async (
 				refIndex = candidateIndex;
 				break;
 			}
+			let deferIneligibleAlias = false;
 			if (refIndex === -1 && firstIneligibleAliasIndex !== -1) {
-				refIndex = firstIneligibleAliasIndex;
+				// A nested alias is only a last resort; let eligible stem and
+				// exact-rating candidates settle before claiming the copy.
+				if (allowIneligibleAliasFallback) {
+					refIndex = firstIneligibleAliasIndex;
+				} else {
+					deferIneligibleAlias = true;
+				}
 			}
-			if (deferClaim || (refIndex === -1 && stemOwnerBlockedClaim)) {
+			if (deferClaim || deferIneligibleAlias || (refIndex === -1 && stemOwnerBlockedClaim)) {
 				pendingSetDefClaims.add(index);
 				if (!deferClaim) pendingSetDefClaimDeferrals.delete(index);
 				continue;
@@ -1640,25 +1648,12 @@ export const discoverCatalogFiles = async (
 						Number(sameStemAlternativeKeys.has(b))
 				);
 			// Sorted rank proves a slot owner only when the remaining key and
-			// row counts match; a surplus file (e.g. an uncataloged chart)
-			// must not suppress a listed direct reference's retry.
+			// row counts match; with a surplus file it needs a catalog stem
+			// owner so an uncataloged chart cannot suppress a listed retry.
 			const hasOneToOneSlots = positionalKeys.length === remainingRowsByPos.length;
-			const pendingKeyCounts = new Map<string, number>();
-			for (const rowIndex of pendingDirectRefRows) {
-				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
-				const key = deferral ? resolveSetDefObject(deferral.ref)?.key : undefined;
-				if (key) pendingKeyCounts.set(key, (pendingKeyCounts.get(key) ?? 0) + 1);
-			}
 			const retryRows = new Set<number>();
 			for (const rowIndex of pendingDirectRefRows) {
-				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
-				const deferralKey = deferral ? resolveSetDefObject(deferral.ref)?.key : undefined;
-				const sharedPendingKey =
-					deferralKey !== undefined && (pendingKeyCounts.get(deferralKey) ?? 0) > 1;
-				if (
-					!deferredGroupRowIndexes.has(rowIndex) ||
-					(!hasOneToOneSlots && !sharedPendingKey)
-				) {
+				if (!deferredGroupRowIndexes.has(rowIndex)) {
 					retryRows.add(rowIndex);
 					continue;
 				}
@@ -1668,8 +1663,7 @@ export const discoverCatalogFiles = async (
 				const slotKey = pos >= 0 ? positionalKeys[pos] : undefined;
 				// An ordinary exact match in this row's uploader slot settles
 				// first; retrying the re-rated direct reference here would give
-				// the slot file to the other row. A shared pending key must
-				// still yield when its slot file has a catalog stem owner.
+				// the slot file to the other row.
 				const slotHasStemOwner =
 					slotKey !== undefined &&
 					dtxFiles.some(
@@ -1684,7 +1678,7 @@ export const discoverCatalogFiles = async (
 					slotKey !== undefined &&
 					!isRetainedCopyKey(slotKey, rowLevel) &&
 					probedLevelByKey.get(slotKey) === rowLevel &&
-					(!sharedPendingKey || slotHasStemOwner)
+					(hasOneToOneSlots || slotHasStemOwner)
 				)
 					continue;
 				retryRows.add(rowIndex);
@@ -1860,7 +1854,7 @@ export const discoverCatalogFiles = async (
 	// Claiming it earlier would let the weaker name match displace another
 	// file's exact rating.
 	await claimStemMatchedRows(false);
-	claimSetDefRows(false, true, true);
+	claimSetDefRows(false, true, true, undefined, true);
 	if (!hasUnclaimedLevelZeroRow()) {
 		for (const key of dtxObjectKeys) {
 			if (!usedDtxKeys.has(key) && probedLevelByKey.get(key) === 0) usedDtxKeys.add(key);

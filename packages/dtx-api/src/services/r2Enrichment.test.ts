@@ -7387,4 +7387,64 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/05.dtx'
 		]);
 	});
+
+	it('defers a nested alias until the exact-rated root chart can claim the row', async () => {
+		// EXPERT/40 takes basic.dtx; EXPERT/30's nested extras/expert.dtx is
+		// not cataloged, so it must wait for the exact-rated root expert.dtx
+		// instead of claiming the nested copy in the non-exact pass.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL EXPERT\n#L1FILE basic.dtx\n#L2LABEL EXPERT\n#L2FILE extras/expert.dtx\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/extras/expert.dtx': '#TITLE: Song\n#DLEVEL: 40\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'EXPERT', level: 40 },
+					{ label: 'EXPERT', level: 30 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/basic.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
+
+	it('keeps one-to-one duplicate difficulty order when the slot stem differs', async () => {
+		// Both BASIC rows are level 50 and 04.dtx/05.dtx are the only remaining
+		// keys. 04.dtx's stem does not match the BASIC label, but with
+		// one-to-one slots it still owns the first row; the second row retries
+		// 05.dtx instead of swapping the links.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 05.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/05.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: '01', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/05.dtx'
+		]);
+	});
 });

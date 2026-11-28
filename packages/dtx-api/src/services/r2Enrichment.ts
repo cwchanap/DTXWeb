@@ -1411,6 +1411,20 @@ export const discoverCatalogFiles = async (
 		);
 		return !namesUnclaimedRow && namesClaimedRow;
 	};
+	const hasUsableIneligibleAlias = (rowIndex: number): boolean => {
+		const refs = filesByLabel.get(dtxFiles[rowIndex].label.toLowerCase());
+		return Boolean(
+			refs?.some((ref) => {
+				const object = resolveSetDefObject(ref);
+				return Boolean(
+					object &&
+					!keyIsAssignedToRow(object.key) &&
+					!isCatalogEligibleKey(object.key) &&
+					!isDirectRawRef(ref, object.key)
+				);
+			})
+		);
+	};
 	const stemDeepProbedKeys = new Set<string>();
 	const claimStemMatchedRows = async (
 		exactOnly: boolean,
@@ -1484,11 +1498,31 @@ export const discoverCatalogFiles = async (
 				effectiveProbed !== rowLevel &&
 				hasPendingDirectRefDeferredByClaimedRating(rows[0]);
 			if (defersForPendingDirectRef) pendingDirectRefRows.add(rows[0]);
+			const equalLevelRowsWithoutAlias = dtxFiles.filter(
+				(file, index) =>
+					index !== rows[0] &&
+					!rowsClaimedBySetDef.has(index) &&
+					normalizeLevel(file.level) === rowLevel &&
+					!hasUsableIneligibleAlias(index)
+			).length;
+			const exactOrdinaryKeyCount = dtxObjectKeys.filter(
+				(key) =>
+					!usedDtxKeys.has(key) &&
+					isCatalogEligibleKey(key) &&
+					!sameStemAlternativeKeys.has(key) &&
+					probedLevelByKey.get(key) === rowLevel
+			).length;
+			const aliasRowMustYieldExactStem =
+				effectiveProbed === rowLevel &&
+				hasUsableIneligibleAlias(rows[0]) &&
+				equalLevelRowsWithoutAlias > 0 &&
+				exactOrdinaryKeyCount <= equalLevelRowsWithoutAlias;
 			if (
 				typeof effectiveProbed === 'number' &&
 				!namesDifferentRow &&
 				!hasOrdinaryExactMatch &&
 				!defersForPendingDirectRef &&
+				!aliasRowMustYieldExactStem &&
 				(exactOnly ? effectiveProbed === rowLevel : effectiveProbed !== 0 || rowLevel === 0)
 			) {
 				rowsClaimedBySetDef.add(rows[0]);
@@ -1617,14 +1651,29 @@ export const discoverCatalogFiles = async (
 			const object = resolveSetDefObject(deferral.ref);
 			return object && !keyIsAssignedToRow(object.key) ? object.key : undefined;
 		};
+		const usableAliasKeysFor = (rowIndex: number): string[] => {
+			const refs = filesByLabel.get(dtxFiles[rowIndex].label.toLowerCase()) ?? [];
+			const keys: string[] = [];
+			for (const ref of refs) {
+				const object = resolveSetDefObject(ref);
+				if (
+					!object ||
+					keyIsAssignedToRow(object.key) ||
+					isCatalogEligibleKey(object.key) ||
+					isDirectRawRef(ref, object.key)
+				)
+					continue;
+				if (!keys.includes(object.key)) keys.push(object.key);
+			}
+			return keys;
+		};
 		const ordinaryDemandCountExcluding = (excludedRowIndexes: ReadonlySet<number>): number => {
 			const demandRows = fallbackRows.filter(
 				(row) => !rowsClaimedBySetDef.has(row.index) && !excludedRowIndexes.has(row.index)
 			);
 			const aliasCoverage = new Set<string>();
 			for (const row of demandRows) {
-				const aliasKey = usableAliasKeyFor(row.index);
-				if (aliasKey) aliasCoverage.add(aliasKey);
+				for (const aliasKey of usableAliasKeysFor(row.index)) aliasCoverage.add(aliasKey);
 			}
 			return demandRows.length - aliasCoverage.size;
 		};
@@ -1657,9 +1706,7 @@ export const discoverCatalogFiles = async (
 			// rows without aliases still need just to stay linked.
 			const groupRowIndexes = new Set(groupRows.map((row) => row.index));
 			const groupAliasKeys = new Set(
-				groupRows
-					.map((row) => usableAliasKeyFor(row.index))
-					.filter((key) => key !== undefined)
+				groupRows.flatMap((row) => usableAliasKeysFor(row.index))
 			);
 			const ordinaryKeyCount = dtxObjectKeys.filter(
 				(key) =>
@@ -1667,9 +1714,32 @@ export const discoverCatalogFiles = async (
 					isCatalogEligibleKey(key) &&
 					!sameStemAlternativeKeys.has(key)
 			).length;
+			const outsideOrdinaryDemand = ordinaryDemandCountExcluding(groupRowIndexes);
+			const exactOrdinaryKeyCount = dtxObjectKeys.filter(
+				(key) =>
+					!usedDtxKeys.has(key) &&
+					isCatalogEligibleKey(key) &&
+					!sameStemAlternativeKeys.has(key) &&
+					probedLevelByKey.get(key) === groupLevel
+			).length;
+			const allUsableAliasKeys = new Set(
+				fallbackRows.flatMap((row) => usableAliasKeysFor(row.index))
+			);
+			const nestedFallbackKeyCount = dtxObjectKeys.filter(
+				(key) =>
+					!usedDtxKeys.has(key) &&
+					!isCatalogEligibleKey(key) &&
+					!sameStemAlternativeKeys.has(key) &&
+					!allUsableAliasKeys.has(key)
+			).length;
+			const exactMatchExhaustsEligiblePool =
+				ordinaryKeyCount === groupSize &&
+				exactOrdinaryKeyCount >= groupSize &&
+				nestedFallbackKeyCount === outsideOrdinaryDemand;
 			const aliasGroupNeedsDeferredAssignment =
 				groupAliasKeys.size > 0 &&
-				ordinaryKeyCount - groupSize < ordinaryDemandCountExcluding(groupRowIndexes);
+				ordinaryKeyCount - groupSize < outsideOrdinaryDemand &&
+				!exactMatchExhaustsEligiblePool;
 			if (aliasGroupNeedsDeferredAssignment) {
 				deferredGroups.push(groupRows);
 				continue;
@@ -1870,9 +1940,20 @@ export const discoverCatalogFiles = async (
 						if (hasFutureGroupRowAtLevel(probed)) return false;
 						return !keyIsAssignedToRow(object.key) && isCatalogEligibleKey(object.key);
 					};
+					const rowsWithAliasCount = unclaimedGroupRows.filter(
+						(row) => usableAliasKeysFor(row.index).length > 0
+					).length;
+					const distinctGroupAliasKeys = new Set(
+						unclaimedGroupRows.flatMap((row) => usableAliasKeysFor(row.index))
+					);
+					const aliasesCanCoverEveryAliasedRow =
+						rowsWithAliasCount > 0 && distinctGroupAliasKeys.size >= rowsWithAliasCount;
 					const hasUniqueAlias = (rowIndex: number): boolean =>
-						aliasCountForRow(rowIndex) === 1;
+						aliasesCanCoverEveryAliasedRow
+							? usableAliasKeysFor(rowIndex).length > 0
+							: aliasCountForRow(rowIndex) === 1;
 					const sharedAliasKeyFor = (rowIndex: number): string | undefined => {
+						if (aliasesCanCoverEveryAliasedRow) return undefined;
 						const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
 						if (!deferral || deferral.reason !== 'ineligibleAlias') return undefined;
 						const object = resolveSetDefObject(deferral.ref);
@@ -1956,11 +2037,24 @@ export const discoverCatalogFiles = async (
 						);
 					const assignedKeys = new Set<string>();
 					const rowsByIndex = [...unclaimedGroupRows].sort((a, b) => a.index - b.index);
+					const noFallbackRowCount = unclaimedGroupRows.filter(
+						(row) => needScore(row.index) === 0
+					).length;
+					const fallbackSlotAllowance =
+						outsideOrdinaryDemand > 0
+							? Math.max(0, ordinaryConsumptionCap - noFallbackRowCount)
+							: Number.MAX_SAFE_INTEGER;
+					let fallbackSlotClaims = 0;
 					// On-slot exacts settle first; a no-fallback row can still
 					// reclaim one later if its slot owner has an alternative.
 					for (const row of rowsByIndex) {
 						if (rowsClaimedBySetDef.has(row.index)) continue;
-						if (outsideOrdinaryDemand > 0 && needScore(row.index) !== 0) continue;
+						if (
+							outsideOrdinaryDemand > 0 &&
+							needScore(row.index) !== 0 &&
+							fallbackSlotClaims >= fallbackSlotAllowance
+						)
+							continue;
 						const slotKey = slotKeyFor(row.index);
 						if (
 							slotKey === undefined ||
@@ -1973,7 +2067,10 @@ export const discoverCatalogFiles = async (
 						rowsClaimedBySetDef.add(row.index);
 						matchedKeysByRowIndex.set(row.index, slotKey);
 						usedDtxKeys.add(slotKey);
-						if (!isRetainedCopyKey(slotKey, groupLevel)) ordinaryKeysClaimed += 1;
+						if (!isRetainedCopyKey(slotKey, groupLevel)) {
+							ordinaryKeysClaimed += 1;
+							if (needScore(row.index) !== 0) fallbackSlotClaims += 1;
+						}
 					}
 					const rowsByNeed = [...unclaimedGroupRows].sort(
 						(a, b) => needScore(a.index) - needScore(b.index) || a.index - b.index

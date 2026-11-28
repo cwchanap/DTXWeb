@@ -7931,6 +7931,119 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('preserves a complete nested positional fallback when exact roots fit the group', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE nested/04.dtx\n',
+				'42/nested/04.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 60 },
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EXTREME', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx'
+		]);
+	});
+
+	it('keeps an exact uploader slot for its alias-backed owner when capacity allows', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL ADV\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 80\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 90\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'ADV', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
+	it('keeps a stem exact chart for a row without an alias', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L2LABEL HARD\n#L2FILE nested/01.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'ADV', level: 60 },
+					{ label: 'HARD', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/hard.dtx',
+			'https://cdn.example.test/42/nested/01.dtx'
+		]);
+	});
+
+	it('uses distinct repeated-label aliases instead of counting only the first', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE nested/01.dtx\n#L2LABEL BASIC\n#L2FILE nested/02.dtx\n',
+				'42/nested/01.dtx': '#TITLE: Song\n#DLEVEL: 60\n',
+				'42/nested/02.dtx': '#TITLE: Song\n#DLEVEL: 61\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 50\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 50 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 40 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/nested/01.dtx',
+			'https://cdn.example.test/42/nested/02.dtx',
+			'https://cdn.example.test/42/01.dtx'
+		]);
+	});
+
 	it('protects a filename owner when a surplus chart is present', async () => {
 		const discovery = await discoverCatalogFiles(
 			makeChartBucket({

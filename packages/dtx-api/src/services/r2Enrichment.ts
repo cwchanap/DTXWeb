@@ -1369,12 +1369,19 @@ export const discoverCatalogFiles = async (
 					return false;
 				const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(object.key);
 				if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
-				return !dtxFiles.some(
+				const namesUnclaimedRow = dtxFiles.some(
 					(other, otherIndex) =>
 						otherIndex !== rowIndex &&
 						!rowsClaimedBySetDef.has(otherIndex) &&
 						normalizeLevel(other.level) === probed
 				);
+				const namesClaimedRow = dtxFiles.some(
+					(other, otherIndex) =>
+						otherIndex !== rowIndex &&
+						rowsClaimedBySetDef.has(otherIndex) &&
+						normalizeLevel(other.level) === probed
+				);
+				return !namesUnclaimedRow && namesClaimedRow;
 			});
 			return deferredDirectRefs.length === 1;
 		};

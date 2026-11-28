@@ -7025,4 +7025,50 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/expert.dtx'
 		]);
 	});
+
+	it('keeps another row’s filename match when an earlier file is missing', async () => {
+		// 02a.dtx is present but unrated and dropped, so the remaining files
+		// start at 03.dtx while the remaining rows start at 02a/20. After the
+		// retries leave MEDIUM/30 alone, slot alignment alone would give it
+		// 04.dtx, which uniquely matches the later 04/40 row. MEDIUM must take
+		// the unowned 03.dtx so 04/40 keeps its filename match.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02a.dtx': '#TITLE: Song\n#DLEVEL: 0\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '02a', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: '04', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual(['https://cdn.example.test/42/03.dtx', 'https://cdn.example.test/42/04.dtx']);
+	});
 });

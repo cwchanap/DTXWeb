@@ -1655,11 +1655,17 @@ export const discoverCatalogFiles = async (
 				const positionalRow = pos !== undefined ? remainingRowsByPos[pos] : undefined;
 				return Boolean(positionalRow && groupRowIndexes.has(positionalRow.index));
 			};
+			const consumesOtherRowsFilename = (key: string): boolean => {
+				const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
+				return ownerIndex !== -1 && !groupRowIndexes.has(ownerIndex);
+			};
 			const orderDeferredCandidates = (keys: string[]): string[] => {
 				const ordered = orderExactCandidates(groupLevel, keys);
 				const bySlot = (tier: string[]): string[] => [
-					...tier.filter(isOnSlot),
-					...tier.filter((key) => !isOnSlot(key))
+					...tier.filter((key) => !consumesOtherRowsFilename(key) && isOnSlot(key)),
+					...tier.filter((key) => !consumesOtherRowsFilename(key) && !isOnSlot(key)),
+					...tier.filter((key) => consumesOtherRowsFilename(key) && isOnSlot(key)),
+					...tier.filter((key) => consumesOtherRowsFilename(key) && !isOnSlot(key))
 				];
 				return [
 					...bySlot(ordered.filter((key) => !isRetainedCopyKey(key, groupLevel))),

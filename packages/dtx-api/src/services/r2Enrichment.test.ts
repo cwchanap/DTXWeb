@@ -8044,6 +8044,29 @@ describe('PR365 review assignment regressions', () => {
 		]);
 	});
 
+	it('keeps crossed exact charts in uploader slots when one file is re-rated', async () => {
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/adv.dtx': '#TITLE: Song\n#DLEVEL: 85\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 60\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'HARD', level: 80 },
+					{ label: 'ADV', level: 60 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/adv.dtx',
+			'https://cdn.example.test/42/hard.dtx'
+		]);
+	});
+
 	it('protects a filename owner when a surplus chart is present', async () => {
 		const discovery = await discoverCatalogFiles(
 			makeChartBucket({

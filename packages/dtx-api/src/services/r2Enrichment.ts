@@ -2339,6 +2339,38 @@ export const discoverCatalogFiles = async (
 
 	claimSetDefRows(false, true, true);
 
+	const canUseLateExactKeyForRow = (
+		key: string,
+		rowIndex: number,
+		ignoreStemOwner = false
+	): boolean => {
+		if (ignoreStemOwner) return true;
+		const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
+		return ownerIndex === -1 || ownerIndex === rowIndex || rowsClaimedBySetDef.has(ownerIndex);
+	};
+	const claimLateExactSlotMatches = (ignoreStemOwner: boolean): void => {
+		const rows = fallbackRows
+			.filter(({ index }) => !rowsClaimedBySetDef.has(index))
+			.sort((a, b) => a.index - b.index);
+		const keys = dtxObjectKeys.filter(
+			(key) =>
+				!usedDtxKeys.has(key) &&
+				isCatalogEligibleKey(key) &&
+				!sameStemAlternativeKeys.has(key)
+		);
+		if (rows.length !== keys.length) return;
+		for (const [slotIndex, row] of rows.entries()) {
+			const key = keys[slotIndex];
+			if (!key || probedLevelByKey.get(key) !== normalizeLevel(row.file.level)) continue;
+			const mayIgnoreStemOwner = ignoreStemOwner && !hasUsableIneligibleAlias(row.index);
+			if (!canUseLateExactKeyForRow(key, row.index, mayIgnoreStemOwner)) continue;
+			rowsClaimedBySetDef.add(row.index);
+			matchedKeysByRowIndex.set(row.index, key);
+			usedDtxKeys.add(key);
+		}
+	};
+	claimLateExactSlotMatches(true);
+
 	// Re-rated leftovers: with exact-rating claims settled, a unique stem
 	// match whose probed rating names no catalog row is still likely the
 	// row's own re-rated file — the uploader replaces charts in place, so
@@ -2353,25 +2385,7 @@ export const discoverCatalogFiles = async (
 		}
 	}
 
-	const canUseLateExactKeyForRow = (key: string, rowIndex: number): boolean => {
-		const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
-		return ownerIndex === -1 || ownerIndex === rowIndex || rowsClaimedBySetDef.has(ownerIndex);
-	};
-	const lateExactRows = fallbackRows
-		.filter(({ index }) => !rowsClaimedBySetDef.has(index))
-		.sort((a, b) => a.index - b.index);
-	const lateExactSlotKeys = dtxObjectKeys.filter(
-		(key) =>
-			!usedDtxKeys.has(key) && isCatalogEligibleKey(key) && !sameStemAlternativeKeys.has(key)
-	);
-	for (const [slotIndex, row] of lateExactRows.entries()) {
-		const key = lateExactSlotKeys[slotIndex];
-		if (!key || probedLevelByKey.get(key) !== normalizeLevel(row.file.level)) continue;
-		if (!canUseLateExactKeyForRow(key, row.index)) continue;
-		rowsClaimedBySetDef.add(row.index);
-		matchedKeysByRowIndex.set(row.index, key);
-		usedDtxKeys.add(key);
-	}
+	claimLateExactSlotMatches(false);
 
 	for (const row of fallbackRows) {
 		if (rowsClaimedBySetDef.has(row.index)) continue;

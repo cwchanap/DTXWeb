@@ -1655,18 +1655,53 @@ export const discoverCatalogFiles = async (
 				const positionalRow = pos !== undefined ? remainingRowsByPos[pos] : undefined;
 				return Boolean(positionalRow && groupRowIndexes.has(positionalRow.index));
 			};
+			const hasViableDeferredDirectRef = (
+				rowIndex: number,
+				excludingKey: string
+			): boolean => {
+				if (groupRowIndexes.has(rowIndex) || rowsClaimedBySetDef.has(rowIndex))
+					return false;
+				const deferral = pendingSetDefClaimDeferrals.get(rowIndex);
+				if (!deferral || deferral.reason !== 'rating') return false;
+				const object = resolveSetDefObject(deferral.ref);
+				if (!object || object.key === excludingKey) return false;
+				return !keyIsAssignedToRow(object.key) && isCatalogEligibleKey(object.key);
+			};
 			const consumesOtherRowsFilename = (key: string): boolean => {
 				const ownerIndex = uniqueUnclaimedStemOwnerIndex(key);
-				return ownerIndex !== -1 && !groupRowIndexes.has(ownerIndex);
+				if (ownerIndex === -1 || groupRowIndexes.has(ownerIndex)) return false;
+				// If the owner can still retry its own deferred SET.def
+				// reference, this stem match is not its only claim.
+				return !hasViableDeferredDirectRef(ownerIndex, key);
+			};
+			const isDeferredDirectRefOfOtherRow = (key: string): boolean => {
+				for (const [rowIndex, deferral] of pendingSetDefClaimDeferrals) {
+					if (groupRowIndexes.has(rowIndex) || rowsClaimedBySetDef.has(rowIndex))
+						continue;
+					if (deferral.reason !== 'rating') continue;
+					const object = resolveSetDefObject(deferral.ref);
+					if (!object || object.key !== key) continue;
+					if (keyIsAssignedToRow(object.key) || !isCatalogEligibleKey(object.key))
+						continue;
+					return true;
+				}
+				return false;
+			};
+			const candidateRank = (key: string): number => {
+				if (isDeferredDirectRefOfOtherRow(key)) return 2;
+				if (consumesOtherRowsFilename(key)) return 1;
+				return 0;
 			};
 			const orderDeferredCandidates = (keys: string[]): string[] => {
 				const ordered = orderExactCandidates(groupLevel, keys);
-				const bySlot = (tier: string[]): string[] => [
-					...tier.filter((key) => !consumesOtherRowsFilename(key) && isOnSlot(key)),
-					...tier.filter((key) => !consumesOtherRowsFilename(key) && !isOnSlot(key)),
-					...tier.filter((key) => consumesOtherRowsFilename(key) && isOnSlot(key)),
-					...tier.filter((key) => consumesOtherRowsFilename(key) && !isOnSlot(key))
-				];
+				const bySlot = (tier: string[]): string[] =>
+					[0, 1, 2].flatMap((rank) => {
+						const ranked = tier.filter((key) => candidateRank(key) === rank);
+						return [
+							...ranked.filter(isOnSlot),
+							...ranked.filter((key) => !isOnSlot(key))
+						];
+					});
 				return [
 					...bySlot(ordered.filter((key) => !isRetainedCopyKey(key, groupLevel))),
 					...bySlot(ordered.filter((key) => isRetainedCopyKey(key, groupLevel)))

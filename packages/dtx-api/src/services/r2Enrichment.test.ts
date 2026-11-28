@@ -7071,4 +7071,54 @@ describe('PR365 review assignment regressions', () => {
 				.map((chart) => chart.fileUrl)
 		).toEqual(['https://cdn.example.test/42/03.dtx', 'https://cdn.example.test/42/04.dtx']);
 	});
+
+	it('keeps a deferred direct reference ahead of a competing stem match', async () => {
+		// The repeated label 04 lists 03.dtx and 53.dtx. 53.dtx matches the
+		// level-50 row, while 03.dtx stays deferred for the level-20 row
+		// because MEDIUM/30 also rates 30. 04.dtx only matches the level-20
+		// row by filename, so MEDIUM must take 04.dtx and let 03.dtx retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n' +
+					'#L5LABEL 04\n#L5FILE 03.dtx\n#L6LABEL 04\n#L6FILE 53.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/53.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: '04', level: 20 },
+					{ label: '04', level: 50 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(
+			discovery.charts
+				.filter((chart) => chart.label === 'MEDIUM' || chart.label === '04')
+				.map((chart) => chart.fileUrl)
+		).toEqual([
+			'https://cdn.example.test/42/03.dtx',
+			'https://cdn.example.test/42/53.dtx',
+			'https://cdn.example.test/42/04.dtx'
+		]);
+	});
 });

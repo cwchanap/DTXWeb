@@ -1620,16 +1620,26 @@ export const discoverCatalogFiles = async (
 				const object = resolveSetDefObject(deferral.ref);
 				return Boolean(object && !keyIsAssignedToRow(object.key));
 			});
+			// A lone alias row must not consume the last ordinary chart that
+			// another unclaimed row has left; the alias can satisfy this row.
+			const aliasRowMustYield =
+				groupSize === 1 &&
+				groupHasUsableAlias &&
+				dtxObjectKeys.filter(
+					(key) =>
+						!usedDtxKeys.has(key) &&
+						isCatalogEligibleKey(key) &&
+						!sameStemAlternativeKeys.has(key)
+				).length <=
+					fallbackRows.filter(
+						(row) =>
+							!rowsClaimedBySetDef.has(row.index) && row.index !== groupRows[0].index
+					).length;
+			if (aliasRowMustYield) continue;
 			const selectedKeys = new Set<string>();
 			for (const key of orderExactCandidates(groupLevel, dtxObjectKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (usedDtxKeys.has(key) || !isCatalogEligibleKey(key)) continue;
-				// A lone alias row must not consume a unique filename owner's
-				// only chart; the owner cannot be recovered after this pass.
-				if (groupSize === 1 && groupHasUsableAlias) {
-					const owner = uniqueUnclaimedStemOwnerIndex(key);
-					if (owner !== -1 && !groupRows.some((row) => row.index === owner)) continue;
-				}
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
 			if (selectedKeys.size < groupSize && groupSize > 1) {
@@ -1898,7 +1908,8 @@ export const discoverCatalogFiles = async (
 						if (
 							slotKey === undefined ||
 							assignedKeys.has(slotKey) ||
-							probedLevelByKey.get(slotKey) !== groupLevel
+							probedLevelByKey.get(slotKey) !== groupLevel ||
+							candidateRank(slotKey) > 0
 						)
 							continue;
 						assignedKeys.add(slotKey);
@@ -1912,7 +1923,8 @@ export const discoverCatalogFiles = async (
 					for (const row of rowsByNeed) {
 						if (rowsClaimedBySetDef.has(row.index)) continue;
 						const key = exactCandidates.find(
-							(candidate) => !assignedKeys.has(candidate)
+							(candidate) =>
+								!assignedKeys.has(candidate) && candidateRank(candidate) === 0
 						);
 						if (!key) break;
 						assignedKeys.add(key);
@@ -1943,8 +1955,14 @@ export const discoverCatalogFiles = async (
 					for (const row of rowsByNeed) {
 						if (rowsClaimedBySetDef.has(row.index)) continue;
 						if (needScore(row.index) !== 0) continue;
-						const key = unprobedKeys.shift();
-						if (!key) break;
+						const key = unprobedKeys.find((candidate) => {
+							const pos = posByKey.get(candidate);
+							const positionalRow =
+								pos !== undefined ? remainingRowsByPos[pos] : undefined;
+							return positionalRow?.index === row.index;
+						});
+						if (!key) continue;
+						unprobedKeys.splice(unprobedKeys.indexOf(key), 1);
 						rowsClaimedBySetDef.add(row.index);
 						matchedKeysByRowIndex.set(row.index, key);
 						usedDtxKeys.add(key);

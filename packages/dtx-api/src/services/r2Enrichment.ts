@@ -1353,6 +1353,31 @@ export const discoverCatalogFiles = async (
 			if (rows) rows.push(index);
 			else unclaimedRowsByLabel.set(label, [index]);
 		});
+		// A direct SET.def reference deferred only because an already claimed
+		// row shares its probed rating is stronger evidence than a mismatched
+		// filename-stem claim; let the pending-claim retry run first.
+		const hasPendingDirectRefDeferredByClaimedRating = (rowIndex: number): boolean => {
+			if (!pendingSetDefClaims.has(rowIndex)) return false;
+			const row = dtxFiles[rowIndex];
+			const refs = filesByLabel.get(row.label.toLowerCase());
+			if (!refs) return false;
+			const rowLevel = normalizeLevel(row.level);
+			const deferredDirectRefs = refs.filter((ref) => {
+				const object = resolveSetDefObject(ref);
+				if (!object || keyIsAssignedToRow(object.key)) return false;
+				if (!isDirectRawRef(ref, object.key) || !isCatalogEligibleKey(object.key))
+					return false;
+				const probed = fileLevelByRef.get(ref) ?? probedLevelByKey.get(object.key);
+				if (typeof probed !== 'number' || probed === 0 || probed === rowLevel) return false;
+				return !dtxFiles.some(
+					(other, otherIndex) =>
+						otherIndex !== rowIndex &&
+						!rowsClaimedBySetDef.has(otherIndex) &&
+						normalizeLevel(other.level) === probed
+				);
+			});
+			return deferredDirectRefs.length === 1;
+		};
 		// A probed rating equal to a DIFFERENT unclaimed row's level names that
 		// row's chart — the same disqualification the set.def claim loop applies —
 		// so the file must not claim this row on its stem alone.
@@ -1397,10 +1422,15 @@ export const discoverCatalogFiles = async (
 						isCatalogEligibleKey(key) &&
 						probedLevelByKey.get(key) === rowLevel
 				);
+			const defersForPendingDirectRef =
+				!exactOnly &&
+				effectiveProbed !== rowLevel &&
+				hasPendingDirectRefDeferredByClaimedRating(rows[0]);
 			if (
 				typeof effectiveProbed === 'number' &&
 				!namesDifferentRow &&
 				!hasOrdinaryExactMatch &&
+				!defersForPendingDirectRef &&
 				(exactOnly ? effectiveProbed === rowLevel : effectiveProbed !== 0 || rowLevel === 0)
 			) {
 				rowsClaimedBySetDef.add(rows[0]);

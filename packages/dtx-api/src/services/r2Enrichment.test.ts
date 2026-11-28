@@ -6727,4 +6727,37 @@ describe('PR365 review assignment regressions', () => {
 			null
 		]);
 	});
+
+	it('retries a deferred direct SET.def reference before a mismatched stem claim', async () => {
+		// BASIC has two rows (30, 40). 02.dtx exact-claims BASIC/40 while
+		// expert.dtx exact-claims EXPERT/70. 01.dtx probes 70, so BASIC/30's
+		// direct reference is deferred until exact-rating fallback completes.
+		// The unlisted basic.dtx also probes 70; its filename stem must not
+		// claim BASIC/30 before 01.dtx gets its retry.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def': '#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 02.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 40\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 40 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
 });

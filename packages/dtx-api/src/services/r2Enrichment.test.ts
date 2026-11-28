@@ -6978,4 +6978,51 @@ describe('PR365 review assignment regressions', () => {
 			'https://cdn.example.test/42/expert.dtx'
 		]);
 	});
+
+	it('prefers an on-slot exact match after pending retries', async () => {
+		// BASIC/30 and HARD/30 retry 01.dtx and 02.dtx, leaving MEDIUM/30
+		// alone in the deferred level-30 group. 03.dtx and 04.dtx both probe
+		// 30, but only 04.dtx maps to MEDIUM's remaining filename slot; the
+		// cap must not select 03.dtx just because it sorts first.
+		const discovery = await discoverCatalogFiles(
+			makeChartBucket({
+				'42/set.def':
+					'#L1LABEL BASIC\n#L1FILE 01.dtx\n#L2LABEL BASIC\n#L2FILE 50.dtx\n' +
+					'#L3LABEL HARD\n#L3FILE 02.dtx\n#L4LABEL HARD\n#L4FILE 52.dtx\n',
+				'42/01.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/02.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/50.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/52.dtx': '#TITLE: Song\n#DLEVEL: 50\n',
+				'42/basic.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/hard.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/expert.dtx': '#TITLE: Song\n#DLEVEL: 70\n',
+				'42/03.dtx': '#TITLE: Song\n#DLEVEL: 30\n',
+				'42/04.dtx': '#TITLE: Song\n#DLEVEL: 30\n'
+			}),
+			{
+				simfileId: 42,
+				dtxFiles: [
+					{ label: 'BASIC', level: 30 },
+					{ label: 'BASIC', level: 50 },
+					{ label: 'HARD', level: 30 },
+					{ label: 'HARD', level: 50 },
+					{ label: 'EASY', level: 20 },
+					{ label: 'MEDIUM', level: 30 },
+					{ label: 'EXPERT', level: 70 }
+				],
+				publicBaseUrl: 'https://cdn.example.test'
+			},
+			silentLogger
+		);
+
+		expect(discovery.charts.map((chart) => chart.fileUrl)).toEqual([
+			'https://cdn.example.test/42/01.dtx',
+			'https://cdn.example.test/42/50.dtx',
+			'https://cdn.example.test/42/02.dtx',
+			'https://cdn.example.test/42/52.dtx',
+			'https://cdn.example.test/42/03.dtx',
+			'https://cdn.example.test/42/04.dtx',
+			'https://cdn.example.test/42/expert.dtx'
+		]);
+	});
 });

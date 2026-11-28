@@ -1646,8 +1646,28 @@ export const discoverCatalogFiles = async (
 				(a, b) =>
 					Number(sameStemAlternativeKeys.has(a)) - Number(sameStemAlternativeKeys.has(b))
 			);
+			const posByKey = new Map(positionalKeys.map((key, pos) => [key, pos]));
+			// Within each priority tier, an exact file in a remaining row's
+			// uploader slot outranks an off-slot exact file, or the cap can
+			// discard the slot owner before positional matching.
+			const isOnSlot = (key: string): boolean => {
+				const pos = posByKey.get(key);
+				const positionalRow = pos !== undefined ? remainingRowsByPos[pos] : undefined;
+				return Boolean(positionalRow && groupRowIndexes.has(positionalRow.index));
+			};
+			const orderDeferredCandidates = (keys: string[]): string[] => {
+				const ordered = orderExactCandidates(groupLevel, keys);
+				const bySlot = (tier: string[]): string[] => [
+					...tier.filter(isOnSlot),
+					...tier.filter((key) => !isOnSlot(key))
+				];
+				return [
+					...bySlot(ordered.filter((key) => !isRetainedCopyKey(key, groupLevel))),
+					...bySlot(ordered.filter((key) => isRetainedCopyKey(key, groupLevel)))
+				];
+			};
 			const selectedKeys = new Set<string>();
-			for (const key of orderExactCandidates(groupLevel, remainingEligibleKeys)) {
+			for (const key of orderDeferredCandidates(remainingEligibleKeys)) {
 				if (selectedKeys.size === groupSize) break;
 				if (probedLevelByKey.get(key) === groupLevel) selectedKeys.add(key);
 			}
@@ -1661,11 +1681,9 @@ export const discoverCatalogFiles = async (
 					}
 				}
 			}
-			const candidates = orderExactCandidates(
-				groupLevel,
+			const candidates = orderDeferredCandidates(
 				remainingEligibleKeys.filter((key) => selectedKeys.has(key))
 			);
-			const posByKey = new Map(positionalKeys.map((key, pos) => [key, pos]));
 			const unassignedCandidates: string[] = [];
 			// Keep candidates whose uploader position belongs to a row in this
 			// group with that positional owner first, so a short candidate list
